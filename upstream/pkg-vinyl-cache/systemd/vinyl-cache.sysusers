@@ -1,0 +1,4 @@
+u vinyllog -:vinyl "Vinyl Cache Log User"
+u vcache -:vinyl "Vinyl Cache Worker User"
+u vinyl -:vinyl "Vinyl Cache Daemon User"
+g vinyl -

@@ -1,0 +1,76 @@
+Source: vinyl-cache
+Section: web
+Priority: optional
+Maintainer: The Vinyl Cache Project <pkg@vinyl-cache.org>
+Build-Depends:
+ debhelper (>= 9),
+ debhelper (>= 9.20160709) | dh-systemd,
+ libedit-dev,
+ libjemalloc-dev,
+ libncurses-dev,
+ libpcre2-dev,
+ pkg-config,
+ python3-docutils,
+ python3-sphinx,
+Vcs-Git: https://code.vinyl-cache.org/vinyl-cache/pkg-vinyl-cache.git
+Homepage: https://vinyl-cache.org/
+Standards-Version: 3.9.6
+
+Package: vinyl-cache
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ adduser,
+ gcc,
+ libc6-dev | libc6.1-dev | libc-dev,
+Provides:
+ libvinylapi3,
+ ${vinyld:ABI},
+ ${vinyld:VRT},
+Suggests: vinyl-cache-dev
+Replaces:
+ libvarnishapi1,
+ varnish-dbg,
+ varnish-doc
+Conflicts:
+ libvarnishapi1,
+ varnish-dbg,
+ varnish-doc
+Description: state of the art, high-performance web accelerator
+ Vinyl Cache is a state of the art web accelerator written with
+ performance and flexibility in mind.
+ .
+ Vinyl Cache stores web pages in memory so web servers don't have to
+ create the same web page over and over again. Vinyl serves pages
+ much faster than any application server; giving the website a
+ significant speed up.
+ .
+ Some of the features include:
+  * A modern design
+  * VCL - a very flexible configuration language
+  * Load balancing with health checking of backends
+  * Partial support for ESI - Edge Side Includes
+  * URL rewriting
+  * Graceful handling of "dead" backends
+
+Package: vinyl-cache-dev
+Section: libdevel
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ vinyl-cache (= ${binary:Version}),
+ pkg-config,
+ python3 (>= 3.4),
+Provides:
+ libvinyl-dev,
+ libvinylapi-dev
+Replaces:
+ libvarnish-dev,
+ libvarnishapi-dev
+Conflicts:
+ libvarnish-dev,
+ libvarnishapi-dev
+Description: development files for Vinyl Cache
+ Development files for Vinyl Cache HTTP accelerator.

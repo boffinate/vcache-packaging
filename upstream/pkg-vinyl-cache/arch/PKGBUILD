@@ -1,0 +1,67 @@
+# adapted from https://github.com/archlinux/svntogit-packages/blob/packages/varnish/trunk/PKGBUILD
+
+# before building, be sure to:
+# - replace @VERSION@ with the proper Vinyl Cache version to use
+# - run `makepkg -fg >> PKGBUILD` to generate the checksum entries
+
+pkgname=vinyl-cache
+pkgver=9.0.0
+pkgrel=1
+pkgdesc="High-performance HTTP accelerator"
+arch=('x86_64')
+url="https://vinyl-cache.org/"
+license=('BSD')
+depends=('gcc' 'libnsl' 'pcre2')
+makedepends=('python-docutils' 'python-sphinx' )
+optdepends=('python: needed for vmod development')
+backup=('etc/vinyl-cache/default.vcl')
+install=$pkgname.install
+source=("https://vinyl-cache.org/downloads/vinyl-cache-$pkgver.tgz"
+	vinylreload
+	$pkgname.install
+	vinyl-cache.logrotate
+	vinyl-cache.service
+	vinylncsa.service
+	vinyl-cache.sysusers
+	vinyl-cache.tmpfiles
+)
+
+build() {
+  cd "vinyl-cache-$pkgver"
+
+  ./configure \
+    --prefix=/usr \
+    --sysconfdir=/etc \
+    --localstatedir=/var/lib \
+    --sbindir=/usr/bin \
+    --with-contrib
+
+  make
+}
+
+check() {
+  cd "vinyl-cache-$pkgver"
+
+  make check
+}
+
+package() {
+  cd "vinyl-cache-$pkgver"
+
+  make DESTDIR="$pkgdir" install
+
+  install -Dm644 "$srcdir/vinyl-cache.service" "$pkgdir/usr/lib/systemd/system/vinyl-cache.service"
+  install -Dm644 "$srcdir/vinylncsa.service" "$pkgdir/usr/lib/systemd/system/vinylncsa.service"
+  install -Dm755 "$srcdir/vinylreload" "$pkgdir/usr/bin/vinylreload"
+  install -Dm755 "$srcdir/vinyl-cache.logrotate" "$pkgdir/etc/logrotate.d/vinyl-cache"
+  install -Dm644 "$srcdir/vinyl-cache.tmpfiles" "$pkgdir/usr/lib/tmpfiles.d/vinyl-cache.conf"
+
+  # create users & group
+  install -Dm644 "$srcdir/vinyl-cache.sysusers" "$pkgdir/usr/lib/sysusers.d/vinyl-cache.conf"
+
+  # config
+  install -Dm644 "etc/example.vcl" "$pkgdir/etc/vinyl-cache/default.vcl"
+
+  # license
+  install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

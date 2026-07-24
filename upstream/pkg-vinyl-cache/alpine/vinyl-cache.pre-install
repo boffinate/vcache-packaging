@@ -1,0 +1,6 @@
+#!/bin/sh
+
+addgroup -S vinyl 2>/dev/null
+adduser -S -D -H -h /var/lib/vinyl-cache -s /sbin/nologin -G vinyl -g vinyl vinyl 2>/dev/null
+
+exit 0

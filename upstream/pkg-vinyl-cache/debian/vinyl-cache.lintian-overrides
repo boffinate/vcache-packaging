@@ -1,0 +1,13 @@
+vinyl-cache: embedded-library zlib [usr/bin/vinyltest]
+vinyl-cache: embedded-library zlib [usr/bin/vtest]
+vinyl-cache: embedded-library zlib [usr/sbin/vinyld]
+
+vinyl-cache: unstripped-binary-or-object [usr/*bin/vinyl*]
+vinyl-cache: unstripped-binary-or-object [usr/bin/vtest]
+
+vinyl-cache: unstripped-binary-or-object [usr/lib/libvinylapi.so.*]
+vinyl-cache: unstripped-binary-or-object [usr/lib/vinyl-cache/vmods/libvmod_*.so]
+
+vinyl-cache: versioned-provides vinyld-vrt (= 7.0)
+
+vinyl-cache: init.d-script-not-included-in-package etc/init.d/vinyl-cache

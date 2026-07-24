@@ -1,0 +1,70 @@
+#!/bin/sh
+
+# Postinst script for vinyl-cache.
+# Stig Sandbeck Mathisen <ssm@debian.org>
+
+set -e
+set -u
+
+# Settings
+daemon_group="vinyl"
+daemon_user="vinyl"
+worker_user="vcache"
+log_user="vinyllog"
+daemon_dir=/var/lib/vinyl-cache/$(uname -n)
+log_dir="/var/log/vinyl-cache"
+old_log_dir="/var/log/vinyl-cache"
+
+
+ensure_users() {
+
+    # Daemon user and group
+    if ! getent passwd $daemon_user 2>&1 >/dev/null; then
+        adduser --quiet --system --no-create-home --home /nonexistent --group $daemon_user
+    fi
+
+    # Extra users in daemon group
+    for user in $worker_user $log_user; do
+        if ! getent passwd $user 2>&1 >/dev/null; then
+            adduser --quiet --system --no-create-home --home /nonexistent --ingroup $daemon_group $user
+        fi
+    done
+
+}
+
+vinyl_cache_create_storagedir() {
+    if ! [ -d "$daemon_dir" ]; then
+        install -o $daemon_user -g $daemon_user -d $daemon_dir
+    fi
+}
+
+vinyl_cache_setup_logdir() {
+    if ! dpkg-statoverride --list $log_dir >/dev/null; then
+        dpkg-statoverride --update --add $log_user $daemon_group 0750 $log_dir
+    fi
+}
+
+# In varnish 4.1, the varnish shared memory log is readable by the "varnish"
+# group, instead of by everyone.  We need to update the "varnishlog" user to
+# reflect this, as well as the permissions on /var/log/varnish
+change_group_for_varnishlog_user() {
+    usermod -g $daemon_group $log_user
+    dpkg-statoverride --remove $old_log_dir
+    dpkg-statoverride --update --add $log_user $daemon_group 0750 $old_log_dir
+}
+
+case ${1:-} in
+    configure)
+
+        ensure_users
+
+        vinyl_cache_create_storagedir
+        vinyl_cache_setup_logdir
+
+        if dpkg --compare-versions "4.1.0-2~" "gt-nl" "${2:-}"; then
+            change_group_for_varnishlog_user
+        fi
+        ;;
+esac
+
+#DEBHELPER#

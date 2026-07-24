@@ -1,0 +1,64 @@
+#!/bin/sh
+#
+# This script builds Vinyl Cache in chroot from a tarball.
+#
+# Author: Lasse Karstensen <lkarsten@varnish-software.com>, March 2015.
+# Author: Dridi Boukelmoune <dridi.boukelmoune@gmail.com>, March 2018.
+
+set -e
+set -u
+
+ELVER=${ELVER:-el7}
+
+rm -rf build
+mkdir -p build
+cd build
+
+SOURCE=$(ls ../sources/vinyl-cache-*gz 2>/dev/null | tail -1)
+
+tar xf "$SOURCE"
+
+DIST_DIR=$(ls)
+
+VERSION=$("$DIST_DIR"/configure --version | awk 'NR == 1 {print $NF}')
+
+# VERSION looks like 5.2.1 or 5.2.0-rc1
+MAJOR=${VERSION%.*}		# 5.2
+MINOR=${VERSION##*.}		# 1 or 0-rc1
+MINOR=${MINOR%%-*}		# 1 or 0
+RELEASE=${VERSION#*-}		# 5.2.1 or rc1
+RELEASE=${RELEASE#$VERSION}	# '' or rc1
+
+cp -r -L ../redhat/* "$DIST_DIR"/
+
+tar zcf "$DIST_DIR.tgz" "$DIST_DIR"/
+
+if [ -n "${WEEKLY_VERSION:-}" ]; then
+	RPMVERSION="${WEEKLY_VERSION}"
+else
+	RPMVERSION="${MAJOR}.${MINOR}"
+fi
+
+MOCK_ROOT="epel-${ELVER#el}-x86_64"
+RESULT_DIR="vinyl-cache-${MAJOR}/${ELVER}"
+
+mock() {
+	if [ -n "$RELEASE" ]
+	then
+		set -- --define "v_rc $RELEASE" "$@"
+	fi
+	command mock \
+		--root "$MOCK_ROOT" \
+		--uniqueext "worker${EXECUTOR_NUMBER:-}" \
+		--resultdir "$RESULT_DIR" \
+		--define "_smp_mflags -j10" \
+		--define "versiontag ${RPMVERSION}" \
+		--define "releasetag ${RPMRELEASE:-1}" \
+		--define "srcname $DIST_DIR" \
+		--define "nocheck 1" \
+		"$@"
+	# XXX: no mechanism to make nocheck conditional
+}
+
+mock --buildsrpm --source . --spec "$DIST_DIR"/vinyl-cache.spec
+mock --rebuild "$RESULT_DIR"/vinyl-cache-*.src.rpm "$@"

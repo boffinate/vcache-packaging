@@ -1,0 +1,93 @@
+#!/bin/sh
+#
+# Build Debian and Ubuntu packages from a tarball.
+#
+# This is the script that our Jenkins/CI system runs. Yes, it is a bit messy.
+#
+#
+# For running this on your own computer (jessie), see https://wiki.debian.org/mk-sbuild
+# for information on setting up sbuild.
+# Short version: 1) apt-get install ubuntu-dev-tools 2) mk-sbuild jessie
+#
+# To CHANGE the golden image: sudo schroot -c source:jessie-amd64 -u root
+# To ENTER an image snapshot: schroot -c jessie-amd64
+# To BUILD within a snapshot: sbuild -A -d jessie-amd64 PACKAGE*.dsc
+
+set -e
+set -u
+
+BINDISTS=${BINDISTS:-stretch}
+
+rm -rf build
+mkdir -p build
+cd build
+
+SOURCE=$(ls ../sources/vinyl-cache-*gz 2>/dev/null | tail -1)
+
+tar xf "$SOURCE"
+
+DIST_DIR=$(ls)
+
+VERSION=$("$DIST_DIR"/configure --version | awk 'NR == 1 {print $NF}')
+
+# VERSION looks like 5.2.1 or 5.2.0-rc1
+MAJOR=${VERSION%.*}		# 5.2
+MINOR=${VERSION##*.}		# 1 or 0-rc1
+MINOR=${MINOR%%-*}		# 1 or 0
+RELEASE=${VERSION#*-}		# 5.2.1 or rc1
+RELEASE=${RELEASE#$VERSION}	# '' or rc1
+BUILD_NUMBER=${BUILD_NUMBER:-none}
+BUILD_ID=${BUILD_ID:-none}
+
+# Take version override set on Jenkins builds into account.
+if [ -n "${WEEKLY_VERSION:-}" ]
+then
+	VERSION=$WEEKLY_VERSION
+	RELEASE=
+	DEBVERSION=weekly
+	DCH_TEXT="Release build #$BUILD_NUMBER ID: $BUILD_ID"
+elif [ -n "${DEBVERSION:-}" ]
+then
+	VERSION="$MAJOR.$MINOR"
+	DEBVERSION="${DEBVERSION:-}"
+	DCH_TEXT="Release build #$BUILD_NUMBER ID: $BUILD_ID"
+elif [ "${VERSION}" = "trunk" ]
+then
+	VERSION=$(date +%Y%m%d%H%M%S)
+	RELEASE=
+	DEBVERSION=trunk
+	DCH_TEXT="Trunk build from git"
+else
+	VERSION="$MAJOR.$MINOR"
+	DEBVERSION="0${RELEASE}+daily+$(date +%Y%m%d.%H%M%S)"
+	RELEASE=
+	# XXX: why move the RELEASE inside the DEBVERSION?
+	DCH_TEXT="Automatic build from git"
+fi
+
+FULL_VERSION="$VERSION${RELEASE:+~}$RELEASE-$DEBVERSION"
+
+cp -r -L ../debian "$DIST_DIR"/
+
+sed -i -e "s|@VERSION@|$FULL_VERSION|"  "$DIST_DIR/debian/changelog"
+
+tar zcf "$DIST_DIR.orig.tar.gz" "$DIST_DIR"/
+
+cd "$DIST_DIR"
+
+dch -v "$FULL_VERSION" "$DCH_TEXT"
+
+# Generate the source package used by subsequent sbuilds
+dpkg-buildpackage -us -uc -S -j10 -d
+
+# Back to build/
+cd ..
+
+# By now we are done setting up and building the source package.
+
+# Build binary packages for the requested releases inside chroots.
+for dist in $BINDISTS; do
+	# Legacy packages embedded the release into the package version.
+	export DEBIAN_OVERRIDE_BINARY_VERSION="$FULL_VERSION~$dist"
+	sbuild -v -A -c "$dist-amd64-sbuild" -d "$dist" vinyl-cache*.dsc
+done

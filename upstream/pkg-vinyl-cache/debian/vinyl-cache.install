@@ -1,0 +1,11 @@
+etc/vinyl-cache/default.vcl
+usr/bin/*
+usr/sbin/*
+usr/lib/vinyl-cache
+usr/share/man
+usr/share/vinyl-cache/vcc
+usr/share/vinyl-cache/vcl
+usr/share/doc/vinyl-cache/*.vcl
+# from libvarnishapi1
+usr/lib/lib*.so*
+usr/lib/libvinylapi.so

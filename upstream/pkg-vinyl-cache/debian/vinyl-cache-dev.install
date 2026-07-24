@@ -1,0 +1,5 @@
+usr/include/vinyl-cache
+usr/share/aclocal
+usr/share/vinyl-cache/vmodtool.py
+usr/share/vinyl-cache/vsctool.py
+usr/lib/pkgconfig/*.pc

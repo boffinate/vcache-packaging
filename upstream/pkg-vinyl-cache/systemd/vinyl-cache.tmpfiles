@@ -1,0 +1,2 @@
+d /var/lib/vinyl-cache 0750 vinyl vinyl
+d /var/lib/vinyl-cache/vinyld 0750 vinyl vinyl

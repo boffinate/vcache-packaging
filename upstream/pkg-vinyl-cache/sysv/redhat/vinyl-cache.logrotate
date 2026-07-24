@@ -1,0 +1,10 @@
+/var/log/vinyl-cache/vinylncsa.log {
+  daily
+  rotate 7
+  compress
+  delaycompress
+  missingok
+  postrotate
+    /bin/kill -HUP `cat /var/run/vinylncsa.pid /run/vinylncsa/vinylncsa.pid 2>/dev/null` 2> /dev/null || true
+  endscript
+}
