@@ -1,0 +1,74 @@
+Source: vinyl-cache
+Section: web
+Priority: optional
+Maintainer: @MAINTAINER_NAME@ <@MAINTAINER_EMAIL@>
+Build-Depends:
+ debhelper-compat (= 13),
+ libedit-dev,
+ libjemalloc-dev [amd64 i386 ppc64el s390x riscv64],
+ libncurses-dev,
+ libpcre2-dev,
+ libunwind-dev,
+ pkgconf,
+ python3,
+ python3-docutils,
+ python3-sphinx,
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Homepage: https://vinyl-cache.org/
+Vcs-Git: https://code.vinyl-cache.org/vinyl-cache/vinyl-cache.git
+Vcs-Browser: https://code.vinyl-cache.org/vinyl-cache/vinyl-cache
+
+Package: vinyl-cache
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ adduser,
+ gcc,
+ libc6-dev | libc-dev,
+Provides:
+ ${vinyld:ABI},
+ ${vinyld:VRT},
+Suggests: vinyl-cache-dev
+Description: state of the art, high-performance web accelerator
+ Vinyl Cache is a state of the art web accelerator written with performance
+ and flexibility in mind. It stores web pages in memory so web servers do not
+ have to create the same page over and over again.
+ .
+ This package contains the vinyld daemon, the command line utilities, the
+ shared library, the VMODs distributed with Vinyl Cache, and the systemd
+ service integration.
+ .
+ The package also provides two virtual packages that identify the exact VMOD
+ binary interface of this build: vinyld-vrt, carrying the public VRT ABI
+ version, and vinyld-abi-<hash>, carrying the exact strict VMOD ABI. A VMOD
+ that declares "$ABI strict" depends on the latter, so an incompatible Vinyl
+ Cache upgrade is unresolvable rather than silently loadable.
+ .
+ EXPERIMENTAL: this is a pre-9.0.0 snapshot package built from an unreleased
+ development revision. It carries no security-update commitment.
+
+Package: vinyl-cache-dev
+Section: libdevel
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ vinyl-cache (= ${binary:Version}),
+ pkgconf,
+ python3,
+Description: development files for Vinyl Cache
+ Vinyl Cache is a state of the art web accelerator written with performance
+ and flexibility in mind.
+ .
+ This package contains the headers, the vinylapi.pc pkg-config file, the
+ vinyl.m4 autoconf macros and the vmodtool.py and vsctool.py generators
+ needed to build a Vinyl Cache VMOD or an application against libvinylapi.
+ .
+ Because a strict-ABI VMOD is bound to one exact Vinyl Cache build, this
+ package depends on the exact matching vinyl-cache binary version rather than
+ on a version range.
+ .
+ EXPERIMENTAL: this is a pre-9.0.0 snapshot package built from an unreleased
+ development revision. It carries no security-update commitment.

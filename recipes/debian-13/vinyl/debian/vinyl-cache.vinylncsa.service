@@ -1,0 +1,29 @@
+[Unit]
+Description=Vinyl Cache HTTP accelerator NCSA logging daemon
+After=vinyl.service
+
+Documentation=man:vinylncsa(1) https://vinyl-cache.org/
+
+[Service]
+RuntimeDirectory=vinylncsa
+Type=forking
+User=vinyllog
+Group=vinyl
+
+# Beware of custom formats! If you wish to use a different format using the
+# -F option for vinylncsa, please note that systemd also uses percent '%'
+# expansion in unit files: you need to double the percent signs in your
+# format string.
+#
+# For example the default format would look like this:
+#
+#     -F '%%h %%l %%u %%t "%%r" %%s %%b "%%{Referer}i" "%%{User-agent}i"'
+#
+# Alternatively you can read the ncsa format from a file using the -f
+# option in your vinylncsa command line.
+
+ExecStart=/usr/bin/vinylncsa -a -w /var/log/vinyl-cache/vinylncsa.log -D
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target

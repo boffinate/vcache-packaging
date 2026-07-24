@@ -1,0 +1,40 @@
+#!/bin/sh
+# Vinyl Cache runtime package post-installation script.
+#
+# Creates the unprivileged accounts vinyld's unix jail drops privileges to.
+# Nothing here starts, reloads or reconfigures a running Vinyl Cache: an
+# upgrade of this package must never disturb a live cache, and the systemd
+# units are deliberately shipped neither enabled nor started.
+
+set -e
+
+DAEMON_USER=vinyl
+DAEMON_GROUP=vinyl
+WORKER_USER=vcache
+LOG_USER=vinyllog
+
+case "$1" in
+    configure)
+        if ! getent group "$DAEMON_GROUP" >/dev/null; then
+            addgroup --quiet --system "$DAEMON_GROUP"
+        fi
+        if ! getent passwd "$DAEMON_USER" >/dev/null; then
+            adduser --quiet --system --no-create-home --home /nonexistent \
+                --shell /usr/sbin/nologin --ingroup "$DAEMON_GROUP" "$DAEMON_USER"
+        fi
+        for u in "$WORKER_USER" "$LOG_USER"; do
+            if ! getent passwd "$u" >/dev/null; then
+                adduser --quiet --system --no-create-home --home /nonexistent \
+                    --shell /usr/sbin/nologin --ingroup "$DAEMON_GROUP" "$u"
+            fi
+        done
+        chown "$DAEMON_USER:$DAEMON_GROUP" /var/lib/vinyl-cache || true
+        chmod 0750 /var/lib/vinyl-cache || true
+        chown "$LOG_USER:$DAEMON_GROUP" /var/log/vinyl-cache || true
+        chmod 0750 /var/log/vinyl-cache || true
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

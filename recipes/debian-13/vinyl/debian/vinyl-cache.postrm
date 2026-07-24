@@ -1,0 +1,20 @@
+#!/bin/sh
+# Vinyl Cache runtime package post-removal script.
+#
+# On purge, remove the cache working directory and the log directory that the
+# package created. The system accounts are deliberately left behind: Debian
+# policy discourages removing system users, because files elsewhere on the
+# system may still be owned by them.
+
+set -e
+
+case "$1" in
+    purge)
+        rm -rf /var/lib/vinyl-cache
+        rm -rf /var/log/vinyl-cache
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

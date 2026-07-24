@@ -1,0 +1,10 @@
+etc/vinyl-cache/default.vcl
+usr/bin/*
+usr/sbin/*
+usr/lib/*/libvinylapi.so.*
+usr/lib/*/vinyl-cache/vmods/*.so
+usr/share/doc/vinyl-cache/*.vcl
+usr/share/man/man1/*
+usr/share/man/man3/*
+usr/share/man/man7/*
+usr/share/vinyl-cache/vcl/*

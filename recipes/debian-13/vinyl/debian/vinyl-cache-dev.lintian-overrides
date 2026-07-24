@@ -1,0 +1,3 @@
+# See vinyl-cache.lintian-overrides: this package is not in Debian and has no
+# Debian bug tracker, so its first upload closes no bugs.
+vinyl-cache-dev: initial-upload-closes-no-bugs

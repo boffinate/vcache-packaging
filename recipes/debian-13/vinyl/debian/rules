@@ -1,0 +1,134 @@
+#!/usr/bin/make -f
+#
+# Vinyl Cache 9 -- Debian 13 (trixie) packaging rules.
+#
+# Derived from upstream/pkg-vinyl-cache/debian/rules (vendored at commit
+# 27c91305023b4c4dae09f903644774fb9dbd8fcb) and modernised for debhelper
+# compat 13. See ../../README.md for the audit findings.
+#
+# The ABI provider generation is the one piece kept in spirit from the upstream
+# recipe, because it is the part the packaging plan singles out as useful: it
+# reads the strict VMOD ABI and the public VRT version out of the *built tree*
+# rather than from a hand-edited constant, so the virtual packages a runtime
+# advertises cannot drift from the binary it ships.
+
+# Full distribution hardening. On this target dpkg-buildflags already supplies
+# stack-protector-strong, stack-clash-protection, FORTIFY_SOURCE, format
+# hardening, branch protection and partial RELRO by default, and PIE is a
+# builtin of Debian's gcc; hardening=+all adds BIND_NOW for full RELRO.
+#
+# The diagnostic harness in libvmod-cachetag configures Vinyl Cache with
+# --disable-stack-protector. That option must never reach a package build. It
+# is not merely omitted below: Vinyl's configure.ac only ever feeds the stack
+# protector into DEVELOPER_CFLAGS, which reaches CFLAGS only when
+# --enable-developer-warnings is also given, so the hardening here comes
+# entirely from dpkg-buildflags and is verified by ELF inspection in build.sh.
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+DEB_HOST_ARCH ?= $(shell dpkg-architecture -qDEB_HOST_ARCH)
+DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+# Architectures on which no libjemalloc-dev build dependency is declared in
+# debian/control. Keep the two lists in step: configure would otherwise pick
+# jemalloc up by auto-detection on one and not the other.
+WITHOUT_JEMALLOC_ARCH_LIST := arm64 hppa m68k
+
+CONFIGURE_FLAGS = \
+	--localstatedir=/var/lib \
+	--libdir=/usr/lib/$(DEB_HOST_MULTIARCH) \
+	--with-unwind
+
+ifneq ($(filter $(DEB_HOST_ARCH),$(WITHOUT_JEMALLOC_ARCH_LIST)),)
+CONFIGURE_FLAGS += --without-jemalloc
+endif
+
+# --- ABI provider generation -------------------------------------------------
+#
+# include/vmod_abi.h contains
+#     #define VMOD_ABI_Version "<PACKAGE_STRING> <40 hex commit>"
+# and the trailing field is the strict VMOD ABI hash that a "$ABI strict" VMOD
+# must be bound to. include/vrt.h carries the public VRT interface version.
+#
+# Both are read out of the source tree with cpp, at make parse time, so the
+# values are a property of what is being compiled. include/vcs_version.h and
+# include/vmod_abi.h ship in the orig tarball -- they are generated when the
+# release archive is assembled, because they cannot be derived without a Git
+# checkout -- and include/Makefile.am leaves them alone when there is no .git.
+#
+# NB: $(num) is the only way to get a literal '#' into a makefile line. GNU
+# make strips comments at read time, so writing grep -v '^#' here would
+# truncate the line mid-quote and hand /bin/sh an unterminated string -- which
+# is exactly what happened on the first run of this recipe, silently producing
+# an empty ABI. The assertions in override_dh_gencontrol are what caught it.
+num=\#
+cpp_last = cpp - -Iinclude 2>/dev/null | grep -v '^$(num)' | grep -v '^[[:space:]]*$$' | tail -1
+
+VINYLD_ABI := $(shell \
+	printf '$(num)include "vmod_abi.h"\nVMOD_ABI_Version\n' | \
+	$(cpp_last) | tr -d '"' | awk '{ print $$NF }')
+
+VINYLD_VRT := $(shell \
+	printf '$(num)include "vdef.h"\n$(num)include "vrt.h"\n%s.%s\n' \
+		VRT_MAJOR_VERSION VRT_MINOR_VERSION | \
+	$(cpp_last) | tr -c -d '0-9.')
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	dh_auto_configure -- $(CONFIGURE_FLAGS)
+
+# Vinyl Cache's own suite is the vinyltest VTC matrix. It needs free TCP
+# ports, a writable workdir and several minutes, and it is already run by the
+# authoritative Docker harness in the libvmod-cachetag repository against both
+# the diagnostic and the production build profiles. Re-running it here would
+# duplicate that gate while making the package build far less reliable, so the
+# package build compiles only. Behavioural coverage of the *packaged* artifact
+# is the installed-package smoke test's job.
+override_dh_auto_test:
+
+override_dh_auto_install:
+	dh_auto_install
+	# The systemd unit and the documentation both refer to a default VCL;
+	# ship the upstream example as a conffile.
+	install -d debian/tmp/etc/vinyl-cache
+	install -m 0644 etc/example.vcl debian/tmp/etc/vinyl-cache/default.vcl
+	# vinylreload is not part of the Vinyl Cache source tree; it comes from
+	# the packaging material and is what the service unit's ExecReload runs.
+	install -d debian/tmp/usr/sbin
+	install -m 0755 debian/vinylreload debian/tmp/usr/sbin/vinylreload
+	# vinylstat_help_gen is a build-time code generator that produces
+	# vinylstat's help text; Vinyl's own Makefile.am installs it into
+	# $(bindir) but nothing at runtime calls it, and it has no manual page.
+	# A build helper is not part of the runtime interface.
+	rm -f debian/tmp/usr/bin/vinylstat_help_gen
+	# Libtool archives and static libraries are not shipped.
+	find debian/tmp -name '*.la' -delete
+	find debian/tmp -name '*.a' -delete
+
+# Emit the two virtual packages that bind a strict-ABI VMOD to this exact
+# build. dh_shlibdeps has already written debian/vinyl-cache.substvars by the
+# time dh_gencontrol runs, so appending to it here is safe.
+#
+# Upstream wrote to a shared debian/substvars and passed -T to dh_gencontrol,
+# which applies one substvars file to every binary package; the per-package
+# file is the correct target in a multi-binary source package.
+override_dh_gencontrol:
+	@test -n "$(VINYLD_ABI)" || { echo "E: could not read the strict VMOD ABI from include/vmod_abi.h" >&2; exit 1; }
+	@test -n "$(VINYLD_VRT)" || { echo "E: could not read VRT_MAJOR_VERSION/VRT_MINOR_VERSION from include/vrt.h" >&2; exit 1; }
+	@printf '%s' '$(VINYLD_ABI)' | grep -Eq '^[0-9a-f]{40}$$' || \
+		{ echo "E: strict VMOD ABI '$(VINYLD_ABI)' is not 40 lowercase hex characters" >&2; exit 1; }
+	@printf '%s' '$(VINYLD_VRT)' | grep -Eq '^[0-9]+\.[0-9]+$$' || \
+		{ echo "E: VRT version '$(VINYLD_VRT)' is not <major>.<minor>" >&2; exit 1; }
+	echo "vinyld:ABI=vinyld-abi-$(VINYLD_ABI)" >> debian/vinyl-cache.substvars
+	echo "vinyld:VRT=vinyld-vrt (= $(VINYLD_VRT))" >> debian/vinyl-cache.substvars
+	dh_gencontrol
+
+# Deliberately neither enabled nor started on install. These are experimental
+# pre-9.0.0 snapshot packages with no security-update commitment, and the unit
+# binds :6081 on all interfaces; an unattended start of an internet-facing
+# daemon is not an acceptable side effect of installing a learning artifact.
+# Revisit when the channel gains a security owner and a response target.
+override_dh_installsystemd:
+	dh_installsystemd --no-enable --no-start
+	dh_installsystemd --name vinylncsa --no-enable --no-start

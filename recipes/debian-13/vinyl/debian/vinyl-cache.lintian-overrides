@@ -1,0 +1,45 @@
+# libvinylapi is not an independently consumable shared library. It is the
+# Vinyl Cache instrumentation API, versioned in lockstep with the daemon, and a
+# strict-ABI VMOD is bound to one exact vinyld build anyway. Splitting it into a
+# libvinylapi3 binary package would advertise an independent SONAME
+# compatibility promise this project explicitly does not make; see "Cachetag is
+# coupled to an exact Vinyl ABI" in the packaging plan.
+vinyl-cache: package-name-doesnt-match-sonames libvinylapi3
+
+# For the same reason there is no symbols control file: publishing one would
+# state a per-symbol backwards-compatibility promise for a library whose
+# consumers are required to be rebuilt for every Vinyl revision.
+vinyl-cache: no-symbols-control-file *
+
+# vinyltest and vtest embed a private copy of zlib (lib/libvgz) because the VTC
+# suite exercises Vinyl's own gzip stream handling, which must be the code path
+# the daemon uses rather than the system library's.
+vinyl-cache: embedded-library
+
+# VMODs are built with -module -avoid-version and are dlopened by vinyld, which
+# supplies the cache symbols they reference. They are plugins for one process,
+# not general shared libraries, so they deliberately do not link everything they
+# use. This is the same shape every Varnish-family VMOD has.
+vinyl-cache: shared-library-lacks-prerequisites [usr/lib/*/vinyl-cache/vmods/*.so]
+
+# vtest is the upstream VTest2 harness binary and vinylreload is a packaging
+# helper script; neither has an upstream manual page. Writing one here would
+# mean maintaining documentation for third-party and packaging code in a
+# snapshot package.
+vinyl-cache: no-manual-page [usr/bin/vtest]
+vinyl-cache: no-manual-page [usr/sbin/vinylreload]
+
+# Upstream typographical errors in generated Vinyl manual pages. Fixing them
+# belongs in the Vinyl source tree, not in a packaging patch, and this snapshot
+# deliberately carries no downstream patches.
+vinyl-cache: typo-in-manual-page
+
+# vinyld's upstream manual page is installed in section 1 by man/Makefile.am.
+# Moving it to section 8 is an upstream change; a packaging-side rename would
+# make the shipped page disagree with its own .TH line and with every upstream
+# cross-reference to vinyld(1).
+vinyl-cache: manual-page-for-system-command [usr/sbin/vinyld]
+
+# This package is not in Debian and has no Debian bug tracker; there are no
+# bugs for its first upload to close.
+vinyl-cache: initial-upload-closes-no-bugs

@@ -1,0 +1,5 @@
+# The upstream "source" for this package is a git-archive export of one pinned
+# Vinyl Cache commit plus the vtest2 submodule, assembled by
+# recipes/debian-13/build.sh. There is no upstream release tarball to point a
+# watch file at, and there will not be one until Vinyl Cache 9.0.0 is tagged.
+vinyl-cache source: debian-watch-file-is-missing
