@@ -1,0 +1,38 @@
+[Unit]
+Description=Vinyl Cache, a high-performance HTTP accelerator
+Documentation=man:vinyld(1)
+Wants=network-online.target
+After=network-online.target nss-lookup.target
+
+[Service]
+Type=forking
+KillMode=mixed
+
+# Maximum number of open files (for ulimit -n)
+LimitNOFILE=131072
+
+# Shared memory (VSM) segments are tentatively locked in memory. The default
+# value for vsl_space (the vinyld -l option) is 80MB; other segment types
+# benefit from being able to lock more.
+LimitMEMLOCK=100M
+
+# Avoid "fork failed" on reload.
+TasksMax=infinity
+
+# Maximum size of the corefile.
+LimitCORE=infinity
+
+# A PID file makes the main process selection deterministic.
+RuntimeDirectory=%N
+PIDFile=%t/%N/vinyld.pid
+
+ExecStart=/usr/sbin/vinyld \
+	  -a :6081 \
+	  -f /etc/vinyl-cache/default.vcl \
+	  -P %t/%N/vinyld.pid \
+	  -p feature=+http2 \
+	  -s malloc,256m
+ExecReload=/usr/sbin/vinylreload
+
+[Install]
+WantedBy=multi-user.target

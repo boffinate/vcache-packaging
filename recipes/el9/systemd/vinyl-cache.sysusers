@@ -1,0 +1,9 @@
+# Users and group owned by the vinyl-cache package.
+#
+# Replaces the upstream recipe's %pre groupadd/useradd block: sysusers.d is the
+# EL9-native mechanism, it is declarative, and it does not leave a scriptlet that
+# rpmlint has to be argued with.
+g vinyl    -
+u vinyl    -:vinyl "Vinyl Cache Daemon User" /var/lib/vinyl-cache /sbin/nologin
+u vcache   -:vinyl "Vinyl Cache Worker User" /dev/null /sbin/nologin
+u vinyllog -:vinyl "Vinyl Cache Log User"    /dev/null /sbin/nologin

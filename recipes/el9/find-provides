@@ -1,0 +1,100 @@
+#!/bin/sh
+#
+# Inject the Vinyl Cache VMOD ABI into the RPM Provides of the runtime package.
+#
+# Derived from upstream/pkg-vinyl-cache/redhat/find-provides (vendored at commit
+# 27c91305023b4c4dae09f903644774fb9dbd8fcb). Changes from that original:
+#
+#   * the package version-release arrives as $1 instead of being scraped out of
+#     $RPM_BUILD_ROOT by string surgery. The upstream form happened to work only
+#     because the buildroot path ends in <name>-<version>-<release>.<arch>, and
+#     it silently produced nonsense for any version containing the separator it
+#     cut on. Snapshot versions such as 9.0.0~git20260613.a909548147 make that
+#     kind of accident likely, and a wrong vmod() version is invisible until a
+#     dependency fails to resolve;
+#   * $BUILD_DIR is passed as $2 rather than inferred from $0, so the script does
+#     not have to be copied into the unpacked source tree;
+#   * the emitted ABI is checked to be 40 lowercase hex characters. Building
+#     outside a git checkout makes Vinyl's include/generate.py fall back to the
+#     literal string NOGIT, which would otherwise be published as a perfectly
+#     well-formed and completely wrong ABI provide;
+#   * errors are fatal. The original ran under `set -e` but its provide-emitting
+#     subshell could not fail the build, so a broken cpp expansion degraded to a
+#     package with no ABI provide at all.
+#
+# Contract: reads file names on stdin, writes RPM Provides on stdout. Files that
+# are not special-cased are handed to the real find-provides unchanged, so the
+# ordinary soname provides are still generated.
+
+set -e
+set -u
+
+VMOD_VR=$1
+BUILD_DIR=$2
+FIND_PROVIDES=$3
+shift 3
+
+ABI_ISA=$(rpm --eval '%{?_isa}')
+
+expand_macro() {
+	cpp - -Iinclude <<-EOF |
+	#include "vcs_version.h"
+	#include "vdef.h"
+	#include "vrt.h"
+	$1
+	EOF
+	tail -1
+}
+
+# Resolved once, in the main shell, before any file is read: a failure here must
+# abort the script rather than disappear into a pipeline's exit status.
+ABI=$(cd "$BUILD_DIR" && expand_macro VCS_Version | tr -d '"')
+VRT_MAJOR=$(cd "$BUILD_DIR" && expand_macro VRT_MAJOR_VERSION | tr -c -d '[0-9]')
+VRT_MINOR=$(cd "$BUILD_DIR" && expand_macro VRT_MINOR_VERSION | tr -c -d '[0-9]')
+
+case $ABI in
+*[!0-9a-f]* | "")
+	echo "find-provides: refusing to publish ABI '$ABI'" >&2
+	echo "find-provides: expected 40 lowercase hex characters" >&2
+	exit 1
+	;;
+esac
+
+if [ ${#ABI} -ne 40 ]; then
+	echo "find-provides: ABI '$ABI' is not 40 characters" >&2
+	exit 1
+fi
+
+if [ -z "$VRT_MAJOR" ] || [ -z "$VRT_MINOR" ]; then
+	echo "find-provides: could not expand VRT version" >&2
+	exit 1
+fi
+
+vinyld_provides() {
+	cat <<-EOF
+	vinyld(abi)$ABI_ISA = $ABI
+	vinyld(vrt)$ABI_ISA = $VRT_MAJOR.$VRT_MINOR
+	EOF
+}
+
+while read -r FILE
+do
+	case $FILE in
+	*/sbin/vinyld)
+		vinyld_provides
+		printf '%s\n' "$FILE" | $FIND_PROVIDES "$@"
+		;;
+	*/libvmod_*.so)
+		# A VMOD is a dlopen()ed plugin, not a system library: publish a
+		# vmod(<name>) capability instead of an soname provide.
+		VMOD=${FILE##*/libvmod_}
+		VMOD=${VMOD%.so}
+		printf 'vmod(%s)%s = %s\n' "$VMOD" "$ABI_ISA" "$VMOD_VR"
+		;;
+	*)
+		printf '%s\n' "$FILE" | $FIND_PROVIDES "$@"
+		;;
+	esac
+done |
+sort |
+uniq

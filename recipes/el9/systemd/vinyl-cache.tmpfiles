@@ -1,0 +1,4 @@
+# The package owns and ships both directories, so these entries exist only to
+# restore ownership and mode if something else removes or replaces them.
+d /var/lib/vinyl-cache 0750 vinyl vinyl -
+d /var/log/vinyl-cache 0750 vinyllog vinyl -

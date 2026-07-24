@@ -1,0 +1,265 @@
+# Vinyl Cache 9 -- EL9 RPM recipe.
+#
+# Modernised from upstream/pkg-vinyl-cache/redhat/vinyl-cache.spec (vendored at
+# commit 27c91305023b4c4dae09f903644774fb9dbd8fcb). That file targets EL6/EL7,
+# builds a release tarball produced by `make dist`, and disables debuginfo. See
+# ../../docs/ for the audit record of what changed and why.
+#
+# Every identity value arrives from cohort.env through --define. Nothing here is
+# hand-edited: a recipe that disagrees with the pinned inputs is a bug in the
+# recipe, not a thing to patch in place.
+#
+# This file is a template: at-sign delimited tokens are substituted from
+# cohort.env by container/build.sh before rpmbuild runs, the same way the
+# cachetag recipe is substituted from the registry manifests. The generated spec
+# is fully concrete, so the resulting source RPM rebuilds standalone with a
+# plain `rpmbuild --rebuild` and no --define incantation.
+
+%global vinyl_version   @VINYL_VERSION@
+%global vinyl_release   @VINYL_RELEASE@%{?dist}
+%global vinyl_commit    @VINYL_GIT_COMMIT@
+# Spelled out rather than built from %%{name}: these are defined before the Name
+# tag, so %%{name} would stay unexpanded here and then re-expand per subpackage,
+# pointing the dependency generator at a vinyl-cache-devel-* build directory that
+# does not exist. That failure is silent on the main package and fatal on the
+# subpackage, which is a poor way to find out.
+%global vinyl_srcdir    vinyl-cache-%{vinyl_version}
+%global vinyl_vmoddir   %{_libdir}/vinyl-cache/vmods
+
+# Link-time optimisation is off. Vinyl loads VMODs with dlopen() against symbols
+# exported from the daemon, generates C at run time and compiles it against the
+# installed headers, and bakes an ABI identity into the result. -flto=auto is not
+# a hardening flag and buys nothing here worth that risk surface. The distro's
+# hardening flags are otherwise taken exactly as %%configure supplies them: no
+# --disable-stack-protector, no --enable-developer-warnings, no CFLAGS override.
+%global _lto_cflags %{nil}
+
+# ABI provider generation. RPM 4.16 on EL9 still honours the external dependency
+# generator, verified by probe before this recipe was written. find-provides adds
+# the two exact-ABI provides that every strict-ABI VMOD depends on, and leaves
+# every other file to the stock generator so ordinary soname provides survive.
+%global _use_internal_dependency_generator 0
+%global __find_provides %{_builddir}/%{vinyl_srcdir}/find-provides %{vinyl_version}-%{vinyl_release} %{_builddir}/%{vinyl_srcdir} %__find_provides
+
+Name:           vinyl-cache
+Version:        %{vinyl_version}
+Release:        %{vinyl_release}
+Summary:        High-performance HTTP accelerator
+License:        BSD-2-Clause
+URL:            https://vinyl-cache.org/
+
+# Immutable export of the pinned Vinyl source revision, produced by
+# container/build.sh stage_source: `git archive` of the superproject plus its vtest2
+# submodule, with the generated include/vcs_version.h and include/vmod_abi.h
+# injected because `git archive` drops the .git directory that Vinyl's
+# include/generate.py needs to derive them.
+Source0:        %{vinyl_srcdir}.tar.gz
+Source1:        find-provides
+Source2:        vinyl-cache.service
+Source3:        vinylncsa.service
+Source4:        vinylreload
+Source5:        vinyl-cache.logrotate
+Source6:        vinyl-cache.tmpfiles
+Source7:        vinyl-cache.sysusers
+
+BuildRequires:  autoconf
+BuildRequires:  autoconf-archive
+BuildRequires:  automake
+BuildRequires:  diffutils
+BuildRequires:  gcc
+BuildRequires:  libedit-devel
+BuildRequires:  libtool
+BuildRequires:  libunwind-devel
+BuildRequires:  make
+BuildRequires:  ncurses-devel
+BuildRequires:  pcre2-devel
+BuildRequires:  pkgconfig
+BuildRequires:  python3
+BuildRequires:  python3-docutils
+BuildRequires:  python3-sphinx
+BuildRequires:  systemd-rpm-macros
+%ifnarch aarch64
+BuildRequires:  jemalloc-devel
+%endif
+
+# vinyld compiles each VCL program with the system C compiler at run time and
+# links it against the installed headers, so the toolchain is a runtime, not
+# merely a build-time, dependency.
+Requires:       gcc
+Requires:       logrotate
+Requires:       redhat-rpm-config
+Requires(pre):  shadow-utils
+%{?systemd_requires}
+%{?sysusers_requires_compat}
+
+%description
+Vinyl Cache is a high-performance HTTP accelerator. It stores responses in
+memory so origin servers do not have to produce the same response repeatedly.
+
+This package contains the daemon, its command line tools, the shared libraries
+they need, the built-in VMODs, and the systemd integration.
+
+EXPERIMENTAL snapshot built from Vinyl Cache commit
+%{vinyl_commit}.
+It is not a supported release and carries no
+security-update commitment. Cohort @COHORT_ID@.
+
+%package devel
+Summary:        Development files for %{name}
+# A VMOD built against these headers is valid only against the exact runtime it
+# was compiled against, so the development package is pinned to one build of it.
+Requires:       %{name}%{?_isa} = %{version}-%{release}
+Requires:       pkgconfig
+Requires:       python3
+
+%description devel
+Headers, vinylapi.pc, the vinyl.m4 autoconf macros and the VMOD/VSC generation
+tools needed to build a VMOD or an API client against Vinyl Cache.
+
+Because Vinyl Cache VMODs may declare a strict ABI, this package requires the
+exact matching runtime package and nothing looser.
+
+%prep
+%autosetup -n %{vinyl_srcdir}
+cp -p %{SOURCE1} .
+
+# The pinned source must already carry the generated ABI headers. If it does
+# not, Vinyl's include/generate.py runs without a .git directory and silently
+# bakes the literal string NOGIT into the ABI, which would then be published as
+# a package Provides. Fail here instead.
+test -f include/vcs_version.h
+test -f include/vmod_abi.h
+
+%build
+./autogen.sh
+# No --localstatedir override. Vinyl's configure.ac derives its state directory
+# as ${localstatedir}/lib/vinyl-cache, so %%configure's own --localstatedir=/var
+# already yields /var/lib/vinyl-cache. The upstream EL7 recipe passed
+# --localstatedir=/var/lib, which was right for the older layout and would put
+# the state directory in /var/lib/lib/vinyl-cache here.
+#
+# --with-unwind is explicit rather than auto-detected. Vinyl's configure enables
+# libunwind whenever libunwind-devel happens to be in the buildroot, which makes
+# a user-visible runtime dependency a silent function of the build environment.
+# It is a production panic-backtrace facility, so it is kept and declared -- but
+# note the consequence: libunwind.so.8 is not in EL9 BaseOS or AppStream, so this
+# runtime package requires EPEL. That is a deliberate, recorded trade, and the
+# alternative (--without-unwind, falling back to glibc backtrace) is the thing to
+# reconsider before this lane is published.
+%configure --disable-static --with-unwind
+
+# Prove the built tree really carries the ABI this cohort promised, before the
+# dependency generator turns it into a package Provides. Nothing downstream can
+# detect a wrong ABI: it produces a well-formed package whose strict-ABI VMODs
+# resolve, install and then fail to load.
+abi=$(sed -n 's/^#define[[:space:]]\+VMOD_ABI_Version[[:space:]]\+"\(.*\)"[[:space:]]*$/\1/p' \
+	include/vmod_abi.h)
+if [ "${abi##* }" != "%{vinyl_commit}" ]; then
+	echo "E: built tree ABI '$abi' does not end in the pinned commit" >&2
+	echo "E: %{vinyl_commit}" >&2
+	exit 1
+fi
+printf 'VMOD_ABI_Version = %%s\n' "$abi"
+
+%make_build
+
+%install
+# Keep the ELF objects unstripped so RPM's own debuginfo extraction, which this
+# recipe deliberately leaves enabled, has something to extract.
+export DONT_STRIP=1
+%make_install
+
+find %{buildroot}%{_libdir} -name '*.la' -delete
+
+# A build-time code generator for vinylstat's help text that make install drops
+# into bindir. It has no runtime user and no manual page; shipping it would put
+# a private build tool on every installation.
+rm -f %{buildroot}%{_bindir}/vinylstat_help_gen
+
+install -D -m 0644 %{SOURCE2} %{buildroot}%{_unitdir}/vinyl-cache.service
+install -D -m 0644 %{SOURCE3} %{buildroot}%{_unitdir}/vinylncsa.service
+install -D -m 0755 %{SOURCE4} %{buildroot}%{_sbindir}/vinylreload
+install -D -m 0644 %{SOURCE5} %{buildroot}%{_sysconfdir}/logrotate.d/vinyl-cache
+install -D -m 0644 %{SOURCE6} %{buildroot}%{_tmpfilesdir}/vinyl-cache.conf
+install -D -m 0644 %{SOURCE7} %{buildroot}%{_sysusersdir}/vinyl-cache.conf
+install -D -m 0644 etc/example.vcl %{buildroot}%{_sysconfdir}/vinyl-cache/default.vcl
+
+mkdir -p %{buildroot}%{_localstatedir}/lib/vinyl-cache
+mkdir -p %{buildroot}%{_localstatedir}/log/vinyl-cache
+mkdir -p %{buildroot}%{vinyl_vmoddir}
+
+%pre
+%sysusers_create_compat %{SOURCE7}
+
+%post
+%systemd_post vinyl-cache.service vinylncsa.service
+
+%preun
+%systemd_preun vinyl-cache.service vinylncsa.service
+
+%postun
+# Deliberately not %%systemd_postun_with_restart: an ABI-coupled VMOD is mapped
+# into the running daemon, and restarting it from a package transaction is
+# exactly the failure the packaging plan is trying to avoid.
+%systemd_postun vinyl-cache.service vinylncsa.service
+
+%files
+%license LICENSE
+%doc README.md ChangeLog
+%doc doc/changes*.rst
+# Installed by make install into docdir, not added by %%doc above.
+%{_pkgdocdir}/builtin.vcl
+%{_pkgdocdir}/example.vcl
+%{_sbindir}/vinyld
+%{_sbindir}/vinylreload
+%{_bindir}/vinyladm
+%{_bindir}/vinylhist
+%{_bindir}/vinyllog
+%{_bindir}/vinylncsa
+%{_bindir}/vinylstat
+%{_bindir}/vinyltest
+%{_bindir}/vinyltop
+# vtest is the generic VTC driver from the bundled vtest2 submodule; vinyltest
+# is the Vinyl-flavoured front end for it. Both are installed by make install
+# and both are useful for running a VMOD's test suite against this runtime.
+%{_bindir}/vtest
+%{_libdir}/libvinylapi.so.*
+%dir %{_libdir}/%{name}
+%dir %{vinyl_vmoddir}
+%{vinyl_vmoddir}/libvmod_*.so
+%dir %{_datadir}/%{name}
+%{_datadir}/%{name}/vcl
+%{_unitdir}/vinyl-cache.service
+%{_unitdir}/vinylncsa.service
+%{_tmpfilesdir}/vinyl-cache.conf
+%{_sysusersdir}/vinyl-cache.conf
+%dir %{_sysconfdir}/vinyl-cache
+%config(noreplace) %{_sysconfdir}/vinyl-cache/default.vcl
+%config(noreplace) %{_sysconfdir}/logrotate.d/vinyl-cache
+%attr(0750,vinyl,vinyl) %dir %{_localstatedir}/lib/vinyl-cache
+%attr(0750,vinyllog,vinyl) %dir %{_localstatedir}/log/vinyl-cache
+%{_mandir}/man1/*.1*
+# man3 is the built-in VMOD reference, not API documentation, so it belongs
+# with the runtime that provides those VMODs.
+%{_mandir}/man3/*.3*
+%{_mandir}/man7/*.7*
+
+%files devel
+%{_includedir}/%{name}
+%{_libdir}/libvinylapi.so
+%{_libdir}/pkgconfig/vinylapi.pc
+%{_datadir}/aclocal/vinyl.m4
+%{_datadir}/aclocal/vinyl-legacy.m4
+%{_datadir}/%{name}/vmodtool.py
+%{_datadir}/%{name}/vsctool.py
+# The VCC interface descriptions of the built-in VMODs: reference material for
+# someone writing a VMOD, not something the daemon reads at run time.
+%{_datadir}/%{name}/vcc
+
+%changelog
+* @RPM_CHANGELOG_DATE@ @MAINTAINER_NAME@ <@MAINTAINER_EMAIL@> - @VINYL_VERSION@-@VINYL_RELEASE@
+- EXPERIMENTAL snapshot package, built from pinned Vinyl Cache source commit
+  @VINYL_GIT_COMMIT@. Not a release, not supported, and carrying no
+  security-update commitment.
+- Generated from cohort.env; do not edit by hand.
+- First EL9 build of the modernised pkg-vinyl-cache RPM material.
