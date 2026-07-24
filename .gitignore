@@ -1,0 +1,43 @@
+# Python tooling
+
+__pycache__/
+*.py[co]
+
+# Package build output. Built artifacts are never committed: they are
+# reproducible from the pinned inputs recorded in the cohort registry, and a
+# checked-in binary would have no provenance.
+
+/build/
+/_build/
+/out/
+/dist/
+*.deb
+*.ddeb
+*.udeb
+*.dsc
+*.buildinfo
+*.changes
+*.rpm
+*.apk
+*.pkg.tar.zst
+*.txz
+*.tar.gz
+*.tar.xz
+*.orig.tar.*
+*.debian.tar.*
+
+# Local scratch space
+
+scratchpad/
+*.log
+*~
+
+# macOS
+
+.DS_Store
+
+# Vendored upstream material is committed verbatim, including any file the
+# patterns above would otherwise exclude. Its provenance is recorded in
+# upstream/PROVENANCE.md.
+
+!upstream/**
