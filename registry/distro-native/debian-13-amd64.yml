@@ -1,0 +1,58 @@
+# TEMPLATE DISTRO-NATIVE MANIFEST - NOT RELEASABLE
+#
+# A distro-native manifest describes a cachetag package built and tested
+# against a distribution's own Vinyl packages. It has no cohort identity: its
+# compatibility claim is bound to the exact distro Vinyl binary package
+# version recorded below. Debian does not currently ship a Vinyl 9 package, so
+# this file exists to fix the schema and lane, not to claim support.
+schema: cachetag-distro-native/v1
+status: template
+lane: distro-native
+cachetag:
+  version: 1.0.0
+  source_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+target:
+  id: debian-13-amd64
+  distro: debian
+  distro_release: 13
+  distro_id: debian-13
+  arch: amd64
+  package_format: deb
+  dist_tag: ""
+package:
+  revision: 1
+  source_name: libvmod-cachetag
+  binary_name: libvmod-cachetag
+distro_vinyl:
+  repository_origin: https://example.invalid/debian/dists/trixie/main
+  upstream_version: 9.0.0
+  source_package_version: PLACEHOLDER
+  binary_package_version: PLACEHOLDER
+  runtime_package: vinyl-cache
+  dev_package: vinyl-cache-dev
+  vrt: 23.0
+  strict_abi: "0000000000000000000000000000000000000000"
+  exposes_abi_provide: unknown
+  patches: []
+build:
+  profile: production
+  image_ref: docker.io/library/debian:13
+  image_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  compiler: PLACEHOLDER
+  configure_options: PLACEHOLDER
+  cflags: PLACEHOLDER
+  ldflags: PLACEHOLDER
+  source_date_epoch: PLACEHOLDER
+  hardening_check: pending
+  build_dependencies: []
+install:
+  # On the distro-native lane this must come from the distribution's own
+  # development package, so it is a placeholder until that package exists.
+  vmoddir: PLACEHOLDER
+  vmoddir_source: pkg-config
+artifacts: []
+tests:
+  package_lint: pending
+  installed_package_smoke: pending
+  full_behavior_suite: pending
+  upgrade_transactions: pending

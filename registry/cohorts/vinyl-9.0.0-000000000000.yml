@@ -1,0 +1,38 @@
+# TEMPLATE COHORT - NOT RELEASABLE
+#
+# status: template means every digest below is a placeholder and the input-id
+# segment of the cohort identifier is the reserved value 000000000000. The real
+# first cohort identifier is assigned only after the Vinyl source archive, the
+# ordered downstream patch set, and the production build-profile revision are
+# pinned. It must never be derived from the mutable sibling ../vinyl-cache
+# checkout. See registry/README.md.
+schema: cachetag-cohort/v1
+status: template
+cohort: vinyl-9.0.0-000000000000
+cachetag:
+  version: 1.0.0
+  source_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  git_commit: "0000000000000000000000000000000000000000"
+vinyl:
+  version: 9.0.0
+  source_url: https://example.invalid/vinyl-cache-9.0.0.tgz
+  source_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  git_commit: "0000000000000000000000000000000000000000"
+  vrt: 23.0
+  strict_abi: "0000000000000000000000000000000000000000"
+  patches: []
+build_profile:
+  name: production
+  revision: 1
+required_vmods:
+  - cachetag
+storage_support:
+  - default
+targets:
+  - debian-13-amd64
+  - el9-x86_64
+support:
+  channel: pre-release
+  release_owner: PLACEHOLDER
+  fellow: excluded
+  buddy: source-harness-only

@@ -1,0 +1,235 @@
+"""Generate native package version metadata from cachetag release manifests.
+
+Every native version string, package revision, artifact filename, and ABI
+dependency expression used by a packaging recipe is derived here from the
+cohort and target manifests. Recipes must not hand-edit these values.
+
+Standard library only.
+"""
+
+from __future__ import annotations
+
+import re
+
+from manifest import PACKAGE_STEM
+
+__all__ = ["package_versions", "target_metadata", "as_shell"]
+
+# Native archive/package extension per package format.
+_EXTENSION = {
+    "deb": "deb",
+    "rpm": "rpm",
+    "arch": "pkg.tar.zst",
+    "freebsd": "pkg",
+    "apk": "apk",
+}
+
+# Ecosystems whose first packaging of an upstream version is revision 1 vs 0.
+# The manifest always stores the canonical revision, which starts at 1.
+_ZERO_BASED = {"freebsd", "apk"}
+
+
+def package_versions(version: str, revision: int, dist_tag: str = "") -> dict:
+    """Map one canonical package revision onto every supported ecosystem.
+
+    ``revision`` is the canonical manifest revision and starts at 1. Debian,
+    RPM, and Arch use it directly; FreeBSD PORTREVISION and Alpine pkgrel start
+    at 0 and therefore use ``revision - 1``.
+    """
+    if revision < 1:
+        raise ValueError("package revision starts at 1")
+    zero_based = revision - 1
+    rpm_release = f"{revision}.{dist_tag}" if dist_tag else str(revision)
+    return {
+        "debian": {
+            "version": f"{version}-{revision}",
+            "upstream_version": version,
+            "debian_revision": str(revision),
+        },
+        "rpm": {
+            "version": version,
+            "release": rpm_release,
+            "dist_tag": dist_tag,
+        },
+        "arch": {
+            "pkgver": version,
+            "pkgrel": str(revision),
+        },
+        "freebsd": {
+            "portversion": version,
+            "portrevision": str(zero_based),
+            "pkg_version": version if zero_based == 0 else f"{version}_{zero_based}",
+        },
+        "alpine": {
+            "pkgver": version,
+            "pkgrel": str(zero_based),
+        },
+    }
+
+
+def _native_filename(fmt: str, version: str, revision: int, arch: str, versions: dict) -> str:
+    if fmt == "deb":
+        return f"{PACKAGE_STEM}_{versions['debian']['version']}_{arch}.deb"
+    if fmt == "rpm":
+        return f"{PACKAGE_STEM}-{version}-{versions['rpm']['release']}.{arch}.rpm"
+    if fmt == "arch":
+        return f"{PACKAGE_STEM}-{version}-{versions['arch']['pkgrel']}-{arch}.pkg.tar.zst"
+    if fmt == "freebsd":
+        return f"{PACKAGE_STEM}-{versions['freebsd']['pkg_version']}.pkg"
+    if fmt == "apk":
+        return f"{PACKAGE_STEM}-{version}-r{versions['alpine']['pkgrel']}.apk"
+    raise ValueError(f"unknown package format {fmt!r}")
+
+
+def _source_filenames(fmt: str, version: str, revision: int, versions: dict) -> list:
+    if fmt == "deb":
+        return [
+            f"{PACKAGE_STEM}_{version}.orig.tar.gz",
+            f"{PACKAGE_STEM}_{versions['debian']['version']}.debian.tar.xz",
+            f"{PACKAGE_STEM}_{versions['debian']['version']}.dsc",
+        ]
+    if fmt == "rpm":
+        return [f"{PACKAGE_STEM}-{version}-{versions['rpm']['release']}.src.rpm"]
+    return []
+
+
+def _abi_strings(vrt: str, strict_abi: str, exact_package: str = None) -> dict:
+    abi_provide = f"vinyld-abi-{strict_abi}"
+    vrt_provide = f"vinyld-vrt = {vrt}"
+    deb_depends = [abi_provide, f"vinyld-vrt (= {vrt})"]
+    rpm_requires = [abi_provide, f"vinyld-vrt = {vrt}"]
+    if exact_package:
+        deb_depends.append(exact_package)
+        rpm_requires.append(exact_package.replace(" (= ", " = ").rstrip(")"))
+    return {
+        "abi_provide": abi_provide,
+        "vrt_provide": vrt_provide,
+        "deb_depends": ", ".join(deb_depends),
+        "rpm_requires": rpm_requires,
+        "arch_depends": [abi_provide],
+        "freebsd_run_depends": [abi_provide],
+        "alpine_depends": [abi_provide],
+    }
+
+
+def target_metadata(target: dict, cohort: dict = None) -> dict:
+    """Build the complete generated metadata block for one target manifest."""
+    lane = target["lane"]
+    tgt = target["target"]
+    fmt = tgt["package_format"]
+    arch = tgt["arch"]
+    revision = int(target["package"]["revision"])
+
+    if lane == "cohort":
+        if cohort is None:
+            raise ValueError("a cohort-lane target needs its cohort manifest")
+        version = cohort["cachetag"]["version"]
+        vrt = cohort["vinyl"]["vrt"]
+        strict_abi = cohort["vinyl"]["strict_abi"]
+        cohort_id = cohort["cohort"]
+        exact_package = None
+        origin = {"kind": "cohort", "cohort": cohort_id}
+    else:
+        version = target["cachetag"]["version"]
+        distro_vinyl = target["distro_vinyl"]
+        vrt = distro_vinyl["vrt"]
+        strict_abi = distro_vinyl["strict_abi"]
+        cohort_id = None
+        exact_package = None
+        if distro_vinyl["exposes_abi_provide"] != "yes":
+            exact_package = "{} (= {})".format(
+                distro_vinyl["runtime_package"], distro_vinyl["binary_package_version"]
+            )
+        origin = {
+            "kind": "distro-native",
+            "repository_origin": distro_vinyl["repository_origin"],
+            "vinyl_binary_package_version": distro_vinyl["binary_package_version"],
+        }
+
+    versions = package_versions(version, revision, tgt["dist_tag"])
+    native_filename = _native_filename(fmt, version, revision, arch, versions)
+    extension = _EXTENSION[fmt]
+    release_asset = "{}-{}-{}-{}-{}.{}".format(
+        PACKAGE_STEM, version, revision, tgt["distro_id"], arch, extension
+    )
+
+    return {
+        "schema": "cachetag-package-metadata/v1",
+        "lane": lane,
+        "origin": origin,
+        "target": tgt["id"],
+        "distro": tgt["distro"],
+        "distro_release": tgt["distro_release"],
+        "distro_id": tgt["distro_id"],
+        "arch": arch,
+        "package_format": fmt,
+        "cachetag_version": version,
+        "package_revision": revision,
+        "source_archive": f"{PACKAGE_STEM}-{version}.tar.gz",
+        "versions": versions,
+        "native": {
+            "format": fmt,
+            "version_fields": versions[_FORMAT_TO_ECOSYSTEM[fmt]],
+        },
+        "artifacts": {
+            "native_filename": native_filename,
+            "release_asset_filename": release_asset,
+            "source_package_filenames": _source_filenames(fmt, version, revision, versions),
+        },
+        "abi": _abi_strings(vrt, strict_abi, exact_package),
+        "vinyl": {"vrt": vrt, "strict_abi": strict_abi},
+        "install": {
+            "vmoddir": target["install"]["vmoddir"],
+            "vmoddir_source": target["install"]["vmoddir_source"],
+        },
+        # Tokens that packaging recipes substitute into their templates.
+        "substitutions": {
+            "@VINYL_VMODDIR@": target["install"]["vmoddir"],
+        },
+    }
+
+
+_FORMAT_TO_ECOSYSTEM = {
+    "deb": "debian",
+    "rpm": "rpm",
+    "arch": "arch",
+    "freebsd": "freebsd",
+    "apk": "alpine",
+}
+
+
+def _flatten(prefix: str, value, out: list) -> None:
+    if isinstance(value, dict):
+        for key, sub in value.items():
+            _flatten(f"{prefix}_{key}" if prefix else key, sub, out)
+    elif isinstance(value, list):
+        # A list becomes a count plus indexed variables. Joining with a
+        # separator would corrupt values that legitimately contain spaces, such
+        # as the RPM requirement "vinyld-vrt = 23.0".
+        out.append((f"{prefix}_count", str(len(value))))
+        for index, item in enumerate(value):
+            _flatten(f"{prefix}_{index}", item, out)
+    else:
+        out.append((prefix, str(value)))
+
+
+def as_shell(metadata: dict) -> str:
+    """Render metadata as CACHETAG_* shell assignments for packaging recipes.
+
+    Scalars become single variables. Lists become ``<name>_COUNT`` plus
+    ``<name>_0``, ``<name>_1``, ... so that values containing spaces survive.
+    Every value is single-quoted and safe to ``eval`` in POSIX sh, and every
+    name is a valid POSIX shell identifier: characters that cannot appear in
+    one - such as the ``@`` in substitution tokens like ``@VINYL_VMODDIR@`` -
+    are folded to underscores.
+    """
+    flat: list = []
+    _flatten("", metadata, flat)
+    lines = []
+    for key, value in flat:
+        name = re.sub(r"[^A-Za-z0-9_]", "_", key.upper())
+        if not name.startswith("CACHETAG_"):
+            name = "CACHETAG_" + name
+        escaped = value.replace("'", "'\\''")
+        lines.append(f"{name}='{escaped}'")
+    return "\n".join(lines) + "\n"
