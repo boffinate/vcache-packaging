@@ -1,0 +1,199 @@
+# Synthetic mismatched-candidate fixture for the EL9 upgrade-transaction matrix.
+#
+# THIS IS NOT A VINYL CACHE BUILD. It is a package-metadata-level fixture: the
+# payload is the *baseline* cohort's own installed files, re-wrapped under a
+# higher version-release and, for the mismatch variant, a deliberately wrong
+# vinyld(abi) provide. Nothing is compiled here.
+#
+# Why a respin rather than a second real Vinyl build:
+#
+#   * the plan asks for a fixture that exercises the resolver, and every input
+#     the resolver reads is package metadata: name, EVR, Provides, Requires.
+#     A second compile would change none of the things under test;
+#   * a respin is reproducible from artefacts that are already digest-pinned in
+#     dist/el9/SHA256SUMS, so the fixture's provenance is a two-line statement
+#     ("baseline RPM <sha256>, plus this spec") rather than a second build
+#     environment nobody recorded;
+#   * it keeps the fixture honest in the direction that matters. The candidate
+#     really installs, really runs, and really provides the sonames a VMOD links
+#     against, so a transaction that *should* succeed is not seen to fail for
+#     some unrelated reason.
+#
+# The one thing a respin cannot simulate is a genuinely different Vinyl binary.
+# That is stated in the shipped FIXTURE.txt and in the session note; no test in
+# this matrix depends on the payload differing.
+#
+# Tokens are substituted by mismatch/container.sh from cohort.env and from the
+# baseline packages' own metadata. Nothing here is hand-edited per variant.
+
+%global fixture_version @FIXTURE_VERSION@
+%global fixture_release @FIXTURE_RELEASE@
+%global fixture_abi     @FIXTURE_ABI@
+%global fixture_variant @VARIANT@
+%global baseline_evr    @BASELINE_EVR@
+%global vinyl_vmoddir   %{_libdir}/vinyl-cache/vmods
+
+# No compiler runs, so there is nothing to extract debuginfo from and no
+# build-id links to regenerate. Both are switched off explicitly: left on, RPM
+# would try to re-derive them from binaries it did not build.
+%global debug_package %{nil}
+%global _build_id_links none
+
+Name:           vinyl-cache
+Version:        %{fixture_version}
+Release:        %{fixture_release}
+Summary:        High-performance HTTP accelerator (SYNTHETIC UPGRADE FIXTURE)
+License:        BSD-2-Clause
+URL:            https://vinyl-cache.org/
+
+# The payload: the baseline cohort's own binary packages, digest-pinned in
+# dist/el9/SHA256SUMS.
+Source0:        @BASELINE_RUNTIME_RPM@
+Source1:        @BASELINE_DEVEL_RPM@
+# The sysusers.d fragment, needed by %%pre exactly as the real recipe needs it.
+Source2:        vinyl-cache.sysusers
+
+BuildRequires:  cpio
+BuildRequires:  rpm
+BuildRequires:  systemd-rpm-macros
+
+# Copied from the real recipe. A fixture whose manual dependencies differ from
+# the package it stands in for would be testing the fixture, not the packaging.
+Requires:       gcc
+Requires:       logrotate
+Requires:       redhat-rpm-config
+Requires(pre):  shadow-utils
+%{?systemd_requires}
+%{?sysusers_requires_compat}
+
+# The ABI identity under test. For the mismatch variant this hash is
+# deliberately not any Vinyl commit; for the same-abi variant it is the
+# baseline's, unchanged, which is the point of that variant.
+Provides:       vinyld(abi)%{?_isa} = %{fixture_abi}
+Provides:       vinyld(vrt)%{?_isa} = @VINYL_VRT@
+@VMOD_PROVIDES@
+
+%description
+SYNTHETIC TEST FIXTURE -- NOT A RELEASE, NOT A BUILD OF VINYL CACHE.
+
+This package exists only to drive the EL9 upgrade-transaction matrix. It carries
+the file payload of vinyl-cache %{baseline_evr} re-wrapped as version
+%{fixture_version}-%{fixture_release}, advertising
+vinyld(abi) = %{fixture_abi}.
+
+Variant: %{fixture_variant}.
+@VARIANT_NOTE@
+
+Cohort @COHORT_ID@ (fixture; not a promoted cohort).
+
+%package devel
+Summary:        Development files for %{name} (SYNTHETIC UPGRADE FIXTURE)
+Requires:       %{name}%{?_isa} = %{version}-%{release}
+Requires:       pkgconfig
+Requires:       python3
+
+%description devel
+SYNTHETIC TEST FIXTURE. Development half of the fixture candidate cohort, pinned
+to the fixture runtime exactly as the real recipe pins it.
+
+%prep
+%setup -q -c -T
+
+%install
+# Unpack the baseline binary packages into the buildroot. This is the whole
+# "build": the fixture ships the cohort's own files.
+for payload in %{SOURCE0} %{SOURCE1}; do
+	( cd %{buildroot} && rpm2cpio "$payload" | cpio -idm --quiet )
+done
+
+# Build-id links belong to RPM's debuginfo machinery, which is off here. Left in
+# place they would be unpackaged files and would fail the build.
+rm -rf %{buildroot}%{_prefix}/lib/.build-id
+
+# Make the "different content" claim literally true rather than notional, and
+# make sure anyone who finds this package on a machine can tell what it is.
+cat > %{buildroot}%{_pkgdocdir}/FIXTURE.txt <<'EOF'
+This vinyl-cache package is a SYNTHETIC TEST FIXTURE.
+
+It is not a build of Vinyl Cache. Its payload is the file content of
+vinyl-cache @BASELINE_EVR@, re-wrapped by
+recipes/el9/mismatch-fixture.sh under a higher version-release
+(@FIXTURE_VERSION@-@FIXTURE_RELEASE@) and the VMOD ABI provide
+vinyld(abi) = @FIXTURE_ABI@.
+
+Variant: @VARIANT@.
+@VARIANT_NOTE@
+
+It exists to drive the upgrade-transaction matrix documented in
+vinyl-packaging/docs/. Do not install it on anything you care about, and do not
+publish it to any repository that a user could reach.
+
+Because the payload is unchanged, the binaries in this package are byte-for-byte
+the baseline's. The fixture simulates a mismatched candidate at the level the
+package manager actually resolves on -- name, version-release, Provides,
+Requires -- and makes no claim to simulate different compiled code.
+EOF
+
+%pre
+%sysusers_create_compat %{SOURCE2}
+
+%post
+%systemd_post vinyl-cache.service vinylncsa.service
+
+%preun
+%systemd_preun vinyl-cache.service vinylncsa.service
+
+%postun
+%systemd_postun vinyl-cache.service vinylncsa.service
+
+# The file lists below are copied from vinyl-cache.spec.in, with %%license/%%doc
+# replaced by the installed directories they produce (there is no unpacked source
+# tree here to take them from). container.sh diffs the resulting file list
+# against the baseline package and fails if they disagree.
+%files
+%{_licensedir}/%{name}
+%{_pkgdocdir}
+%{_sbindir}/vinyld
+%{_sbindir}/vinylreload
+%{_bindir}/vinyladm
+%{_bindir}/vinylhist
+%{_bindir}/vinyllog
+%{_bindir}/vinylncsa
+%{_bindir}/vinylstat
+%{_bindir}/vinyltest
+%{_bindir}/vinyltop
+%{_bindir}/vtest
+%{_libdir}/libvinylapi.so.*
+%dir %{_libdir}/%{name}
+%dir %{vinyl_vmoddir}
+%{vinyl_vmoddir}/libvmod_*.so
+%dir %{_datadir}/%{name}
+%{_datadir}/%{name}/vcl
+%{_unitdir}/vinyl-cache.service
+%{_unitdir}/vinylncsa.service
+%{_tmpfilesdir}/vinyl-cache.conf
+%{_sysusersdir}/vinyl-cache.conf
+%dir %{_sysconfdir}/vinyl-cache
+%config(noreplace) %{_sysconfdir}/vinyl-cache/default.vcl
+%config(noreplace) %{_sysconfdir}/logrotate.d/vinyl-cache
+%attr(0750,vinyl,vinyl) %dir %{_localstatedir}/lib/vinyl-cache
+%attr(0750,vinyllog,vinyl) %dir %{_localstatedir}/log/vinyl-cache
+%{_mandir}/man1/*.1*
+%{_mandir}/man3/*.3*
+%{_mandir}/man7/*.7*
+
+%files devel
+%{_includedir}/%{name}
+%{_libdir}/libvinylapi.so
+%{_libdir}/pkgconfig/vinylapi.pc
+%{_datadir}/aclocal/vinyl.m4
+%{_datadir}/aclocal/vinyl-legacy.m4
+%{_datadir}/%{name}/vmodtool.py
+%{_datadir}/%{name}/vsctool.py
+%{_datadir}/%{name}/vcc
+
+%changelog
+* @RPM_CHANGELOG_DATE@ @MAINTAINER_NAME@ <@MAINTAINER_EMAIL@> - @FIXTURE_VERSION@-@FIXTURE_RELEASE@
+- SYNTHETIC UPGRADE FIXTURE, variant @VARIANT@. Not a release and not a build.
+- Payload re-wrapped from vinyl-cache @BASELINE_EVR@; vinyld(abi) set to
+  @FIXTURE_ABI@.
