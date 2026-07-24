@@ -8,6 +8,8 @@ Only the *Vinyl* recipes live here. The cachetag recipes stay in `libvmod-cachet
 
 ```text
 build.sh              the whole lane; runs on the host, builds only in containers
+mismatch-fixture.sh   the synthetic mismatched Vinyl candidate fixtures
+transactions.sh       the upgrade-transaction matrix, one container per scenario
 vinyl/debian/         the Vinyl Cache 9 Debian source package, debhelper compat 13
 container/
   assemble-source.sh  canonical pinned Vinyl source archive and both orig tarballs
@@ -15,6 +17,8 @@ container/
   stage-cachetag.sh   dpkg-buildpackage for cachetag against the INSTALLED dev package
   stage-lint.sh       lintian over every produced package
   stage-smoke.sh      the plan's 11-step installed-package scenario, fresh container
+  make-mismatch.sh    repack a baseline deb into a synthetic candidate fixture
+  stage-transactions.sh  one upgrade-transaction scenario, in one fresh container
 ```
 
 Artifacts and logs go to `../../dist/debian-13/`, which is entirely gitignored.
@@ -29,6 +33,24 @@ recipes/debian-13/build.sh cachetag lint smoke
 ```
 
 Every stage runs in a fresh `debian:trixie` container pinned by digest. The host is used only to read the pinned Git checkouts with `git archive`, to substitute recipe tokens, and to move files. Nothing is installed on the host.
+
+## Upgrade-transaction safety
+
+`build.sh` proves the cohort installs. It does not prove what a package manager does when an *incompatible* Vinyl update appears in the repository — which is the question the plan's "Upgrade transaction safety" section asks, and the one that decides whether an upgrade can silently delete an imported VMOD.
+
+```sh
+recipes/debian-13/mismatch-fixture.sh   # synthetic candidates, retained with digests
+recipes/debian-13/transactions.sh       # the whole matrix
+recipes/debian-13/transactions.sh --list
+recipes/debian-13/transactions.sh s04   # one scenario, or a prefix
+recipes/debian-13/transactions.sh --summary
+```
+
+`mismatch-fixture.sh` mints two synthetic candidate package pairs from the retained baseline cohort by a scripted control-metadata transformation: a `mismatch` variant with a different `vinyld-abi-<hash>`, and a `sameabi` variant with the baseline's hash but a different version and payload. Both are versioned above the baseline, both are real installable debs, and both are retained under `dist/debian-13/mismatch/` with `SHA256SUMS` and a `PROVENANCE` manifest, as the plan requires.
+
+`transactions.sh` then installs the baseline cohort through a local apt repository, publishes one candidate into it, and runs one transaction command — in a throwaway container per scenario, so an outcome cannot contaminate the next. It records the resolver outcome, whether the VMOD survived, and whether `vinyld` can still compile a VCL that imports it.
+
+Results and the reasoning are in [`docs/20260724_2300_note_step-9-debian-13-transactions.md`](../../docs/20260724_2300_note_step-9-debian-13-transactions.md). The short version: `apt upgrade` and `apt-get upgrade` are safe; `apt full-upgrade`, `apt-get dist-upgrade` and a direct `apt install vinyl-cache=<version>` all remove `libvmod-cachetag`, and apt's confirmation prompt defaults to yes.
 
 ## How the source input is pinned
 
