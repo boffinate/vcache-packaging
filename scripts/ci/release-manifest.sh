@@ -56,9 +56,9 @@ note "writing $assets/release-manifest.json"
 # these values also lives in recipes/debian-13/build.sh and
 # recipes/el9/cohort.env, and this script has no dependency on either
 # lane's own process having left an env dump behind for it to read).
-vinyl_commit=a90954814766d933a75d4c808c449cb9bc0ae3d3
+vinyl_commit=25761f8505817ac50df994270bfe75b60073e33e
 vinyl_strict_abi=$vinyl_commit
-vinyl_upstream_version="9.0.0~git20260613.a909548147"
+vinyl_upstream_version="9.0.0~git20260520.25761f8505"
 vinyl_vrt=23.0
 cachetag_version=1.0.0
 cachetag_source_sha256=c7054e69219ff3c54501d9c68857f2117944c4658db4cb08e2821b09b27821a2

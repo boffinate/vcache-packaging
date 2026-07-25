@@ -9,7 +9,7 @@
 #     $RPM_BUILD_ROOT by string surgery. The upstream form happened to work only
 #     because the buildroot path ends in <name>-<version>-<release>.<arch>, and
 #     it silently produced nonsense for any version containing the separator it
-#     cut on. Snapshot versions such as 9.0.0~git20260613.a909548147 make that
+#     cut on. Snapshot versions such as 9.0.0~git20260520.25761f8505 make that
 #     kind of accident likely, and a wrong vmod() version is invisible until a
 #     dependency fails to resolve;
 #   * $BUILD_DIR is passed as $2 rather than inferred from $0, so the script does

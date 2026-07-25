@@ -45,7 +45,7 @@ transactions/           the scenario base image, local repositories, and scenari
 The runtime package publishes the three capabilities every strict-ABI VMOD depends on, architecture-qualified:
 
 ```text
-vinyld(abi)(aarch-64) = a90954814766d933a75d4c808c449cb9bc0ae3d3
+vinyld(abi)(aarch-64) = 25761f8505817ac50df994270bfe75b60073e33e
 vinyld(vrt)(aarch-64) = 23.0
 vinyld(cohort-vinyl-9.0.0-000000000000)(aarch-64)
 ```

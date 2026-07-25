@@ -56,8 +56,8 @@ set -eu
 # fixture derived from an unrecorded input would be worthless as evidence.
 ###############################################################################
 
-BASE_ABI=a90954814766d933a75d4c808c449cb9bc0ae3d3
-BASE_VERSION=9.0.0~git20260613.a909548147-1
+BASE_ABI=25761f8505817ac50df994270bfe75b60073e33e
+BASE_VERSION=9.0.0~git20260520.25761f8505-1
 # Must match build.sh's COHORT_ID: it is what the baseline runtime advertises as
 # vinyld-cohort-<id>, and the transformation below asserts it is present before
 # rewriting it.
@@ -74,7 +74,7 @@ BASE_COHORT=unassigned-local-process-proof
 # system.
 #
 # Version ordering matters and is asserted below:
-#     baseline  9.0.0~git20260613.a909548147-1
+#     baseline  9.0.0~git20260520.25761f8505-1
 #   < mismatch  9.0.0~git20260614.ffffffffffff-1
 #   < sameabi   9.0.0~git20260615.eeeeeeeeeeee-1
 #
@@ -102,7 +102,7 @@ SAMEABI_COHORT=sameabi-fixture-eeeeeeeeeeee
 # reproduces it. This is the Vinyl commit epoch the Debian 13 lane already uses
 # as SOURCE_DATE_EPOCH, so the fixture is dated to the cohort it derives from
 # rather than to whenever someone happened to run this script.
-FIXTURE_SOURCE_DATE_EPOCH=${FIXTURE_SOURCE_DATE_EPOCH:-1781307021}
+FIXTURE_SOURCE_DATE_EPOCH=${FIXTURE_SOURCE_DATE_EPOCH:-1779265093}
 
 IMAGE_REF=${IMAGE_REF:-debian:trixie}
 IMAGE_DIGEST=${IMAGE_DIGEST:-sha256:fac46bff2e02f51425b6e33b0e1169f55dfb053d83511ca28aa50c09fd5ed7a4}

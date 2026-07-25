@@ -36,19 +36,35 @@ set -eu
 # Vinyl Cache source revision. The strict VMOD ABI token is, by construction,
 # this commit id: include/generate.py writes VMOD_ABI_Version as
 # "<PACKAGE_STRING> <commit>".
-VINYL_GIT_COMMIT=a90954814766d933a75d4c808c449cb9bc0ae3d3
+#
+# Re-pinned 2026-07-25 (packaging plan step 10) from
+# a90954814766d933a75d4c808c449cb9bc0ae3d3 to this commit. The previous pin was
+# an unpublished local branch that carried 17 additive benchmark-scaffolding
+# commits on top of upstream, including an in-tree vmod_tag that is a benchmark
+# subject and not part of Vinyl. Packages must ship pure upstream Vinyl, and CI
+# cannot fetch a commit that does not exist on code.vinyl-cache.org. This commit
+# is the merge-base of that branch with upstream main.
+VINYL_GIT_COMMIT=25761f8505817ac50df994270bfe75b60073e33e
 VINYL_STRICT_ABI=$VINYL_GIT_COMMIT
 VINYL_ABI_STRING="Vinyl Cache trunk $VINYL_GIT_COMMIT"
 VTEST2_GIT_COMMIT=db5ccb4a078da40b3ec1ca3c18bf498bb1520888
 
-# Digest of the canonical pinned Vinyl source archive, as produced by the
-# identical assembly procedure in libvmod-cachetag/scripts/release-source-archive.sh
-# and recorded in release/dist/libvmod-cachetag-1.0.0.metadata.json.
-VINYL_SOURCE_SHA256=2587f03289b3e16d36b4b688def4b78fb5af07a9aacc620a55e094a5c0f6ee15
+# Digest of the canonical pinned Vinyl source archive, produced by the identical
+# assembly procedure as libvmod-cachetag/scripts/release-source-archive.sh.
+#
+# Re-derived 2026-07-25 by the source stage below, because the re-pin of
+# VINYL_GIT_COMMIT deliberately changed the archive's input. Note that
+# libvmod-cachetag's release/dist/libvmod-cachetag-1.0.0.metadata.json still
+# records the OLD Vinyl commit in its vinyl_input block: that field is
+# provenance for the Vinyl prefix the VMOD was test-built against, it is not an
+# input to the cachetag archive, and CACHETAG_SOURCE_SHA256 below is unchanged
+# by this re-pin. Regenerating that metadata is a separate cachetag-release job.
+VINYL_SOURCE_SHA256=27568cc1cdf914b3a328fc633d90137b62134fc7d375ca16010656a26d53f507
 
-# Snapshot version convention, shared with the EL9 lane. This is a pre-9.0.0
+# Snapshot version convention, shared with the EL9 lane: 9.0.0~git<commit date
+# in the commit's own timezone><10-char short hash>. This is a pre-9.0.0
 # experimental snapshot: Vinyl's own AC_INIT still says "trunk".
-VINYL_UPSTREAM_VERSION=9.0.0~git20260613.a909548147
+VINYL_UPSTREAM_VERSION=9.0.0~git20260520.25761f8505
 VINYL_PACKAGE_REVISION=1
 VINYL_PACKAGE_VERSION=$VINYL_UPSTREAM_VERSION-$VINYL_PACKAGE_REVISION
 
@@ -60,8 +76,13 @@ CACHETAG_DEBIAN_VERSION=$CACHETAG_VERSION-$CACHETAG_PACKAGE_REVISION
 CACHETAG_SOURCE_SHA256=c7054e69219ff3c54501d9c68857f2117944c4658db4cb08e2821b09b27821a2
 CACHETAG_SOURCE_DATE_EPOCH=1784926281
 
-# Vinyl commit timestamp, used as SOURCE_DATE_EPOCH for the Vinyl lane.
-VINYL_SOURCE_DATE_EPOCH=1781307021
+# Commit AUTHOR date of VINYL_GIT_COMMIT, 2026-05-20T10:18:13+02:00, used as
+# SOURCE_DATE_EPOCH for the Vinyl lane. Author rather than committer date: the
+# author date survives a rebase, and the previous pin's value (1781307021) was
+# also its author date. The EL9 lane's cohort.env states the same rule and must
+# carry the same number; at the previous pin the two commit dates were
+# identical, which hid a stale value there. Do not let these two diverge.
+VINYL_SOURCE_DATE_EPOCH=1779265093
 
 DEBIAN_DISTRIBUTION=trixie
 
