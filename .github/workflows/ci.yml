@@ -124,7 +124,7 @@ jobs:
           retention-days: 14
 
   debian-13:
-    name: Debian 13 amd64 (sbuild)
+    name: Debian 13 amd64 (pbuilder)
     needs: cachetag-source-archive
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -158,7 +158,7 @@ jobs:
         run: recipes/debian-13/build.sh source
         working-directory: vcache-packaging
 
-      - name: materialize the sbuild chroot from the pinned digest
+      - name: build the pinned buildroot with mmdebstrap
         run: bash scripts/ci/debian13/make-chroot.sh
         working-directory: vcache-packaging
 

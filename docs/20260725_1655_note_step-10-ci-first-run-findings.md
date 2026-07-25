@@ -223,3 +223,22 @@ The schroot path is recorded as green rather than as a failure, because it was: 
 pbuilder wants none of it: unpack a base tarball, build, destroy, as plain root. The clean-room properties the requirement is actually about are untouched -- a minimal Essential-only buildroot from the pinned snapshot, build dependencies resolved only from `debian/control`, the build driven from the `.dsc`, and a fresh root per package. The chroot's provenance, which was the real problem all along, does not change either: mmdebstrap from `DEBIAN_SNAPSHOT`, with the package list recorded as evidence.
 
 cachetag's `vinyl-cache-dev (= exact version)` is satisfied the same way the EL9 lane satisfies its equivalent: publish what this run just built as a local repository (`dpkg-scanpackages`, `--othermirror deb [trusted=yes] file://...`) and let the buildroot resolve it. That is the right shape for a chroot which is deliberately destroyed between packages, and it is why the earlier `mock --install` and sbuild `--extra-package` approaches were both working around the wrong thing.
+
+## Green on pbuilder
+
+Run [30174495649](https://github.com/boffinate/vcache-packaging/actions/runs/30174495649), all five jobs:
+
+| job | result | wall time | budget |
+| --- | --- | --- | --- |
+| registry selftest and validate | success | 5s | 10m |
+| build and pin the cachetag source archive | success | 6m27s | 20m |
+| Debian 13 amd64 (pbuilder) | success | 6m03s | 20m |
+| EL9 x86_64 (Mock) | success | 6m21s | 15m |
+| combined checksum summary | success | 9s | 5m |
+
+pbuilder needed two fixes beyond the design, both ordinary configuration rather than anything structural, and both found by running the recipe in a container rather than in CI:
+
+1. **pbuilder resolves Build-Depends with aptitude by default**, and a buildd chroot has no aptitude: `env: 'aptitude': No such file or directory`. `PBUILDERSATISFYDEPENDSCMD=/usr/lib/pbuilder/pbuilder-satisfydepends-apt` uses the resolver a minimal buildroot actually ships.
+2. **pbuilder does not refresh apt before resolving dependencies**, and mmdebstrap ships the chroot with its lists cleaned, so every build dependency came back "not installable" from empty lists. A `D05update` hook runs `apt-get update` inside the chroot between the apt lines being installed and dependencies being resolved -- which the cachetag build needs anyway, since that is when apt first sees the `--othermirror` local repository holding `vinyl-cache-dev`.
+
+Both packages build, and every assertion the lane carries passes against pbuilder output exactly as it did against sbuild's: strict-ABI Provides/Depends, `vmod_tag` absence, five hardening checks on both ELF objects, lintian, the installed-package smoke in a fresh container, and checksums.

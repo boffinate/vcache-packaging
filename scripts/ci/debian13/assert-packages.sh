@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# ABI and hardening assertions against the sbuild-produced .deb files in
+# ABI and hardening assertions against the pbuilder-produced .deb files in
 # dist/debian-13/. This is the ONE deliberate piece of logic duplication in
 # this design (see DESIGN.md sections 2 and 4, point 7): the equivalent
 # checks already exist in recipes/debian-13/container/stage-vinyl.sh and
 # stage-cachetag.sh, interleaved with their own `dpkg-buildpackage` call, so
-# they cannot be called standalone against a package sbuild produced instead.
+# they cannot be called standalone against a package pbuilder produced instead.
 # They are reproduced here verbatim (not reinvented), attributed by comment
 # to their line ranges in each source file at the time this draft was
 # written, and DESIGN.md section 7 recommends factoring the two source files
@@ -79,7 +79,7 @@ esac
 note "vinyl-cache: upstream purity, no benchmark-scaffolding vmod_tag"
 # Mirrors the assertion stage-vinyl.sh gained in 7b54802. It has to be
 # repeated here for the same reason the ABI assertions above are: the CI lane
-# builds with sbuild and never runs stage-vinyl.sh, so without this the
+# builds with pbuilder and never runs stage-vinyl.sh, so without this the
 # clean-room lane would be the one lane that cannot catch a Vinyl re-pin
 # regressing to a tree carrying an in-tree vmod_tag.
 tag_files=$(
@@ -130,4 +130,4 @@ mkdir -p /tmp/hx-cachetag
 dpkg-deb -x "$cachetag_deb" /tmp/hx-cachetag
 inspect_hardening "/tmp/hx-cachetag$vmoddir/libvmod_cachetag.so" libvmod_cachetag.so
 
-printf '\nOK: all ABI and hardening assertions passed against the sbuild-produced packages\n'
+printf '\nOK: all ABI and hardening assertions passed against the pbuilder-produced packages\n'
