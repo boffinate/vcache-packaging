@@ -67,6 +67,12 @@ case "$depends" in
 	*"vinyld-vrt"*) echo "OK: depends on vinyld-vrt" ;;
 	*) echo "E: missing vinyld-vrt dependency" >&2; exit 1 ;;
 esac
+# The cohort-qualified dependency. The ABI token above is a hash of the upstream
+# source revision and cannot distinguish two builds of it; this one can.
+case "$depends" in
+	*"vinyld-cohort-$COHORT_ID"*) echo "OK: depends on vinyld-cohort-$COHORT_ID" ;;
+	*) echo "E: missing cohort-qualified dependency vinyld-cohort-$COHORT_ID" >&2; exit 1 ;;
+esac
 # NB: read the listing into a variable first. "dpkg-deb -c | grep -q" makes
 # grep exit on the first match, dpkg-deb then dies of SIGPIPE, and under
 # `set -o pipefail` the pipeline reports failure even though the file WAS

@@ -73,6 +73,12 @@ MAINTAINER_EMAIL='noreply@boffinate.com'
 
 # No cohort identifier is minted here. The registry assigns it; this build
 # reports every input the assignment needs.
+#
+# The value is baked into the runtime package's vinyld-cohort-<id> provide and
+# into cachetag's dependency on it, so it has to be usable inside a Debian
+# package name: [a-z0-9] first, then [a-z0-9+.-]. debian/rules asserts that
+# before emitting the substvar rather than letting dpkg-gencontrol produce a
+# malformed relation.
 COHORT_ID='unassigned-local-process-proof'
 
 SOURCE_URL="https://github.com/boffinate/libvmod-cachetag/releases/download/v$CACHETAG_VERSION/libvmod-cachetag-$CACHETAG_VERSION.tar.gz"
@@ -118,6 +124,7 @@ run_in_container() {
 		-e "VINYL_PACKAGE_VERSION=$VINYL_PACKAGE_VERSION" \
 		-e "VINYL_STRICT_ABI=$VINYL_STRICT_ABI" \
 		-e "VINYL_ABI_STRING=$VINYL_ABI_STRING" \
+		-e "COHORT_ID=$COHORT_ID" \
 		-e "VINYL_SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH" \
 		-e "CACHETAG_VERSION=$CACHETAG_VERSION" \
 		-e "CACHETAG_DEBIAN_VERSION=$CACHETAG_DEBIAN_VERSION" \
@@ -237,6 +244,7 @@ substitute_recipes() {
 	rm -rf "$work_dir/vinyl-debian"
 	cp -R "$recipe_dir/vinyl/debian" "$work_dir/vinyl-debian"
 	_subst "$work_dir/vinyl-debian" \
+		"COHORT_ID=$COHORT_ID" \
 		"VINYL_DEBIAN_VERSION=$VINYL_PACKAGE_VERSION" \
 		"DEBIAN_DISTRIBUTION=$DEBIAN_DISTRIBUTION" \
 		"DEBIAN_DATE=$_vinyl_date" \

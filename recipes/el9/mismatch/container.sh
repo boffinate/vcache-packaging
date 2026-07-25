@@ -96,13 +96,15 @@ variant_setup() {
 		fixture_version=9.0.0~git20260724.ffffffffffff
 		fixture_release=1.mismatchfixture.el9
 		fixture_abi=ffffffffffffffffffffffffffffffffffffffff
+		fixture_cohort=mismatch-fixture-ffffffffffff
 		variant_note='Simulates an incompatible Vinyl security upgrade: higher version-release, different VMOD ABI. A strict-ABI VMOD built against the baseline cannot resolve against it.'
 		;;
 	sameabi)
 		fixture_version=9.0.0~git20260724.eeeeeeeeeeee
 		fixture_release=1.sameabifixture.el9
 		fixture_abi=$VINYL_STRICT_ABI
-		variant_note='Simulates the plan'"'"'s known limitation: a different Vinyl package advertising the SAME baked-in ABI string. A strict-ABI VMOD resolves against it even though it is a different package.'
+		fixture_cohort=sameabi-fixture-eeeeeeeeeeee
+		variant_note='Simulates the plan'"'"'s known limitation: a different Vinyl package advertising the SAME baked-in ABI string, from a different cohort. Before the cohort-qualified provide existed (2026-07-25) a strict-ABI VMOD resolved against it without complaint; now the cohort dependency refuses it.'
 		;;
 	*)
 		echo "unknown variant: $1" >&2; exit 2 ;;
@@ -114,7 +116,15 @@ build_variant() {
 	local variant=$1
 	variant_setup "$variant"
 
-	say "variant $variant: $fixture_evr, vinyld(abi) = $fixture_abi"
+	say "variant $variant: $fixture_evr, vinyld(abi) = $fixture_abi, vinyld(cohort-$fixture_cohort)"
+
+	# A fixture that reused the promoted cohort id would silently make the
+	# same-abi scenario test nothing, so assert the difference rather than
+	# trusting the table above.
+	if [ "$fixture_cohort" = "$COHORT_ID" ]; then
+		bad "fixture cohort id equals the real cohort id $COHORT_ID"
+		return
+	fi
 
 	# Ordering is a load-bearing property of the fixture, not a detail.
 	if rpmdev-vercmp "$baseline_evr" "$fixture_evr" >/dev/null 2>&1; then
@@ -139,6 +149,7 @@ build_variant() {
 		-e "s|@FIXTURE_VERSION@|$fixture_version|g" \
 		-e "s|@FIXTURE_RELEASE@|$fixture_release|g" \
 		-e "s|@FIXTURE_ABI@|$fixture_abi|g" \
+		-e "s|@FIXTURE_COHORT@|$fixture_cohort|g" \
 		-e "s|@VARIANT@|$variant|g" \
 		-e "s|@VARIANT_NOTE@|$variant_note|g" \
 		-e "s|@BASELINE_EVR@|$baseline_evr|g" \
@@ -201,6 +212,21 @@ verify_variant() {
 	else
 		bad "candidate does not provide the intended ABI"
 		rpm -qp --provides "$cand"
+	fi
+
+	# 1b. the cohort provide is the fixture's own, and the baseline's cohort
+	#     provide is nowhere in the package. Getting this wrong in the
+	#     permissive direction would make the same-abi scenario silently pass.
+	if rpm -qp --provides "$cand" | grep -qx "vinyld(cohort-$fixture_cohort)$isa"; then
+		ok "candidate provides vinyld(cohort-$fixture_cohort)$isa"
+	else
+		bad "candidate does not provide the intended cohort token"
+		rpm -qp --provides "$cand"
+	fi
+	if rpm -qp --provides "$cand" | grep -q "vinyld(cohort-$COHORT_ID)"; then
+		bad "candidate still advertises the real cohort $COHORT_ID"
+	else
+		ok "candidate does not advertise the real cohort $COHORT_ID"
 	fi
 
 	# 2. the file payload is the baseline's, so a transaction that succeeds

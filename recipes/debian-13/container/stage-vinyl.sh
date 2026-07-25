@@ -59,6 +59,12 @@ case "$provides" in
 	*"vinyld-vrt (= "*) echo "OK: runtime provides a versioned vinyld-vrt" ;;
 	*) echo "E: runtime does not provide vinyld-vrt" >&2; exit 1 ;;
 esac
+# The provenance provide. Without it a same-ABI package from any other build
+# satisfies an installed VMOD, which is what the step-9 matrix measured.
+case "$provides" in
+	*"vinyld-cohort-$COHORT_ID"*) echo "OK: runtime provides vinyld-cohort-$COHORT_ID" ;;
+	*) echo "E: runtime does not provide vinyld-cohort-$COHORT_ID" >&2; exit 1 ;;
+esac
 vrt=$(printf '%s' "$provides" | tr ',' '\n' | sed -n 's/.*vinyld-vrt (= \([0-9.]*\)).*/\1/p')
 echo "VRT version as built: $vrt"
 printf '%s\n' "$vrt" > /out/logs/vinyl-vrt.txt

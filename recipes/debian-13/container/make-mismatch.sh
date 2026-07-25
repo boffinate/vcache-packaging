@@ -21,8 +21,11 @@
 #   FIXTURE_VARIANT     mismatch | sameabi
 #   FIXTURE_VERSION     the synthetic (higher) Debian version
 #   FIXTURE_ABI         the vinyld-abi-<hash> token the fixture advertises
+#   FIXTURE_COHORT      the vinyld-cohort-<id> token the fixture advertises;
+#                       always different from the baseline's, in both variants
 #   BASE_VERSION        the baseline cohort Debian version
 #   BASE_ABI            the baseline strict ABI hash
+#   BASE_COHORT         the baseline cohort id
 #   DEB_HOST_ARCH       target architecture of the baseline debs
 #   SOURCE_DATE_EPOCH   fixed timestamp, so the fixture is reproducible and the
 #                       digest retained per the plan stays meaningful
@@ -30,8 +33,9 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export LC_ALL=C
 
-: "${FIXTURE_VARIANT:?}" "${FIXTURE_VERSION:?}" "${FIXTURE_ABI:?}"
-: "${BASE_VERSION:?}" "${BASE_ABI:?}" "${DEB_HOST_ARCH:?}" "${SOURCE_DATE_EPOCH:?}"
+: "${FIXTURE_VARIANT:?}" "${FIXTURE_VERSION:?}" "${FIXTURE_ABI:?}" "${FIXTURE_COHORT:?}"
+: "${BASE_VERSION:?}" "${BASE_ABI:?}" "${BASE_COHORT:?}"
+: "${DEB_HOST_ARCH:?}" "${SOURCE_DATE_EPOCH:?}"
 export SOURCE_DATE_EPOCH
 
 apt-get update -qq
@@ -46,7 +50,7 @@ work=$(mktemp -d)
 # evidence of anything.
 stamp=$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%dT%H:%M:%SZ)
 
-echo "===== synthetic fixture: variant=$FIXTURE_VARIANT version=$FIXTURE_VERSION abi=$FIXTURE_ABI ====="
+echo "===== synthetic fixture: variant=$FIXTURE_VARIANT version=$FIXTURE_VERSION abi=$FIXTURE_ABI cohort=$FIXTURE_COHORT ====="
 
 for pkg in vinyl-cache vinyl-cache-dev; do
 	src="/out/${pkg}_${BASE_VERSION}_${DEB_HOST_ARCH}.deb"
@@ -72,8 +76,10 @@ for pkg in vinyl-cache vinyl-cache-dev; do
 		package:            $pkg
 		fixture version:    $FIXTURE_VERSION
 		advertised ABI:     vinyld-abi-$FIXTURE_ABI
+		advertised cohort:  vinyld-cohort-$FIXTURE_COHORT
 		baseline version:   $BASE_VERSION
 		baseline ABI:       vinyld-abi-$BASE_ABI
+		baseline cohort:    vinyld-cohort-$BASE_COHORT
 		baseline deb:       $(basename "$src")
 		baseline sha256:    $base_sha
 		fixture epoch:      $stamp (SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH)
@@ -81,9 +87,14 @@ for pkg in vinyl-cache vinyl-cache-dev; do
 
 		This package's payload is the byte-identical payload of the baseline
 		cohort deb named above, plus this file. Only the control metadata was
-		rewritten: Version, the vinyld-abi-<hash> virtual provide (or, for the
-		-dev package, the exact runtime version dependency), Installed-Size,
-		and a banner appended to the Description.
+		rewritten: Version, the vinyld-abi-<hash> and vinyld-cohort-<id> virtual
+		provides (or, for the -dev package, the exact runtime version
+		dependency), Installed-Size, and a banner appended to the Description.
+
+		Both variants carry a cohort id of their own, distinct from the
+		baseline's. For the sameabi variant that is the entire point: same
+		baked-in ABI string, different provenance, which is the combination the
+		cohort provide exists to refuse.
 
 		It exists solely to drive package-manager upgrade-transaction tests for
 		the binary packaging and distribution plan. It carries no real code
@@ -105,8 +116,10 @@ for pkg in vinyl-cache vinyl-cache-dev; do
 		variant = env["FIXTURE_VARIANT"]
 		version = env["FIXTURE_VERSION"]
 		abi = env["FIXTURE_ABI"]
+		cohort = env["FIXTURE_COHORT"]
 		base_version = env["BASE_VERSION"]
 		base_abi = env["BASE_ABI"]
+		base_cohort = env["BASE_COHORT"]
 
 		ctrl_path = os.path.join(root, "DEBIAN", "control")
 		with open(ctrl_path, encoding="utf-8") as fh:
@@ -144,6 +157,18 @@ for pkg in vinyl-cache vinyl-cache-dev; do
 		    after = before.replace("vinyld-abi-" + base_abi, "vinyld-abi-" + abi)
 		    if before == after and base_abi != abi:
 		        raise SystemExit("Provides did not contain the baseline ABI token")
+		    # The cohort provide always moves, in both variants. A fixture that
+		    # silently kept the baseline's cohort token would make the sameabi
+		    # scenarios test nothing at all, so a baseline package without one
+		    # is a hard error rather than a skipped rewrite.
+		    if "vinyld-cohort-" + base_cohort not in after:
+		        raise SystemExit(
+		            "Provides did not contain the baseline cohort token "
+		            "vinyld-cohort-" + base_cohort
+		        )
+		    after = after.replace(
+		        "vinyld-cohort-" + base_cohort, "vinyld-cohort-" + cohort
+		    )
 		    prov[1][0] = after
 		    print("  Provides: %s -> %s" % (before, after))
 
@@ -161,7 +186,8 @@ for pkg in vinyl-cache vinyl-cache-dev; do
 		banner = [
 		    " .",
 		    " SYNTHETIC PACKAGING FIXTURE (variant: %s). Repacked from the baseline" % variant,
-		    " cohort package %s with rewritten control metadata only." % base_version,
+		    " cohort package %s with rewritten control metadata only," % base_version,
+		    " advertising cohort %s." % cohort,
 		    " Not a real Vinyl Cache build and not a security update. See",
 		    " /usr/share/doc/<package>/SYNTHETIC-FIXTURE.txt.",
 		]

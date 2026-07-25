@@ -47,6 +47,14 @@ else
 	bad "cachetag does not require vinyld(abi)$isa = $VINYL_STRICT_ABI"
 fi
 
+# The cohort-qualified requirement, unversioned because the cohort id is carried
+# in the capability name: an RPM EVR cannot contain the hyphens a cohort id has.
+if rpm -qpR "$cachetag_rpm" | grep -qx "vinyld(cohort-$COHORT_ID)$isa"; then
+	ok "cachetag requires vinyld(cohort-$COHORT_ID)$isa"
+else
+	bad "cachetag does not require the cohort-qualified capability"
+fi
+
 # The negative half of the assertion: with no Vinyl runtime present, the ABI
 # dependency must be the thing that is unsatisfiable. If cachetag installed here
 # the dependency would be decorative.
@@ -74,6 +82,19 @@ if rpm -q --provides vinyl-cache | grep -qx "vinyld(abi)$isa = $VINYL_STRICT_ABI
 	ok "runtime provides the exact strict ABI"
 else
 	bad "runtime does not provide vinyld(abi)$isa = $VINYL_STRICT_ABI"
+fi
+
+if rpm -q --provides vinyl-cache | grep -qx "vinyld(cohort-$COHORT_ID)$isa"; then
+	ok "runtime provides vinyld(cohort-$COHORT_ID)$isa"
+else
+	bad "runtime does not provide vinyld(cohort-$COHORT_ID)$isa"
+fi
+
+# Negative control: a capability naming any other cohort must have no provider.
+if rpm -q --whatprovides "vinyld(cohort-some-other-cohort)$isa" >/dev/null 2>&1; then
+	bad "a foreign cohort capability has a provider"
+else
+	ok "a foreign cohort capability has no provider"
 fi
 
 # ---------------------------------------------------------------------------

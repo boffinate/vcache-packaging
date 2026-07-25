@@ -345,7 +345,33 @@ same-abi)
 	command_run='dnf upgrade  [candidate keeps the SAME ABI string]'
 	run dnf --assumeno upgrade
 	run dnf -y upgrade
-	notes='the plan'"'"'s known limitation; '
+	notes='the plan'"'"'s known limitation, closed by the cohort provide (2026-07-25); '
+	;;
+
+# The two erasing routes, aimed at the same-ABI candidate. Before the
+# cohort-qualified provide existed there was nothing for them to test: the
+# same-ABI candidate simply upgraded, so no resolver conflict arose and no
+# erasure could be proposed. Now that it is a conflict, these ask whether the
+# fix converts a silent upgrade into a removal, which is what the Debian lane's
+# equivalent scenarios (s13, s14) do.
+same-abi-targeted-allowerasing)
+	command_run='dnf upgrade --allowerasing vinyl-cache  [SAME ABI string]'
+	run dnf --assumeno --allowerasing upgrade vinyl-cache
+	if plan_removes_cachetag "$last_out"; then
+		notes='the plan listed libvmod-cachetag for removal; '
+	fi
+	run dnf -y --allowerasing upgrade vinyl-cache
+	notes="${notes}same-ABI candidate, targeted erasing upgrade; "
+	;;
+
+same-abi-install-allowerasing)
+	command_run="dnf install --allowerasing vinyl-cache-$cand_evr  [SAME ABI string]"
+	run dnf --assumeno --allowerasing install "vinyl-cache-$cand_evr"
+	if plan_removes_cachetag "$last_out"; then
+		notes='the plan listed libvmod-cachetag for removal; '
+	fi
+	run dnf -y --allowerasing install "vinyl-cache-$cand_evr"
+	notes="${notes}same-ABI candidate, erasing install; "
 	;;
 
 history-undo)

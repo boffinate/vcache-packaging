@@ -153,6 +153,17 @@ SHA-256 = `546d7171ef8e64724e444e69c06fd8e5cc319050324f9ad670fcbd45831ae50e`, so
 
 Any change to the Vinyl source archive, the patch series, or the production build-profile revision produces a different cohort identity, even when Vinyl advertises an unchanged `strict_abi` string. That is the property the plan requires: the baked-in ABI string is a dependency identifier, not a rebuild decision.
 
+### The cohort identifier is also a package-name component
+
+Since 2026-07-25 the cohort id is not only a manifest key. The Vinyl runtime package advertises a second, cohort-qualified virtual provide alongside the exact-ABI one — `vinyld-cohort-<cohort-id>` on Debian, the unversioned `vinyld(cohort-<cohort-id>)%{?_isa}` on RPM — and every cohort VMOD depends on it. The step-9 transaction matrices in [`docs/`](../docs/) measured why: on both apt and dnf, a *different* package advertising the baseline's `vinyld-abi-<hash>` upgraded cleanly, because that token is derived from the upstream source revision and says nothing about the patch series, build profile or respin that produced the binary.
+
+Two consequences for this identifier:
+
+- **it must be usable inside a package name**, `^[a-z0-9][a-z0-9+.-]+$`. The derived form `vinyl-<upstream-version>-<input-id>` satisfies this by construction, and both lanes assert it at build time rather than trusting that;
+- **it goes in the provide *name*, never its version**, because a cohort id contains hyphens and RPM will not accept one in an EVR. The Debian side uses the same shape for symmetry rather than because it has to.
+
+The distro-native lane has no cohort identity and therefore emits no cohort dependency at all; its equivalent guard is the exact binary package version dependency described below.
+
 ## Target manifest
 
 `registry/targets/<cohort-id>/<target-id>.yml`. The file name stem must equal `target.id`.
@@ -253,7 +264,7 @@ These values are **never stored** in a manifest. They are computed by the toolin
 - the native artifact filename, for example `libvmod-cachetag_1.0.0-1_amd64.deb` or `libvmod-cachetag-1.0.0-1.el9.x86_64.rpm`;
 - the source package filenames (`.orig.tar.gz`, `.debian.tar.xz`, `.dsc`, `.src.rpm`);
 - the release asset filename, which always carries distro and arch: `libvmod-cachetag-1.0.0-1-debian-13-amd64.deb`;
-- the ABI dependency expressions: `vinyld-abi-<strict-abi>`, `vinyld-vrt = <vrt>`, the Debian `Depends` form `vinyld-abi-<hash>, vinyld-vrt (= 23.0)`, and the RPM `Requires` list;
+- the ABI dependency expressions: `vinyld-abi-<strict-abi>`, `vinyld-vrt = <vrt>`, the cohort-qualified pair `vinyld-cohort-<cohort-id>` (Debian) and `vinyld(cohort-<cohort-id>)` (RPM), the Debian `Depends` form `vinyld-abi-<hash>, vinyld-vrt (= 23.0), vinyld-cohort-<cohort-id>`, and the RPM `Requires` list;
 - the recipe substitution tokens, currently `@VINYL_VMODDIR@`, in a `substitutions` block. Unlike the values above these are copied from the manifest rather than computed, but they are emitted here so that a recipe has exactly one place to read them from. The block is the extension point for further tokens.
 
 Note on artifact naming: the native `.deb` filename is whatever `dpkg-buildpackage` produces from the package name, version, and architecture, so the distro release cannot appear in it. The distro-bearing name is the **release asset** name used for GitHub Release uploads. A distro suffix inside the Debian version itself (`1.0.0-1~deb13`) is deliberately **not** used yet; it becomes necessary only when one repository component serves more than one Debian or Ubuntu release, which the first milestone does not do.

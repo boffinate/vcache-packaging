@@ -30,6 +30,7 @@
 %global fixture_release @FIXTURE_RELEASE@
 %global fixture_abi     @FIXTURE_ABI@
 %global fixture_variant @VARIANT@
+%global fixture_cohort  @FIXTURE_COHORT@
 %global baseline_evr    @BASELINE_EVR@
 %global vinyl_vmoddir   %{_libdir}/vinyl-cache/vmods
 
@@ -71,6 +72,13 @@ Requires(pre):  shadow-utils
 # baseline's, unchanged, which is the point of that variant.
 Provides:       vinyld(abi)%{?_isa} = %{fixture_abi}
 Provides:       vinyld(vrt)%{?_isa} = @VINYL_VRT@
+# The provenance identity. BOTH variants carry a cohort id of their own, never
+# the baseline's: a fixture that reused the promoted cohort id would be claiming
+# to be part of a set it was never built with. For the same-abi variant this is
+# the whole experiment -- identical baked-in ABI string, different provenance --
+# and it is what turns matrix row 17 from "upgraded without noticing" into an
+# unsatisfiable dependency.
+Provides:       vinyld(cohort-%{fixture_cohort})%{?_isa}
 @VMOD_PROVIDES@
 
 %description
@@ -79,12 +87,14 @@ SYNTHETIC TEST FIXTURE -- NOT A RELEASE, NOT A BUILD OF VINYL CACHE.
 This package exists only to drive the EL9 upgrade-transaction matrix. It carries
 the file payload of vinyl-cache %{baseline_evr} re-wrapped as version
 %{fixture_version}-%{fixture_release}, advertising
-vinyld(abi) = %{fixture_abi}.
+vinyld(abi) = %{fixture_abi}
+and vinyld(cohort-%{fixture_cohort}).
 
 Variant: %{fixture_variant}.
 @VARIANT_NOTE@
 
-Cohort @COHORT_ID@ (fixture; not a promoted cohort).
+Derived from cohort @COHORT_ID@ (fixture; not a promoted cohort, and it
+deliberately does not advertise that cohort's identity).
 
 %package devel
 Summary:        Development files for %{name} (SYNTHETIC UPGRADE FIXTURE)
@@ -118,8 +128,9 @@ This vinyl-cache package is a SYNTHETIC TEST FIXTURE.
 It is not a build of Vinyl Cache. Its payload is the file content of
 vinyl-cache @BASELINE_EVR@, re-wrapped by
 recipes/el9/mismatch-fixture.sh under a higher version-release
-(@FIXTURE_VERSION@-@FIXTURE_RELEASE@) and the VMOD ABI provide
-vinyld(abi) = @FIXTURE_ABI@.
+(@FIXTURE_VERSION@-@FIXTURE_RELEASE@), the VMOD ABI provide
+vinyld(abi) = @FIXTURE_ABI@ and the cohort provide
+vinyld(cohort-@FIXTURE_COHORT@).
 
 Variant: @VARIANT@.
 @VARIANT_NOTE@
@@ -196,4 +207,5 @@ EOF
 * @RPM_CHANGELOG_DATE@ @MAINTAINER_NAME@ <@MAINTAINER_EMAIL@> - @FIXTURE_VERSION@-@FIXTURE_RELEASE@
 - SYNTHETIC UPGRADE FIXTURE, variant @VARIANT@. Not a release and not a build.
 - Payload re-wrapped from vinyl-cache @BASELINE_EVR@; vinyld(abi) set to
-  @FIXTURE_ABI@.
+  @FIXTURE_ABI@ and the cohort provide set to
+  vinyld(cohort-@FIXTURE_COHORT@).

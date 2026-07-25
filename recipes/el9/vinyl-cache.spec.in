@@ -25,6 +25,10 @@
 # subpackage, which is a poor way to find out.
 %global vinyl_srcdir    vinyl-cache-%{vinyl_version}
 %global vinyl_vmoddir   %{_libdir}/vinyl-cache/vmods
+# The coordinated package cohort this runtime belongs to. It is an input of the
+# build rather than anything readable out of the Vinyl sources, and it reaches
+# the dependency generator through the %%{__find_provides} line below.
+%global vinyl_cohort    @COHORT_ID@
 
 # Link-time optimisation is off. Vinyl loads VMODs with dlopen() against symbols
 # exported from the daemon, generates C at run time and compiles it against the
@@ -36,10 +40,17 @@
 
 # ABI provider generation. RPM 4.16 on EL9 still honours the external dependency
 # generator, verified by probe before this recipe was written. find-provides adds
-# the two exact-ABI provides that every strict-ABI VMOD depends on, and leaves
-# every other file to the stock generator so ordinary soname provides survive.
+# the two exact-ABI provides that every strict-ABI VMOD depends on, plus the
+# cohort-qualified provide below, and leaves every other file to the stock
+# generator so ordinary soname provides survive.
+#
+# vinyld(cohort-<id>) is unversioned and carries the cohort in its NAME because
+# a cohort id contains hyphens and is therefore not a legal RPM EVR. It closes
+# the provenance gap the step-9 matrix measured: row 17 upgraded a package that
+# advertised the baseline's vinyld(abi) but was a different build, and dnf had
+# nothing to object to. See ../../docs/20260724_2342_note_step-9-el9-transactions.md.
 %global _use_internal_dependency_generator 0
-%global __find_provides %{_builddir}/%{vinyl_srcdir}/find-provides %{vinyl_version}-%{vinyl_release} %{_builddir}/%{vinyl_srcdir} %__find_provides
+%global __find_provides %{_builddir}/%{vinyl_srcdir}/find-provides %{vinyl_version}-%{vinyl_release} %{_builddir}/%{vinyl_srcdir} %{vinyl_cohort} %__find_provides
 
 Name:           vinyl-cache
 Version:        %{vinyl_version}

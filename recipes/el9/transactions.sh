@@ -56,7 +56,9 @@ install-candidate
 install-candidate-allowerasing
 versionlock
 history-undo
-same-abi"
+same-abi
+same-abi-targeted-allowerasing
+same-abi-install-allowerasing"
 
 do_prep=yes
 rebuild_image=
@@ -122,7 +124,7 @@ status=0
 for s in $scenarios; do
 	printf '\n===== scenario: %s =====\n' "$s"
 	candidate_repo=candidate
-	[ "$s" = same-abi ] && candidate_repo=sameabi
+	case $s in same-abi*) candidate_repo=sameabi ;; esac
 
 	rc=0
 	docker run --rm \

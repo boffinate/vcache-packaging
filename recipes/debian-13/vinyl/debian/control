@@ -30,6 +30,7 @@ Depends:
 Provides:
  ${vinyld:ABI},
  ${vinyld:VRT},
+ ${vinyld:COHORT},
 Suggests: vinyl-cache-dev
 Description: state of the art, high-performance web accelerator
  Vinyl Cache is a state of the art web accelerator written with performance
@@ -40,11 +41,22 @@ Description: state of the art, high-performance web accelerator
  shared library, the VMODs distributed with Vinyl Cache, and the systemd
  service integration.
  .
- The package also provides two virtual packages that identify the exact VMOD
+ The package also provides three virtual packages that identify the exact VMOD
  binary interface of this build: vinyld-vrt, carrying the public VRT ABI
- version, and vinyld-abi-<hash>, carrying the exact strict VMOD ABI. A VMOD
- that declares "$ABI strict" depends on the latter, so an incompatible Vinyl
- Cache upgrade is unresolvable rather than silently loadable.
+ version, vinyld-abi-<hash>, carrying the exact strict VMOD ABI, and
+ vinyld-cohort-<cohort-id>, carrying the identity of the coordinated package
+ cohort this runtime was built and tested as part of. A VMOD that declares
+ "$ABI strict" depends on all three, so an incompatible Vinyl Cache upgrade is
+ unresolvable rather than silently loadable.
+ .
+ The cohort provide exists because the ABI provide cannot police provenance.
+ vinyld-abi-<hash> is derived from the upstream source revision, so two
+ packages built from the same revision with different downstream patches, a
+ different build profile or a vendor respin advertise the identical token and
+ are interchangeable as far as apt is concerned. The cohort id is a digest of
+ the pinned source archive, the ordered patch series and the production build
+ profile, so a package from a different cohort no longer satisfies an installed
+ VMOD's dependency even when it claims the same ABI.
  .
  EXPERIMENTAL: this is a pre-9.0.0 snapshot package built from an unreleased
  development revision. It carries no security-update commitment.

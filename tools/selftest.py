@@ -20,6 +20,7 @@ so a bug in cohort_input_blob() cannot silently agree with itself.
 from __future__ import annotations
 
 import os
+import re as _re_module
 import sys
 import tempfile
 from pathlib import Path
@@ -532,10 +533,43 @@ def test_metadata() -> None:
     check(
         "metadata: debian depends string",
         meta["abi"]["deb_depends"]
-        == "vinyld-abi-a90954814766d933a75d4c808c449cb9bc0ae3d3, vinyld-vrt (= 23.0)",
+        == "vinyld-abi-a90954814766d933a75d4c808c449cb9bc0ae3d3, vinyld-vrt (= 23.0), "
+        f"vinyld-cohort-{VALID_COHORT_ID}",
         meta["abi"]["deb_depends"],
     )
     check("metadata: vrt provide string", meta["abi"]["vrt_provide"] == "vinyld-vrt = 23.0")
+    check(
+        "metadata: cohort-qualified provide carries the cohort id in its name",
+        meta["abi"]["cohort_provide"] == f"vinyld-cohort-{VALID_COHORT_ID}",
+        meta["abi"]["cohort_provide"],
+    )
+    check(
+        "metadata: the rpm cohort provide is unversioned and parenthesised",
+        meta["abi"]["rpm_cohort_provide"] == f"vinyld(cohort-{VALID_COHORT_ID})",
+        meta["abi"]["rpm_cohort_provide"],
+    )
+    # The cohort id ends up inside a Debian virtual package name and an RPM
+    # provide name, so it has to survive both without quoting. A cohort id that
+    # needed escaping would produce a package nobody can depend on.
+    check(
+        "metadata: the cohort provide is a legal package name",
+        _re_module.fullmatch(r"[a-z0-9][a-z0-9+.-]+", meta["abi"]["cohort_provide"]) is not None,
+        meta["abi"]["cohort_provide"],
+    )
+    check(
+        "metadata: the cohort provide is not versioned",
+        "=" not in meta["abi"]["cohort_provide"]
+        and "=" not in meta["abi"]["rpm_cohort_provide"],
+        meta["abi"]["cohort_provide"],
+    )
+    check(
+        "metadata: arch/freebsd/alpine dependency lists carry the cohort provide too",
+        all(
+            f"vinyld-cohort-{VALID_COHORT_ID}" in meta["abi"][key]
+            for key in ("arch_depends", "freebsd_run_depends", "alpine_depends")
+        ),
+        str(meta["abi"]),
+    )
     check("metadata: source archive name", meta["source_archive"] == "libvmod-cachetag-1.0.0.tar.gz")
     check("metadata: origin identifies the cohort", meta["origin"]["cohort"] == VALID_COHORT_ID)
 
@@ -563,6 +597,11 @@ def test_metadata() -> None:
         "metadata: rpm requires the exact strict abi",
         "vinyld-abi-a90954814766d933a75d4c808c449cb9bc0ae3d3" in meta["abi"]["rpm_requires"],
     )
+    check(
+        "metadata: rpm requires the cohort-qualified provide as well",
+        f"vinyld(cohort-{VALID_COHORT_ID})" in meta["abi"]["rpm_requires"],
+        str(meta["abi"]["rpm_requires"]),
+    )
     shell = metadata_mod.as_shell(meta)
     check(
         "metadata: shell rendering exports the native filename",
@@ -571,8 +610,13 @@ def test_metadata() -> None:
     )
     check(
         "metadata: shell rendering keeps list entries separate and unmangled",
-        "CACHETAG_ABI_RPM_REQUIRES_COUNT='2'" in shell
+        "CACHETAG_ABI_RPM_REQUIRES_COUNT='3'" in shell
         and "CACHETAG_ABI_RPM_REQUIRES_1='vinyld-vrt = 23.0'" in shell,
+        shell,
+    )
+    check(
+        "metadata: shell rendering exports the cohort provide",
+        f"CACHETAG_ABI_COHORT_PROVIDE='vinyld-cohort-{VALID_COHORT_ID}'" in shell,
         shell,
     )
     check(
@@ -604,6 +648,16 @@ def test_distro_native(repo_root: Path) -> None:
         "distro-native: falls back to an exact package dependency when no abi provide exists",
         "vinyl-cache (= 9.0.0-3)" in meta["abi"]["deb_depends"],
         meta["abi"]["deb_depends"],
+    )
+    # A distro-native artifact has no cohort identity, and no distribution
+    # package will ever provide one, so emitting a cohort dependency here would
+    # make every distro-native package permanently unresolvable.
+    check(
+        "distro-native: emits no cohort-qualified dependency",
+        meta["abi"]["cohort_provide"] == ""
+        and meta["abi"]["rpm_cohort_provide"] == ""
+        and "vinyld-cohort-" not in meta["abi"]["deb_depends"],
+        str(meta["abi"]),
     )
 
 

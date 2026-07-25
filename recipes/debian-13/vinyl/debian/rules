@@ -42,6 +42,17 @@ ifneq ($(filter $(DEB_HOST_ARCH),$(WITHOUT_JEMALLOC_ARCH_LIST)),)
 CONFIGURE_FLAGS += --without-jemalloc
 endif
 
+# --- cohort identity ---------------------------------------------------------
+#
+# The cohort id of the build that produced this package. Unlike the two values
+# below it cannot be read out of the source tree: a cohort is a *set* of
+# packages built together, so its identity is an input of the build, not a
+# property of the Vinyl sources. build.sh substitutes it here from the same
+# constant it hands the cachetag recipe, and override_dh_gencontrol refuses to
+# emit a provide if the substitution did not happen or produced something that
+# is not a legal Debian package name.
+COHORT_ID = @COHORT_ID@
+
 # --- ABI provider generation -------------------------------------------------
 #
 # include/vmod_abi.h contains
@@ -106,22 +117,35 @@ override_dh_auto_install:
 	find debian/tmp -name '*.la' -delete
 	find debian/tmp -name '*.a' -delete
 
-# Emit the two virtual packages that bind a strict-ABI VMOD to this exact
+# Emit the three virtual packages that bind a strict-ABI VMOD to this exact
 # build. dh_shlibdeps has already written debian/vinyl-cache.substvars by the
 # time dh_gencontrol runs, so appending to it here is safe.
 #
 # Upstream wrote to a shared debian/substvars and passed -T to dh_gencontrol,
 # which applies one substvars file to every binary package; the per-package
 # file is the correct target in a multi-binary source package.
+#
+# vinyld-cohort-<id> is the provenance provide. The step-9 apt transaction
+# matrix (docs/20260724_2300_note_step-9-debian-13-transactions.md, rows s12 to
+# s14) showed a candidate carrying the *same* baked-in vinyld-abi-<hash> from a
+# different build upgrading cleanly through every path tested, because the ABI
+# token is a hash of the upstream commit and says nothing about which patch set,
+# build profile or downstream respin produced the binary. The cohort id does,
+# and it cannot be a provide *version* because RPM forbids the hyphens it
+# contains -- hence the id in the provide *name* on both lanes.
 override_dh_gencontrol:
 	@test -n "$(VINYLD_ABI)" || { echo "E: could not read the strict VMOD ABI from include/vmod_abi.h" >&2; exit 1; }
 	@test -n "$(VINYLD_VRT)" || { echo "E: could not read VRT_MAJOR_VERSION/VRT_MINOR_VERSION from include/vrt.h" >&2; exit 1; }
+	@test -n "$(COHORT_ID)" || { echo "E: COHORT_ID is empty; the @COHORT_ID@ token was not substituted" >&2; exit 1; }
 	@printf '%s' '$(VINYLD_ABI)' | grep -Eq '^[0-9a-f]{40}$$' || \
 		{ echo "E: strict VMOD ABI '$(VINYLD_ABI)' is not 40 lowercase hex characters" >&2; exit 1; }
 	@printf '%s' '$(VINYLD_VRT)' | grep -Eq '^[0-9]+\.[0-9]+$$' || \
 		{ echo "E: VRT version '$(VINYLD_VRT)' is not <major>.<minor>" >&2; exit 1; }
+	@printf '%s' '$(COHORT_ID)' | grep -Eq '^[a-z0-9][a-z0-9+.-]+$$' || \
+		{ echo "E: cohort id '$(COHORT_ID)' is not usable in a Debian package name" >&2; exit 1; }
 	echo "vinyld:ABI=vinyld-abi-$(VINYLD_ABI)" >> debian/vinyl-cache.substvars
 	echo "vinyld:VRT=vinyld-vrt (= $(VINYLD_VRT))" >> debian/vinyl-cache.substvars
+	echo "vinyld:COHORT=vinyld-cohort-$(COHORT_ID)" >> debian/vinyl-cache.substvars
 	dh_gencontrol
 
 # Deliberately neither enabled nor started on install. These are experimental

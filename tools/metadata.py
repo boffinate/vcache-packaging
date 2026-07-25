@@ -93,22 +93,52 @@ def _source_filenames(fmt: str, version: str, revision: int, versions: dict) -> 
     return []
 
 
-def _abi_strings(vrt: str, strict_abi: str, exact_package: str = None) -> dict:
+def _abi_strings(
+    vrt: str, strict_abi: str, exact_package: str = None, cohort_id: str = None
+) -> dict:
     abi_provide = f"vinyld-abi-{strict_abi}"
     vrt_provide = f"vinyld-vrt = {vrt}"
     deb_depends = [abi_provide, f"vinyld-vrt (= {vrt})"]
     rpm_requires = [abi_provide, f"vinyld-vrt = {vrt}"]
+    arch_depends = [abi_provide]
+
+    # The cohort-qualified provide. The ABI token is a hash of the upstream
+    # source revision, so a repackaged, patched or vendor-respun runtime built
+    # from that revision advertises the identical token; the step-9 transaction
+    # matrices confirmed both apt and dnf accept such a package silently. The
+    # cohort id is a digest over the pinned source archive, the ordered patch
+    # series and the production build profile, so it is the value that can
+    # answer the provenance question.
+    #
+    # It goes in the provide NAME, not its version, on every ecosystem: a cohort
+    # id contains hyphens, which RPM does not permit in an EVR. Keeping the same
+    # shape on the Debian side is a deliberate symmetry, not an accident.
+    #
+    # The distro-native lane has no cohort identity and therefore never gets
+    # one; its equivalent guard is the exact binary package version dependency
+    # below.
+    cohort_provide = None
+    rpm_cohort_provide = None
+    if cohort_id:
+        cohort_provide = f"vinyld-cohort-{cohort_id}"
+        rpm_cohort_provide = f"vinyld(cohort-{cohort_id})"
+        deb_depends.append(cohort_provide)
+        rpm_requires.append(rpm_cohort_provide)
+        arch_depends.append(cohort_provide)
+
     if exact_package:
         deb_depends.append(exact_package)
         rpm_requires.append(exact_package.replace(" (= ", " = ").rstrip(")"))
     return {
         "abi_provide": abi_provide,
         "vrt_provide": vrt_provide,
+        "cohort_provide": cohort_provide or "",
+        "rpm_cohort_provide": rpm_cohort_provide or "",
         "deb_depends": ", ".join(deb_depends),
         "rpm_requires": rpm_requires,
-        "arch_depends": [abi_provide],
-        "freebsd_run_depends": [abi_provide],
-        "alpine_depends": [abi_provide],
+        "arch_depends": arch_depends,
+        "freebsd_run_depends": list(arch_depends),
+        "alpine_depends": list(arch_depends),
     }
 
 
@@ -176,7 +206,7 @@ def target_metadata(target: dict, cohort: dict = None) -> dict:
             "release_asset_filename": release_asset,
             "source_package_filenames": _source_filenames(fmt, version, revision, versions),
         },
-        "abi": _abi_strings(vrt, strict_abi, exact_package),
+        "abi": _abi_strings(vrt, strict_abi, exact_package, cohort_id),
         "vinyl": {"vrt": vrt, "strict_abi": strict_abi},
         "install": {
             "vmoddir": target["install"]["vmoddir"],

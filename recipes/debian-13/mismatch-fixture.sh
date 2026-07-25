@@ -21,12 +21,14 @@
 #              can no longer be satisfied. This is the fixture the transaction
 #              matrix is really about.
 #
-#   sameabi    the SAME vinyld-abi-<hash> as the baseline, different version
-#              and different payload. This is the plan's stated known
-#              limitation -- "an exact vinyld-abi-<hash> dependency alone
-#              cannot distinguish two Vinyl packages that advertise the same
-#              baked-in ABI string but contain different downstream patches" --
-#              turned into something testable.
+#   sameabi    the SAME vinyld-abi-<hash> as the baseline, different version,
+#              different payload and a DIFFERENT vinyld-cohort-<id>. This is
+#              the plan's stated known limitation -- "an exact vinyld-abi-<hash>
+#              dependency alone cannot distinguish two Vinyl packages that
+#              advertise the same baked-in ABI string but contain different
+#              downstream patches" -- turned into something testable, and since
+#              2026-07-25 it is also the regression test for the cohort-
+#              qualified provide that closes it.
 #
 # Both are produced by a scripted metadata-level transformation of the retained
 # baseline cohort debs rather than by a second Vinyl compile. The justification
@@ -56,6 +58,10 @@ set -eu
 
 BASE_ABI=a90954814766d933a75d4c808c449cb9bc0ae3d3
 BASE_VERSION=9.0.0~git20260613.a909548147-1
+# Must match build.sh's COHORT_ID: it is what the baseline runtime advertises as
+# vinyld-cohort-<id>, and the transformation below asserts it is present before
+# rewriting it.
+BASE_COHORT=unassigned-local-process-proof
 
 ###############################################################################
 # SYNTHETIC FIXTURE IDENTITY
@@ -79,9 +85,17 @@ BASE_VERSION=9.0.0~git20260613.a909548147-1
 
 MISMATCH_VERSION=9.0.0~git20260614.ffffffffffff-1
 MISMATCH_ABI=ffffffffffffffffffffffffffffffffffffffff
+MISMATCH_COHORT=mismatch-fixture-ffffffffffff
 
 SAMEABI_VERSION=9.0.0~git20260615.eeeeeeeeeeee-1
 SAMEABI_ABI=$BASE_ABI
+# Deliberately NOT the baseline cohort. The whole point of this variant is a
+# package that copies the baked-in ABI string while coming from somewhere else:
+# a distro backport, a vendor respin, a rebuild with a different patch series.
+# Before the cohort-qualified provide existed, apt upgraded it cleanly through
+# every path tested (scenarios s12 to s14). With it, the same package is an
+# unsatisfiable upgrade, which is the intended direction.
+SAMEABI_COHORT=sameabi-fixture-eeeeeeeeeeee
 
 # Fixed timestamp for the fixture build. The plan asks for the fixture's digest
 # to be retained; a digest is only worth retaining if regenerating the fixture
@@ -154,16 +168,18 @@ docker run --rm "$IMAGE" bash -c '
 ###############################################################################
 
 build_variant() {
-	_variant=$1; _version=$2; _abi=$3
-	note "building fixture variant: $_variant ($_version, vinyld-abi-$_abi)"
+	_variant=$1; _version=$2; _abi=$3; _cohort=$4
+	note "building fixture variant: $_variant ($_version, vinyld-abi-$_abi, vinyld-cohort-$_cohort)"
 	docker run --rm \
 		-v "$recipe_dir/container:/stage:ro" \
 		-v "$out_dir:/out" \
 		-e "FIXTURE_VARIANT=$_variant" \
 		-e "FIXTURE_VERSION=$_version" \
 		-e "FIXTURE_ABI=$_abi" \
+		-e "FIXTURE_COHORT=$_cohort" \
 		-e "BASE_VERSION=$BASE_VERSION" \
 		-e "BASE_ABI=$BASE_ABI" \
+		-e "BASE_COHORT=$BASE_COHORT" \
 		-e "DEB_HOST_ARCH=$DEB_HOST_ARCH" \
 		-e "SOURCE_DATE_EPOCH=$FIXTURE_SOURCE_DATE_EPOCH" \
 		"$IMAGE" bash /stage/make-mismatch.sh \
@@ -177,8 +193,8 @@ build_variant() {
 variants=${*:-mismatch sameabi}
 for v in $variants; do
 	case $v in
-	mismatch) build_variant mismatch "$MISMATCH_VERSION" "$MISMATCH_ABI" ;;
-	sameabi)  build_variant sameabi  "$SAMEABI_VERSION"  "$SAMEABI_ABI" ;;
+	mismatch) build_variant mismatch "$MISMATCH_VERSION" "$MISMATCH_ABI" "$MISMATCH_COHORT" ;;
+	sameabi)  build_variant sameabi  "$SAMEABI_VERSION"  "$SAMEABI_ABI"  "$SAMEABI_COHORT" ;;
 	*)        die "unknown variant: $v" ;;
 	esac
 done
@@ -207,12 +223,18 @@ note "writing the fixture provenance manifest"
 	printf '#\n'
 	printf '# Baseline version:  %s\n' "$BASE_VERSION"
 	printf '# Baseline ABI:      vinyld-abi-%s\n' "$BASE_ABI"
-	printf '# mismatch variant:  %s  vinyld-abi-%s\n' "$MISMATCH_VERSION" "$MISMATCH_ABI"
-	printf '# sameabi variant:   %s  vinyld-abi-%s\n' "$SAMEABI_VERSION" "$SAMEABI_ABI"
+	printf '# Baseline cohort:   vinyld-cohort-%s\n' "$BASE_COHORT"
+	printf '# mismatch variant:  %s  vinyld-abi-%s  vinyld-cohort-%s\n' \
+		"$MISMATCH_VERSION" "$MISMATCH_ABI" "$MISMATCH_COHORT"
+	printf '# sameabi variant:   %s  vinyld-abi-%s  vinyld-cohort-%s\n' \
+		"$SAMEABI_VERSION" "$SAMEABI_ABI" "$SAMEABI_COHORT"
+	printf '#\n'
+	printf '# Both variants advertise a cohort id of their own. For sameabi that is the\n'
+	printf '# case under test: identical baked-in ABI string, different provenance.\n'
 	printf '#\n'
 	printf '# Transformation: dpkg-deb -R, add usr/share/doc/<pkg>/SYNTHETIC-FIXTURE.txt,\n'
-	printf '# rewrite the control Version / Provides / exact-runtime Depends /\n'
-	printf '# Installed-Size / Description banner, append the marker to md5sums,\n'
+	printf '# rewrite the control Version / Provides (ABI and cohort) / exact-runtime\n'
+	printf '# Depends / Installed-Size / Description banner, append the marker to md5sums,\n'
 	printf '# dpkg-deb --build --root-owner-group. Payload otherwise byte-identical.\n'
 	printf '#\n'
 	printf '# NOT REAL BUILDS. Never publish these to a user-facing repository.\n'

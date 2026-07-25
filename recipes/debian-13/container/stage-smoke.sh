@@ -67,6 +67,26 @@ else
 	bad "installed package lacks the exact strict-ABI dependency"
 fi
 
+echo "--- the cohort-qualified provide, which the ABI relation cannot supply ---"
+if dpkg-query -W -f='${Provides}\n' vinyl-cache | grep -q "vinyld-cohort-$COHORT_ID"; then
+	ok "runtime provides vinyld-cohort-$COHORT_ID"
+else
+	bad "runtime does not provide vinyld-cohort-$COHORT_ID"
+fi
+if dpkg-query -W -f='${Depends}\n' libvmod-cachetag | grep -q "vinyld-cohort-$COHORT_ID"; then
+	ok "installed package depends on vinyld-cohort-$COHORT_ID"
+else
+	bad "installed package lacks the cohort-qualified dependency"
+fi
+echo "* who provides it:"
+apt-cache showpkg "vinyld-cohort-$COHORT_ID" | sed -n '1,12p'
+echo "* negative control: a different cohort id must not resolve"
+if apt-get install -y --dry-run "vinyld-cohort-some-other-cohort" >/dev/null 2>&1; then
+	bad "a foreign vinyld-cohort- virtual package resolved"
+else
+	ok "a foreign vinyld-cohort- virtual package is unresolvable"
+fi
+
 ###############################################################################
 step "3 -- confirm the installed .so is in the runtime's VMOD directory"
 ###############################################################################

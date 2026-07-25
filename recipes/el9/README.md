@@ -42,14 +42,17 @@ transactions/           the scenario base image, local repositories, and scenari
 
 ## What the packages promise
 
-The runtime package publishes the two capabilities every strict-ABI VMOD depends on, architecture-qualified:
+The runtime package publishes the three capabilities every strict-ABI VMOD depends on, architecture-qualified:
 
 ```text
 vinyld(abi)(aarch-64) = a90954814766d933a75d4c808c449cb9bc0ae3d3
 vinyld(vrt)(aarch-64) = 23.0
+vinyld(cohort-vinyl-9.0.0-000000000000)(aarch-64)
 ```
 
 The ABI token is the pinned Vinyl commit id, because Vinyl bakes `"<PACKAGE_STRING> <VCS_Version>"` into `include/vmod_abi.h`. `vinyl-cache-devel` requires the exact matching runtime, `%{version}-%{release}` and arch-qualified, and the cachetag package requires the exact `vinyld(abi)` above. That dependency is not decorative: the smoke test asserts that `dnf` refuses to install cachetag with no runtime present, naming `vinyld(abi)` as the unsatisfied capability.
+
+The third capability is the cohort-qualified one, added 2026-07-25. It is **unversioned**, and the cohort id is part of the capability *name*, because a cohort id contains hyphens and RPM will not accept those in an EVR. It exists because the ABI token cannot police provenance: it is derived from the upstream source revision, so any rebuild of that revision — a distro backport, a vendor respin, a different patch series — advertises the identical string. Matrix row 17 measured exactly that, and `dnf upgrade` took the candidate without a murmur. With the cohort capability in the dependency set, the same candidate is unresolvable. All three capabilities come from `find-provides`; the cohort id reaches it as the third positional argument, spliced into `%{__find_provides}` from `%{vinyl_cohort}`.
 
 ## Two things worth knowing before changing anything here
 
@@ -59,9 +62,11 @@ The ABI token is the pinned Vinyl commit id, because Vinyl bakes `"<PACKAGE_STRI
 
 ## Upgrade transactions
 
-`mismatch-fixture.sh` builds a synthetic mismatched candidate Vinyl pair by re-wrapping the baseline cohort's own payload under a higher, obviously synthetic version-release and a different `vinyld(abi)` hash. `transactions.sh` then runs the plan's dnf transaction list against it, one fresh container per scenario, and records what the resolver actually did.
+`mismatch-fixture.sh` builds a synthetic mismatched candidate Vinyl pair by re-wrapping the baseline cohort's own payload under a higher, obviously synthetic version-release, a different `vinyld(abi)` hash and a fixture cohort id of its own. `transactions.sh` then runs the plan's dnf transaction list against it, one fresh container per scenario, and records what the resolver actually did.
 
 Two commands, and only two, were found to remove an installed VMOD: `dnf install --allowerasing vinyl-cache-<version>` and `dnf upgrade --allowerasing <package>`. Whole-system `dnf upgrade`, `--best`, `--nobest`, `distro-sync` and even `distro-sync --allowerasing` never did. A plain `dnf upgrade` does not skip the update as one might expect — with the EL9 default `best=True` it fails the whole transaction. The full table, the same-ABI-string result, and the `versionlock` incident-response procedure are in the session note in `../../docs/`.
+
+The `sameabi` variant now carries a fixture cohort id too, which is the point of it: same baked-in ABI string, different provenance. Since 2026-07-25 the `same-abi` scenario refuses instead of upgrading silently, and the two extra scenarios `same-abi-targeted-allowerasing` and `same-abi-install-allowerasing` exist because the fix made those routes reachable for the first time — with no conflict there was previously nothing for an erasing transaction to erase. Both remove the VMOD, exactly as their mismatched-ABI equivalents do, so the same warning covers both.
 
 ## Deferred
 

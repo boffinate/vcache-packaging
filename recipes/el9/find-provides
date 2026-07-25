@@ -14,6 +14,13 @@
 #     dependency fails to resolve;
 #   * $BUILD_DIR is passed as $2 rather than inferred from $0, so the script does
 #     not have to be copied into the unpacked source tree;
+#   * a third argument, the cohort id, is emitted as an extra unversioned provide
+#     vinyld(cohort-<id>). The exact-ABI provide is a hash of the upstream source
+#     revision and therefore cannot police provenance: EL9 transaction row 17
+#     (docs/20260724_2342_note_step-9-el9-transactions.md) upgraded a different
+#     package carrying the same baked-in ABI string with no objection from dnf.
+#     The cohort id goes in the provide NAME rather than its version because it
+#     contains hyphens, which are not legal in an RPM EVR;
 #   * the emitted ABI is checked to be 40 lowercase hex characters. Building
 #     outside a git checkout makes Vinyl's include/generate.py fall back to the
 #     literal string NOGIT, which would otherwise be published as a perfectly
@@ -31,8 +38,9 @@ set -u
 
 VMOD_VR=$1
 BUILD_DIR=$2
-FIND_PROVIDES=$3
-shift 3
+COHORT_ID=$3
+FIND_PROVIDES=$4
+shift 4
 
 ABI_ISA=$(rpm --eval '%{?_isa}')
 
@@ -70,10 +78,29 @@ if [ -z "$VRT_MAJOR" ] || [ -z "$VRT_MINOR" ]; then
 	exit 1
 fi
 
+# The cohort id is an input of the build, not something readable out of the
+# source tree, so an unsubstituted or empty value has to be fatal here: it would
+# otherwise publish a provide named "vinyld(cohort-)" that every cohort matches.
+# The charset is the one both lanes share, so the Debian virtual package name
+# and this provide name stay identical apart from the RPM parentheses.
+case $COHORT_ID in
+"" | *[!a-z0-9+.-]* | [!a-z0-9]*)
+	echo "find-provides: refusing to publish cohort id '$COHORT_ID'" >&2
+	echo "find-provides: expected ^[a-z0-9][a-z0-9+.-]+\$" >&2
+	exit 1
+	;;
+esac
+
+if [ ${#COHORT_ID} -lt 2 ]; then
+	echo "find-provides: cohort id '$COHORT_ID' is too short" >&2
+	exit 1
+fi
+
 vinyld_provides() {
 	cat <<-EOF
 	vinyld(abi)$ABI_ISA = $ABI
 	vinyld(vrt)$ABI_ISA = $VRT_MAJOR.$VRT_MINOR
+	vinyld(cohort-$COHORT_ID)$ABI_ISA
 	EOF
 }
 
