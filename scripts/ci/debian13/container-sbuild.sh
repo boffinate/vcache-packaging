@@ -27,8 +27,24 @@
 # unpinned input to a lane whose entire purpose is a pinned buildroot, so it
 # is no longer an input at all.
 #
-# sbuild still uses --chroot-mode=unshare, and still runs as an unprivileged
-# user: the clean-room property comes from the chroot, not from the container.
+# WHY NOT --chroot-mode=unshare
+#
+# Containerising removed the userland variable but not the failure: inside
+# this image, on a GitHub runner, sbuild still reported
+#
+#   Can't exec "dpkg": Permission denied at /usr/libexec/sbuild-usernsexec:613
+#
+# while the identical image, tarball, sbuild version and user setup complete
+# arch detection when the same container runs on another host. What is left
+# is the runner's own kernel and LSM policy, which this repository cannot
+# pin and should not depend on.
+#
+# So the chroot is entered with sudo rather than a user namespace. The
+# clean-room property is unchanged and comes from where it always came from:
+# a fresh chroot unpacked from the digest-pinned tarball for each build,
+# resolving Build-Depends from debian/control inside it. The user namespace
+# was only ever the mechanism for entering that chroot without privilege, and
+# inside a container that we already start privileged it buys nothing.
 
 set -euo pipefail
 
@@ -49,42 +65,50 @@ note "build toolchain"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-# sbuild     the builder (trixie ships 0.89.3, the version this recipe is
-#            known to work with)
-# uidmap     newuidmap/newgidmap, used by sbuild-usernsexec
-# iproute2   sbuild runs `ip link set lo up` in the build namespace
+# sbuild     the builder (trixie ships 0.89.3)
+# sudo       how sbuild enters the chroot in --chroot-mode=sudo
+# iproute2   sbuild brings up loopback in the build environment
 # debhelper  `dpkg-buildpackage -S` runs debian/rules clean, and both recipes
 #            are dh-based
 apt-get install -y --no-install-recommends \
-	sbuild uidmap iproute2 debhelper dpkg-dev fakeroot
+	sbuild sudo iproute2 debhelper dpkg-dev fakeroot
 sbuild --version | head -1
 
 ###############################################################################
-note "unprivileged build user"
+note "build user and chroot"
 ###############################################################################
 #
-# sbuild's unshare backend resolves the invoking user's /etc/subuid range and
-# refuses to be root, so the build runs as an ordinary user. That user is
-# given the uid/gid that owns the bind-mounted /out, so it can write the
-# assembled source trees and the packages land on the host owned by the
-# account that started the job rather than by root.
+# sbuild refuses to run as root, so the build still runs as an ordinary user;
+# that user gets the uid/gid owning the bind-mounted /out so the packages land
+# on the host owned by the account that started the job, and passwordless sudo
+# so sbuild can enter the chroot.
 #
 build_uid=$(stat -c %u "$out")
 build_gid=$(stat -c %g "$out")
 [ "$build_uid" -ne 0 ] || die "/out is owned by root; sbuild cannot run as root"
 getent group "$build_gid" >/dev/null || groupadd -g "$build_gid" sbuilder
 useradd -o -u "$build_uid" -g "$build_gid" -m -d /home/sbuilder sbuilder
-usermod --add-subuids 100000-165535 --add-subgids 100000-165535 sbuilder
-grep '^sbuilder:' /etc/subuid /etc/subgid
+printf 'sbuilder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/sbuilder
+chmod 0440 /etc/sudoers.d/sbuilder
 
 # The source trees were assembled by an earlier container running as root.
 chown -R "$build_uid:$build_gid" "$work"
 
 as_builder() { runuser -u sbuilder -- "$@"; }
 
-as_builder unshare --user --map-root-user true ||
-	die "the build user cannot create a user namespace inside this container; sbuild --chroot-mode=unshare cannot work"
-printf 'OK: user namespaces available to the build user\n'
+# sudo chroot mode takes a directory, from /etc/sbuild/chroot/<name>.
+note "unpacking the pinned chroot"
+chroot_dir=/srv/chroot/$DEBIAN_DISTRIBUTION-amd64
+rm -rf "$chroot_dir"
+mkdir -p "$chroot_dir" /etc/sbuild/chroot
+tar -C "$chroot_dir" -xf "$chroot_tarball"
+ln -sfn "$chroot_dir" "/etc/sbuild/chroot/$DEBIAN_DISTRIBUTION-amd64"
+# A chroot needs these to exist before anything is mounted on them, and
+# needs a resolver: docker keeps /etc/resolv.conf outside the image, so the
+# export does not carry one.
+mkdir -p "$chroot_dir"/proc "$chroot_dir"/sys "$chroot_dir"/dev
+cp /etc/resolv.conf "$chroot_dir/etc/resolv.conf"
+printf 'chroot: %s (%s)\n' "$chroot_dir" "$(cat "$chroot_dir/etc/debian_version" 2>/dev/null || echo unknown)"
 
 ###############################################################################
 # One package: source package on the host side of the chroot, then sbuild.
@@ -107,12 +131,7 @@ build_one() {
 
 	[ -f "$_dsc" ] || die "expected $_dsc after dpkg-buildpackage -S"
 
-	note "sbuild: $_name (unshare chroot $chroot_tarball)"
-	# sbuild reports a chroot it cannot introspect as an empty architecture
-	# and says nothing about why, so show what it was handed.
-	printf 'chroot tarball: %s bytes, %s members\n' \
-		"$(wc -c < "$chroot_tarball")" "$(tar -tf "$chroot_tarball" | wc -l)"
-	tar -tvf "$chroot_tarball" ./usr/bin/dpkg ./bin/sh 2>&1 | head -4 || true
+	note "sbuild: $_name (chroot $chroot_dir)"
 	_sbuild_out=$work/sbuild-out/$_name
 	mkdir -p "$_sbuild_out"
 	chown "$build_uid:$build_gid" "$_sbuild_out"
@@ -120,8 +139,8 @@ build_one() {
 		sbuild \
 			--arch=amd64 \
 			--dist="$DEBIAN_DISTRIBUTION" \
-			--chroot-mode=unshare \
-			--chroot="$chroot_tarball" \
+			--chroot-mode=sudo \
+			--chroot="$DEBIAN_DISTRIBUTION-amd64" \
 			--verbose \
 			--no-run-lintian \
 			--no-source \

@@ -29,32 +29,6 @@ out_dir=$repo_dir/dist/debian-13
 [ -f "$CHROOT_TARBALL" ] ||
 	die "no chroot tarball at $CHROOT_TARBALL; run make-chroot.sh first"
 
-#
-# User namespaces are a host-kernel property, and AppArmor is a host-kernel
-# LSM: `docker run --privileged` makes the container unconfined, but the
-# unprivileged user *inside* it still has no CAP_SYS_ADMIN in the initial
-# namespace, so Ubuntu 24.04's
-# kernel.apparmor_restrict_unprivileged_userns=1 denies it a namespace just
-# as it does on the runner. Measured: container-sbuild.sh's preflight
-# reported "the build user cannot create a user namespace inside this
-# container" until this was relaxed (run 30169877504).
-#
-# Containerising fixed the other half of the problem -- the userland that
-# could not exec inside the chroot -- and this is the half that has to be
-# fixed out here. Restricting unprivileged user namespaces is a hardening
-# measure for multi-user systems; this is a single-use ephemeral runner whose
-# job is to run one namespaced build.
-#
-userns_sysctl=kernel.apparmor_restrict_unprivileged_userns
-if sysctl -n "$userns_sysctl" >/dev/null 2>&1; then
-	note "$userns_sysctl = $(sysctl -n "$userns_sysctl")"
-	if [ "$(sysctl -n "$userns_sysctl")" != "0" ]; then
-		sudo -n sysctl -w "$userns_sysctl=0"
-	fi
-else
-	printf '%s: not present on this kernel\n' "$userns_sysctl"
-fi
-
 note "sbuild both packages inside $IMAGE"
 docker run --privileged --rm \
 	-v "$repo_dir:/repo:ro" \
