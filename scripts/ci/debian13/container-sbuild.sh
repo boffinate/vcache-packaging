@@ -108,6 +108,11 @@ build_one() {
 	[ -f "$_dsc" ] || die "expected $_dsc after dpkg-buildpackage -S"
 
 	note "sbuild: $_name (unshare chroot $chroot_tarball)"
+	# sbuild reports a chroot it cannot introspect as an empty architecture
+	# and says nothing about why, so show what it was handed.
+	printf 'chroot tarball: %s bytes, %s members\n' \
+		"$(wc -c < "$chroot_tarball")" "$(tar -tf "$chroot_tarball" | wc -l)"
+	tar -tvf "$chroot_tarball" ./usr/bin/dpkg ./bin/sh 2>&1 | head -4 || true
 	_sbuild_out=$work/sbuild-out/$_name
 	mkdir -p "$_sbuild_out"
 	chown "$build_uid:$build_gid" "$_sbuild_out"
@@ -117,6 +122,7 @@ build_one() {
 			--dist="$DEBIAN_DISTRIBUTION" \
 			--chroot-mode=unshare \
 			--chroot="$chroot_tarball" \
+			--verbose \
 			--no-run-lintian \
 			--no-source \
 			"$@" \
