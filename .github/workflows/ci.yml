@@ -241,14 +241,18 @@ jobs:
             "$EL9_IMAGE"
         working-directory: vcache-packaging
 
-      - name: report + rpmlint (unchanged, container/build.sh stage_report stage_lint)
+      # `deps` first because this is a fresh container: stage_lint calls
+      # rpmlint directly and stage_deps is what installs it. In the local
+      # lane all stages share one container, so deps has always already run
+      # by the time lint does; here it has not.
+      - name: report + rpmlint (unchanged, container/build.sh stage_deps stage_report stage_lint)
         run: |
           docker run --rm \
             -v "$PWD/recipes/el9:/recipes:ro" \
             -v "$PWD/dist/el9:/out" \
             -w /out \
             "$EL9_IMAGE" \
-            bash /recipes/container/build.sh report lint
+            bash /recipes/container/build.sh deps report lint
         working-directory: vcache-packaging
 
       - name: installed-package smoke, fresh container (unchanged, build.sh --smoke-only)
