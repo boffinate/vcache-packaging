@@ -1,0 +1,275 @@
+name: Release draft assembly
+
+# Draft, unreviewed and unexecuted (see ../DESIGN.md). Manual-trigger only:
+# this is the plan's release workflow steps 1-12 ("Upload every asset to an
+# internal draft GitHub Release for final validation"), NOT step 14
+# ("publish it as a GitHub pre-release"). Publishing the pre-release stays a
+# human/orchestrator action, per the gate note's step-10 sequencing
+# ("CI clean-room builds first, then the draft release, then a real
+# experimental pre-release is allowed").
+#
+# This workflow always does a full, fresh, clean-room rebuild rather than
+# reusing a prior ci.yml run's artifacts -- so that what lands in the draft
+# release is unambiguously the output of one traceable run, not a mix of
+# whatever artifacts happened to still be retained from an earlier one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cachetag_ref:
+        description: >-
+          libvmod-cachetag ref to build from. Defaults to the tracked
+          development branch; pin an exact tag/commit once one exists
+          (see DESIGN.md open question #1).
+        required: false
+        default: packaging-plan-implementation
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  VINYL_GIT_COMMIT: a90954814766d933a75d4c808c449cb9bc0ae3d3
+  VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
+  CACHETAG_SOURCE_SHA256: c7054e69219ff3c54501d9c68857f2117944c4658db4cb08e2821b09b27821a2
+  EL9_IMAGE: almalinux:9
+
+jobs:
+  registry-selftest:
+    name: registry selftest and validate --require-releasable
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: boffinate/libvmod-cachetag
+          ref: ${{ inputs.cachetag_ref }}
+          path: libvmod-cachetag
+      - run: python3 tools/release_tool.py selftest
+        working-directory: vcache-packaging
+      # --require-releasable is EXPECTED to fail while the checked-in cohort
+      # is still `template` (see DESIGN.md open question #2). This step is
+      # informational for now: it records why a real cohort-aware release
+      # cannot be assembled yet, rather than blocking the draft build, which
+      # is still useful evidence on its own.
+      - name: validate --require-releasable (informational until a candidate cohort exists)
+        run: |
+          python3 tools/release_tool.py \
+            --cachetag-src "$GITHUB_WORKSPACE/libvmod-cachetag" \
+            validate --require-releasable || \
+            echo "::warning::registry is not release-ready yet (expected while the cohort is `template`; see DESIGN.md #10.2)"
+        working-directory: vcache-packaging
+
+  cachetag-source-archive:
+    needs: registry-selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: boffinate/libvmod-cachetag
+          ref: ${{ inputs.cachetag_ref }}
+          path: libvmod-cachetag
+          fetch-depth: 0
+      - name: checkout ../vinyl-cache (pinned commit)
+        run: |
+          set -eu
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
+      - name: build docker/vinyl-cache-ubuntu-build.Dockerfile
+        run: |
+          docker build -t vinyl-cache-ubuntu-build \
+            -f docker/vinyl-cache-ubuntu-build.Dockerfile docker
+        working-directory: libvmod-cachetag
+      - name: scripts/release-source-archive.sh
+        run: |
+          bash "$GITHUB_WORKSPACE/vcache-packaging/scripts/ci/source-archive.sh" \
+            "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$VINYL_GIT_COMMIT" \
+            "$CACHETAG_SOURCE_SHA256"
+        working-directory: libvmod-cachetag
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: release-cachetag-source-archive
+          path: |
+            libvmod-cachetag/release/dist/libvmod-cachetag-*.tar.gz
+            libvmod-cachetag/release/dist/libvmod-cachetag-*.metadata.json
+          if-no-files-found: error
+          retention-days: 14
+
+  debian-13:
+    needs: cachetag-source-archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: boffinate/libvmod-cachetag
+          ref: ${{ inputs.cachetag_ref }}
+          path: libvmod-cachetag
+      - name: checkout ../vinyl-cache (pinned commit)
+        run: |
+          set -eu
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-cachetag-source-archive
+          path: libvmod-cachetag/release/dist
+      - run: recipes/debian-13/build.sh source
+        working-directory: vcache-packaging
+      - run: sudo bash scripts/ci/debian13/make-chroot.sh
+        working-directory: vcache-packaging
+      - run: sudo bash scripts/ci/debian13/sbuild-vinyl.sh
+        working-directory: vcache-packaging
+      - run: sudo bash scripts/ci/debian13/sbuild-cachetag.sh
+        working-directory: vcache-packaging
+      - run: bash scripts/ci/debian13/assert-packages.sh
+        working-directory: vcache-packaging
+      - run: recipes/debian-13/build.sh lint smoke sums
+        working-directory: vcache-packaging
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: release-debian-13-packages
+          path: |
+            vcache-packaging/dist/debian-13/*.deb
+            vcache-packaging/dist/debian-13/*.dsc
+            vcache-packaging/dist/debian-13/*.changes
+            vcache-packaging/dist/debian-13/*.buildinfo
+            vcache-packaging/dist/debian-13/*.tar.*
+            vcache-packaging/dist/debian-13/SHA256SUMS
+            vcache-packaging/dist/debian-13/logs/**
+          if-no-files-found: error
+          retention-days: 90
+
+  el9:
+    needs: cachetag-source-archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: boffinate/libvmod-cachetag
+          ref: ${{ inputs.cachetag_ref }}
+          path: libvmod-cachetag
+      - name: checkout ../vinyl-cache (pinned commit)
+        run: |
+          set -eu
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-cachetag-source-archive
+          path: libvmod-cachetag/release/dist
+      - run: |
+          sudo bash scripts/ci/el9/mock-build.sh \
+            "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$GITHUB_WORKSPACE/libvmod-cachetag" \
+            "$EL9_IMAGE"
+        working-directory: vcache-packaging
+      - run: |
+          docker run --rm \
+            -v "$PWD/recipes/el9:/recipes:ro" \
+            -v "$PWD/dist/el9:/out" \
+            -w /out \
+            "$EL9_IMAGE" \
+            bash /recipes/container/build.sh report lint
+          recipes/el9/build.sh --smoke-only
+        working-directory: vcache-packaging
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: release-el9-packages
+          path: |
+            vcache-packaging/dist/el9/packages/*.rpm
+            vcache-packaging/dist/el9/SHA256SUMS
+            vcache-packaging/dist/el9/logs/**
+          if-no-files-found: error
+          retention-days: 90
+
+  assemble-draft-release:
+    name: assemble the internal draft GitHub Release
+    needs: [debian-13, el9]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Elevated permissions and a protected environment are confined to this
+    # one job. Configure the `release-draft` environment's protection rules
+    # (required reviewers, or restrict to a release-owner team) in the
+    # repository settings; this workflow file only names the environment.
+    environment: release-draft
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+
+      # Downloaded into separate subdirectories, not one shared "assets"
+      # directory: both lanes produce a file literally named SHA256SUMS, and
+      # a shared directory would silently let the second download clobber
+      # the first. release-manifest.sh reads all three subdirectories and
+      # writes one merged, lane-qualified checksum file.
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-cachetag-source-archive
+          path: assets/source-archive
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-debian-13-packages
+          path: assets/debian-13
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-el9-packages
+          path: assets/el9
+
+      - name: assemble release-manifest.json and the aggregate SHA256SUMS
+        run: |
+          bash scripts/ci/release-manifest.sh \
+            "$GITHUB_WORKSPACE/assets" \
+            "$GITHUB_RUN_ID" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+        working-directory: vcache-packaging
+
+      - name: flatten release assets into one upload directory
+        run: |
+          set -eu
+          mkdir -p upload
+          # release-manifest.sh writes these two directly into assets/.
+          cp assets/RELEASE-SHA256SUMS assets/release-manifest.json upload/
+          # Per-artifact layout mirrors each upload-artifact step's `path:`
+          # globs in this same workflow -- update both together if either
+          # changes. Lane SHA256SUMS files are deliberately excluded: the
+          # merged RELEASE-SHA256SUMS above is the release asset.
+          cp assets/source-archive/*.tar.gz assets/source-archive/*.metadata.json upload/
+          cp assets/debian-13/*.deb assets/debian-13/*.dsc assets/debian-13/*.changes \
+            assets/debian-13/*.buildinfo assets/debian-13/*.tar.* upload/
+          cp assets/el9/packages/*.rpm upload/
+
+      - name: create the internal draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag="draft-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA:0:12}"
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --title "Draft: $tag" \
+            --notes "Internal draft assembled by release-draft.yml, run $GITHUB_RUN_ID. \
+          NOT a public pre-release. A human/orchestrator publishes the real \
+          pre-release from a validated draft, per the step-10 gate decision." \
+            upload/*
