@@ -191,3 +191,19 @@ The docker-export chroot was abandoned on 2026-07-25. The elimination table abov
 The plan offers "pin buildroot repositories **or** record exact resolved package versions". The Debian lane now does the former: `DEBIAN_SNAPSHOT=20260701T000000Z` in `pins.env`, and mmdebstrap builds from `https://snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT/`. snapshot.debian.org was measured before committing to it -- it answered in under 0.2s and built a full buildd chroot in 45-80s, so the throttling that usually argues against it did not appear. The fallback (plain mirror plus a recorded package list) was not needed.
 
 Both are recorded anyway: `dist/debian-13/logs/buildroot-packages.txt` lists every package and version the snapshot resolved to, which is the Debian counterpart of the EL9 lane's `logs/buildroot-packages.tsv`. EL9 keeps record-and-audit because Mock resolves from AlmaLinux's live mirrors, which have no snapshot service.
+
+## Green
+
+Run [30172378393](https://github.com/boffinate/vcache-packaging/actions/runs/30172378393), all five jobs:
+
+| job | result | wall time | budget |
+| --- | --- | --- | --- |
+| registry selftest and validate | success | 7s | 10m |
+| build and pin the cachetag source archive | success | 6m11s | 20m |
+| Debian 13 amd64 (sbuild) | success | 5m40s | 20m |
+| EL9 x86_64 (Mock) | success | 7m48s | 15m |
+| combined checksum summary | success | 4s | 5m |
+
+Inside the Debian lane: the mmdebstrap chroot from snapshot `20260701T000000Z`, `build-essential=12.12`, vinyl-cache built in the chroot (`Status: successful`, Build-Time 46s, Install-Time 47s), libvmod-cachetag built against it with `--extra-package` (`Status: successful`, Build-Time 8s), then the unchanged assertions: strict-ABI Provides/Depends, no `vmod_tag` in the packaged Vinyl, and hardening PASS on all five checks for both `vinyld` and `libvmod_cachetag.so` (stack-protector, RELRO, BIND_NOW, PIE, fortify-source), lintian, the installed-package smoke in a fresh container, and checksums.
+
+The clean-room requirement the whole design exists for is now actually met on both lanes: sbuild against a snapshot-pinned buildd chroot, Mock against a fresh buildroot, neither of them using the runner's userland for anything but starting a container.
