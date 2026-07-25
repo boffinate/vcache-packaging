@@ -71,11 +71,29 @@ trap - EXIT
 docker rm -f "$cid" >/dev/null
 
 # Assert the export really is a root filesystem before a build depends on it.
-for path in ./etc/os-release ./proc/ ./sys/ ./dev/; do
-	tar -tf "$CHROOT_TARBALL" "$path" >/dev/null 2>&1 ||
+# `docker export` names members without a leading "./" (etc/, proc/, dev/),
+# unlike `tar -C / -cf - .`, so accept either spelling rather than assuming.
+#
+# The member list goes to a file, and grep reads that file rather than a pipe.
+# Under `set -o pipefail`, `printf '%s\n' "$members" | grep -q ...` reports 141
+# even on a match: grep exits at the first hit, printf takes SIGPIPE, and
+# pipefail surfaces printf's status as the pipeline's.
+#
+members=$(mktemp)
+trap 'rm -f "$members"' EXIT
+tar -tf "$CHROOT_TARBALL" > "$members"
+for path in etc/os-release proc/ sys/ dev/; do
+	grep -qx -e "$path" -e "./$path" "$members" ||
 		die "$CHROOT_TARBALL does not contain $path; the docker export is not a usable chroot"
 done
-tar -xOf "$CHROOT_TARBALL" ./etc/os-release | head -3
+if grep -qx etc/os-release "$members"; then prefix=""; else prefix="./"; fi
+# /etc/os-release is a symlink to ../usr/lib/os-release on Debian, so read the
+# target: extracting the symlink member itself yields no content. Captured
+# rather than piped to `head` for the pipefail reason above -- `head` exiting
+# early would leave tar with SIGPIPE.
+os_release=$(tar -xOf "$CHROOT_TARBALL" "${prefix}usr/lib/os-release" 2>/dev/null || true)
+[ -n "$os_release" ] || die "$CHROOT_TARBALL has no readable os-release"
+printf '%s\n' "$os_release" | sed -n '1,3p'
 
 printf 'OK: sbuild unshare chroot tarball ready at %s (%s bytes)\n' \
 	"$CHROOT_TARBALL" "$(wc -c < "$CHROOT_TARBALL")"
