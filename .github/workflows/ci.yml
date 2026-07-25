@@ -157,15 +157,15 @@ jobs:
         working-directory: vcache-packaging
 
       - name: materialize the sbuild chroot from the pinned digest
-        run: sudo bash scripts/ci/debian13/make-chroot.sh
+        run: bash scripts/ci/debian13/make-chroot.sh
         working-directory: vcache-packaging
 
       - name: sbuild vinyl-cache
-        run: sudo bash scripts/ci/debian13/sbuild-vinyl.sh
+        run: bash scripts/ci/debian13/sbuild-vinyl.sh
         working-directory: vcache-packaging
 
       - name: sbuild libvmod-cachetag (against the vinyl-cache .debs just built)
-        run: sudo bash scripts/ci/debian13/sbuild-cachetag.sh
+        run: bash scripts/ci/debian13/sbuild-cachetag.sh
         working-directory: vcache-packaging
 
       - name: ABI and hardening assertions (mirrors stage-vinyl.sh / stage-cachetag.sh)
@@ -235,7 +235,7 @@ jobs:
 
       - name: Mock build (vinyl-cache, then libvmod-cachetag)
         run: |
-          sudo bash scripts/ci/el9/mock-build.sh \
+          bash scripts/ci/el9/mock-build.sh \
             "$GITHUB_WORKSPACE/vinyl-cache" \
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "$EL9_IMAGE"

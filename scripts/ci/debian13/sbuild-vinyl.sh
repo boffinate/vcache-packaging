@@ -10,9 +10,8 @@
 # substituted and in place) and everything AFTER it (assert-packages.sh,
 # then the unmodified build.sh lint/smoke/sums stages) is reused unchanged.
 #
-# Must run as root (workflow step: `sudo bash ...`), same as make-chroot.sh.
-#
-# DRAFT, unexecuted -- see ../../../DESIGN.md section 4.
+# Runs as the ordinary build user, not root: sbuild's unshare backend needs
+# the invoking user to have an /etc/subuid range. See make-chroot.sh.
 
 set -euo pipefail
 
@@ -25,9 +24,11 @@ out_dir=$repo_dir/dist/debian-13
 work_dir=$out_dir/work
 src_dir=$work_dir/build/vinyl-cache-$VINYL_UPSTREAM_VERSION
 
+[ "$(id -u)" -ne 0 ] || die "run this as the ordinary build user, not root (see make-chroot.sh)"
 [ -d "$src_dir/debian" ] ||
 	die "$src_dir has no debian/ tree; run recipes/debian-13/build.sh source first"
-[ -d "$CHROOT_DIR" ] || die "no sbuild chroot at $CHROOT_DIR; run make-chroot.sh first"
+[ -f "$CHROOT_TARBALL" ] ||
+	die "no sbuild chroot tarball at $CHROOT_TARBALL; run make-chroot.sh first"
 
 note "dpkg-buildpackage -S: Vinyl Cache source package"
 (
@@ -36,10 +37,13 @@ note "dpkg-buildpackage -S: Vinyl Cache source package"
 	dpkg-buildpackage -S -us -uc -d
 )
 
-dsc="$work_dir/build/vinyl-cache_${VINYL_PACKAGE_VERSION}_source.changes"
+# sbuild builds from the .dsc. Handing it the *_source.changes that
+# `dpkg-buildpackage -S` writes alongside it fails with "E: Failed to fetch
+# source files" (measured 2026-07-25, sbuild 0.89.3+deb13u4).
+dsc="$work_dir/build/vinyl-cache_${VINYL_PACKAGE_VERSION}.dsc"
 [ -f "$dsc" ] || die "expected $dsc after dpkg-buildpackage -S"
 
-note "sbuild: vinyl-cache (unshare chroot $CHROOT_DIR)"
+note "sbuild: vinyl-cache (unshare chroot $CHROOT_TARBALL)"
 sbuild_out=$work_dir/sbuild-out/vinyl
 mkdir -p "$sbuild_out"
 (
@@ -49,10 +53,9 @@ mkdir -p "$sbuild_out"
 		--arch=amd64 \
 		--dist="$DEBIAN_DISTRIBUTION" \
 		--chroot-mode=unshare \
-		--chroot="$CHROOT_DIR" \
+		--chroot="$CHROOT_TARBALL" \
 		--no-run-lintian \
 		--no-source \
-		-us -uc \
 		"$dsc"
 )
 

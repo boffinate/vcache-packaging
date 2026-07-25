@@ -8,12 +8,11 @@
 #
 # Usage: mock-build.sh VINYL_GIT_DIR CACHETAG_GIT_DIR EL9_IMAGE
 #
-# Must run with enough privilege to pass --privileged to `docker run` for the
-# Mock stage specifically (Mock's chroot/bind-mount isolation needs it); the
-# ci.yml workflow runs this whole script under `sudo` for simplicity, even
-# though only the Mock step strictly requires elevated privilege.
-#
-# DRAFT, unexecuted -- see ../../../DESIGN.md section 5.
+# Runs as the ordinary build user. `docker run --privileged` is what gives
+# Mock the chroot/bind-mount isolation it needs, and that needs docker-group
+# membership, not root: running the script itself under `sudo` would leave
+# dist/el9/ owned by root, and the later non-privileged steps
+# (recipes/el9/build.sh --smoke-only, artifact upload) write into it.
 
 set -eu
 

@@ -41,22 +41,34 @@ ci_checkout_vinyl_cache() {
 	rm -rf "$_dest"
 	mkdir -p "$_dest"
 
-	# Try a shallow, commit-targeted fetch first to bound clone time; a
-	# commit that is not a branch/tag tip may not be shallow-fetchable
-	# depending on the server's uploadpack.allowReachableSHA1InWant setting,
-	# so a full clone is the documented, unconditionally-correct fallback.
-	# UNVERIFIED in this draft: no network access to code.vinyl-cache.org
-	# was available while writing this script.
-	git -C "$_dest" init -q
-	git -C "$_dest" remote add origin "$_remote"
-	if git -C "$_dest" fetch -q --depth 1 origin "$_commit" 2>/dev/null; then
-		git -C "$_dest" checkout -q FETCH_HEAD
-	else
-		note "shallow fetch of $_commit failed or is unsupported by the server; falling back to a full clone"
-		rm -rf "$_dest"
-		git clone -q "$_remote" "$_dest"
-		git -C "$_dest" checkout -q "$_commit"
-	fi
+	# A full clone is the only option here. Measured 2026-07-25: this server
+	# answers /info/refs?service=git-upload-pack with `content-type:
+	# text/plain`, i.e. it serves the repository over *dumb* HTTP, so any
+	# commit-targeted `git fetch --depth 1` dies with "dumb http transport
+	# does not support shallow capabilities" regardless of the commit. The
+	# earlier draft attempted a shallow fetch first; that attempt could never
+	# succeed against this remote, and its failure masked the real error
+	# below behind git's obscure "unable to read tree" message.
+	rm -rf "$_dest"
+	git clone -q "$_remote" "$_dest"
+
+	# A dumb-HTTP clone carries exactly what the published refs reach. If the
+	# pinned commit is not among them the checkout below fails with an error
+	# that names an object id but not the cause, so say the cause plainly.
+	#
+	# NEVER "fix" this by picking a commit the remote does have. A pinned
+	# commit the public remote cannot serve means the input this pipeline is
+	# pinned against has not been published; publishing it (or deliberately
+	# re-pinning, in a change that explains why) is the fix.
+	git -C "$_dest" cat-file -e "$_commit^{commit}" 2>/dev/null || die \
+"pinned Vinyl commit $_commit is not reachable from any ref published by
+$_remote (a full clone of it does not contain the object). The pin is not
+wrong-valued, it is unpublished: nothing this workflow can do makes it
+fetchable. Push the branch carrying it to the public remote, or re-pin
+deliberately, and update recipes/debian-13/build.sh, recipes/el9/cohort.env,
+scripts/ci/debian13/pinned.sh and .github/workflows/*.yml together."
+
+	git -C "$_dest" checkout -q --detach "$_commit"
 
 	_got=$(git -C "$_dest" rev-parse HEAD)
 	[ "$_got" = "$_commit" ] ||

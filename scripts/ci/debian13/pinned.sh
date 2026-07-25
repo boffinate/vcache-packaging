@@ -32,5 +32,8 @@ IMAGE_REF=${IMAGE_REF:-debian:trixie}
 IMAGE_DIGEST=${IMAGE_DIGEST:-sha256:fac46bff2e02f51425b6e33b0e1169f55dfb053d83511ca28aa50c09fd5ed7a4}
 IMAGE="$IMAGE_REF@$IMAGE_DIGEST"
 
-# Where make-chroot.sh materializes the sbuild unshare chroot.
-CHROOT_DIR=${CHROOT_DIR:-/srv/chroot/vinyl-trixie-amd64}
+# Where make-chroot.sh materializes the sbuild unshare chroot. sbuild's
+# unshare backend consumes a TARBALL (sbuild(1), --chroot), and it must be
+# readable by the unprivileged user that runs sbuild, so this lives in that
+# user's cache directory -- which is also where sbuild looks by default.
+CHROOT_TARBALL=${CHROOT_TARBALL:-${XDG_CACHE_HOME:-$HOME/.cache}/sbuild/$DEBIAN_DISTRIBUTION-amd64.tar}
