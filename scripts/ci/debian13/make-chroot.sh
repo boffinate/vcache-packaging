@@ -112,6 +112,41 @@ else
 	die "this user cannot create a user namespace and $userns_sysctl does not exist to relax; sbuild --chroot-mode=unshare cannot work here"
 fi
 
+#
+# sbuild's unshare backend unpacks the chroot into $unshare_tmpdir_template,
+# which defaults to /tmp/tmp.sbuild.XXXXXXXXXX, and then execs dpkg inside it.
+# On this runner that exec fails with EACCES:
+#
+#   Can't exec "dpkg": Permission denied at /usr/libexec/sbuild-usernsexec line 561
+#
+# EACCES on exec of a mode-0755 binary is the signature of a noexec mount, so
+# measure it, and put the session directory somewhere known-executable either
+# way. $HOME is on the same filesystem as the workspace the build already
+# writes to.
+#
+note "exec-from-/tmp preflight"
+tmp_exec_probe=$(mktemp /tmp/exec-probe.XXXXXX)
+printf '#!/bin/sh\necho executable\n' > "$tmp_exec_probe"
+chmod 0755 "$tmp_exec_probe"
+if "$tmp_exec_probe" >/dev/null 2>&1; then
+	printf 'OK: /tmp permits exec\n'
+else
+	printf 'NOTE: /tmp does NOT permit exec -- this is what breaks sbuild unshare\n'
+fi
+grep -E ' /tmp ' /proc/mounts || printf '/tmp is not a separate mount\n'
+rm -f "$tmp_exec_probe"
+
+note "pointing sbuild's unshare session directory at \$HOME"
+mkdir -p "$HOME/.config/sbuild" "$HOME/.cache/sbuild"
+cat > "$HOME/.config/sbuild/config.pl" <<'PERL'
+# Written by scripts/ci/debian13/make-chroot.sh. sbuild unpacks the chroot
+# here and executes binaries from it, so it must be on an exec-permitting
+# filesystem; the /tmp default is not one on a GitHub runner.
+$unshare_tmpdir_template = $ENV{'HOME'} . '/.cache/sbuild/tmp.sbuild.XXXXXXXXXX';
+1;
+PERL
+cat "$HOME/.config/sbuild/config.pl"
+
 note "materializing $IMAGE into $CHROOT_TARBALL"
 # The unshare backend takes a chroot TARBALL, not a directory: sbuild(1),
 # --chroot: "With the unshare chroot mode, if this option is a path, then it
