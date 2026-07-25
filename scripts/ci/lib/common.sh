@@ -33,6 +33,22 @@ sha256_file() {
 # mismatch here means the sibling checkout does not contain the input the
 # rest of this pipeline is pinned against, and every downstream digest
 # assertion depends on that not being silently true.
+# ci_take_ownership DIR
+#
+# recipes/debian-13/build.sh's source stage assembles dist/debian-13/work/
+# inside a container, so every file in it is owned by root on the host, while
+# sbuild has to run as the ordinary build user (see debian13/make-chroot.sh).
+# `dpkg-buildpackage -S` writes into that tree, so hand it over first. Nothing
+# about the tree's *content* changes; this is ownership only.
+ci_take_ownership() {
+	_dir=$1
+	[ -e "$_dir" ] || die "cannot take ownership of $_dir: it does not exist"
+	if [ ! -w "$_dir" ] || [ -n "$(find "$_dir" ! -user "$(id -u)" -print -quit)" ]; then
+		note "taking ownership of $_dir (assembled as root inside a container)"
+		sudo -n chown -R "$(id -u):$(id -g)" "$_dir"
+	fi
+}
+
 ci_checkout_vinyl_cache() {
 	_dest=$1; _commit=$2; _vtest2_commit=$3
 	_remote=https://code.vinyl-cache.org/vinyl-cache/vinyl-cache.git

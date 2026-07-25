@@ -76,6 +76,23 @@ case "$dev_depends" in
 	*) die "dev package does not depend on the exact matching runtime" ;;
 esac
 
+note "vinyl-cache: upstream purity, no benchmark-scaffolding vmod_tag"
+# Mirrors the assertion stage-vinyl.sh gained in 7b54802. It has to be
+# repeated here for the same reason the ABI assertions above are: the CI lane
+# builds with sbuild and never runs stage-vinyl.sh, so without this the
+# clean-room lane would be the one lane that cannot catch a Vinyl re-pin
+# regressing to a tree carrying an in-tree vmod_tag.
+tag_files=$(
+	for f in "$runtime_deb" "$dev_deb"; do
+		dpkg-deb -c "$f" | awk '{print $NF}'
+	done | { grep -E 'vmod_tag|libvmod_tag' || true; }
+)
+if [ -n "$tag_files" ]; then
+	printf '%s\n' "$tag_files" >&2
+	die "packaged Vinyl contains vmod_tag artifacts"
+fi
+printf 'OK: no vmod_tag file in the runtime or dev package\n'
+
 note "vinyl-cache runtime: hardening inspection (production profile)"
 mkdir -p /tmp/hx-vinyl
 dpkg-deb -x "$runtime_deb" /tmp/hx-vinyl

@@ -37,6 +37,8 @@ vinyl_dev_deb=$(ls "$out_dir"/vinyl-cache-dev_"${VINYL_PACKAGE_VERSION}"_*.deb 2
 [ -n "$vinyl_deb" ] || die "vinyl-cache_${VINYL_PACKAGE_VERSION}_*.deb not found in $out_dir; run sbuild-vinyl.sh first"
 [ -n "$vinyl_dev_deb" ] || die "vinyl-cache-dev_${VINYL_PACKAGE_VERSION}_*.deb not found in $out_dir; run sbuild-vinyl.sh first"
 
+ci_take_ownership "$work_dir"
+
 note "dpkg-buildpackage -S: libvmod-cachetag source package"
 (
 	cd "$src_dir"

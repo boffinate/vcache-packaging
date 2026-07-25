@@ -30,6 +30,8 @@ src_dir=$work_dir/build/vinyl-cache-$VINYL_UPSTREAM_VERSION
 [ -f "$CHROOT_TARBALL" ] ||
 	die "no sbuild chroot tarball at $CHROOT_TARBALL; run make-chroot.sh first"
 
+ci_take_ownership "$work_dir"
+
 note "dpkg-buildpackage -S: Vinyl Cache source package"
 (
 	cd "$src_dir"
