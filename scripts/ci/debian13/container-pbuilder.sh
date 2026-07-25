@@ -77,6 +77,24 @@ PBUILDERSATISFYDEPENDSCMD=/usr/lib/pbuilder/pbuilder-satisfydepends-apt
 PBUILDERRC
 cat /etc/pbuilderrc
 
+#
+# pbuilder does not refresh apt inside the chroot before resolving
+# Build-Depends, and mmdebstrap ships the chroot with its package lists
+# cleaned, so the first apt-resolver run reported every single build
+# dependency as "not installable" from empty lists. A D hook runs inside the
+# chroot after the apt lines are installed and before dependencies are
+# resolved, which is also exactly what the cachetag build needs so apt can
+# see the local repository added with --othermirror.
+#
+note "pbuilder hooks"
+mkdir -p /pbuilder-hooks
+cat > /pbuilder-hooks/D05update <<'HOOK'
+#!/bin/sh
+set -e
+apt-get update
+HOOK
+chmod 0755 /pbuilder-hooks/D05update
+
 note "compressing the mmdebstrap base tarball"
 # pbuilder's --basetgz is a gzipped tarball; make-chroot.sh writes a plain tar
 # because that is what it can assert against and record a package list from.
@@ -113,6 +131,7 @@ build_one() {
 		--components main \
 		--mirror "$DEBIAN_SNAPSHOT_URI" \
 		--architecture amd64 \
+		--hookdir /pbuilder-hooks \
 		--no-auto-cross \
 		"$@" \
 		"$_dsc"
