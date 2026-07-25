@@ -52,16 +52,19 @@ cat "$assets/RELEASE-SHA256SUMS"
 
 note "writing $assets/release-manifest.json"
 
-# Pinned values, restated here (see DESIGN.md section 2/11 on why: each of
-# these values also lives in recipes/debian-13/build.sh and
-# recipes/el9/cohort.env, and this script has no dependency on either
-# lane's own process having left an env dump behind for it to read).
-vinyl_commit=25761f8505817ac50df994270bfe75b60073e33e
-vinyl_strict_abi=$vinyl_commit
-vinyl_upstream_version="9.0.0~git20260520.25761f8505"
-vinyl_vrt=23.0
-cachetag_version=1.0.0
-cachetag_source_sha256=a262ac7a74a1464d4c0a4cc6f072ea04a77ff660b25bf0befd32dc63c18fb329
+# Pinned values, read from the single definition in
+# recipes/debian-13/pins.env rather than restated here. This script used to
+# carry its own copy of every one of them, which made four copies of the
+# cachetag digest in this repository; the 2026-07-25 re-pin had to find and
+# move all four, and an earlier one missed a fifth (scripts/ci/debian13/pinned.sh).
+. "$(CDPATH= cd -- "$here/../.." && pwd)/recipes/debian-13/pins.env"
+
+vinyl_commit=$VINYL_GIT_COMMIT
+vinyl_strict_abi=$VINYL_STRICT_ABI
+vinyl_upstream_version=$VINYL_UPSTREAM_VERSION
+vinyl_vrt=$VINYL_VRT_EXPECTED
+cachetag_version=$CACHETAG_VERSION
+cachetag_source_sha256=$CACHETAG_SOURCE_SHA256
 
 cat > "$assets/release-manifest.json" <<JSON
 {

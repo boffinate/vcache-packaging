@@ -1,45 +1,25 @@
 #!/bin/sh
 #
-# Pinned inputs shared by the scripts/ci/debian13/*.sh CI scripts.
+# Pinned inputs for the scripts/ci/debian13/*.sh CI scripts.
 #
-# This mirrors the "PINNED INPUTS" block at the top of
-# recipes/debian-13/build.sh verbatim. It is the one deliberate piece of
-# constant duplication in this design beyond assert-packages.sh (see
-# DESIGN.md section 2 and section 11): each CI step after `build.sh source`
-# runs in its own shell invocation (a separate GitHub Actions step), so
-# values build.sh computed in its own process are not otherwise visible to
-# them. Keep this file byte-identical to build.sh's block; a divergence here
-# is a bug, not a place to improvise a different value.
+# This file no longer states any pinned value. It reads them from
+# recipes/debian-13/pins.env, the single definition it shares with
+# recipes/debian-13/build.sh, and adds only what exists because CI runs the
+# lane differently: where the chroot tarball lives.
 #
-# The 2026-07-25 cachetag re-pin (92fac70) moved
-# CACHETAG_SOURCE_DATE_EPOCH in build.sh and left this copy behind, which is
-# exactly the divergence this header warns about: the sbuild lane would have
-# stamped the package with one epoch while the changelog build.sh substituted
-# carried another. If a later change adds a value here, add it to build.sh's
-# block too, and vice versa.
+# It used to be a hand-maintained mirror of build.sh's pinned block, with a
+# header instructing whoever changed one to change the other. On 2026-07-25
+# the cachetag re-pin moved CACHETAG_SOURCE_DATE_EPOCH in build.sh and not
+# here, and nothing caught it: each copy was internally consistent, so the
+# only symptom would have been a package whose file timestamps disagreed with
+# its own changelog. Mirrors rot; readers do not.
 
-VINYL_GIT_COMMIT=25761f8505817ac50df994270bfe75b60073e33e
-VINYL_STRICT_ABI=$VINYL_GIT_COMMIT
-VINYL_UPSTREAM_VERSION=9.0.0~git20260520.25761f8505
-VINYL_PACKAGE_REVISION=1
-VINYL_PACKAGE_VERSION=$VINYL_UPSTREAM_VERSION-$VINYL_PACKAGE_REVISION
-VINYL_SOURCE_DATE_EPOCH=1779265093
-VINYL_VRT_EXPECTED=23.0
+_here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+_repo=$(CDPATH= cd -- "$_here/../../.." && pwd)
 
-CACHETAG_GIT_COMMIT=fcc369d23b199cc8e41086f28f2322256a8843d9
-CACHETAG_VERSION=1.0.0
-CACHETAG_PACKAGE_REVISION=1
-CACHETAG_DEBIAN_VERSION=$CACHETAG_VERSION-$CACHETAG_PACKAGE_REVISION
-CACHETAG_SOURCE_DATE_EPOCH=1784997430
+. "$_repo/recipes/debian-13/pins.env"
 
-DEBIAN_DISTRIBUTION=trixie
-
-IMAGE_REF=${IMAGE_REF:-debian:trixie}
-IMAGE_DIGEST=${IMAGE_DIGEST:-sha256:fac46bff2e02f51425b6e33b0e1169f55dfb053d83511ca28aa50c09fd5ed7a4}
-IMAGE="$IMAGE_REF@$IMAGE_DIGEST"
-
-# Where make-chroot.sh materializes the sbuild unshare chroot. sbuild's
-# unshare backend consumes a TARBALL (sbuild(1), --chroot), and it must be
-# readable by the unprivileged user that runs sbuild, so this lives in that
-# user's cache directory -- which is also where sbuild looks by default.
-CHROOT_TARBALL=${CHROOT_TARBALL:-${XDG_CACHE_HOME:-$HOME/.cache}/sbuild/$DEBIAN_DISTRIBUTION-amd64.tar}
+# Where make-chroot.sh materializes the sbuild unshare chroot. It lives under
+# the lane's own work directory because sbuild runs inside a container that
+# has that directory mounted; see scripts/ci/debian13/sbuild-lane.sh.
+CHROOT_TARBALL=${CHROOT_TARBALL:-$_repo/dist/debian-13/work/chroot/$DEBIAN_DISTRIBUTION-amd64.tar}

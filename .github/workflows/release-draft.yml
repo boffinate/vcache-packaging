@@ -131,9 +131,7 @@ jobs:
         working-directory: vcache-packaging
       - run: bash scripts/ci/debian13/make-chroot.sh
         working-directory: vcache-packaging
-      - run: bash scripts/ci/debian13/sbuild-vinyl.sh
-        working-directory: vcache-packaging
-      - run: bash scripts/ci/debian13/sbuild-cachetag.sh
+      - run: bash scripts/ci/debian13/sbuild-lane.sh
         working-directory: vcache-packaging
       - run: bash scripts/ci/debian13/assert-packages.sh
         working-directory: vcache-packaging

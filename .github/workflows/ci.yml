@@ -73,10 +73,10 @@ jobs:
     name: build and pin the cachetag source archive
     needs: registry-selftest
     runs-on: ubuntu-latest
-    # See DESIGN.md #9: a full Vinyl autotools build plus a full `make
-    # distcheck` of the Default-storage VTC suite. Unmeasured; this is a
-    # guess, not a measurement.
-    timeout-minutes: 90
+    # Measured 2026-07-25 across six green runs: 6m09s-8m02s, the spread
+    # being runner-to-runner variance on identical input. 20 minutes is a
+    # "something has hung" guard, not a target.
+    timeout-minutes: 20
     steps:
       - name: checkout vcache-packaging
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -127,7 +127,7 @@ jobs:
     name: Debian 13 amd64 (sbuild)
     needs: cachetag-source-archive
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: checkout vcache-packaging
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -162,12 +162,8 @@ jobs:
         run: bash scripts/ci/debian13/make-chroot.sh
         working-directory: vcache-packaging
 
-      - name: sbuild vinyl-cache
-        run: bash scripts/ci/debian13/sbuild-vinyl.sh
-        working-directory: vcache-packaging
-
-      - name: sbuild libvmod-cachetag (against the vinyl-cache .debs just built)
-        run: bash scripts/ci/debian13/sbuild-cachetag.sh
+      - name: sbuild both packages in the pinned debian:trixie container
+        run: bash scripts/ci/debian13/sbuild-lane.sh
         working-directory: vcache-packaging
 
       - name: ABI and hardening assertions (mirrors stage-vinyl.sh / stage-cachetag.sh)
@@ -208,7 +204,7 @@ jobs:
     name: EL9 x86_64 (Mock)
     needs: cachetag-source-archive
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: checkout vcache-packaging
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

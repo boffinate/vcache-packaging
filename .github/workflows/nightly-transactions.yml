@@ -97,11 +97,8 @@ jobs:
       - name: sbuild chroot
         run: bash scripts/ci/debian13/make-chroot.sh
         working-directory: vcache-packaging
-      - name: sbuild vinyl-cache
-        run: bash scripts/ci/debian13/sbuild-vinyl.sh
-        working-directory: vcache-packaging
-      - name: sbuild cachetag
-        run: bash scripts/ci/debian13/sbuild-cachetag.sh
+      - name: sbuild both packages (pinned container)
+        run: bash scripts/ci/debian13/sbuild-lane.sh
         working-directory: vcache-packaging
       - name: ABI/hardening assertions
         run: bash scripts/ci/debian13/assert-packages.sh
