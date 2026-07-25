@@ -139,3 +139,38 @@ Ruled out, each by measurement rather than reasoning:
 The discriminating fact is not on the runner at all. The same tarball, the same sbuild invocation and the same unprivileged-user-with-subuids setup build a package to `Status: successful` inside a `debian:trixie` container, and fail with this exact error inside an `ubuntu:24.04` container. It is a property of the Ubuntu 24.04 userland, not of GitHub Actions, and not of anything this repository controls.
 
 **The recommendation is to stop fighting the runner's userland and give the Debian lane the shape the EL9 lane already has**: run sbuild inside a privileged, digest-pinned `debian:trixie` container, exactly as the Mock lane runs inside a privileged, digest-pinned `almalinux:9` container. That is the one environment where this recipe is known to work end to end, it makes the two lanes structurally symmetric, and it removes "whatever userland ubuntu-latest happens to ship" as an unpinned input to a lane whose entire purpose is a pinned buildroot. `make-chroot.sh` keeps its job (export the pinned image to a tarball); `sbuild-vinyl.sh` and `sbuild-cachetag.sh` move inside the container, the way `container-mock.sh` did.
+
+## The containerised Debian lane, and where it now stops
+
+The recommendation above was implemented: `sbuild-lane.sh` starts a privileged container from the digest-pinned `debian:trixie`, and `container-sbuild.sh` builds both packages inside it, mirroring `mock-build.sh` / `container-mock.sh`. The pins moved to `recipes/debian-13/pins.env`, which `build.sh`, the CI scripts and `release-manifest.sh` all read, so the five hand-mirrored copies that produced the epoch drift are gone.
+
+Containerising did what it was supposed to: it removed the runner's userland as an input. It did not make the lane green, and the reason is worth stating precisely, because it changes what the next step should be.
+
+**`--chroot-mode=unshare` is not available on this runner, at any layer.** Inside the pinned container, the build user gets a namespace (the host sysctl relax in `sbuild-lane.sh` is what allows that) and then still cannot exec inside the unpacked chroot:
+
+```
+I: Creating chroot session...
+Can't exec "dpkg": Permission denied at /usr/libexec/sbuild-usernsexec line 613
+E: Can't determine architecture of chroot:
+```
+
+The same image, the same tarball, the same sbuild version and the same user setup get past arch detection when that container runs on a different host. Everything this repository can pin has been eliminated by measurement; what remains is the runner's kernel and LSM policy.
+
+**`--chroot-mode=sudo` no longer exists.** sbuild 0.89 answers `E: CHROOT_MODE=sudo (or unset) is unsupported`.
+
+**`--chroot-mode=schroot` is the remaining option, and a `docker export` rootfs is not a build chroot.** Reproduced locally, so the next session can iterate without CI round-trips. Solved so far: the build user must be in the `sbuild` group (`sbuild-adduser`), and the chroot needs `/run/lock` (sbuild writes `/var/lock/sbuild` *inside* it), a writable `/tmp`, `/build`, and a `resolv.conf` docker keeps outside the image. All of those are now in `container-sbuild.sh`. Still failing at `E: Error locking chroot session`, whose proximate cause is visible when the lock command is run by hand:
+
+```
+E: Failed to change to directory '/home/sbuilder/w': No such file or directory
+I: The directory does not exist inside the chroot.
+```
+
+sbuild runs its lock command inside the session with the invoking directory as cwd, and the sbuild schroot profile does not bind-mount `/home` (confirmed: no `/home` line in `/etc/schroot/sbuild/fstab`). Adding one did not by itself clear it.
+
+### What to try next, in order of my confidence
+
+1. **Build the chroot with `mmdebstrap` inside the pinned container** rather than adapting a `docker export`. `sbuild-createchroot`/`mmdebstrap` produce what schroot and sbuild expect; the digest pin can move to "the trixie suite as of a recorded snapshot" or the mmdebstrap run can be seeded from the pinned rootfs. Everything failing now is a way in which a container image differs from a build chroot, and this stops enumerating those differences one CI run at a time.
+2. **Run sbuild from a directory that exists inside the chroot** (`/build`), which is what the `Failed to change to directory` message is really asking for.
+3. **Reserve sbuild for the release workflow** and let `ci.yml` use `recipes/debian-13/build.sh vinyl cachetag` -- the container path that is already green locally -- so CI gates packages on every push while the clean-room builder is settled separately.
+
+The EL9 lane is green and repeatable throughout all of this, and its architecture is the one being copied, so the shape is right; it is the Debian buildroot's provenance that is unresolved.

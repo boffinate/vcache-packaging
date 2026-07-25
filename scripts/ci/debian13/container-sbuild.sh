@@ -39,7 +39,9 @@
 # is the runner's own kernel and LSM policy, which this repository cannot
 # pin and should not depend on.
 #
-# So the chroot is entered with sudo rather than a user namespace. The
+# So the chroot is entered with schroot rather than a user namespace. (sudo
+# mode, the other namespace-free option, was removed in sbuild 0.89: "E:
+# CHROOT_MODE=sudo (or unset) is unsupported".) The
 # clean-room property is unchanged and comes from where it always came from:
 # a fresh chroot unpacked from the digest-pinned tarball for each build,
 # resolving Build-Depends from debian/control inside it. The user namespace
@@ -66,47 +68,66 @@ note "build toolchain"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 # sbuild     the builder (trixie ships 0.89.3)
-# sudo       how sbuild enters the chroot in --chroot-mode=sudo
+# schroot    how sbuild enters the chroot in its default chroot mode
 # iproute2   sbuild brings up loopback in the build environment
 # debhelper  `dpkg-buildpackage -S` runs debian/rules clean, and both recipes
 #            are dh-based
 apt-get install -y --no-install-recommends \
-	sbuild sudo iproute2 debhelper dpkg-dev fakeroot
+	sbuild schroot iproute2 debhelper dpkg-dev fakeroot
 sbuild --version | head -1
 
 ###############################################################################
 note "build user and chroot"
 ###############################################################################
 #
-# sbuild refuses to run as root, so the build still runs as an ordinary user;
-# that user gets the uid/gid owning the bind-mounted /out so the packages land
-# on the host owned by the account that started the job, and passwordless sudo
-# so sbuild can enter the chroot.
+# sbuild refuses to run as root, so the build still runs as an ordinary user,
+# and that user gets the uid/gid owning the bind-mounted /out so the packages
+# land on the host owned by the account that started the job.
 #
 build_uid=$(stat -c %u "$out")
 build_gid=$(stat -c %g "$out")
 [ "$build_uid" -ne 0 ] || die "/out is owned by root; sbuild cannot run as root"
 getent group "$build_gid" >/dev/null || groupadd -g "$build_gid" sbuilder
 useradd -o -u "$build_uid" -g "$build_gid" -m -d /home/sbuilder sbuilder
-printf 'sbuilder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/sbuilder
-chmod 0440 /etc/sudoers.d/sbuilder
-
+# schroot serves chroots only to members of the sbuild group.
+sbuild-adduser sbuilder >/dev/null 2>&1 || usermod -aG sbuild sbuilder
+id sbuilder
 # The source trees were assembled by an earlier container running as root.
 chown -R "$build_uid:$build_gid" "$work"
 
 as_builder() { runuser -u sbuilder -- "$@"; }
 
-# sudo chroot mode takes a directory, from /etc/sbuild/chroot/<name>.
 note "unpacking the pinned chroot"
+chroot_name=$DEBIAN_DISTRIBUTION-amd64-sbuild
 chroot_dir=/srv/chroot/$DEBIAN_DISTRIBUTION-amd64
 rm -rf "$chroot_dir"
-mkdir -p "$chroot_dir" /etc/sbuild/chroot
+mkdir -p "$chroot_dir"
 tar -C "$chroot_dir" -xf "$chroot_tarball"
-ln -sfn "$chroot_dir" "/etc/sbuild/chroot/$DEBIAN_DISTRIBUTION-amd64"
+
+# schroot serves the chroot to sbuild. The sbuild profile (shipped by the
+# sbuild package) is what bind-mounts /proc, /sys, /dev and the build
+# directory into it per session.
+cat > "/etc/schroot/chroot.d/$chroot_name" <<SCHROOT
+[$chroot_name]
+description=Pinned $IMAGE_REF@$IMAGE_DIGEST rootfs
+type=directory
+directory=$chroot_dir
+profile=sbuild
+users=sbuilder
+root-users=sbuilder
+SCHROOT
+cat "/etc/schroot/chroot.d/$chroot_name"
 # A chroot needs these to exist before anything is mounted on them, and
 # needs a resolver: docker keeps /etc/resolv.conf outside the image, so the
 # export does not carry one.
-mkdir -p "$chroot_dir"/proc "$chroot_dir"/sys "$chroot_dir"/dev
+# A docker rootfs is not a build chroot. These are the pieces sbuild's
+# schroot mode needs that `docker export` does not carry: mount points,
+# /run/lock for the lock file sbuild creates at /var/lock/sbuild (a symlink
+# to /run/lock) inside the chroot, a writable /tmp, and a resolver, which
+# docker keeps outside the image.
+mkdir -p "$chroot_dir"/proc "$chroot_dir"/sys "$chroot_dir"/dev \
+	"$chroot_dir"/run/lock "$chroot_dir"/tmp "$chroot_dir"/build
+chmod 1777 "$chroot_dir"/tmp "$chroot_dir"/run/lock
 cp /etc/resolv.conf "$chroot_dir/etc/resolv.conf"
 printf 'chroot: %s (%s)\n' "$chroot_dir" "$(cat "$chroot_dir/etc/debian_version" 2>/dev/null || echo unknown)"
 
@@ -131,7 +152,7 @@ build_one() {
 
 	[ -f "$_dsc" ] || die "expected $_dsc after dpkg-buildpackage -S"
 
-	note "sbuild: $_name (chroot $chroot_dir)"
+	note "sbuild: $_name (schroot $chroot_name -> $chroot_dir)"
 	_sbuild_out=$work/sbuild-out/$_name
 	mkdir -p "$_sbuild_out"
 	chown "$build_uid:$build_gid" "$_sbuild_out"
@@ -139,8 +160,8 @@ build_one() {
 		sbuild \
 			--arch=amd64 \
 			--dist="$DEBIAN_DISTRIBUTION" \
-			--chroot-mode=sudo \
-			--chroot="$DEBIAN_DISTRIBUTION-amd64" \
+			--chroot-mode=schroot \
+			--chroot="$chroot_name" \
 			--verbose \
 			--no-run-lintian \
 			--no-source \
