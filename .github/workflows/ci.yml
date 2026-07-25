@@ -27,10 +27,12 @@ env:
   VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
   VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
   CACHETAG_VERSION: 1.0.0
-  CACHETAG_SOURCE_SHA256: c7054e69219ff3c54501d9c68857f2117944c4658db4cb08e2821b09b27821a2
-  # Open question (DESIGN.md #10.1): this is a moving branch, not a pinned
-  # commit. Pin an exact commit here once libvmod-cachetag tags v1.0.0.
-  CACHETAG_REF: packaging-plan-implementation
+  CACHETAG_SOURCE_SHA256: a262ac7a74a1464d4c0a4cc6f072ea04a77ff660b25bf0befd32dc63c18fb329
+  # Exact pinned commit (closes DESIGN.md #10.1); the archive digest above is
+  # a function of this commit (mtimes are pinned to its committer date), so
+  # the two move together, and with the lane pins in recipes/debian-13/build.sh
+  # and recipes/el9/cohort.env. Point v1.0.0 at this commit when tagging.
+  CACHETAG_REF: fcc369d23b199cc8e41086f28f2322256a8843d9
   # Index digest resolved 2026-07-25 (`docker buildx imagetools inspect
   # almalinux:9`); must match EL9_IMAGE in recipes/el9/cohort.env, which is
   # authoritative (build.sh re-sources cohort.env, clobbering any env

@@ -61,7 +61,7 @@ vinyl_strict_abi=$vinyl_commit
 vinyl_upstream_version="9.0.0~git20260520.25761f8505"
 vinyl_vrt=23.0
 cachetag_version=1.0.0
-cachetag_source_sha256=c7054e69219ff3c54501d9c68857f2117944c4658db4cb08e2821b09b27821a2
+cachetag_source_sha256=a262ac7a74a1464d4c0a4cc6f072ea04a77ff660b25bf0befd32dc63c18fb329
 
 cat > "$assets/release-manifest.json" <<JSON
 {

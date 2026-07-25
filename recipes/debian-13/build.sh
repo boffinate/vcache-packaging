@@ -53,12 +53,11 @@ VTEST2_GIT_COMMIT=db5ccb4a078da40b3ec1ca3c18bf498bb1520888
 # assembly procedure as libvmod-cachetag/scripts/release-source-archive.sh.
 #
 # Re-derived 2026-07-25 by the source stage below, because the re-pin of
-# VINYL_GIT_COMMIT deliberately changed the archive's input. Note that
-# libvmod-cachetag's release/dist/libvmod-cachetag-1.0.0.metadata.json still
-# records the OLD Vinyl commit in its vinyl_input block: that field is
-# provenance for the Vinyl prefix the VMOD was test-built against, it is not an
-# input to the cachetag archive, and CACHETAG_SOURCE_SHA256 below is unchanged
-# by this re-pin. Regenerating that metadata is a separate cachetag-release job.
+# VINYL_GIT_COMMIT deliberately changed the archive's input. The metadata
+# sidecar's vinyl_input block is provenance for the Vinyl prefix the VMOD was
+# test-built against, not an input to the cachetag archive; the archive digest
+# is a function of the cachetag commit alone (content plus mtimes pinned to
+# its committer date).
 VINYL_SOURCE_SHA256=27568cc1cdf914b3a328fc633d90137b62134fc7d375ca16010656a26d53f507
 
 # Snapshot version convention, shared with the EL9 lane: 9.0.0~git<commit date
@@ -73,8 +72,15 @@ VINYL_PACKAGE_VERSION=$VINYL_UPSTREAM_VERSION-$VINYL_PACKAGE_REVISION
 CACHETAG_VERSION=1.0.0
 CACHETAG_PACKAGE_REVISION=1
 CACHETAG_DEBIAN_VERSION=$CACHETAG_VERSION-$CACHETAG_PACKAGE_REVISION
-CACHETAG_SOURCE_SHA256=c7054e69219ff3c54501d9c68857f2117944c4658db4cb08e2821b09b27821a2
-CACHETAG_SOURCE_DATE_EPOCH=1784926281
+# Re-pinned 2026-07-25: the previous digest (c7054e69…) was an artifact of a
+# dirty working tree — its metadata sidecar recorded worktree_dirty:true, seven
+# commits behind HEAD — so no commit anywhere could reproduce it. This digest
+# was produced from the clean commit below and is proven identical on two
+# amd64 CI runners and the arm64 harness. The archive's file mtimes are pinned
+# to that commit's committer date, so digest, commit, and epoch move together.
+CACHETAG_GIT_COMMIT=fcc369d23b199cc8e41086f28f2322256a8843d9
+CACHETAG_SOURCE_SHA256=a262ac7a74a1464d4c0a4cc6f072ea04a77ff660b25bf0befd32dc63c18fb329
+CACHETAG_SOURCE_DATE_EPOCH=1784997430
 
 # Commit AUTHOR date of VINYL_GIT_COMMIT, 2026-05-20T10:18:13+02:00, used as
 # SOURCE_DATE_EPOCH for the Vinyl lane. Author rather than committer date: the
