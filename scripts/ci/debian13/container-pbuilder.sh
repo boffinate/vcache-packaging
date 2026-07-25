@@ -58,9 +58,24 @@ apt-get update -qq
 # debhelper  `dpkg-buildpackage -S` runs debian/rules clean, and both recipes
 #            are dh-based
 # dpkg-dev   dpkg-scanpackages, for the local repository below
+# procps     pbuilder-buildpackage-funcs calls sysctl; without it the build
+#            works but every run logs "sysctl: command not found"
 apt-get install -y --no-install-recommends \
-	pbuilder debhelper dpkg-dev fakeroot
+	pbuilder debhelper dpkg-dev fakeroot procps
 pbuilder --version 2>/dev/null | head -1 || dpkg-query -W -f='pbuilder ${Version}\n' pbuilder
+
+#
+# pbuilder resolves Build-Depends with aptitude by default, and a buildd
+# chroot has no aptitude: the first run got as far as unpacking the dummy
+# dependency package and then failed with "env: 'aptitude': No such file or
+# directory". apt is the resolver a minimal buildroot actually has, and using
+# it keeps the resolution the same one dpkg-buildpackage would do.
+#
+note "pbuilder configuration"
+cat > /etc/pbuilderrc <<'PBUILDERRC'
+PBUILDERSATISFYDEPENDSCMD=/usr/lib/pbuilder/pbuilder-satisfydepends-apt
+PBUILDERRC
+cat /etc/pbuilderrc
 
 note "compressing the mmdebstrap base tarball"
 # pbuilder's --basetgz is a gzipped tarball; make-chroot.sh writes a plain tar
