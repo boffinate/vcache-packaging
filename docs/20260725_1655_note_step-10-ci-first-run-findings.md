@@ -174,3 +174,20 @@ sbuild runs its lock command inside the session with the invoking directory as c
 3. **Reserve sbuild for the release workflow** and let `ci.yml` use `recipes/debian-13/build.sh vinyl cachetag` -- the container path that is already green locally -- so CI gates packages on every push while the clean-room builder is settled separately.
 
 The EL9 lane is green and repeatable throughout all of this, and its architecture is the one being copied, so the shape is right; it is the Debian buildroot's provenance that is unresolved.
+
+## The chroot the Debian lane actually needed
+
+The docker-export chroot was abandoned on 2026-07-25. The elimination table above is the reason: six CI runs, each finding another way in which a container image is not a build chroot -- no mount points, no `/run/lock` for the lock file sbuild writes at `/var/lock/sbuild` *inside* the chroot, no `resolv.conf` (docker keeps it outside the image), no `build-essential`, and ownership and member naming the unshare backend would not accept. Enumerating those one CI run at a time was the mistake; a container image and a build chroot are different artifacts, and adapting one into the other has no natural end.
+
+`mmdebstrap --variant=buildd` produces the second artifact directly, in one step, inside the same digest-pinned container. Validated locally end to end before touching CI -- chroot built, schroot session taken, `hello` built to exit 0 with real `.deb` output -- which is how the remaining problems were found without spending runs on them:
+
+- **The buildd variant has no CA bundle.** The snapshot is served over https, so apt inside the chroot could not fetch its own lists and every Build-Depends looked uninstallable (`Package build dependencies not satisfied`). Fixed with `--include=ca-certificates`.
+- **A snapshot's `Release` file is older than its own `Valid-Until`.** Both mmdebstrap and the chroot's apt need `Acquire::Check-Valid-Until "false"`; the chroot's copy has to be written separately, because mmdebstrap's `--aptopt` does not persist into the result.
+- **sbuild's default bd-uninstallable explainer hides the real error.** It reported `E: Failed to explain bd-uninstallable`; `--bd-uninstallable-explainer=none` reports what apt actually said.
+- **sbuild locks the chroot from the invoking directory**, and refuses the session when that directory does not exist inside the chroot. Builds are driven from `/build`, which exists in every sbuild chroot.
+
+### Buildroot pinning: snapshot, not record-and-audit
+
+The plan offers "pin buildroot repositories **or** record exact resolved package versions". The Debian lane now does the former: `DEBIAN_SNAPSHOT=20260701T000000Z` in `pins.env`, and mmdebstrap builds from `https://snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT/`. snapshot.debian.org was measured before committing to it -- it answered in under 0.2s and built a full buildd chroot in 45-80s, so the throttling that usually argues against it did not appear. The fallback (plain mirror plus a recorded package list) was not needed.
+
+Both are recorded anyway: `dist/debian-13/logs/buildroot-packages.txt` lists every package and version the snapshot resolved to, which is the Debian counterpart of the EL9 lane's `logs/buildroot-packages.tsv`. EL9 keeps record-and-audit because Mock resolves from AlmaLinux's live mirrors, which have no snapshot service.

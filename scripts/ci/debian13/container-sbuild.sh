@@ -104,32 +104,34 @@ rm -rf "$chroot_dir"
 mkdir -p "$chroot_dir"
 tar -C "$chroot_dir" -xf "$chroot_tarball"
 
-# schroot serves the chroot to sbuild. The sbuild profile (shipped by the
-# sbuild package) is what bind-mounts /proc, /sys, /dev and the build
-# directory into it per session.
+# mmdebstrap produces a real buildd chroot, so this is all it needs: a
+# resolver (not part of any chroot's own contents) and the apt option the
+# snapshot's backdated Release file requires, the same one mmdebstrap itself
+# was given. Without the latter, apt inside the chroot cannot refresh its
+# lists and every Build-Depends looks uninstallable.
+cp /etc/resolv.conf "$chroot_dir/etc/resolv.conf"
+printf 'Acquire::Check-Valid-Until "false";\n' \
+	> "$chroot_dir/etc/apt/apt.conf.d/10snapshot"
+
 cat > "/etc/schroot/chroot.d/$chroot_name" <<SCHROOT
 [$chroot_name]
-description=Pinned $IMAGE_REF@$IMAGE_DIGEST rootfs
+description=Debian $DEBIAN_DISTRIBUTION buildd chroot from snapshot $DEBIAN_SNAPSHOT
 type=directory
 directory=$chroot_dir
 profile=sbuild
 users=sbuilder
 root-users=sbuilder
 SCHROOT
-cat "/etc/schroot/chroot.d/$chroot_name"
-# A chroot needs these to exist before anything is mounted on them, and
-# needs a resolver: docker keeps /etc/resolv.conf outside the image, so the
-# export does not carry one.
-# A docker rootfs is not a build chroot. These are the pieces sbuild's
-# schroot mode needs that `docker export` does not carry: mount points,
-# /run/lock for the lock file sbuild creates at /var/lock/sbuild (a symlink
-# to /run/lock) inside the chroot, a writable /tmp, and a resolver, which
-# docker keeps outside the image.
-mkdir -p "$chroot_dir"/proc "$chroot_dir"/sys "$chroot_dir"/dev \
-	"$chroot_dir"/run/lock "$chroot_dir"/tmp "$chroot_dir"/build
-chmod 1777 "$chroot_dir"/tmp "$chroot_dir"/run/lock
-cp /etc/resolv.conf "$chroot_dir/etc/resolv.conf"
-printf 'chroot: %s (%s)\n' "$chroot_dir" "$(cat "$chroot_dir/etc/debian_version" 2>/dev/null || echo unknown)"
+
+# sbuild runs its chroot-locking command with the invoking directory as the
+# working directory, and refuses the session when that directory does not
+# exist inside the chroot ("Failed to change to directory ... The directory
+# does not exist inside the chroot"). /build exists in every sbuild chroot
+# and is where the sbuild schroot profile mounts the build tree, so the
+# builds are driven from there.
+build_root=/build
+mkdir -p "$build_root"
+chown "$build_uid:$build_gid" "$build_root"
 
 ###############################################################################
 # One package: source package on the host side of the chroot, then sbuild.
@@ -153,7 +155,7 @@ build_one() {
 	[ -f "$_dsc" ] || die "expected $_dsc after dpkg-buildpackage -S"
 
 	note "sbuild: $_name (schroot $chroot_name -> $chroot_dir)"
-	_sbuild_out=$work/sbuild-out/$_name
+	_sbuild_out=$build_root/$_name
 	mkdir -p "$_sbuild_out"
 	chown "$build_uid:$build_gid" "$_sbuild_out"
 	as_builder env -C "$_sbuild_out" SOURCE_DATE_EPOCH="$_epoch" \
@@ -162,6 +164,7 @@ build_one() {
 			--dist="$DEBIAN_DISTRIBUTION" \
 			--chroot-mode=schroot \
 			--chroot="$chroot_name" \
+			--bd-uninstallable-explainer=none \
 			--verbose \
 			--no-run-lintian \
 			--no-source \
