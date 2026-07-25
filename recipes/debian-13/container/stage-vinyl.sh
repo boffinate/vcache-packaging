@@ -78,6 +78,26 @@ case "$dev_depends" in
 	*) echo "E: dev package does not depend on the exact matching runtime" >&2; exit 1 ;;
 esac
 
+# The packaged Vinyl must be pure upstream. Until 2026-07-25 the lane was pinned
+# to an unpublished local branch whose 17 extra commits added an in-tree
+# vmod_tag -- a benchmark subject, not part of Vinyl. Shipping it would have put
+# an experimental VMOD and its documentation into a distribution package under
+# the upstream name. This asserts the re-pin stayed re-pinned.
+echo "--- upstream purity: no benchmark-scaffolding vmod_tag ---"
+tag_files=$(
+	for f in vinyl-cache_"$VINYL_PACKAGE_VERSION"_*.deb \
+		vinyl-cache-dev_"$VINYL_PACKAGE_VERSION"_*.deb; do
+		[ -e "$f" ] || continue
+		dpkg-deb -c "$f" | awk '{print $NF}'
+	done | { grep -E 'vmod_tag|libvmod_tag' || true; }
+)
+if [ -n "$tag_files" ]; then
+	echo "E: packaged Vinyl contains vmod_tag artifacts:" >&2
+	printf '%s\n' "$tag_files" >&2
+	exit 1
+fi
+echo "OK: no vmod_tag file in the runtime or dev package"
+
 echo "===== hardening inspection (production profile) ====="
 mkdir -p /tmp/hx
 dpkg-deb -x "$runtime_deb" /tmp/hx

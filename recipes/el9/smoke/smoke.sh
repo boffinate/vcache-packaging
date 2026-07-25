@@ -97,6 +97,18 @@ else
 	ok "a foreign cohort capability has no provider"
 fi
 
+# The packaged Vinyl must be pure upstream. Until 2026-07-25 both lanes were
+# pinned to an unpublished local branch whose extra commits added an in-tree
+# vmod_tag -- a benchmark subject, not part of Vinyl. This asserts the 2026-07-25
+# re-pin to upstream 25761f8505 stayed re-pinned.
+if rpm -ql vinyl-cache | grep -Eq 'vmod_tag|libvmod_tag'; then
+	printf '\nvmod_tag files found in the runtime package:\n'
+	rpm -ql vinyl-cache | grep -E 'vmod_tag|libvmod_tag' | sed 's/^/  /'
+	bad "the runtime package ships benchmark-scaffolding vmod_tag files"
+else
+	ok "the runtime package ships no vmod_tag file (pure upstream Vinyl)"
+fi
+
 # ---------------------------------------------------------------------------
 step "2. install the cachetag package through dnf"
 dnf -y install "$cachetag_rpm"
