@@ -42,7 +42,31 @@ sudo -n apt-get update -qq
 #               both recipes' rules files are dh-based
 # dpkg-dev/fakeroot  source-package assembly
 sudo -n apt-get install -y --no-install-recommends \
-	sbuild uidmap iproute2 debhelper dpkg-dev fakeroot
+	uidmap iproute2 debhelper dpkg-dev fakeroot
+
+#
+# sbuild comes from backports, deliberately. ubuntu-latest ships sbuild
+# 0.85.10ubuntu0.2, whose unshare backend cannot use a chroot tarball on this
+# runner: it unpacks the tarball and then dies with
+#   runuser: failed to execute sh: Permission denied
+#   E: read_command failed to execute dpkg
+#   E: Can't determine architecture of chroot:
+# (measured, run 30167536066). 0.89.3 from debian:trixie builds the same shape
+# of job to "Status: successful" in a container, and <codename>-backports
+# carries 0.88.3, which has the reworked unshare backend rather than the
+# 2023-era one 0.85 froze on.
+#
+. /etc/os-release
+backports="${VERSION_CODENAME:?}-backports"
+note "installing sbuild from $backports"
+printf 'deb http://archive.ubuntu.com/ubuntu %s main universe\n' "$backports" |
+	sudo -n tee /etc/apt/sources.list.d/sbuild-backports.list >/dev/null
+sudo -n apt-get update -qq
+# libsbuild-perl carries the backend this needs and sbuild depends on the
+# exact version, so both come from the same suite.
+sudo -n apt-get install -y --no-install-recommends -t "$backports" \
+	sbuild libsbuild-perl
+sbuild --version | head -1
 
 # An /etc/subuid + /etc/subgid range for the invoking user is a hard
 # precondition of unshare mode. GitHub's runner images ship one; add it if

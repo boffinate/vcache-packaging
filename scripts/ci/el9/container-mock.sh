@@ -41,6 +41,7 @@ logdir=/out/logs
 srcdir=$topdir/SOURCES
 specdir=$topdir/SPECS
 resultdir=/out/mockresult
+localrepo=/out/localrepo
 vinyl_srcname=vinyl-cache-$VINYL_VERSION
 vinyl_evr="$VINYL_VERSION-$VINYL_RELEASE.el9"
 
@@ -134,6 +135,30 @@ find "$resultdir/vinyl" -name 'vinyl-cache*.rpm' -exec cp -p {} /out/packages/ \
 cp -p "$vinyl_srpm" /out/packages/
 
 ###############################################################################
+say "publish the just-built Vinyl packages as a local repository"
+###############################################################################
+#
+# libvmod-cachetag BuildRequires vinyl-cache-devel = <exact evr>, which is on
+# no mirror. The first draft satisfied that by `mock --install`-ing the built
+# packages into the same root and relying on --no-clean to keep them there for
+# the --rebuild that follows. That is not what --no-clean does: every mock
+# --rebuild starts with "chroot init", which restores the root cache and
+# discards anything --install put there, so `dnf builddep` then reported
+#   No matching package to install: 'vinyl-cache-devel = ...'
+# (measured, run 30167536066). --addrepo is the documented mechanism for
+# "build against packages I just built": mock's dnf runs outside the chroot,
+# so a file:// URL to a path in this container resolves.
+#
+dnf -y install createrepo_c
+rm -rf "$localrepo"
+mkdir -p "$localrepo"
+find "$resultdir/vinyl" -name 'vinyl-cache*.rpm' ! -name '*.src.rpm' \
+	-exec cp -p {} "$localrepo/" \;
+createrepo_c "$localrepo"
+chown -R "$build_uid:$build_gid" "$localrepo"
+ls -1 "$localrepo"
+
+###############################################################################
 say "Mock: install vinyl-cache + vinyl-cache-devel into the SAME root"
 ###############################################################################
 
@@ -194,12 +219,14 @@ say "Mock: libvmod-cachetag buildsrpm + rebuild, against the installed vinyl-cac
 
 export SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH
 mock_as -r "$mock_cfg" --no-clean \
+	--addrepo="file://$localrepo" \
 	--resultdir="$resultdir/cachetag" \
 	--buildsrpm --spec "$specdir/libvmod-cachetag.spec" --sources "$srcdir" \
 	2>&1 | tee "$logdir/mock-cachetag-srpm.log"
 
 cachetag_srpm=$(ls "$resultdir/cachetag"/libvmod-cachetag-"$CACHETAG_VERSION-$CACHETAG_RELEASE.el9".src.rpm)
 mock_as -r "$mock_cfg" --no-clean \
+	--addrepo="file://$localrepo" \
 	--resultdir="$resultdir/cachetag" \
 	--rebuild "$cachetag_srpm" \
 	2>&1 | tee "$logdir/mock-cachetag-build.log"
