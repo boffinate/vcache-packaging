@@ -154,7 +154,7 @@ This is a packaging-side fix by necessity: correcting `ACLOCAL_AMFLAGS` would me
 
 ### Also: a documentation correction, not a code fix
 
-`packaging/README.md`'s token table said `@VINYL_VMODDIR@` had **no manifest field** and that the manifests lived under this repository's `release/`. Both statements are now stale: the registry moved to `vinyl-packaging/registry/` and `cachetag-target/v1` records `install.vmoddir` plus `install.vmoddir_source`. Corrected in place, since that section explicitly says it "is the place to fix any drift between the two". The resolved value on this target confirms the per-target argument: `/usr/lib/aarch64-linux-gnu/vinyl-cache/vmods`.
+`packaging/README.md`'s token table said `@VINYL_VMODDIR@` had **no manifest field** and that the manifests lived under this repository's `release/`. Both statements are now stale: the registry moved to `vcache-packaging/registry/` and `cachetag-target/v1` records `install.vmoddir` plus `install.vmoddir_source`. Corrected in place, since that section explicitly says it "is the place to fix any drift between the two". The resolved value on this target confirms the per-target argument: `/usr/lib/aarch64-linux-gnu/vinyl-cache/vmods`.
 
 ### Reported, deliberately NOT fixed and NOT suppressed
 

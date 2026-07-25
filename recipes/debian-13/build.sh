@@ -26,7 +26,7 @@ set -eu
 # PINNED INPUTS
 #
 # These are the compatibility inputs of the cohort. They belong in the cohort
-# registry (vinyl-packaging/registry/), and they will be read from there as
+# registry (vcache-packaging/registry/), and they will be read from there as
 # soon as a `candidate` cohort manifest exists; the checked-in cohort is still
 # a `template` with placeholder identity values, so for this first process-
 # proof run they are stated here, once, and every one of them is *asserted*

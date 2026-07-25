@@ -174,7 +174,7 @@ build_variant() {
 	rpmbuild --define "_topdir $topdir" \
 		--define "use_source_date_epoch_as_buildtime 1" \
 		--define "clamp_mtime_to_source_date_epoch 1" \
-		--define "_buildhost vinyl-packaging-fixture.invalid" \
+		--define "_buildhost vcache-packaging-fixture.invalid" \
 		-bb "$spec" \
 		2>&1 | tee "$logdir/fixture-$variant-build.log" | tail -n 5
 

@@ -9,7 +9,7 @@ Prior decision: the repository split was approved by the maintainer on 2026-07-2
 ## What exists now
 
 ```text
-vinyl-packaging/
+vcache-packaging/
   README.md              purpose, layout, the plan's support statement
   AGENTS.md              runbook; CLAUDE.md is a symlink to it, matching the sibling repos
   .gitignore

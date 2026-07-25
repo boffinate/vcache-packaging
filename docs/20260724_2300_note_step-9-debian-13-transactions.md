@@ -228,15 +228,15 @@ So:
 
 ```sh
 # fixtures (requires the baseline cohort from recipes/debian-13/build.sh)
-vinyl-packaging/recipes/debian-13/mismatch-fixture.sh
+vcache-packaging/recipes/debian-13/mismatch-fixture.sh
 
 # the whole matrix
-vinyl-packaging/recipes/debian-13/transactions.sh
+vcache-packaging/recipes/debian-13/transactions.sh
 
 # one scenario, or a prefix
-vinyl-packaging/recipes/debian-13/transactions.sh s04
-vinyl-packaging/recipes/debian-13/transactions.sh --list
-vinyl-packaging/recipes/debian-13/transactions.sh --summary
+vcache-packaging/recipes/debian-13/transactions.sh s04
+vcache-packaging/recipes/debian-13/transactions.sh --list
+vcache-packaging/recipes/debian-13/transactions.sh --summary
 ```
 
 Everything runs in containers. No host package is installed. The host only reads and writes `dist/debian-13/`.

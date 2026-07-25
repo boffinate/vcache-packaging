@@ -125,7 +125,7 @@ Variant: @VARIANT@.
 @VARIANT_NOTE@
 
 It exists to drive the upgrade-transaction matrix documented in
-vinyl-packaging/docs/. Do not install it on anything you care about, and do not
+vcache-packaging/docs/. Do not install it on anything you care about, and do not
 publish it to any repository that a user could reach.
 
 Because the payload is unchanged, the binaries in this package are byte-for-byte

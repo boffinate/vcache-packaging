@@ -61,7 +61,7 @@ f75913ba2fe2d95528b96e82939cc1faebcfa3025d8e7cdd54522b04e92483de  vinyl-cache-9.
 These digests are **reproducible**: `mismatch-fixture.sh --check-reproducible` builds the fixture twice in two separate containers and fails unless the digests are identical. Getting there took two pins that are easy to lose silently, and both are worth knowing for the real lane:
 
 - `SOURCE_DATE_EPOCH` alone does not fix `BUILDTIME` on EL9. rpm 4.16 ships `%use_source_date_epoch_as_buildtime` defaulting to `0`, so the header timestamp still comes from the wall clock unless that macro is set to `1`.
-- `_buildhost` defaults to the container's hostname, which Docker randomises per run. Two identical builds in two containers differed by exactly that one header string until it was pinned to `vinyl-packaging-fixture.invalid`.
+- `_buildhost` defaults to the container's hostname, which Docker randomises per run. Two identical builds in two containers differed by exactly that one header string until it was pinned to `vcache-packaging-fixture.invalid`.
 
 A retained digest that a rebuild does not reproduce is a receipt, not a provenance record, so the check is a command rather than a comment.
 

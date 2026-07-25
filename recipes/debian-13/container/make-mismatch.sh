@@ -77,7 +77,7 @@ for pkg in vinyl-cache vinyl-cache-dev; do
 		baseline deb:       $(basename "$src")
 		baseline sha256:    $base_sha
 		fixture epoch:      $stamp (SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH)
-		generator:          vinyl-packaging/recipes/debian-13/mismatch-fixture.sh
+		generator:          vcache-packaging/recipes/debian-13/mismatch-fixture.sh
 
 		This package's payload is the byte-identical payload of the baseline
 		cohort deb named above, plus this file. Only the control metadata was

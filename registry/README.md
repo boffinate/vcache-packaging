@@ -4,7 +4,7 @@ This directory holds the compatibility manifests defined by [Phase 0 of the bina
 
 Nothing here builds or tests anything. The tooling is pure Python 3 standard library and is safe to run on the host; packages are built and tested only in containers and native buildroots, as [AGENTS.md](../AGENTS.md) requires, and the cachetag VMOD itself only through the Docker harness in its own repository.
 
-The registry lives in `vinyl-packaging` rather than in any VMOD repository because a cohort is a *set* of packages — one Vinyl runtime plus every strict-ABI VMOD built against it — and no single member of that set can own its identity. It moved here from `libvmod-cachetag` on 2026-07-24; Git history did not transfer.
+The registry lives in `vcache-packaging` rather than in any VMOD repository because a cohort is a *set* of packages — one Vinyl runtime plus every strict-ABI VMOD built against it — and no single member of that set can own its identity. It moved here from `libvmod-cachetag` on 2026-07-24; Git history did not transfer.
 
 ## Layout
 

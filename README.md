@@ -1,4 +1,4 @@
-# vinyl-packaging
+# vcache-packaging
 
 Packaging and release-coordination repository for the Vinyl Cache package cohort.
 

@@ -152,7 +152,7 @@ def _write_workspace(
     explicit cachetag path exercises the default sibling resolution.
     """
     cachetag_src = root / "libvmod-cachetag"
-    registry_root = root / "vinyl-packaging"
+    registry_root = root / "vcache-packaging"
     cachetag_src.mkdir(parents=True, exist_ok=True)
     (cachetag_src / "configure.ac").write_text(CONFIGURE_AC, encoding="utf-8")
     (registry_root / "registry" / "cohorts").mkdir(parents=True, exist_ok=True)
