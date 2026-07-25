@@ -110,3 +110,32 @@ Everything before sbuild works: `build.sh source` assembles both trees, the chro
 ### The shape of all of it
 
 Six distinct failures across the two lanes, and every one is the same story: a tool that refuses to be root, in an environment that only offers root, or a pinned input that turned out not to be pinned. None of them could have been found by reading the scripts, and none of them reproduce on the maintainer's macOS Docker, where container-root writes are remapped to the invoking user and no AppArmor policy exists.
+
+## Where the Debian lane stands, and what it is not
+
+EL9 is green and repeatably so (runs 30167989753, 30168652270, 30168996900), at 5m24s against a 30-minute budget. The Debian lane is stuck in one place, and the value of what follows is mostly in the eliminations, because each one cost a run.
+
+sbuild unpacks the chroot, creates the session, and then cannot execute anything inside it:
+
+```
+I: Unpacking /home/runner/.cache/sbuild/trixie-amd64.tar to /tmp/tmp.sbuild.*
+I: Creating chroot session...
+Can't exec "dpkg": Permission denied at /usr/libexec/sbuild-usernsexec line 561
+E: Can't determine architecture of chroot:
+Fail-Stage: chroot-arch
+```
+
+Ruled out, each by measurement rather than reasoning:
+
+| hypothesis | how it was eliminated |
+| --- | --- |
+| sbuild too old (0.85) | 0.88.3 from backports fails identically |
+| chroot tarball shape | raw `docker export` and a root-owned, `./`-prefixed, device-node-free repack both fail |
+| `/tmp` mounted noexec | measured on the runner: `/tmp` is not a separate mount and permits exec |
+| session dir on the wrong filesystem | moving it to `$HOME` made it worse -- the subuid-mapped user cannot traverse in, so tar could not open the destination |
+| unprivileged user namespaces denied | `kernel.apparmor_restrict_unprivileged_userns` relaxed, and the preflight confirms a namespace can be created |
+| AppArmor confining the namespace | `kernel.apparmor_restrict_unprivileged_unconfined` was already 0 |
+
+The discriminating fact is not on the runner at all. The same tarball, the same sbuild invocation and the same unprivileged-user-with-subuids setup build a package to `Status: successful` inside a `debian:trixie` container, and fail with this exact error inside an `ubuntu:24.04` container. It is a property of the Ubuntu 24.04 userland, not of GitHub Actions, and not of anything this repository controls.
+
+**The recommendation is to stop fighting the runner's userland and give the Debian lane the shape the EL9 lane already has**: run sbuild inside a privileged, digest-pinned `debian:trixie` container, exactly as the Mock lane runs inside a privileged, digest-pinned `almalinux:9` container. That is the one environment where this recipe is known to work end to end, it makes the two lanes structurally symmetric, and it removes "whatever userland ubuntu-latest happens to ship" as an unpinned input to a lane whose entire purpose is a pinned buildroot. `make-chroot.sh` keeps its job (export the pinned image to a tarball); `sbuild-vinyl.sh` and `sbuild-cachetag.sh` move inside the container, the way `container-mock.sh` did.
