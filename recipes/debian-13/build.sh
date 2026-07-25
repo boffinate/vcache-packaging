@@ -65,13 +65,11 @@ VINYL_SOURCE_DATE_EPOCH=1781307021
 
 DEBIAN_DISTRIBUTION=trixie
 
-# The maintainer identity is deliberately undeliverable. A package carrying a
-# maintainer address implies a security contact, and implementation step 2 of
-# the packaging plan -- deciding who owns security triage -- has not happened.
-# .example is a reserved TLD, so this cannot be mistaken for a real address.
-# These artifacts must not be published until a real owner replaces it.
-MAINTAINER_NAME='Vinyl Cache Packaging (unreleased snapshot)'
-MAINTAINER_EMAIL='packaging@vinyl-cache.example'
+# The maintainer address is real but deliberately does not accept mail; the
+# support channel is the issue tracker reachable via each package's
+# Homepage/Vcs fields. Decided 2026-07-25 (packaging plan step 2 identity).
+MAINTAINER_NAME='Boffinate'
+MAINTAINER_EMAIL='noreply@boffinate.com'
 
 # No cohort identifier is minted here. The registry assigns it; this build
 # reports every input the assignment needs.
