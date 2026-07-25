@@ -97,8 +97,8 @@ jobs:
       - name: sbuild chroot
         run: bash scripts/ci/debian13/make-chroot.sh
         working-directory: vcache-packaging
-      - name: sbuild both packages (pinned container)
-        run: bash scripts/ci/debian13/sbuild-lane.sh
+      - name: build both packages (pinned container)
+        run: bash scripts/ci/debian13/debian-lane.sh
         working-directory: vcache-packaging
       - name: ABI/hardening assertions
         run: bash scripts/ci/debian13/assert-packages.sh

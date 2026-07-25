@@ -207,3 +207,19 @@ Run [30172378393](https://github.com/boffinate/vcache-packaging/actions/runs/301
 Inside the Debian lane: the mmdebstrap chroot from snapshot `20260701T000000Z`, `build-essential=12.12`, vinyl-cache built in the chroot (`Status: successful`, Build-Time 46s, Install-Time 47s), libvmod-cachetag built against it with `--extra-package` (`Status: successful`, Build-Time 8s), then the unchanged assertions: strict-ABI Provides/Depends, no `vmod_tag` in the packaged Vinyl, and hardening PASS on all five checks for both `vinyld` and `libvmod_cachetag.so` (stack-protector, RELRO, BIND_NOW, PIE, fortify-source), lintian, the installed-package smoke in a fresh container, and checksums.
 
 The clean-room requirement the whole design exists for is now actually met on both lanes: sbuild against a snapshot-pinned buildd chroot, Mock against a fresh buildroot, neither of them using the runner's userland for anything but starting a container.
+
+## Why the Debian lane ends on pbuilder
+
+The plan asks for "sbuild or pbuilder for clean builds". sbuild was tried first, and each of its three ways into a chroot turned out to be unavailable here:
+
+| mode | outcome |
+| --- | --- |
+| `unshare` | the runner's kernel refuses to exec inside the namespace-mapped chroot, and that survived every input this repository can pin |
+| `sudo` | removed in sbuild 0.89: `CHROOT_MODE=sudo (or unset) is unsupported` |
+| `schroot` | **worked** -- green twice, runs [30172378393](https://github.com/boffinate/vcache-packaging/actions/runs/30172378393) and [30172890689](https://github.com/boffinate/vcache-packaging/actions/runs/30172890689) -- but schroot is retired upstream |
+
+The schroot path is recorded as green rather than as a failure, because it was: the Debian lane built both packages and passed every assertion, twice, at 5m40s and 6m58s. What retired it was durability, not correctness. Everything schroot contributes -- named reusable sessions, locking, profile-driven bind-mounts -- is persistent-buildd machinery, and a container that exists for exactly one build has no use for any of it. Depending on a retired tool for a property we do not need is a liability with no return.
+
+pbuilder wants none of it: unpack a base tarball, build, destroy, as plain root. The clean-room properties the requirement is actually about are untouched -- a minimal Essential-only buildroot from the pinned snapshot, build dependencies resolved only from `debian/control`, the build driven from the `.dsc`, and a fresh root per package. The chroot's provenance, which was the real problem all along, does not change either: mmdebstrap from `DEBIAN_SNAPSHOT`, with the package list recorded as evidence.
+
+cachetag's `vinyl-cache-dev (= exact version)` is satisfied the same way the EL9 lane satisfies its equivalent: publish what this run just built as a local repository (`dpkg-scanpackages`, `--othermirror deb [trusted=yes] file://...`) and let the buildroot resolve it. That is the right shape for a chroot which is deliberately destroyed between packages, and it is why the earlier `mock --install` and sbuild `--extra-package` approaches were both working around the wrong thing.

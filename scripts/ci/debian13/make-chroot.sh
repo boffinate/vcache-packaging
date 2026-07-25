@@ -53,13 +53,18 @@ mkdir -p "$(dirname "$CHROOT_TARBALL_IN_CONTAINER")"
 #   buildd variant carries no CA bundle, so apt inside the chroot could not
 #   fetch its own package lists ("Package build dependencies not satisfied").
 # --aptopt Check-Valid-Until because a snapshot's Release file is, by
-#   construction, older than it claims to be valid for.
+#   construction, older than it claims to be valid for, and --customize-hook
+#   to leave the same option inside the chroot: mmdebstrap's own apt config
+#   does not persist into the result, and every build that runs in this
+#   chroot needs it too, or apt cannot refresh its lists and every
+#   Build-Depends looks uninstallable.
 mmdebstrap \
 	--variant=buildd \
 	--mode=root \
 	--architectures=amd64 \
 	--include=ca-certificates \
 	--aptopt='Acquire::Check-Valid-Until "false";' \
+	--customize-hook='printf %s\\n "Acquire::Check-Valid-Until \"false\";" > "$1/etc/apt/apt.conf.d/10snapshot"' \
 	--format=tar \
 	"$DEBIAN_DISTRIBUTION" \
 	"$CHROOT_TARBALL_IN_CONTAINER" \
