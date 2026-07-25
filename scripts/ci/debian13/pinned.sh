@@ -11,7 +11,12 @@
 # them. Keep this file byte-identical to build.sh's block; a divergence here
 # is a bug, not a place to improvise a different value.
 #
-# DRAFT, unexecuted -- see ../../../DESIGN.md.
+# The 2026-07-25 cachetag re-pin (92fac70) moved
+# CACHETAG_SOURCE_DATE_EPOCH in build.sh and left this copy behind, which is
+# exactly the divergence this header warns about: the sbuild lane would have
+# stamped the package with one epoch while the changelog build.sh substituted
+# carried another. If a later change adds a value here, add it to build.sh's
+# block too, and vice versa.
 
 VINYL_GIT_COMMIT=25761f8505817ac50df994270bfe75b60073e33e
 VINYL_STRICT_ABI=$VINYL_GIT_COMMIT
@@ -21,10 +26,11 @@ VINYL_PACKAGE_VERSION=$VINYL_UPSTREAM_VERSION-$VINYL_PACKAGE_REVISION
 VINYL_SOURCE_DATE_EPOCH=1779265093
 VINYL_VRT_EXPECTED=23.0
 
+CACHETAG_GIT_COMMIT=fcc369d23b199cc8e41086f28f2322256a8843d9
 CACHETAG_VERSION=1.0.0
 CACHETAG_PACKAGE_REVISION=1
 CACHETAG_DEBIAN_VERSION=$CACHETAG_VERSION-$CACHETAG_PACKAGE_REVISION
-CACHETAG_SOURCE_DATE_EPOCH=1784926281
+CACHETAG_SOURCE_DATE_EPOCH=1784997430
 
 DEBIAN_DISTRIBUTION=trixie
 
