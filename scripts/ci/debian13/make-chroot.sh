@@ -113,16 +113,36 @@ else
 fi
 
 #
-# sbuild's unshare backend unpacks the chroot into $unshare_tmpdir_template,
-# which defaults to /tmp/tmp.sbuild.XXXXXXXXXX, and then execs dpkg inside it.
-# On this runner that exec fails with EACCES:
+# Creating the namespace is necessary but not sufficient. Ubuntu 24.04 has a
+# second knob, kernel.apparmor_restrict_unprivileged_unconfined, which
+# transitions an unconfined program that creates a user namespace into a
+# restricted AppArmor profile. Under it the namespace exists but execs inside
+# it are refused -- which is exactly the EACCES on dpkg that survived the
+# sbuild upgrade, the chroot repack and the session-directory move.
+#
+unconfined_sysctl=kernel.apparmor_restrict_unprivileged_unconfined
+if sysctl -n "$unconfined_sysctl" >/dev/null 2>&1; then
+	printf '%s = %s\n' "$unconfined_sysctl" "$(sysctl -n "$unconfined_sysctl")"
+	if [ "$(sysctl -n "$unconfined_sysctl")" != "0" ]; then
+		note "relaxing $unconfined_sysctl"
+		sudo -n sysctl -w "$unconfined_sysctl=0"
+	fi
+else
+	printf '%s: not present on this kernel\n' "$unconfined_sysctl"
+fi
+
+#
+# sbuild's unshare backend unpacks the chroot into $unshare_tmpdir_template
+# (/tmp/tmp.sbuild.XXXXXXXXXX) and execs dpkg inside it, which failed with
 #
 #   Can't exec "dpkg": Permission denied at /usr/libexec/sbuild-usernsexec line 561
 #
-# EACCES on exec of a mode-0755 binary is the signature of a noexec mount, so
-# measure it, and put the session directory somewhere known-executable either
-# way. $HOME is on the same filesystem as the workspace the build already
-# writes to.
+# EACCES on a mode-0755 binary looks like a noexec mount, but it is not:
+# measured on the runner, /tmp is not a separate mount and does permit exec
+# (run 30168996900). Pointing the session directory elsewhere made it worse,
+# not better -- the subuid-mapped user could not traverse into $HOME -- so the
+# default location stays and the measurement stays with it, to keep the next
+# session failure from being blamed on the mount again.
 #
 note "exec-from-/tmp preflight"
 tmp_exec_probe=$(mktemp /tmp/exec-probe.XXXXXX)
@@ -135,17 +155,6 @@ else
 fi
 grep -E ' /tmp ' /proc/mounts || printf '/tmp is not a separate mount\n'
 rm -f "$tmp_exec_probe"
-
-note "pointing sbuild's unshare session directory at \$HOME"
-mkdir -p "$HOME/.config/sbuild" "$HOME/.cache/sbuild"
-cat > "$HOME/.config/sbuild/config.pl" <<'PERL'
-# Written by scripts/ci/debian13/make-chroot.sh. sbuild unpacks the chroot
-# here and executes binaries from it, so it must be on an exec-permitting
-# filesystem; the /tmp default is not one on a GitHub runner.
-$unshare_tmpdir_template = $ENV{'HOME'} . '/.cache/sbuild/tmp.sbuild.XXXXXXXXXX';
-1;
-PERL
-cat "$HOME/.config/sbuild/config.pl"
 
 note "materializing $IMAGE into $CHROOT_TARBALL"
 # The unshare backend takes a chroot TARBALL, not a directory: sbuild(1),
