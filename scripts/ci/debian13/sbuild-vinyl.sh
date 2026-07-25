@@ -55,6 +55,7 @@ mkdir -p "$sbuild_out"
 		--arch=amd64 \
 		--dist="$DEBIAN_DISTRIBUTION" \
 		--chroot-mode=unshare \
+		--verbose \
 		--chroot="$CHROOT_TARBALL" \
 		--no-run-lintian \
 		--no-source \

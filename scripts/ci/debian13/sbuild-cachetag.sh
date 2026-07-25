@@ -61,6 +61,7 @@ mkdir -p "$sbuild_out"
 		--arch=amd64 \
 		--dist="$DEBIAN_DISTRIBUTION" \
 		--chroot-mode=unshare \
+		--verbose \
 		--chroot="$CHROOT_TARBALL" \
 		--extra-package="$vinyl_deb" \
 		--extra-package="$vinyl_dev_deb" \

@@ -55,7 +55,32 @@ say "install Mock"
 
 dnf -y install epel-release
 dnf -y install mock mock-core-configs
-mock --version
+
+#
+# Mock refuses to run as root -- "mock will not run from the root account
+# (needs an unprivileged uid so it can drop privs)" -- and /usr/bin/mock is a
+# symlink to usermode's consolehelper, which on a GitHub runner fails with
+# "Insufficient rights." (exit 6) rather than falling back to anything useful.
+# So every mock invocation runs as an unprivileged user in the mock group.
+#
+# That user is given the uid/gid that owns the bind-mounted /out, so mock can
+# write its resultdir and the RPMs land on the host owned by the account that
+# started the job rather than by root.
+#
+build_uid=$(stat -c %u /out)
+build_gid=$(stat -c %g /out)
+[ "$build_uid" -ne 0 ] || die "/out is owned by root; mock cannot run as root and would not be able to write its results"
+getent group "$build_gid" >/dev/null || groupadd -g "$build_gid" mockbuild
+useradd -o -u "$build_uid" -g "$build_gid" -m -d /home/mockbuild mockbuild
+usermod -aG mock mockbuild
+chown -R "$build_uid:$build_gid" "$resultdir" "$topdir"
+
+# mock, as that user. Used for every mock call below; a bare `mock` here is a bug.
+mock_as() { runuser -u mockbuild -- mock "$@"; }
+
+printf 'mock runs as %s (uid %s, groups: %s)\n' \
+	mockbuild "$build_uid" "$(runuser -u mockbuild -- id -nG)"
+mock_as --version
 
 ###############################################################################
 say "vinyl-cache: generate the spec (duplicates container/build.sh stage_vinyl's substitution)"
@@ -87,20 +112,20 @@ install -m 0644 /recipes/systemd/vinyl-cache.sysusers "$srcdir/"
 say "Mock: initialize the alma+epel-9-x86_64 root"
 ###############################################################################
 
-mock -r "$mock_cfg" --init
+mock_as -r "$mock_cfg" --init
 
 ###############################################################################
 say "Mock: vinyl-cache buildsrpm + rebuild"
 ###############################################################################
 
 export SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH
-mock -r "$mock_cfg" --no-clean \
+mock_as -r "$mock_cfg" --no-clean \
 	--resultdir="$resultdir/vinyl" \
 	--buildsrpm --spec "$specdir/vinyl-cache.spec" --sources "$srcdir" \
 	2>&1 | tee "$logdir/mock-vinyl-srpm.log"
 
 vinyl_srpm=$(ls "$resultdir/vinyl"/vinyl-cache-"$vinyl_evr".src.rpm)
-mock -r "$mock_cfg" --no-clean \
+mock_as -r "$mock_cfg" --no-clean \
 	--resultdir="$resultdir/vinyl" \
 	--rebuild "$vinyl_srpm" \
 	2>&1 | tee "$logdir/mock-vinyl-build.log"
@@ -113,7 +138,7 @@ say "Mock: install vinyl-cache + vinyl-cache-devel into the SAME root"
 ###############################################################################
 
 arch=$(uname -m)
-mock -r "$mock_cfg" --no-clean --install \
+mock_as -r "$mock_cfg" --no-clean --install \
 	/out/packages/vinyl-cache-"$vinyl_evr.$arch".rpm \
 	/out/packages/vinyl-cache-devel-"$vinyl_evr.$arch".rpm \
 	2>&1 | tee "$logdir/mock-install-vinyl.log"
@@ -122,16 +147,16 @@ mock -r "$mock_cfg" --no-clean --install \
 say "read the substitution values back from the mock-installed devel package"
 ###############################################################################
 
-vmoddir=$(mock -r "$mock_cfg" --no-clean --quiet --chroot -- \
+vmoddir=$(mock_as -r "$mock_cfg" --no-clean --quiet --chroot -- \
 	pkg-config --define-variable=libdir=/usr/lib64 --variable=vmoddir vinylapi)
-incdir=$(mock -r "$mock_cfg" --no-clean --quiet --chroot -- \
+incdir=$(mock_as -r "$mock_cfg" --no-clean --quiet --chroot -- \
 	pkg-config --variable=pkgincludedir vinylapi)
-vrt_major=$(mock -r "$mock_cfg" --no-clean --quiet --chroot -- \
+vrt_major=$(mock_as -r "$mock_cfg" --no-clean --quiet --chroot -- \
 	sed -n 's/^#define[[:space:]]\+VRT_MAJOR_VERSION[[:space:]]\+\([0-9]\+\).*/\1/p' "$incdir/vrt.h")
-vrt_minor=$(mock -r "$mock_cfg" --no-clean --quiet --chroot -- \
+vrt_minor=$(mock_as -r "$mock_cfg" --no-clean --quiet --chroot -- \
 	sed -n 's/^#define[[:space:]]\+VRT_MINOR_VERSION[[:space:]]\+\([0-9]\+\).*/\1/p' "$incdir/vrt.h")
 vrt="$vrt_major.$vrt_minor"
-abi=$(mock -r "$mock_cfg" --no-clean --quiet --chroot -- \
+abi=$(mock_as -r "$mock_cfg" --no-clean --quiet --chroot -- \
 	sed -n 's/^#define[[:space:]]\+VMOD_ABI_Version[[:space:]]\+"\(.*\)"[[:space:]]*$/\1/p' "$incdir/vmod_abi.h" |
 	awk 'NR == 1 { print $NF }')
 
@@ -168,13 +193,13 @@ say "Mock: libvmod-cachetag buildsrpm + rebuild, against the installed vinyl-cac
 ###############################################################################
 
 export SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH
-mock -r "$mock_cfg" --no-clean \
+mock_as -r "$mock_cfg" --no-clean \
 	--resultdir="$resultdir/cachetag" \
 	--buildsrpm --spec "$specdir/libvmod-cachetag.spec" --sources "$srcdir" \
 	2>&1 | tee "$logdir/mock-cachetag-srpm.log"
 
 cachetag_srpm=$(ls "$resultdir/cachetag"/libvmod-cachetag-"$CACHETAG_VERSION-$CACHETAG_RELEASE.el9".src.rpm)
-mock -r "$mock_cfg" --no-clean \
+mock_as -r "$mock_cfg" --no-clean \
 	--resultdir="$resultdir/cachetag" \
 	--rebuild "$cachetag_srpm" \
 	2>&1 | tee "$logdir/mock-cachetag-build.log"

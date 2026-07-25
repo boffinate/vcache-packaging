@@ -54,6 +54,40 @@ if ! grep -q "^$user:" /etc/subuid || ! grep -q "^$user:" /etc/subgid; then
 fi
 grep "^$user:" /etc/subuid /etc/subgid
 
+#
+# The other hard precondition: this user must be able to create a user
+# namespace. Ubuntu 24.04 -- which is what ubuntu-latest resolves to -- ships
+# `kernel.apparmor_restrict_unprivileged_userns=1`, which denies exactly that
+# to unconfined programs, and sbuild reports the consequence as the unhelpful
+# "E: Can't determine architecture of chroot:" with an empty architecture,
+# because its chroot session never started.
+#
+# Probe it here rather than letting sbuild fail opaquely three steps later.
+#
+note "user namespace preflight"
+userns_sysctl=kernel.apparmor_restrict_unprivileged_userns
+if sysctl -n "$userns_sysctl" >/dev/null 2>&1; then
+	printf '%s = %s\n' "$userns_sysctl" "$(sysctl -n "$userns_sysctl")"
+else
+	printf '%s: not present on this kernel\n' "$userns_sysctl"
+fi
+
+if unshare --user --map-root-user true 2>/dev/null; then
+	printf 'OK: this user can create a user namespace\n'
+elif sysctl -n "$userns_sysctl" >/dev/null 2>&1; then
+	note "user namespaces are denied; relaxing $userns_sysctl"
+	# Restricting unprivileged user namespaces is a hardening measure for
+	# multi-user systems. This is a single-use ephemeral runner whose whole
+	# job is to run an unprivileged, namespaced build, and the alternative
+	# is running sbuild as root, which its unshare backend refuses.
+	sudo -n sysctl -w "$userns_sysctl=0"
+	unshare --user --map-root-user true ||
+		die "user namespaces are still denied after relaxing $userns_sysctl"
+	printf 'OK: user namespaces available after relaxing the sysctl\n'
+else
+	die "this user cannot create a user namespace and $userns_sysctl does not exist to relax; sbuild --chroot-mode=unshare cannot work here"
+fi
+
 note "materializing $IMAGE into $CHROOT_TARBALL"
 # The unshare backend takes a chroot TARBALL, not a directory: sbuild(1),
 # --chroot: "With the unshare chroot mode, if this option is a path, then it
