@@ -47,3 +47,41 @@ Unexecuted; its job was skipped too. Two things were checked statically and hold
 ## Not yet measured
 
 The design's cost estimates remain guesses: the source-archive job (budgeted 90 minutes) died after 18 seconds, so nothing is known about a full Vinyl build plus `make distcheck` on a GitHub runner, and neither packaging lane has produced a package in CI. `CACHETAG_SOURCE_SHA256` (`c7054e69...`) is still unverified against a clean-room-produced archive -- the run that would test it never reached the archive step.
+
+## Runs 2-5, after the Vinyl re-pin
+
+The Vinyl blocker above was resolved by the maintainer re-pinning to published upstream `25761f8505` (ca16464). Three more runs followed. The archive job now works and the numbers below are the first real measurements this pipeline has ever produced.
+
+| run | archive job | outcome |
+| --- | --- | --- |
+| [30165677234](https://github.com/boffinate/vcache-packaging/actions/runs/30165677234) (re-pin) | 6m17s | full Vinyl build + cachetag `distcheck`, 53/53 VTCs PASS, then failed cleaning up |
+| [30165796047](https://github.com/boffinate/vcache-packaging/actions/runs/30165796047) | 6m15s | same failure, same cause (old release script) |
+| [30165999231](https://github.com/boffinate/vcache-packaging/actions/runs/30165999231) | 6m16s | reached the archive digest gate and stopped there |
+
+**The 90-minute timeout on that job is roughly 14x too generous.** A GitHub runner does the whole thing -- clone Vinyl, build the harness image, configure and build Vinyl, build cachetag, `make distcheck` over the 53-VTC Default-storage suite, rebuild from the produced archive in a fresh container and run the suite again -- in a bit over six minutes, consistently, three runs in a row. The Debian and EL9 lanes have still never executed: they are `needs:`-gated behind this job, so their 30-minute budgets remain guesses.
+
+### Root-owned work directories (fixed, libvmod-cachetag fcc369d)
+
+Runs 2 and 3 failed *after* a completely successful archive build, on `rm: cannot remove .../release/dist/work/run1/content-digests.txt: Permission denied`. Every container `release-source-archive.sh` starts runs as root, so what it writes into the bind-mounted work directory is root-owned on a Linux host and the host cannot delete it. macOS hides this: the Docker VM maps container-root writes back to the invoking user, which is why every local run of that script since it was written has been cleaning up files it only appeared to own. The same class of bug bit the Debian lane in this repository (61c7c67): `build.sh source` assembles `dist/debian-13/work/` inside a container, and sbuild has to run as an ordinary user, so the tree has to be handed over before `dpkg-buildpackage -S` writes to it.
+
+This is worth generalising: **any host-side mutation of a directory a container has written to is a latent CI failure that macOS will not reproduce.**
+
+## Stop condition: the pinned cachetag archive digest cannot be reproduced
+
+Run 30165999231 produced `a262ac7a74a1464d4c0a4cc6f072ea04a77ff660b25bf0befd32dc63c18fb329`; `CACHETAG_SOURCE_SHA256` pins `c7054e69219ff3c54501d9c68857f2117944c4658db4cb08e2821b09b27821a2`. The pin was not touched. The archive's own metadata sidecar, still on the maintainer's disk at `libvmod-cachetag/release/dist/libvmod-cachetag-1.0.0.metadata.json`, says why:
+
+```json
+"release_stamp": "dev-build-from 0d3c9fdb9e39e65f86b6af9bc6935ca016cff7f8 +dirty",
+"cachetag": { "git_commit": "0d3c9fdb...", "worktree_dirty": true },
+"vinyl_input": { "git_commit": "a90954814766d933a75d4c808c449cb9bc0ae3d3" }
+```
+
+Three things follow, and the first is fatal on its own:
+
+1. **The pinned archive was built from a dirty worktree.** It does not correspond to any committed state of `libvmod-cachetag`, so no build from any commit -- on any architecture -- can reproduce it.
+2. **It is seven commits stale.** `0d3c9fdb..HEAD` includes `src/vmod_cachetag.vcc` and `acinclude.m4`, both of which are shipped in the archive (`src/` is 96 of its 199 members). The content legitimately changed.
+3. **It was built against the old Vinyl pin** (`a909548147`, the one the packages must not ship).
+
+So the mismatch is explained without invoking any architecture effect, and the open amd64-vs-arm64 determinism question is *not* answered by it: that question cannot even be tested until the pin is re-derived from a clean, committed tree. Note also that the archive does not embed the cachetag commit id -- `src/vmod_vcs_version.txt` is written for the compiled VMOD's `.vmod_vcs` ELF section and is neither in `EXTRA_DIST` nor shipped by `make dist` -- so a stable digest across commits that touch nothing shipped is still expected.
+
+The fix is a maintainer decision, and it is the same decision as DESIGN.md open question #1: pin `CACHETAG_REF` to an exact commit, produce the archive from that clean commit, and record the digest it computes. Pinning a digest while CI tracks a moving branch cannot work, because every commit that touches a shipped file invalidates the pin by design.

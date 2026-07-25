@@ -129,11 +129,11 @@ jobs:
           path: libvmod-cachetag/release/dist
       - run: recipes/debian-13/build.sh source
         working-directory: vcache-packaging
-      - run: sudo bash scripts/ci/debian13/make-chroot.sh
+      - run: bash scripts/ci/debian13/make-chroot.sh
         working-directory: vcache-packaging
-      - run: sudo bash scripts/ci/debian13/sbuild-vinyl.sh
+      - run: bash scripts/ci/debian13/sbuild-vinyl.sh
         working-directory: vcache-packaging
-      - run: sudo bash scripts/ci/debian13/sbuild-cachetag.sh
+      - run: bash scripts/ci/debian13/sbuild-cachetag.sh
         working-directory: vcache-packaging
       - run: bash scripts/ci/debian13/assert-packages.sh
         working-directory: vcache-packaging
@@ -177,7 +177,7 @@ jobs:
           name: release-cachetag-source-archive
           path: libvmod-cachetag/release/dist
       - run: |
-          sudo bash scripts/ci/el9/mock-build.sh \
+          bash scripts/ci/el9/mock-build.sh \
             "$GITHUB_WORKSPACE/vinyl-cache" \
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "$EL9_IMAGE"
@@ -188,7 +188,7 @@ jobs:
             -v "$PWD/dist/el9:/out" \
             -w /out \
             "$EL9_IMAGE" \
-            bash /recipes/container/build.sh report lint
+            bash /recipes/container/build.sh deps report lint
           recipes/el9/build.sh --smoke-only
         working-directory: vcache-packaging
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3

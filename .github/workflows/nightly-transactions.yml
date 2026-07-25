@@ -95,13 +95,13 @@ jobs:
         run: recipes/debian-13/build.sh source
         working-directory: vcache-packaging
       - name: sbuild chroot
-        run: sudo bash scripts/ci/debian13/make-chroot.sh
+        run: bash scripts/ci/debian13/make-chroot.sh
         working-directory: vcache-packaging
       - name: sbuild vinyl-cache
-        run: sudo bash scripts/ci/debian13/sbuild-vinyl.sh
+        run: bash scripts/ci/debian13/sbuild-vinyl.sh
         working-directory: vcache-packaging
       - name: sbuild cachetag
-        run: sudo bash scripts/ci/debian13/sbuild-cachetag.sh
+        run: bash scripts/ci/debian13/sbuild-cachetag.sh
         working-directory: vcache-packaging
       - name: ABI/hardening assertions
         run: bash scripts/ci/debian13/assert-packages.sh
@@ -159,7 +159,7 @@ jobs:
 
       - name: Mock build
         run: |
-          sudo bash scripts/ci/el9/mock-build.sh \
+          bash scripts/ci/el9/mock-build.sh \
             "$GITHUB_WORKSPACE/vinyl-cache" \
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "$EL9_IMAGE"
@@ -171,7 +171,7 @@ jobs:
             -v "$PWD/dist/el9:/out" \
             -w /out \
             "$EL9_IMAGE" \
-            bash /recipes/container/build.sh report lint
+            bash /recipes/container/build.sh deps report lint
           recipes/el9/build.sh --smoke-only
         working-directory: vcache-packaging
 
