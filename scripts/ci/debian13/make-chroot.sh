@@ -121,12 +121,41 @@ note "materializing $IMAGE into $CHROOT_TARBALL"
 mkdir -p "$(dirname -- "$CHROOT_TARBALL")"
 rm -f "$CHROOT_TARBALL"
 
+#
+# The export is unpacked and repacked rather than used as sbuild's chroot
+# tarball directly. A raw `docker export` gets as far as being unpacked and
+# then nothing inside it can be executed:
+#
+#   I: Unpacking /home/runner/.cache/sbuild/trixie-amd64.tar to /tmp/tmp.sbuild.*
+#   I: Creating chroot session...
+#   Can't exec "dpkg": Permission denied at /usr/libexec/sbuild-usernsexec line 561
+#   E: Can't determine architecture of chroot:
+#
+# reproduced locally against a real export (sbuild 0.88.3 and 0.89.3 alike),
+# while a rootfs repacked this way builds a package to "Status: successful".
+# Three differences, all of which this reproduces deliberately:
+#
+#   --owner=0 --group=0   every member is root-owned. sbuild unpacks inside a
+#                         user namespace that maps only root and the subuid
+#                         range, so members owned by the runner's uid land as
+#                         an unmapped owner and cannot be executed.
+#   ./-prefixed members   the shape `tar -C <root> -cf - .` produces.
+#   no device nodes       dev/ stays as an empty mount point; sbuild
+#                         bind-mounts the real /dev per invocation, and
+#                         device nodes cannot be created in a user namespace
+#                         anyway.
+#
 docker pull "$IMAGE" >/dev/null
 cid=$(docker create --platform linux/amd64 "$IMAGE" true)
 trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
-docker export "$cid" > "$CHROOT_TARBALL"
-trap - EXIT
+rootfs=$(mktemp -d)
+trap 'docker rm -f "$cid" >/dev/null 2>&1 || true; rm -rf "$rootfs"' EXIT
+docker export "$cid" | tar -C "$rootfs" -x --exclude='dev/*' --no-same-owner
 docker rm -f "$cid" >/dev/null
+mkdir -p "$rootfs/dev" "$rootfs/proc" "$rootfs/sys"
+tar -C "$rootfs" --owner=0 --group=0 --numeric-owner -cf "$CHROOT_TARBALL" .
+rm -rf "$rootfs"
+trap - EXIT
 
 # Assert the export really is a root filesystem before a build depends on it.
 # `docker export` names members without a leading "./" (etc/, proc/, dev/),

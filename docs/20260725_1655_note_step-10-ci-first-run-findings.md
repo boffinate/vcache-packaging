@@ -87,3 +87,26 @@ So the mismatch is explained without invoking any architecture effect, and the o
 One thing the runs do settle: the amd64 archive is reproducible run to run. Runs [30165999231](https://github.com/boffinate/vcache-packaging/actions/runs/30165999231) and [30166321207](https://github.com/boffinate/vcache-packaging/actions/runs/30166321207), on two different ephemeral runners, both produced `a262ac7a74a1464d4c0a4cc6f072ea04a77ff660b25bf0befd32dc63c18fb329` from the same cachetag commit. What remains untested is whether an amd64 archive and an arm64 archive of the *same* clean commit agree.
 
 The fix is a maintainer decision, and it is the same decision as DESIGN.md open question #1: pin `CACHETAG_REF` to an exact commit, produce the archive from that clean commit, and record the digest it computes. Pinning a digest while CI tracks a moving branch cannot work, because every commit that touches a shipped file invalidates the pin by design.
+
+## The two packaging lanes, first executions
+
+With the cachetag digest re-pinned (92fac70) the archive job went green and the Debian and EL9 jobs ran for the first time. Both had never executed anywhere: the local lanes use `recipes/*/build.sh`, which builds in a plain container, while these jobs use sbuild and Mock. Every failure below is therefore a first-contact finding, not a regression.
+
+Archive job timings, now that it passes: 6m09s, 6m16s, 8m02s. The spread is runner-to-runner variance on identical input.
+
+### Debian 13 (sbuild)
+
+1. **`docker export` names tar members without `./`.** The chroot sanity assertions were written against `tar -C / -cf - .` and failed on a perfectly good chroot. Compounded by a `set -o pipefail` trap: `printf ... | grep -q` returns 141 when grep exits early on a *match*, so the check failed precisely when it succeeded. Fixed in c503a5e; both verified against a real export.
+2. **The runner denies unprivileged user namespaces.** `kernel.apparmor_restrict_unprivileged_userns=1` on ubuntu-24.04, and sbuild reports the consequence as `E: Can't determine architecture of chroot:` with an empty architecture -- a message that says nothing about the cause. make-chroot.sh now probes it, relaxes it on this single-use runner, and says so. Confirmed working: `OK: user namespaces available after relaxing the sysctl`.
+3. **ubuntu-latest's sbuild is too old.** 0.85.10ubuntu0.2 unpacks the chroot tarball and then dies with `runuser: failed to execute sh: Permission denied` / `E: read_command failed to execute dpkg`. 0.89.3 from `debian:trixie` builds the same shape of job to `Status: successful` in a container. Now installed from `<codename>-backports` (0.88.3), which also removes "whatever Ubuntu ships" as an unpinned input to a lane whose entire point is pinned buildroots.
+
+Everything before sbuild works: `build.sh source` assembles both trees, the chroot tarball materialises from the pinned digest, and `dpkg-buildpackage -S` produces `vinyl-cache_9.0.0~git20260520.25761f8505-1.dsc`.
+
+### EL9 (Mock)
+
+1. **Mock will not run as root**, and `/usr/bin/mock` is a symlink to usermode's consolehelper, which answers `Insufficient rights.` (exit 6) on a runner. Every mock call now runs as an unprivileged user in the `mock` group, given the uid/gid that owns the bind-mounted `/out` so it can write its resultdir. Confirmed: `mock runs as mockbuild (uid 1001, groups: mockbuild mock)`, and vinyl-cache built.
+2. **`--no-clean` does not preserve `mock --install`ed packages.** Every `mock --rebuild` begins with chroot init, which restores the root cache, so cachetag's `BuildRequires: vinyl-cache-devel = <evr>` failed with `No matching package to install`. container-mock.sh's own header had flagged this exact sequence as written from documentation rather than from a run, and it was wrong. The built RPMs are now published with `createrepo_c` and passed to the cachetag builds with `--addrepo`.
+
+### The shape of all of it
+
+Six distinct failures across the two lanes, and every one is the same story: a tool that refuses to be root, in an environment that only offers root, or a pinned input that turned out not to be pinned. None of them could have been found by reading the scripts, and none of them reproduce on the maintainer's macOS Docker, where container-root writes are remapped to the invoking user and no AppArmor policy exists.
