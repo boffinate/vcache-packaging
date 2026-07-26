@@ -1,0 +1,37 @@
+# Vinyl 9 survey lane: Debian 13 with the vinyl-cache runtime and development
+# packages installed, plus the varnish-name compatibility shim so third-party
+# VMODs reach real API checks instead of failing on the project rename.
+#
+# Keep the common VMOD dependency set (second RUN apt-get) identical to
+# Dockerfile.varnish9 so a missing dependency fails the same way on both lanes.
+ARG IMAGE
+FROM ${IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential autoconf automake autoconf-archive libtool pkg-config git ca-certificates curl \
+    python3 python3-docutils python3-sphinx \
+    libpcre2-dev libedit-dev libncurses-dev libjemalloc-dev libunwind-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Common third-party VMOD dependency set — keep identical to Dockerfile.varnish9.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl-dev zlib1g-dev libcurl4-openssl-dev libmaxminddb-dev libgeoip-dev \
+    libjansson-dev libbrotli-dev libev-dev libevent-dev uuid-dev libossp-uuid-dev \
+    libhiredis-dev libmemcached-dev libgcrypt20-dev libgd-dev libmhash-dev \
+    libluajit-5.1-dev libre2-dev default-libmysqlclient-dev libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY stage/debs /tmp/debs
+RUN apt-get update && apt-get install -y /tmp/debs/*.deb && rm -rf /tmp/debs /var/lib/apt/lists/*
+
+COPY make-shim.sh /harness/make-shim.sh
+RUN sh /harness/make-shim.sh
+
+RUN vinyld -V && pkg-config --modversion varnishapi && varnishd -V
+
+COPY build-and-load.sh /harness/build-and-load.sh
+RUN chmod +x /harness/build-and-load.sh
+
+ENV LANE=vinyl9 DAEMON=vinyld

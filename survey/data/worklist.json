@@ -1,0 +1,2982 @@
+{
+  "schema": "vmod-survey-worklist/v1",
+  "homepage_repo": "https://code.vinyl-cache.org/vinyl-cache/homepage",
+  "homepage_commit": "a67cfa490e071c588dd54dec52a8b006a720b56f",
+  "homepage_commit_time": "2026-06-28T11:01:44+02:00",
+  "generated_by": "survey/tools/ingest.py",
+  "counts": {
+    "total": 113,
+    "homepage": 112,
+    "manual": 1,
+    "active": 81,
+    "inactive": 32,
+    "cloneable": 113,
+    "parse_failures": 0
+  },
+  "parse_failures": [],
+  "entries": [
+    {
+      "name": "abtest",
+      "desc": "AB Tests value selector",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_abtest.json",
+      "forge": "github",
+      "clone_url": "https://github.com/Destination/libvmod-abtest.git",
+      "web_url": "https://github.com/Destination/libvmod-abtest",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_abtest.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "all_healthy",
+      "desc": "director to use more than one probe or a different backend's probe",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_all_healthy.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-all_healthy.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-all_healthy",
+      "branches": {
+        "4.1": "4.1",
+        "6.0": "6.0",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-all_healthy",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-all_healthy"
+      }
+    },
+    {
+      "name": "authentication",
+      "desc": "Authentication",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_authentication.json",
+      "forge": "github",
+      "clone_url": "https://github.com/pariahsoft/libvmod-authentication.git",
+      "web_url": "https://github.com/pariahsoft/libvmod-authentication",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_authentication.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "awsrest",
+      "desc": "AWS Signature",
+      "status": "development",
+      "inactive": false,
+      "date": "2017-04-21",
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_awsrest.json",
+      "forge": "github",
+      "clone_url": "https://github.com/xcir/libvmod-awsrest.git",
+      "web_url": "https://github.com/xcir/libvmod-awsrest",
+      "branches": {
+        "3.0": "varnish30",
+        "4.0": "varnish40",
+        "4.1": "varnish41",
+        "5.0": "master",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_awsrest.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "backend_dyn",
+      "desc": "create and delete backends at runtime",
+      "status": "OBSOLETED by vmod_dynamic",
+      "inactive": true,
+      "date": "2016-04-21",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_backend_dyn.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-backend_dyn.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/libvmod-backend_dyn",
+      "branches": {
+        "5.1": "5.1",
+        "6.0": "6.0"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "basicauth",
+      "desc": "Basicauth",
+      "status": "mature",
+      "inactive": false,
+      "date": "2026-02-27",
+      "license": "GPLv3+",
+      "maintainer": "gray@gnu.org",
+      "support": [
+        "Norse Digital"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_basicauth.json",
+      "forge": "other",
+      "clone_url": "https://git.gnu.org.ua/vmod-basicauth.git",
+      "web_url": "https://git.gnu.org.ua/vmod-basicauth.git",
+      "branches": {
+        "6.0": "6.0",
+        "7.0": "7.0",
+        "main": "main"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "blobcode",
+      "desc": "binary-to-text encodings and decodings for BLOBs",
+      "status": "included in Varnish-Cache since release 5.2 as vmod_blob",
+      "inactive": true,
+      "date": "2017-04-21",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_blobcode.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-blobcode.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/libvmod-blobcode",
+      "branches": {
+        "4.1": "4.1",
+        "5.0": "5.0",
+        "5.1": "5.1"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "blobdigest",
+      "desc": "digests and hmacs for BLOBs",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_blobdigest.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-blobdigest.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-blobdigest",
+      "branches": {
+        "4.1": "4.1",
+        "5.0": "5.0",
+        "5.1": "5.1",
+        "5.2": "5.2",
+        "6.0": "6.0",
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-blobdigest",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-blobdigest"
+      }
+    },
+    {
+      "name": "blobsha256",
+      "desc": "SHA256 digests and hmacs for BLOBs",
+      "status": "mature",
+      "inactive": false,
+      "date": "2022-05-23",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_blobsha256.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-blobsha256.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/libvmod-blobsha256",
+      "branches": {
+        "4.1 - master": "4.1 - master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "blobsynth",
+      "desc": "Generate synthetic() responses from BLOBs",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "Public Domain",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_blobsynth.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-blobsynth.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-blobsynth",
+      "branches": {
+        "5.2": "5.2",
+        "6.0": "6.0",
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-blobsynth",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-blobsynth"
+      }
+    },
+    {
+      "name": "boltsort",
+      "desc": "boltsort - QueryString params sort",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_boltsort.json",
+      "forge": "github",
+      "clone_url": "https://github.com/vimeo/libvmod-boltsort.git",
+      "web_url": "https://github.com/vimeo/libvmod-boltsort",
+      "branches": {
+        "3.0": "3.0",
+        "4.0": "master"
+      },
+      "vcc_path": "src/vmod_boltsort.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "brotli",
+      "desc": "Vinyl Cache Fetch Processor (VFP) for brotli de-/compression",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_brotli.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvfp-brotli.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvfp-brotli",
+      "branches": {
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvfp-brotli",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvfp-brotli"
+      }
+    },
+    {
+      "name": "cfg",
+      "desc": "Access to local / remote .ini / .json files, access to environment variables, and execution of local / remote Lua and JavaScript scripts",
+      "status": "mature",
+      "inactive": false,
+      "date": "2025-02-04",
+      "license": "FreeBSD",
+      "maintainer": "carlos.abalde@gmail.com",
+      "support": [
+        "Allenta Consulting S.L."
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_cfg.json",
+      "forge": "github",
+      "clone_url": "https://github.com/carlosabalde/libvmod-cfg.git",
+      "web_url": "https://github.com/carlosabalde/libvmod-cfg",
+      "branches": {
+        "6.0": "6.0",
+        "8.0": "8.0",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_cfg.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "cluster",
+      "desc": "simple and easy cache clustering",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_cluster.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-cluster.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-cluster",
+      "branches": {
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-cluster",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-cluster"
+      }
+    },
+    {
+      "name": "constant",
+      "desc": "constants as objects in VCL",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_constant.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/varnish-objvar.git",
+      "web_url": "https://gitlab.com/uplex/varnish/varnish-objvar",
+      "branches": {
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/varnish-objvar",
+        "gitlab": "https://gitlab.com/uplex/varnish/varnish-objvar"
+      }
+    },
+    {
+      "name": "cookie",
+      "desc": "Cookie",
+      "status": "included in Varnish-Cache since release 6.4.0",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_cookie.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/varnish-modules.git",
+      "web_url": "https://github.com/varnish/varnish-modules",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_cookie.vcc",
+      "doc_path": "docs/vmod_cookie.rst",
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "cookie (newer versions)",
+      "desc": "Cookie (newer versions)",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_cookie_nigoroll.json",
+      "forge": "github",
+      "clone_url": "https://github.com/nigoroll/varnish-modules.git",
+      "web_url": "https://github.com/nigoroll/varnish-modules",
+      "branches": {
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_cookie.vcc",
+      "doc_path": "docs/cookie.rst",
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "crypto",
+      "desc": "asymmetric signatures (RSA, DSA) in VCL",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_crypto.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-crypto.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-crypto",
+      "branches": {
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-crypto",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-crypto"
+      }
+    },
+    {
+      "name": "curl",
+      "desc": "cURL",
+      "status": "mature",
+      "inactive": false,
+      "date": "2022-05-23",
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_curl.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/libvmod-curl.git",
+      "web_url": "https://github.com/varnish/libvmod-curl",
+      "branches": {
+        "3.0": "3.0",
+        "4.0": "4.0",
+        "4.1": "4.1",
+        "6.0": "6.0",
+        "6.0-lts": "6.0-lts",
+        "6.2": "6.2",
+        "6.3": "6.3",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_curl.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "dateformat",
+      "desc": "Date conversions functions accordingly to a date format (strftime)",
+      "status": "mature",
+      "inactive": true,
+      "date": "2017-03-02",
+      "license": "BSD 2-Clause",
+      "maintainer": "jonathan.huot@thomsonreuters.com",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_dateformat.json",
+      "forge": "github",
+      "clone_url": "https://github.com/thomsonreuters/libvmod-dateformat.git",
+      "web_url": "https://github.com/thomsonreuters/libvmod-dateformat",
+      "branches": {
+        "4.1": "master",
+        "5.0": "master"
+      },
+      "vcc_path": "src/vmod_dateformat.vcc",
+      "doc_path": "README.rst",
+      "warnings": []
+    },
+    {
+      "name": "dbrw",
+      "desc": "Database-driven rewrites",
+      "status": "mature",
+      "inactive": false,
+      "date": "2026-02-27",
+      "license": "GPLv3+",
+      "maintainer": "gray@gnu.org",
+      "support": [
+        "Norse Digital"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_dbrw.json",
+      "forge": "other",
+      "clone_url": "https://git.gnu.org.ua/vmod-dbrw.git",
+      "web_url": "https://git.gnu.org.ua/vmod-dbrw.git",
+      "branches": {
+        "6.0": "6.0",
+        "7.0": "7.0",
+        "main": "main"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "dclass",
+      "desc": "dClass Apache DeviceMap",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "Apache2",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_dclass.json",
+      "forge": "github",
+      "clone_url": "https://github.com/TheWeatherChannel/dClass.git",
+      "web_url": "https://github.com/TheWeatherChannel/dClass",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "servers/src/vmod_dclass4.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "dcs",
+      "desc": "Device Classifier Service",
+      "status": "SPONSOR LOST INTEREST",
+      "inactive": true,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_dcs.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/dcs_classifier.git",
+      "web_url": "https://gitlab.com/uplex/varnish/dcs_classifier",
+      "branches": {
+        "3.0": "master",
+        "4.0": "master",
+        "4.1": "master",
+        "5.0": "master",
+        "5.1": "master",
+        "5.2": "master",
+        "6.0": "master",
+        "6.1": "master",
+        "6.2": "master",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/dcs_classifier",
+        "gitlab": "https://gitlab.com/uplex/varnish/dcs_classifier"
+      }
+    },
+    {
+      "name": "dgram",
+      "desc": "Dgram",
+      "status": "development",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_dgram.json",
+      "forge": "github",
+      "clone_url": "https://github.com/mmb/vmod_dgram.git",
+      "web_url": "https://github.com/mmb/vmod_dgram",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_dgram.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "dict",
+      "desc": "Dictionary look-up",
+      "status": "mature",
+      "inactive": false,
+      "date": "2026-02-27",
+      "license": "GPLv3+",
+      "maintainer": "gray@gnu.org",
+      "support": [
+        "Norse Digital"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_dict.json",
+      "forge": "other",
+      "clone_url": "https://git.gnu.org.ua/vmod-dict.git",
+      "web_url": "https://git.gnu.org.ua/vmod-dict.git",
+      "branches": {
+        "6.0": "6.0",
+        "7.0": "7.0",
+        "main": "main"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "digest",
+      "desc": "Digest",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_digest.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/libvmod-digest.git",
+      "web_url": "https://github.com/varnish/libvmod-digest",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_digest.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "directors",
+      "desc": "Backend selection directors",
+      "status": "included",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software",
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_directors.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnishcache/varnish-cache.git",
+      "web_url": "https://github.com/varnishcache/varnish-cache",
+      "branches": {
+        "4.0": "4.0",
+        "4.1": "4.1",
+        "main": "master"
+      },
+      "vcc_path": "lib/libvmod_directors/vmod.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "dns",
+      "desc": "DNS",
+      "status": "mature",
+      "inactive": false,
+      "date": "2022-05-23",
+      "license": "Apache2",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_dns.json",
+      "forge": "github",
+      "clone_url": "https://github.com/kenshaw/libvmod-dns.git",
+      "web_url": "https://github.com/kenshaw/libvmod-dns",
+      "branches": {
+        "4.1 - master": "master"
+      },
+      "vcc_path": "src/vmod_dns.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "dynamic",
+      "desc": "Dynamic Backends from DNS lookups and service discovery from SRV records",
+      "status": "mature",
+      "inactive": false,
+      "date": "2016-10-04",
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_dynamic.json",
+      "forge": "github",
+      "clone_url": "https://github.com/nigoroll/libvmod-dynamic.git",
+      "web_url": "https://github.com/nigoroll/libvmod-dynamic",
+      "branches": {
+        "4.1": "4.1",
+        "5.0": "5.0",
+        "5.1": "5.1",
+        "5.2": "5.2",
+        "6.0": "6.0",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_dynamic.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "dyncounters",
+      "desc": "create custom VSC at run time",
+      "status": "development",
+      "inactive": false,
+      "date": "2020-04-17",
+      "license": "FreeBSD",
+      "maintainer": "ehocdet@club.fr",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_dyncounters.json",
+      "forge": "github",
+      "clone_url": "https://github.com/ehocdet/libvmod-dyncounters.git",
+      "web_url": "https://github.com/ehocdet/libvmod-dyncounters",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_dyncounters.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "ece",
+      "desc": "Vinyl Cache Module for encrypted Content-Encoding per RFC 8188",
+      "status": "development",
+      "inactive": false,
+      "date": "2020-08-17",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_ece.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-ece.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-ece",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-ece",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-ece"
+      }
+    },
+    {
+      "name": "esicookies",
+      "desc": "inject cookies from Set-Cookie into ESI request headers",
+      "status": "development",
+      "inactive": true,
+      "date": "2016-04-21",
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_esicookies.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-esicookies.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/libvmod-esicookies",
+      "branches": {
+        "3.0": "3.0"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "esiextra",
+      "desc": "ETag and Last-Modified for ESI",
+      "status": "development",
+      "inactive": false,
+      "date": "2017-11-06",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_esiextra.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-esiextra.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/libvmod-esiextra",
+      "branches": {
+        "main": "main"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "etag",
+      "desc": "ETags generated in Vinyl Cache",
+      "status": "development",
+      "inactive": false,
+      "date": "2019-04-17",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_etag.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-etag.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-etag",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-etag",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-etag"
+      }
+    },
+    {
+      "name": "example",
+      "desc": "example vmod - hello world!",
+      "status": "prototype",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_example.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/libvmod-example.git",
+      "web_url": "https://github.com/varnish/libvmod-example",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_example.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "fiftyonedegrees",
+      "desc": "51Degrees Device Detection",
+      "status": "mature",
+      "inactive": false,
+      "date": "2020-07-16",
+      "license": "EUPL",
+      "maintainer": "support@51degrees.com",
+      "support": "51Degrees.mobi Limited",
+      "product": "https://github.com/51Degrees/device-detection-varnish",
+      "origin": "homepage",
+      "source_file": "vmod_51degrees_device_detection.json",
+      "forge": "github",
+      "clone_url": "https://github.com/51Degrees/device-detection-varnish.git",
+      "web_url": "https://github.com/51Degrees/device-detection-varnish",
+      "branches": {
+        "6.0": "master"
+      },
+      "vcc_path": "src/vmod_fiftyonedegrees.vcc",
+      "doc_path": "src/vmod_fiftyonedegrees.rst",
+      "warnings": []
+    },
+    {
+      "name": "file",
+      "desc": "Reading files that may be updated at intervals",
+      "status": "mature",
+      "inactive": false,
+      "date": "2023-12-12",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_file.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-file.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/libvmod-file",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-file"
+      }
+    },
+    {
+      "name": "file (old)",
+      "desc": "File",
+      "status": "development",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_file.old.json",
+      "forge": "github",
+      "clone_url": "https://github.com/academia-edu/libvmod-file.git",
+      "web_url": "https://github.com/academia-edu/libvmod-file",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_file.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "flagship",
+      "desc": "Provide feature flagging & experimentation abilities at the web server level and cache server.",
+      "status": "development",
+      "inactive": false,
+      "date": "2022-12-07",
+      "license": "Apache2",
+      "maintainer": "guillaume.jacquart@abtasty.com",
+      "support": [
+        "AB Tasty"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_flagship.json",
+      "forge": "github",
+      "clone_url": "https://github.com/flagship-io/libvmod-flagship.git",
+      "web_url": "https://github.com/flagship-io/libvmod-flagship",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_flagship.vcc",
+      "doc_path": "README.rst",
+      "warnings": []
+    },
+    {
+      "name": "frozen",
+      "desc": "Efficient JSON parsing based on the frozen parser",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_frozen.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-frozen.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-frozen",
+      "branches": {
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-frozen",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-frozen"
+      }
+    },
+    {
+      "name": "gcrypt",
+      "desc": "access the libgcrypt library of cryptographic building blocks",
+      "status": "mature",
+      "inactive": false,
+      "date": "2022-05-23",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_gcrypt.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-gcrypt.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/libvmod-gcrypt",
+      "branches": {
+        "6.0": "6.0",
+        "6.1": "6.1",
+        "6.5": "6.5",
+        "7.0 - master": "7.0 - master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "geoip2",
+      "desc": "Query MaxMind GeoIP2 DB files",
+      "status": "mature",
+      "inactive": false,
+      "date": "2018-09-30",
+      "license": "BSD 2-Clause",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_geoip2.json",
+      "forge": "github",
+      "clone_url": "https://github.com/fgsch/libvmod-geoip2.git",
+      "web_url": "https://github.com/fgsch/libvmod-geoip2",
+      "branches": {
+        "4.1": "oldstable",
+        "6.0": "oldstable",
+        "6.1": "master",
+        "main": "devel"
+      },
+      "vcc_path": "src/vmod_geoip2.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "globalvar",
+      "desc": "global variables as objects in VCL",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_globalvar.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/varnish-objvar.git",
+      "web_url": "https://gitlab.com/uplex/varnish/varnish-objvar",
+      "branches": {
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/varnish-objvar",
+        "gitlab": "https://gitlab.com/uplex/varnish/varnish-objvar"
+      }
+    },
+    {
+      "name": "gossip",
+      "desc": "Dump information about contents stored in the cache to a JSON file",
+      "status": "prototype",
+      "inactive": false,
+      "date": "2025-02-04",
+      "license": "FreeBSD",
+      "maintainer": "carlos.abalde@gmail.com",
+      "support": [
+        "Allenta Consulting S.L."
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_gossip.json",
+      "forge": "github",
+      "clone_url": "https://github.com/carlosabalde/libvmod-gossip.git",
+      "web_url": "https://github.com/carlosabalde/libvmod-gossip",
+      "branches": {
+        "6.0": "6.0",
+        "7.6": "7.6",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_gossip.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "hashids",
+      "desc": "Hashids encode and decode support",
+      "status": "development",
+      "inactive": false,
+      "date": "2019-03-20",
+      "license": "MIT",
+      "maintainer": "ole.fredrik.skudsvik@schibsted.com",
+      "support": [
+        "Schibsted Media Group"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_hashids.json",
+      "forge": "github",
+      "clone_url": "https://github.com/schibsted/libvmod-hashids.git",
+      "web_url": "https://github.com/schibsted/libvmod-hashids",
+      "branches": {
+        "4.1": "master",
+        "5.0": "master",
+        "5.1": "master",
+        "6.0": "master"
+      },
+      "vcc_path": "src/vmod_hashids.vcc",
+      "doc_path": "README.md",
+      "warnings": []
+    },
+    {
+      "name": "header",
+      "desc": "Header manipulation",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_header.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/libvmod-header.git",
+      "web_url": "https://github.com/varnish/libvmod-header",
+      "branches": {
+        "4.0": "4.0"
+      },
+      "vcc_path": "src/vmod_header.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "headerproxy",
+      "desc": "Add custom request/response headers via your native programming language.",
+      "status": "development",
+      "inactive": true,
+      "date": "2016-05-20",
+      "license": "FreeBSD",
+      "maintainer": "tardis74@yahoo.com",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_headerproxy.json",
+      "forge": "github",
+      "clone_url": "https://github.com/SteveEasley/libvmod-headerproxy.git",
+      "web_url": "https://github.com/SteveEasley/libvmod-headerproxy",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_headerproxy.vcc",
+      "doc_path": "README.rst",
+      "warnings": []
+    },
+    {
+      "name": "hoailona",
+      "desc": "support use of the SecureHD Policy service provided by Akamai Media Services",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_hoailona.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-hoailona.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-hoailona",
+      "branches": {
+        "5.0": "5.0",
+        "5.1": "5.1",
+        "5.2": "5.2",
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-hoailona",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-hoailona"
+      }
+    },
+    {
+      "name": "i18n",
+      "desc": "libvmod-i18n",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "BSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_i18n.json",
+      "forge": "github",
+      "clone_url": "https://github.com/cosimo/libvmod-i18n.git",
+      "web_url": "https://github.com/cosimo/libvmod-i18n",
+      "branches": {
+        "3.0": "3.0"
+      },
+      "vcc_path": "src/vmod.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "iconv",
+      "desc": "iconv character encoding conversions",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_iconv.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-iconv.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-iconv",
+      "branches": {
+        "main": "trunk"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-iconv",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-iconv"
+      }
+    },
+    {
+      "name": "ip2location",
+      "desc": "A Varnish module that enables the user to find the country, region, city, latitude, longitude, zip code, time zone, ISP, domain name, connection type, area code, weather, mobile network, elevation, usage type by IP address. ",
+      "status": "development",
+      "inactive": false,
+      "date": "2019-06-21",
+      "license": "MIT",
+      "maintainer": "support@ip2location.com",
+      "support": [
+        "IP2Location"
+      ],
+      "product": "https://www.ip2location.com/database/ip2location",
+      "origin": "homepage",
+      "source_file": "vmod_ip2location.json",
+      "forge": "github",
+      "clone_url": "https://github.com/ip2location/IP2Location-Varnish.git",
+      "web_url": "https://github.com/ip2location/IP2Location-Varnish",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_ip2location.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "ip2proxy",
+      "desc": "A Varnish module that enables the user to find the country, region, city, ISP and proxy information by IP address.",
+      "status": "development",
+      "inactive": false,
+      "date": "2019-06-28",
+      "license": "MIT",
+      "maintainer": "support@ip2location.com",
+      "support": [
+        "IP2Location"
+      ],
+      "product": "https://www.ip2location.com/database/ip2location",
+      "origin": "homepage",
+      "source_file": "vmod_ip2proxy.json",
+      "forge": "github",
+      "clone_url": "https://github.com/ip2location/IP2Proxy-Varnish.git",
+      "web_url": "https://github.com/ip2location/IP2Proxy-Varnish",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_ip2proxy.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "ipcast",
+      "desc": "ipcast",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_ipcast.json",
+      "forge": "github",
+      "clone_url": "https://github.com/lkarsten/libvmod-ipcast.git",
+      "web_url": "https://github.com/lkarsten/libvmod-ipcast",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_ipcast.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "j",
+      "desc": "A JSON formatter for VCL which sucks less",
+      "status": "development",
+      "inactive": false,
+      "date": "2023-09-01",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_j.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-j.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-j",
+      "branches": {
+        "main": "trunk"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-j",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-j"
+      }
+    },
+    {
+      "name": "jq",
+      "desc": "JSON processor",
+      "status": "development",
+      "inactive": false,
+      "date": "2018-07-13",
+      "license": "BSD 2-Clause",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_jq.json",
+      "forge": "github",
+      "clone_url": "https://github.com/fgsch/libvmod-jq.git",
+      "web_url": "https://github.com/fgsch/libvmod-jq",
+      "branches": {
+        "main": "devel"
+      },
+      "vcc_path": "src/vmod_jq.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "json",
+      "desc": "JSON",
+      "status": "development",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_json.json",
+      "forge": "github",
+      "clone_url": "https://github.com/academia-edu/libvmod-json.git",
+      "web_url": "https://github.com/academia-edu/libvmod-json",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_json.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "lang",
+      "desc": "Detect language based on the accept-language header",
+      "status": "mature",
+      "inactive": false,
+      "date": "2021-06-07",
+      "license": "BSD-like",
+      "maintainer": "support@byteworks.ch",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_lang.json",
+      "forge": "github",
+      "clone_url": "https://github.com/byteworks-ch/varnish-vmod-lang.git",
+      "web_url": "https://github.com/byteworks-ch/varnish-vmod-lang",
+      "branches": {
+        "3.0": "master",
+        "4.0": "master",
+        "4.1": "master",
+        "5.2": "master",
+        "6.2": "master"
+      },
+      "vcc_path": "src/vmod_lang.vcc",
+      "doc_path": "README.md",
+      "warnings": []
+    },
+    {
+      "name": "ldap",
+      "desc": "LDAP authentication",
+      "status": "development",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_ldap.json",
+      "forge": "github",
+      "clone_url": "https://github.com/xcir/libvmod-ldap.git",
+      "web_url": "https://github.com/xcir/libvmod-ldap",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_ldap.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "libvmod_unidirectors",
+      "desc": "Backend selection directors (alternative from vmod_directors)",
+      "status": "mature",
+      "inactive": false,
+      "date": "2016-09-06",
+      "license": "FreeBSD",
+      "maintainer": "manu@gandi.net",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_unidirectors.json",
+      "forge": "github",
+      "clone_url": "https://github.com/ehocdet/libvmod-unidirectors.git",
+      "web_url": "https://github.com/ehocdet/libvmod-unidirectors",
+      "branches": {
+        "4.1": "4.1",
+        "main": "4.1"
+      },
+      "vcc_path": "src/vmod_unidirectors.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "lua",
+      "desc": "Lua",
+      "status": "prototype",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_lua.json",
+      "forge": "github",
+      "clone_url": "https://github.com/flygoast/libvmod-lua.git",
+      "web_url": "https://github.com/flygoast/libvmod-lua",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_lua.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "maxminddb",
+      "desc": "Maxmind Geoip",
+      "status": "mature",
+      "inactive": false,
+      "date": "2022-05-23",
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_maxminddb.json",
+      "forge": "github",
+      "clone_url": "https://github.com/simonvik/libvmod_maxminddb.git",
+      "web_url": "https://github.com/simonvik/libvmod_maxminddb",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_maxminddb.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "memcached",
+      "desc": "memcached",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_memcached.json",
+      "forge": "github",
+      "clone_url": "https://github.com/sodabrew/libvmod-memcached.git",
+      "web_url": "https://github.com/sodabrew/libvmod-memcached",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_memcached.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "null",
+      "desc": "null - Binary data in synthetic",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_null.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/libvmod-null.git",
+      "web_url": "https://github.com/varnish/libvmod-null",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_null.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "oob_probe",
+      "desc": "assign an out-of-band health probe to a backend",
+      "status": "development",
+      "inactive": false,
+      "date": "2016-04-21",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_oob_probe.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/oob_probe.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/oob_probe",
+      "branches": {
+        "4.1": "4.1"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "otp",
+      "desc": "One-time password generator(HOTP/TOTP)",
+      "status": "development",
+      "inactive": false,
+      "date": "2017-08-16",
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_otp.json",
+      "forge": "github",
+      "clone_url": "https://github.com/xcir/libvmod-otp.git",
+      "web_url": "https://github.com/xcir/libvmod-otp",
+      "branches": {
+        "5.1": "varnish51",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_otp.vcc",
+      "doc_path": "README.rst",
+      "warnings": []
+    },
+    {
+      "name": "parseform",
+      "desc": "Parse POST field",
+      "status": "development",
+      "inactive": false,
+      "date": "2017-08-22",
+      "license": "FreeBSD",
+      "maintainer": "kokoniimasu@gmail.com",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_parseform.json",
+      "forge": "github",
+      "clone_url": "https://github.com/xcir/libvmod-parseform.git",
+      "web_url": "https://github.com/xcir/libvmod-parseform",
+      "branches": {
+        "4.1": "varnish41",
+        "5.1": "varnish51",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_parseform.vcc",
+      "doc_path": "README.rst",
+      "warnings": []
+    },
+    {
+      "name": "pcre2",
+      "desc": "access the PCRE2 regular expression library",
+      "status": "development",
+      "inactive": false,
+      "date": "2017-07-17",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_pcre2.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-pcre2.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/libvmod-pcre2",
+      "branches": {
+        "5.1": "5.1"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "pesi",
+      "desc": "Vinyl Cache Delivery Processor for parallel ESI includes",
+      "status": "mature",
+      "inactive": false,
+      "date": "2021-08-16",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_pesi.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvdp-pesi.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvdp-pesi",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvdp-pesi",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvdp-pesi"
+      }
+    },
+    {
+      "name": "pipe",
+      "desc": "Vinyl Cache Delivery and Fetch Processors that pipe responses through external commands",
+      "status": "development",
+      "inactive": false,
+      "date": "2020-08-17",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_pipe.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvdfp-pipe.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvdfp-pipe",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvdfp-pipe",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvdfp-pipe"
+      }
+    },
+    {
+      "name": "queryfilter",
+      "desc": "Simple query string filter/sort module",
+      "status": "mature",
+      "inactive": false,
+      "date": "2023-01-09",
+      "license": "Apache2",
+      "maintainer": "code@nytimes.com",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_queryfilter.json",
+      "forge": "github",
+      "clone_url": "https://github.com/NYTimes/libvmod-queryfilter.git",
+      "web_url": "https://github.com/NYTimes/libvmod-queryfilter",
+      "branches": {
+        "3.0": "master",
+        "4.0": "master",
+        "4.1": "master",
+        "5.2": "master",
+        "6.2": "master",
+        "6.3": "main",
+        "7.2.1": "main"
+      },
+      "vcc_path": "src/vmod_queryfilter.vcc",
+      "doc_path": "README.md",
+      "warnings": []
+    },
+    {
+      "name": "querystring",
+      "desc": "Advanced query-string filtering toolkit",
+      "status": "mature",
+      "inactive": false,
+      "date": "2024-10-13",
+      "license": "GPL-3.0-or-later",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "manual",
+      "source_file": "manual-additions.json",
+      "forge": "other",
+      "clone_url": "https://git.sr.ht/~dridi/vmod-querystring",
+      "web_url": "https://git.sr.ht/~dridi/vmod-querystring",
+      "branches": {},
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [
+        "overrides the homepage entry of the same name"
+      ]
+    },
+    {
+      "name": "ratelimit",
+      "desc": "Ratelimit",
+      "status": "development",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_ratelimit.json",
+      "forge": "github",
+      "clone_url": "https://github.com/tobixen/libvmod-ratelimit.git",
+      "web_url": "https://github.com/tobixen/libvmod-ratelimit",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_ratelimit.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "re",
+      "desc": "regular expression (regexp) matches and backreferences",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_re.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-re.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-re",
+      "branches": {
+        "3.0": "3.0",
+        "4.0": "4.0",
+        "4.1": "4.0",
+        "5.0": "5.0",
+        "5.1": "5.1",
+        "5.2": "5.2",
+        "6.0": "6.0",
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-re",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-re"
+      }
+    },
+    {
+      "name": "re2",
+      "desc": "access the Google RE2 regular expression engine",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_re2.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-re2.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-re2",
+      "branches": {
+        "4.1": "4.1",
+        "5.0": "5.0",
+        "5.1": "5.1",
+        "5.2": "5.2",
+        "6.0": "6.0",
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-re2",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-re2"
+      }
+    },
+    {
+      "name": "redirect",
+      "desc": "redirect",
+      "status": "development",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_redirect.json",
+      "forge": "github",
+      "clone_url": "https://github.com/xcir/libvmod-redirect.git",
+      "web_url": "https://github.com/xcir/libvmod-redirect",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_redirect.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "redis",
+      "desc": "Access to Redis Server / Redis Cluster databases, including Redis Sentinel support",
+      "status": "mature",
+      "inactive": false,
+      "date": "2025-02-04",
+      "license": "FreeBSD",
+      "maintainer": "carlos.abalde@gmail.com",
+      "support": [
+        "Allenta Consulting S.L."
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_redis.json",
+      "forge": "github",
+      "clone_url": "https://github.com/carlosabalde/libvmod-redis.git",
+      "web_url": "https://github.com/carlosabalde/libvmod-redis",
+      "branches": {
+        "6.0": "6.0",
+        "7.6": "7.6",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_redis.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "remoteip",
+      "desc": "Determine the actual client IP address from X-Forwarded-For or similar header",
+      "status": "mature",
+      "inactive": false,
+      "date": "2026-02-27",
+      "license": "GPLv3+",
+      "maintainer": "gray@gnu.org",
+      "support": [
+        "Norse Digital"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_remoteip.json",
+      "forge": "other",
+      "clone_url": "https://git.gnu.org.ua/vmod-remoteip.git",
+      "web_url": "https://git.gnu.org.ua/vmod-remoteip.git",
+      "branches": {
+        "6.0": "6.0",
+        "7.0": "7.0",
+        "main": "main"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "rfc6052",
+      "desc": "rfc6052",
+      "status": "development",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_rfc6052.json",
+      "forge": "github",
+      "clone_url": "https://github.com/toreanderson/libvmod-rfc6052.git",
+      "web_url": "https://github.com/toreanderson/libvmod-rfc6052",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_rfc6052.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "rtstatus",
+      "desc": "RealTime Status Page",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_rtstatus.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/libvmod-rtstatus.git",
+      "web_url": "https://github.com/varnish/libvmod-rtstatus",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_rtstatus.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "saintmode",
+      "desc": "Saint mode (4.1 or later)",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_saintmode.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/varnish-modules.git",
+      "web_url": "https://github.com/varnish/varnish-modules",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_saintmode.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "secdown",
+      "desc": "Secure download",
+      "status": "prototype",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_secdown.json",
+      "forge": "github",
+      "clone_url": "https://github.com/footplus/libvmod-secdown.git",
+      "web_url": "https://github.com/footplus/libvmod-secdown",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "selector",
+      "desc": "match strings associated with backends, regexen and other strings",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_selector.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-selector.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-selector",
+      "branches": {
+        "4.1": "4.1",
+        "5.0": "5.0",
+        "5.1": "5.1",
+        "5.2": "5.2",
+        "6.0": "6.1",
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-selector",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-selector"
+      }
+    },
+    {
+      "name": "shield",
+      "desc": "Shield",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_shield.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/libvmod-shield.git",
+      "web_url": "https://github.com/varnish/libvmod-shield",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_shield.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "slash",
+      "desc": "high performance storage engines (stevedores): **buddy:** in memory with fixed size **fellow:** on ssd/disk with tiered ram cache, eventually persistent, always consistent",
+      "status": "mature",
+      "inactive": false,
+      "date": "2023-03-20",
+      "license": "LGPL-2.1-only",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_slash.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/slash.git",
+      "web_url": "https://gitlab.com/uplex/varnish/slash",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/slash",
+        "gitlab": "https://gitlab.com/uplex/varnish/slash"
+      }
+    },
+    {
+      "name": "soap",
+      "desc": "Read SOAP XML messages in HTTP request's body and expose fields",
+      "status": "development",
+      "inactive": false,
+      "date": "2022-05-23",
+      "license": "BSD 2-Clause",
+      "maintainer": "jonathan.huot@thomsonreuters.com",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_soap.json",
+      "forge": "github",
+      "clone_url": "https://github.com/thomsonreuters/libvmod-soap.git",
+      "web_url": "https://github.com/thomsonreuters/libvmod-soap",
+      "branches": {
+        "4.1": "master",
+        "5.0": "master"
+      },
+      "vcc_path": "src/vmod_soap.vcc",
+      "doc_path": "README.md",
+      "warnings": []
+    },
+    {
+      "name": "softpurge",
+      "desc": "Soft purge",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_softpurge.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/libvmod-softpurge.git",
+      "web_url": "https://github.com/varnish/libvmod-softpurge",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_softpurge.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "statsd",
+      "desc": "Statsd - Varnish stats",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_statsd.json",
+      "forge": "github",
+      "clone_url": "https://github.com/jib/libvmod-statsd.git",
+      "web_url": "https://github.com/jib/libvmod-statsd",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_statsd.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "std",
+      "desc": "std - the standard VMOD",
+      "status": "included",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_std.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnishcache/varnish-cache.git",
+      "web_url": "https://github.com/varnishcache/varnish-cache",
+      "branches": {
+        "3.0": "3.0",
+        "4.0": "4.0",
+        "4.1": "4.1",
+        "main": "master"
+      },
+      "vcc_path": "lib/libvmod_std/vmod.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "taskvar",
+      "desc": "task scoped variables as objects in VCL",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_taskvar.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/varnish-objvar.git",
+      "web_url": "https://gitlab.com/uplex/varnish/varnish-objvar",
+      "branches": {
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/varnish-objvar",
+        "gitlab": "https://gitlab.com/uplex/varnish/varnish-objvar"
+      }
+    },
+    {
+      "name": "tbf",
+      "desc": "Token Bucket Filtering",
+      "status": "mature",
+      "inactive": false,
+      "date": "2026-02-27",
+      "license": "GPLv3+",
+      "maintainer": "gray@gnu.org",
+      "support": [
+        "Norse Digital"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_tbf.json",
+      "forge": "other",
+      "clone_url": "https://git.gnu.org.ua/vmod-tbf.git",
+      "web_url": "https://git.gnu.org.ua/vmod-tbf.git",
+      "branches": {
+        "6.0": "6.0",
+        "7.0": "7.0",
+        "main": "main"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "threescale",
+      "desc": "API Proxy",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_threescale.json",
+      "forge": "github",
+      "clone_url": "https://github.com/3scale/libvmod-3scale.git",
+      "web_url": "https://github.com/3scale/libvmod-3scale",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_threescale.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "throttle",
+      "desc": "Throttle",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_throttle.json",
+      "forge": "github",
+      "clone_url": "https://github.com/nand2/libvmod-throttle.git",
+      "web_url": "https://github.com/nand2/libvmod-throttle",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_throttle.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "timers",
+      "desc": "Varnish Timers (timing&duration)",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_timers.json",
+      "forge": "github",
+      "clone_url": "https://github.com/jib/libvmod-timers.git",
+      "web_url": "https://github.com/jib/libvmod-timers",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_timers.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "timeutils",
+      "desc": "Time Utils",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_timeutils.json",
+      "forge": "github",
+      "clone_url": "https://github.com/jthomerson/libvmod-timeutils.git",
+      "web_url": "https://github.com/jthomerson/libvmod-timeutils",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_timeutils.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "topvar",
+      "desc": "top request (across all ESI levels) scoped variables as objects in VCL",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_topvar.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/varnish-objvar.git",
+      "web_url": "https://gitlab.com/uplex/varnish/varnish-objvar",
+      "branches": {
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/varnish-objvar",
+        "gitlab": "https://gitlab.com/uplex/varnish/varnish-objvar"
+      }
+    },
+    {
+      "name": "tus",
+      "desc": "TUS Upload Server (Proxy TUS to single upload)",
+      "status": "master",
+      "inactive": false,
+      "date": "2022-05-23",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_tus.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-tus.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-tus",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-tus",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-tus"
+      }
+    },
+    {
+      "name": "urlcode",
+      "desc": "URL Code",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_urlcode.json",
+      "forge": "github",
+      "clone_url": "https://github.com/fastly/libvmod-urlcode.git",
+      "web_url": "https://github.com/fastly/libvmod-urlcode",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_urlcode.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "urlfilter",
+      "desc": "libvmod-urlfilter",
+      "status": "development",
+      "inactive": true,
+      "date": null,
+      "license": "GPL",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_urlfilter.json",
+      "forge": "github",
+      "clone_url": "https://github.com/kataweb/libvmod-urlfilter.git",
+      "web_url": "https://github.com/kataweb/libvmod-urlfilter",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_urlfilter.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "urlsort",
+      "desc": "URL Sort",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_urlsort.json",
+      "forge": "github",
+      "clone_url": "https://github.com/cyberroadie/varnish-urlsort.git",
+      "web_url": "https://github.com/cyberroadie/varnish-urlsort",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "vmod/src/vmod_urlsort.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "utf8",
+      "desc": "Unicode normalization, case-folding and other operations",
+      "status": "mature",
+      "inactive": false,
+      "date": "2018-09-30",
+      "license": "BSD 2-Clause",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_utf8.json",
+      "forge": "github",
+      "clone_url": "https://github.com/fgsch/libvmod-utf8.git",
+      "web_url": "https://github.com/fgsch/libvmod-utf8",
+      "branches": {
+        "4.1": "oldstable",
+        "6.0": "oldstable",
+        "6.1": "master",
+        "main": "devel"
+      },
+      "vcc_path": "src/vmod_utf8.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "utils",
+      "desc": "libvmod-utils",
+      "status": "mature",
+      "inactive": true,
+      "date": null,
+      "license": "BSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_utils.json",
+      "forge": "github",
+      "clone_url": "https://github.com/thomsonreuters/libvmod-utils.git",
+      "web_url": "https://github.com/thomsonreuters/libvmod-utils",
+      "branches": {
+        "3.0": "master"
+      },
+      "vcc_path": "src/vmod_utils.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "uuid",
+      "desc": "UUID",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "Apache2",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_uuid.json",
+      "forge": "github",
+      "clone_url": "https://github.com/otto-de/libvmod-uuid.git",
+      "web_url": "https://github.com/otto-de/libvmod-uuid",
+      "branches": {
+        "3.0": "3.0",
+        "4.0": "4.0",
+        "4.1": "4.1",
+        "5.0": "5.x",
+        "5.1": "5.x",
+        "5.2": "5.x",
+        "6.0": "6.0",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_uuid.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "valkey",
+      "desc": "Access to Valkey Server / Valkey Cluster databases, including Valkey Sentinel support",
+      "status": "development",
+      "inactive": false,
+      "date": "2025-02-04",
+      "license": "FreeBSD",
+      "maintainer": "carlos.abalde@gmail.com",
+      "support": [
+        "Allenta Consulting S.L."
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_valkey.json",
+      "forge": "github",
+      "clone_url": "https://github.com/carlosabalde/libvmod-valkey.git",
+      "web_url": "https://github.com/carlosabalde/libvmod-valkey",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_valkey.vcc",
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "var",
+      "desc": "Variable Support",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_var.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/varnish-modules.git",
+      "web_url": "https://github.com/varnish/varnish-modules",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_var.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "variable",
+      "desc": "Enhanced variable support",
+      "status": "mature",
+      "inactive": false,
+      "date": "2026-02-27",
+      "license": "GPLv3+",
+      "maintainer": "gray@gnu.org",
+      "support": [
+        "Norse Digital"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_variable.json",
+      "forge": "other",
+      "clone_url": "https://git.gnu.org.ua/vmod-variable.git",
+      "web_url": "https://git.gnu.org.ua/vmod-variable.git",
+      "branches": {
+        "6.0": "6.0",
+        "7.0": "7.0",
+        "main": "main"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "vmod-modsecurity",
+      "desc": "ModSecurity Binding",
+      "status": "alpha",
+      "inactive": false,
+      "date": "2019-06-01",
+      "license": "BSD",
+      "maintainer": "xdecock@gmail.com",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_security.json",
+      "forge": "github",
+      "clone_url": "https://github.com/xdecock/vmod-modsecurity.git",
+      "web_url": "https://github.com/xdecock/vmod-modsecurity",
+      "branches": {
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_sec.vcc",
+      "doc_path": "README.md",
+      "warnings": []
+    },
+    {
+      "name": "vslp",
+      "desc": "VSLP (StateLess Persistence) aka shard",
+      "status": "included in Varnish-Cache since release 5.0 as the shard director",
+      "inactive": true,
+      "date": "2016-04-21",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_vslp.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-vslp.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/libvmod-vslp",
+      "branches": {
+        "4.0": "4.0",
+        "4.1": "4.1",
+        "main": "main"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": []
+    },
+    {
+      "name": "vsthrottle",
+      "desc": "vsthrottle - Rate-limiting/throttling (v4 and later)",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_vsthrottle.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/varnish-modules.git",
+      "web_url": "https://github.com/varnish/varnish-modules",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_vsthrottle.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "weightadjust",
+      "desc": "random director with dynamically adjustable weights",
+      "status": "mature",
+      "inactive": false,
+      "date": "2019-03-26",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_weightadjust.json",
+      "forge": "other",
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-weightadjust.git",
+      "web_url": "https://gitlab.com/uplex/varnish/libvmod-weightadjust",
+      "branches": {
+        "4.1": "4.1",
+        "5.1": "5.1",
+        "5.2": "5.2",
+        "6.0": "6.0",
+        "6.1": "6.1",
+        "6.2": "6.2",
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-weightadjust",
+        "gitlab": "https://gitlab.com/uplex/varnish/libvmod-weightadjust"
+      }
+    },
+    {
+      "name": "xcounter",
+      "desc": "Custom counter",
+      "status": "development",
+      "inactive": false,
+      "date": "2018-11-19",
+      "license": "FreeBSD",
+      "maintainer": "kokoniimasu@gmail.com",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_xcounter.json",
+      "forge": "github",
+      "clone_url": "https://github.com/xcir/libvmod-xcounter.git",
+      "web_url": "https://github.com/xcir/libvmod-xcounter",
+      "branches": {
+        "6.0": "master",
+        "6.1": "master",
+        "main": "master"
+      },
+      "vcc_path": "src/vmod_xcounter.vcc",
+      "doc_path": "README.rst",
+      "warnings": []
+    },
+    {
+      "name": "xkey",
+      "desc": "Xkey (Hash-Two, Surrogate keys)",
+      "status": "mature",
+      "inactive": false,
+      "date": null,
+      "license": "FreeBSD",
+      "maintainer": null,
+      "support": [
+        "Varnish Software"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_xkey.json",
+      "forge": "github",
+      "clone_url": "https://github.com/varnish/varnish-modules.git",
+      "web_url": "https://github.com/varnish/varnish-modules",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_xkey.vcc",
+      "doc_path": null,
+      "warnings": [
+        "no usable last-revision date"
+      ]
+    },
+    {
+      "name": "zipflow",
+      "desc": "Streaming ZIP file generation",
+      "status": "development",
+      "inactive": false,
+      "date": "2022-09-06",
+      "license": "FreeBSD",
+      "maintainer": "varnish-support@uplex.de",
+      "support": [
+        "Uplex"
+      ],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_zipflow.json",
+      "forge": "other",
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-zipflow.git",
+      "web_url": "https://code.uplex.de/uplex-varnish/libvmod-zipflow",
+      "branches": {
+        "main": "master"
+      },
+      "vcc_path": null,
+      "doc_path": null,
+      "warnings": [],
+      "mirrors": {
+        "UPLEX": "https://code.uplex.de/uplex-varnish/libvmod-zipflow"
+      }
+    },
+    {
+      "name": "zlib",
+      "desc": "Uncompress request's body before sending it to the backend.",
+      "status": "development",
+      "inactive": false,
+      "date": "2017-03-21",
+      "license": "BSD 2-Clause",
+      "maintainer": "jonathan.huot@thomsonreuters.com",
+      "support": [],
+      "product": null,
+      "origin": "homepage",
+      "source_file": "vmod_zlib.json",
+      "forge": "github",
+      "clone_url": "https://github.com/thomsonreuters/libvmod-zlib.git",
+      "web_url": "https://github.com/thomsonreuters/libvmod-zlib",
+      "branches": {
+        "4.1": "master"
+      },
+      "vcc_path": "src/vmod_zlib.vcc",
+      "doc_path": "README.rst",
+      "warnings": []
+    }
+  ]
+}

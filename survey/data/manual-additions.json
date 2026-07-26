@@ -1,0 +1,15 @@
+{
+  "schema": "vmod-survey-manual-additions/v1",
+  "comment": "VMODs not listed in the homepage directory, or listed without a registration JSON. Entries use the same shape as the homepage registration format (howto.rst): required name/desc, plus either a github object or a repos URL. ingest.py merges these into the worklist with origin=manual.",
+  "entries": [
+    {
+      "name": "querystring",
+      "desc": "Advanced query-string filtering toolkit",
+      "license": "GPL-3.0-or-later",
+      "status": "mature",
+      "date": "2024-10-13",
+      "repos": "https://git.sr.ht/~dridi/vmod-querystring",
+      "comment": "Homepage registration has only rev doc URLs, no repos field; repo location taken from those URLs."
+    }
+  ]
+}

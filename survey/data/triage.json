@@ -1,0 +1,3287 @@
+{
+  "schema": "vmod-survey-triage/v1",
+  "worklist_homepage_commit": "a67cfa490e071c588dd54dec52a8b006a720b56f",
+  "generated_by": "survey/tools/triage.py",
+  "counts": {
+    "total": 113,
+    "ok": 112,
+    "failed": 1,
+    "abi": {
+      "undeclared(strict-default)": 68,
+      "vrt": 24,
+      "strict": 5,
+      "no-vcc-found": 7,
+      "strict+vrt": 8
+    },
+    "build_system": {
+      "autotools": 108,
+      "none-detected": 4
+    }
+  },
+  "results": [
+    {
+      "name": "abtest",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/Destination/libvmod-abtest.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "42e44147c9ee13705b329fc13ec5baab9c0fd93a",
+      "head_date": "2013-01-11T15:46:26+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_abtest.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "all_healthy",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-all_healthy.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 15,
+      "claimed_branches_missing": [],
+      "head_commit": "084aa2a96a27a41a8d9ade98478b6860ec0a71f4",
+      "head_date": "2026-03-30T15:28:43+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_all_healthy.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "authentication",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/pariahsoft/libvmod-authentication.git",
+      "ok": false,
+      "clone_state": null,
+      "default_branch": null,
+      "remote_branches": null,
+      "claimed_branches_missing": [],
+      "head_commit": null,
+      "head_date": null,
+      "error": "ls-remote failed: fatal: could not read Username for 'https://github.com': terminal prompts disabled"
+    },
+    {
+      "name": "awsrest",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/xcir/libvmod-awsrest.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 8,
+      "claimed_branches_missing": [],
+      "head_commit": "13fc85c3429dca71d878685a3a8f740de38ba451",
+      "head_date": "2025-08-09T15:29:07+09:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_awsrest.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "backend_dyn",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-backend_dyn.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 5,
+      "claimed_branches_missing": [
+        "6.0"
+      ],
+      "head_commit": "f9c242bde34edadf1e6803cd889e16a39467ffed",
+      "head_date": "2017-06-26T02:37:18+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "basicauth",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://git.gnu.org.ua/vmod-basicauth.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [
+        "6.0",
+        "7.0",
+        "main"
+      ],
+      "head_commit": "ce733a3f8c76ec83b44fe05184cf52150ef5faf3",
+      "head_date": "2026-03-25T10:57:44+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_basicauth.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "blobcode",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-blobcode.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 4,
+      "claimed_branches_missing": [
+        "5.1"
+      ],
+      "head_commit": "54fbd57be5a83138918f54b843b87edff1521f09",
+      "head_date": "2018-06-01T14:07:06+03:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_blobcode.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "blobdigest",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-blobdigest.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 20,
+      "claimed_branches_missing": [],
+      "head_commit": "e14147c3bc94da201139d39735bab8ade1b0428a",
+      "head_date": "2026-03-31T11:48:57+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_blobdigest.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1,
+        "struct worker": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "blobsha256",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-blobsha256.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 3,
+      "claimed_branches_missing": [
+        "4.1 - master"
+      ],
+      "head_commit": "679fe65a45477fa14ef339d5496535925afda641",
+      "head_date": "2022-12-08T14:01:08+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_blobsha256.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "blobsynth",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-blobsynth.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 11,
+      "claimed_branches_missing": [],
+      "head_commit": "c45561b37f08c780fce9d7ae7be834a70e4fb857",
+      "head_date": "2026-03-30T16:25:55+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_blobsynth.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "boltsort",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/vimeo/libvmod-boltsort.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "77d86aeb905c8655e44807ba4779b5bbdc90e2ca",
+      "head_date": "2014-06-19T18:12:57-04:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_boltsort.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "brotli",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvfp-brotli.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 11,
+      "claimed_branches_missing": [],
+      "head_commit": "b9adda40115815120b71fdfa42ef9c8c9567757a",
+      "head_date": "2026-03-31T10:33:40+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vfp_brotli.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "cfg",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/carlosabalde/libvmod-cfg.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 22,
+      "claimed_branches_missing": [
+        "master"
+      ],
+      "head_commit": "cba61770da545748af434f43681e1a819463188d",
+      "head_date": "2026-05-11T18:06:52+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_cfg.vcc"
+      ],
+      "abi": "strict",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 10,
+        "EXP_": 5
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "cluster",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-cluster.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 13,
+      "claimed_branches_missing": [],
+      "head_commit": "316d6ee2f9a34c3529a93b4b384a04f733ae10ac",
+      "head_date": "2026-03-30T14:42:55+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_cluster.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "constant",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/varnish-objvar.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 12,
+      "claimed_branches_missing": [],
+      "head_commit": "4e84f5d3e904097436ccd733f1b343314c94baef",
+      "head_date": "2026-03-30T18:38:39+02:00",
+      "error": null,
+      "vcc_files": [],
+      "abi": "no-vcc-found",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 4
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "cookie",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/varnish/varnish-modules.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 31,
+      "claimed_branches_missing": [],
+      "head_commit": "1f0a412dcca23ab3adc17de1d3327a1f7d8faefe",
+      "head_date": "2026-07-23T10:46:59-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_header.vcc",
+        "src/vmod_tcp.vcc",
+        "src/vmod_saintmode.vcc",
+        "src/vmod_xkey.vcc",
+        "src/vmod_accept.vcc",
+        "src/vmod_bodyaccess.vcc",
+        "src/vmod_vsthrottle.vcc",
+        "src/vmod_str.vcc",
+        "src/vmod_var.vcc"
+      ],
+      "abi": "strict+vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 3,
+        "cache_varnishd.h": 2,
+        "struct objcore": 2,
+        "struct worker": 2,
+        "EXP_": 1,
+        "struct busyobj": 2,
+        "HSH_": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "cookie (newer versions)",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/nigoroll/varnish-modules.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 17,
+      "claimed_branches_missing": [],
+      "head_commit": "4ed00e6f479ab4ce01242f0a8738ed7bfe26566a",
+      "head_date": "2026-02-14T15:46:42+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_header.vcc",
+        "src/vmod_tcp.vcc",
+        "src/vmod_saintmode.vcc",
+        "src/vmod_xkey.vcc",
+        "src/vmod_accept.vcc",
+        "src/vmod_bodyaccess.vcc",
+        "src/vmod_vsthrottle.vcc",
+        "src/vmod_str.vcc",
+        "src/vmod_var.vcc"
+      ],
+      "abi": "strict+vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 3,
+        "cache_varnishd.h": 2,
+        "struct objcore": 2,
+        "struct worker": 2,
+        "EXP_": 1,
+        "struct busyobj": 2,
+        "HSH_": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "crypto",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-crypto.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 9,
+      "claimed_branches_missing": [],
+      "head_commit": "0b6cb770ab0fc134bcd7c02ea09bd6dddfe53736",
+      "head_date": "2026-03-30T18:44:49+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_crypto.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 2
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "curl",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/varnish/libvmod-curl.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 8,
+      "claimed_branches_missing": [],
+      "head_commit": "84e391521396ab4d9a8487a55c8298849b172551",
+      "head_date": "2025-06-03T14:42:30+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_curl.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "dateformat",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/thomsonreuters/libvmod-dateformat.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "3369a2e3b600dd0951a86fd8369ae8e982b7fcf5",
+      "head_date": "2019-11-04T16:38:52+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_dateformat.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "dbrw",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://git.gnu.org.ua/vmod-dbrw.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [
+        "6.0",
+        "7.0",
+        "main"
+      ],
+      "head_commit": "73e57b9b4905029d490044d745ebb608622175a0",
+      "head_date": "2026-03-25T11:07:30+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_dbrw.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "dclass",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/TheWeatherChannel/dClass.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "bfbf34febd286318312799088b414d336dac226e",
+      "head_date": "2015-02-14T19:55:02Z",
+      "error": null,
+      "vcc_files": [
+        "servers/src/vmod_dclass4.vcc",
+        "servers/src/vmod_dclass.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "none-detected"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "dcs",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://gitlab.com/uplex/varnish/dcs_classifier.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "4a2899d6b23283485541d17653ca89692ce24883",
+      "head_date": "2020-12-10T17:04:32+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_dcs40.vcc",
+        "src/vmod_dcs41.vcc",
+        "src/vmod_dcs6.vcc",
+        "src/vmod_dcs5.vcc",
+        "src/vmod_dcs3.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache_varnishd.h": 1,
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "dgram",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/mmb/vmod_dgram.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "5081b94c1bea2c44ce56c4d7894d2574fec19acf",
+      "head_date": "2015-08-08T12:49:34-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_dgram.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "dict",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://git.gnu.org.ua/vmod-dict.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [
+        "6.0",
+        "7.0",
+        "main"
+      ],
+      "head_commit": "784584d272894a39cf995377618aad551a196424",
+      "head_date": "2026-03-25T11:04:22+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_dict.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "digest",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/varnish/libvmod-digest.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 10,
+      "claimed_branches_missing": [],
+      "head_commit": "e745761469b55e83e1fca21dd0cb8eca8022935d",
+      "head_date": "2023-08-17T09:11:00+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_digest.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "directors",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/varnishcache/varnish-cache.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 30,
+      "claimed_branches_missing": [],
+      "head_commit": "0038dd19804fd92cd8bd4bfe92e5a515a57d5e8e",
+      "head_date": "2026-02-16T02:29:49+01:00",
+      "error": null,
+      "vcc_files": [
+        "vmod/vmod_debug.vcc",
+        "vmod/vmod_directors.vcc",
+        "vmod/vmod_proxy.vcc",
+        "vmod/vmod_std.vcc",
+        "vmod/vmod_h2.vcc",
+        "vmod/vmod_cookie.vcc",
+        "vmod/vmod_purge.vcc",
+        "vmod/vmod_blob.vcc",
+        "vmod/vmod_unix.vcc",
+        "vmod/vmod_vtc.vcc"
+      ],
+      "abi": "strict+vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache_varnishd.h": 90,
+        "struct busyobj": 20,
+        "cache/cache.h": 22,
+        "struct worker": 62,
+        "struct objcore": 32,
+        "EXP_": 12,
+        "HSH_": 24
+      },
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "dns",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/kenshaw/libvmod-dns.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "85db591fb9b991faca4f50a6aae17fdff21f56ac",
+      "head_date": "2026-07-25T03:15:02+07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_dns.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "dynamic",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/nigoroll/libvmod-dynamic.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 22,
+      "claimed_branches_missing": [],
+      "head_commit": "d6b49418f3b8b2871b0a2b07b5c50f6ed68f88df",
+      "head_date": "2026-06-29T17:38:48+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_dynamic.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 7,
+        "cache_varnishd.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "dyncounters",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/ehocdet/libvmod-dyncounters.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "1c424936e30257c835a2949adf911be0fd9ed096",
+      "head_date": "2020-05-04T14:24:30+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_dyncounters.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 4
+      },
+      "configure_varnish_refs": [
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "ece",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-ece.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "b06d3d8e84b91809816aff3a43e46c5f5ac6ac39",
+      "head_date": "2019-11-13T17:25:44+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_ece.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 4
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "esicookies",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-esicookies.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [
+        "3.0"
+      ],
+      "head_commit": "f5f73364c43449ca77ce0e2dfb70c7d14205b674",
+      "head_date": "2014-10-28T11:50:07+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_esicookies.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "esiextra",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-esiextra.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [
+        "main"
+      ],
+      "head_commit": "800ff600eb10d57df31270e3a15ae9ab085a9247",
+      "head_date": "2022-12-01T16:21:57+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_esiextra.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 2,
+        "cache_varnishd.h": 1,
+        "struct busyobj": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "etag",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-etag.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "ff3dd8989e4cd2ed0dcae1b49077c28bd5b55e58",
+      "head_date": "2022-12-01T16:22:12+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_etag.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 2
+      },
+      "configure_varnish_refs": [
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "example",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/varnish/libvmod-example.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 5,
+      "claimed_branches_missing": [],
+      "head_commit": "3cea450ee558adde5b12fdcde34650ce537e7f9a",
+      "head_date": "2016-08-23T13:05:11+02:00",
+      "error": null,
+      "vcc_files": [],
+      "abi": "no-vcc-found",
+      "build_system": [
+        "none-detected"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "fiftyonedegrees",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/51Degrees/device-detection-varnish.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "6329c88a1057ac91c99bc15dd5c3238597141b14",
+      "head_date": "2026-06-13T10:35:26+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_fiftyonedegrees.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 2
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "file",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-file.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 3,
+      "claimed_branches_missing": [],
+      "head_commit": "12f5040ac49e85415de5ce6491b33d5df4c9cb73",
+      "head_date": "2025-09-17T11:04:14+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_file.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "file (old)",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/academia-edu/libvmod-file.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "3b6ed18bc8d39a7a32fa4340efc9eddad3e70eff",
+      "head_date": "2013-10-21T18:40:45-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_file.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "flagship",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/flagship-io/libvmod-flagship.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "cacf629775b84d25ff15b751e93ec539ad84007d",
+      "head_date": "2022-12-13T10:17:28+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_flagship.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "frozen",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-frozen.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 9,
+      "claimed_branches_missing": [],
+      "head_commit": "faf0cbfc4fca23d8f6b38800f8cce9cbd8d67661",
+      "head_date": "2026-03-30T14:51:34+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_frozen.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "gcrypt",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-gcrypt.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 9,
+      "claimed_branches_missing": [
+        "7.0 - master"
+      ],
+      "head_commit": "a308e9ceac2a14be395cccc0d5441f99457c695e",
+      "head_date": "2026-03-30T18:19:54+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_gcrypt.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "geoip2",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/fgsch/libvmod-geoip2.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 3,
+      "claimed_branches_missing": [
+        "master",
+        "oldstable"
+      ],
+      "head_commit": "f4da203761c2f5a7b2c865b1b90c681a5158fd0a",
+      "head_date": "2024-04-08T00:28:47+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_geoip2.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "globalvar",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/varnish-objvar.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 12,
+      "claimed_branches_missing": [],
+      "head_commit": "4e84f5d3e904097436ccd733f1b343314c94baef",
+      "head_date": "2026-03-30T18:38:39+02:00",
+      "error": null,
+      "vcc_files": [],
+      "abi": "no-vcc-found",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 4
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "gossip",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/carlosabalde/libvmod-gossip.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 19,
+      "claimed_branches_missing": [
+        "7.6",
+        "master"
+      ],
+      "head_commit": "8b7daaf81505b8d6f42d936f348c60b1743c37f3",
+      "head_date": "2026-05-11T17:56:59+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_gossip.vcc"
+      ],
+      "abi": "strict",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1,
+        "cache_varnishd.h": 1,
+        "struct objcore": 1,
+        "struct worker": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "hashids",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/schibsted/libvmod-hashids.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "59bf6a1ed74cf7c528a5db4b33af185d426a81bb",
+      "head_date": "2019-03-19T11:15:24+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_hashids.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "header",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/varnish/libvmod-header.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 3,
+      "claimed_branches_missing": [],
+      "head_commit": "923c406d6ec663919b046aad265809efeea1a41b",
+      "head_date": "2016-04-29T08:55:24+02:00",
+      "error": null,
+      "vcc_files": [],
+      "abi": "no-vcc-found",
+      "build_system": [
+        "none-detected"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "headerproxy",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/SteveEasley/libvmod-headerproxy.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "1b6b965d31882d2f6f097b986e362720f0a612af",
+      "head_date": "2017-01-31T08:09:32-05:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_headerproxy.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "struct busyobj": 1,
+        "struct worker": 1,
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "hoailona",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-hoailona.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 15,
+      "claimed_branches_missing": [],
+      "head_commit": "2bf8de8bd7d53d22ad7397fc9a13b05ebaec23ca",
+      "head_date": "2026-03-30T18:22:09+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_hoailona.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "i18n",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/cosimo/libvmod-i18n.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "4eb4ed62f6e7524a39fae5fc0625bcbcd74ae63e",
+      "head_date": "2016-02-15T16:14:03+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "iconv",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-iconv.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 6,
+      "claimed_branches_missing": [],
+      "head_commit": "6e4ed7b7573fa6f3ea69c22eb61eeae563423251",
+      "head_date": "2026-03-30T14:26:43+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_iconv.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "ip2location",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/ip2location/IP2Location-Varnish.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "60c7a2a9cd572cc6a03c2f5c8d5b0b98948ddfb6",
+      "head_date": "2025-12-31T14:36:16+08:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_ip2location.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "ip2proxy",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/ip2location/IP2Proxy-Varnish.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "6d806f29bde9a5b0d92455f182cf67c80592cb47",
+      "head_date": "2020-11-26T06:45:05+08:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_ip2proxy.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "ipcast",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/lkarsten/libvmod-ipcast.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "3d81a4ebc7df47f7a3bf9b5036de6926421113cc",
+      "head_date": "2016-04-29T08:50:57+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_ipcast.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "j",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-j.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 6,
+      "claimed_branches_missing": [],
+      "head_commit": "76d71b6b8f22068503ca4c3adce2fe1d0a96072d",
+      "head_date": "2026-03-30T14:58:20+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_j.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "jq",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/fgsch/libvmod-jq.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "4051a7d08dc3a4ca90d9e8319d5a3a132793e1da",
+      "head_date": "2022-09-26T23:02:40+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_jq.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache_varnishd.h": 1
+      },
+      "configure_varnish_refs": [
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "json",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/academia-edu/libvmod-json.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "5615e5cd4a9afa89977c1e8a5fa28f1ae4b7cd6b",
+      "head_date": "2013-10-15T19:02:53-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_json.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "lang",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/byteworks-ch/varnish-vmod-lang.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 3,
+      "claimed_branches_missing": [],
+      "head_commit": "fa066f51dba2dce1caf1fa8bf032b1db4a809a9a",
+      "head_date": "2021-06-07T18:49:51+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_lang.vcc",
+        "src/vmod_lang3.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "ldap",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/xcir/libvmod-ldap.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "d03ff6e02f0bb1d9b9dc0e0650a2a02522ba3a14",
+      "head_date": "2012-10-23T01:47:01+09:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_ldap.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "libvmod_unidirectors",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/ehocdet/libvmod-unidirectors.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 11,
+      "claimed_branches_missing": [],
+      "head_commit": "47ff1e0e728db3f1652f4a50cc0a7650b75196e4",
+      "head_date": "2019-10-21T17:18:32+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_unidirectors.vcc"
+      ],
+      "abi": "strict",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 8
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "lua",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/flygoast/libvmod-lua.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 4,
+      "claimed_branches_missing": [],
+      "head_commit": "f7a9fe18144476220cdbd1cb5af5555157a1563d",
+      "head_date": "2016-03-06T22:05:35+08:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_lua.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "maxminddb",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/simonvik/libvmod_maxminddb.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "a6db438687f516730a0abbad5872a905317c35b4",
+      "head_date": "2021-06-16T15:09:10Z",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_maxminddb.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "memcached",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/sodabrew/libvmod-memcached.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "bb81d2491f3e8f73b30739ea1453049db83af1b0",
+      "head_date": "2014-03-12T20:27:47-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_memcached.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "null",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/varnish/libvmod-null.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 3,
+      "claimed_branches_missing": [],
+      "head_commit": "6535988397f4821f783649538df8476d842bd907",
+      "head_date": "2016-07-26T15:19:59-04:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_null.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "oob_probe",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://code.uplex.de/uplex-varnish/oob_probe.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [
+        "4.1"
+      ],
+      "head_commit": "76dab09c4efffd0a7740dc52ed935690a78666b3",
+      "head_date": "2015-10-24T16:07:51+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "otp",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/xcir/libvmod-otp.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "d854bb433e1944b360c7b44d22ce02d47fc27324",
+      "head_date": "2020-03-17T19:17:29+09:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_otp.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "parseform",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/xcir/libvmod-parseform.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 4,
+      "claimed_branches_missing": [],
+      "head_commit": "caed08161601935a04876e8ad16ba0bff3ba1310",
+      "head_date": "2020-03-17T18:23:14+09:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_parseform.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache_varnishd.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "pcre2",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-pcre2.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [
+        "5.1"
+      ],
+      "head_commit": "3ffe3995c092a4293904b8337bd2a92da4856dc2",
+      "head_date": "2017-07-05T00:03:32+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_pcre2.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "pesi",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvdp-pesi.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 17,
+      "claimed_branches_missing": [],
+      "head_commit": "d6c234da43e2aec7dc5db48013b0eaaf66668981",
+      "head_date": "2026-03-30T16:51:04+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_pesi_debug.vcc",
+        "src/vdp_pesi.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "struct worker": 4,
+        "HSH_": 2,
+        "struct objcore": 2,
+        "cache/cache.h": 3
+      },
+      "configure_varnish_refs": [
+        "vinylapi",
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "pipe",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvdfp-pipe.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 10,
+      "claimed_branches_missing": [],
+      "head_commit": "41117d266a030ff281dd6b5cff21eab120784248",
+      "head_date": "2026-03-30T18:51:22+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vdfp_pipe.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "queryfilter",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/NYTimes/libvmod-queryfilter.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "22583cdbce7e2525da73a6266f87bb117564ff11",
+      "head_date": "2023-01-09T13:40:02-05:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_queryfilter.vcc",
+        "src/vmod_queryfilter3.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "querystring",
+      "origin": "manual",
+      "inactive": false,
+      "clone_url": "https://git.sr.ht/~dridi/vmod-querystring",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "a3dabb8b2a82577badd4cc4409a4fac9d2bd74af",
+      "head_date": "2025-05-26T11:33:07+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_querystring.vcc.in"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "ratelimit",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/tobixen/libvmod-ratelimit.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "f9659aaf78b78f1299c05e35944c769bb3eb3028",
+      "head_date": "2012-12-12T15:55:47+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_ratelimit.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "re",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-re.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 23,
+      "claimed_branches_missing": [],
+      "head_commit": "5cf46314a7c4834ee0c8b89ba66a02d5e19650ba",
+      "head_date": "2026-05-28T19:39:57+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_re.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "re2",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-re2.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 20,
+      "claimed_branches_missing": [],
+      "head_commit": "c009a80895cc4a5fa88bd4c1433d8e6955521be7",
+      "head_date": "2026-03-30T16:52:57+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_re2.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 2
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "redirect",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/xcir/libvmod-redirect.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "e8f6a6da36e5348b18c6590310893cf02661cc55",
+      "head_date": "2012-08-02T01:08:38+09:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_redirect.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "redis",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/carlosabalde/libvmod-redis.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 27,
+      "claimed_branches_missing": [
+        "7.6",
+        "master"
+      ],
+      "head_commit": "08840a7dc93a4c07dca8f4f0c66960580457887c",
+      "head_date": "2026-06-03T16:14:53+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_redis.vcc"
+      ],
+      "abi": "strict",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 4
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "remoteip",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://git.gnu.org.ua/vmod-remoteip.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [
+        "6.0",
+        "7.0",
+        "main"
+      ],
+      "head_commit": "b4290fbd656e0afed3fe114b6957eca106e93c50",
+      "head_date": "2026-03-25T13:06:41+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_remoteip.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "rfc6052",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/toreanderson/libvmod-rfc6052.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "93977e241af2e6732a0e064ab552602dc8e3b86a",
+      "head_date": "2015-10-19T14:13:30+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_rfc6052.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "rtstatus",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/varnish/libvmod-rtstatus.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 7,
+      "claimed_branches_missing": [],
+      "head_commit": "3c945939f3a72e01c30d58f3ec44442618827d8c",
+      "head_date": "2017-11-03T13:49:42+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_rtstatus.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 2
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "saintmode",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/varnish/varnish-modules.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 31,
+      "claimed_branches_missing": [],
+      "head_commit": "1f0a412dcca23ab3adc17de1d3327a1f7d8faefe",
+      "head_date": "2026-07-23T10:46:59-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_header.vcc",
+        "src/vmod_tcp.vcc",
+        "src/vmod_saintmode.vcc",
+        "src/vmod_xkey.vcc",
+        "src/vmod_accept.vcc",
+        "src/vmod_bodyaccess.vcc",
+        "src/vmod_vsthrottle.vcc",
+        "src/vmod_str.vcc",
+        "src/vmod_var.vcc"
+      ],
+      "abi": "strict+vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 3,
+        "cache_varnishd.h": 2,
+        "struct objcore": 2,
+        "struct worker": 2,
+        "EXP_": 1,
+        "struct busyobj": 2,
+        "HSH_": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "secdown",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/footplus/libvmod-secdown.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "5057be4eb7469d211e8c0f57f092373ccd6df5fb",
+      "head_date": "2011-08-08T01:48:38+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "selector",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-selector.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 21,
+      "claimed_branches_missing": [],
+      "head_commit": "c0c83c1748bca037f1fdc84986cfa56697b8e158",
+      "head_date": "2026-07-05T11:55:14+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_selector.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "shield",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/varnish/libvmod-shield.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 3,
+      "claimed_branches_missing": [],
+      "head_commit": "2c11eb5f2574d08b7c8de589b2ad1bd7c559e004",
+      "head_date": "2017-05-22T15:26:29+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_shield.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "slash",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/slash.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 33,
+      "claimed_branches_missing": [],
+      "head_commit": "7be4126892dbc58a03f701632e076f312e0332ed",
+      "head_date": "2026-07-08T21:39:34+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_slash.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "struct worker": 14,
+        "EXP_": 6,
+        "struct objcore": 8,
+        "struct busyobj": 4,
+        "HSH_": 4,
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "soap",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/thomsonreuters/libvmod-soap.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "ef32afc00e4b0bef7375aab4365f53ca993c573e",
+      "head_date": "2023-06-28T15:14:28+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_soap.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 2
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "softpurge",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/varnish/libvmod-softpurge.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 5,
+      "claimed_branches_missing": [],
+      "head_commit": "aa5ead3ae3f7b7f0fa086983c0d42cd6d6831ff6",
+      "head_date": "2016-04-08T11:29:18+02:00",
+      "error": null,
+      "vcc_files": [],
+      "abi": "no-vcc-found",
+      "build_system": [
+        "none-detected"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "statsd",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/jib/libvmod-statsd.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 4,
+      "claimed_branches_missing": [],
+      "head_commit": "de088009e0020b5a04161663693360a0d20289cc",
+      "head_date": "2016-06-09T11:31:00-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_statsd.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "std",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/varnishcache/varnish-cache.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 30,
+      "claimed_branches_missing": [],
+      "head_commit": "0038dd19804fd92cd8bd4bfe92e5a515a57d5e8e",
+      "head_date": "2026-02-16T02:29:49+01:00",
+      "error": null,
+      "vcc_files": [
+        "vmod/vmod_debug.vcc",
+        "vmod/vmod_directors.vcc",
+        "vmod/vmod_proxy.vcc",
+        "vmod/vmod_std.vcc",
+        "vmod/vmod_h2.vcc",
+        "vmod/vmod_cookie.vcc",
+        "vmod/vmod_purge.vcc",
+        "vmod/vmod_blob.vcc",
+        "vmod/vmod_unix.vcc",
+        "vmod/vmod_vtc.vcc"
+      ],
+      "abi": "strict+vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache_varnishd.h": 90,
+        "struct busyobj": 20,
+        "cache/cache.h": 22,
+        "struct worker": 62,
+        "struct objcore": 32,
+        "EXP_": 12,
+        "HSH_": 24
+      },
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "taskvar",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/varnish-objvar.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 12,
+      "claimed_branches_missing": [],
+      "head_commit": "4e84f5d3e904097436ccd733f1b343314c94baef",
+      "head_date": "2026-03-30T18:38:39+02:00",
+      "error": null,
+      "vcc_files": [],
+      "abi": "no-vcc-found",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 4
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "tbf",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://git.gnu.org.ua/vmod-tbf.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 3,
+      "claimed_branches_missing": [
+        "6.0",
+        "7.0",
+        "main"
+      ],
+      "head_commit": "42da01e18bd67d32bd891c87c166e967d47dee3c",
+      "head_date": "2026-03-25T08:54:32+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_tbf.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": []
+    },
+    {
+      "name": "threescale",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/3scale/libvmod-3scale.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 5,
+      "claimed_branches_missing": [],
+      "head_commit": "a639c4f2251f4e7821bccf4dd156aa01d7636433",
+      "head_date": "2014-11-18T17:43:44+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_threescale.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "throttle",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/nand2/libvmod-throttle.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "524eda1b6255ff0d691ef446ebfcce4242dc502e",
+      "head_date": "2013-12-15T11:48:21+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_throttle.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "timers",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/jib/libvmod-timers.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "5fec9fcc2b4bbfdbf755a496b5ea7565e3895974",
+      "head_date": "2013-10-18T15:04:10-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_timers.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "timeutils",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/jthomerson/libvmod-timeutils.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "2be40432117b5abde71d51c8615d0e0b8acf8fb9",
+      "head_date": "2012-10-22T08:03:16-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_timeutils.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "topvar",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/varnish-objvar.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 12,
+      "claimed_branches_missing": [],
+      "head_commit": "4e84f5d3e904097436ccd733f1b343314c94baef",
+      "head_date": "2026-03-30T18:38:39+02:00",
+      "error": null,
+      "vcc_files": [],
+      "abi": "no-vcc-found",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 4
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "tus",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-tus.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 10,
+      "claimed_branches_missing": [],
+      "head_commit": "7dd1a25a8a792df72cdbef1ac58db8e838b44c4e",
+      "head_date": "2026-03-30T14:19:45+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_tus.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 10,
+        "EXP_": 1,
+        "struct objcore": 1,
+        "struct worker": 1,
+        "HSH_": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "urlcode",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/fastly/libvmod-urlcode.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "ee2a24f8bc80a214ab664371e82dc3a64c3475e7",
+      "head_date": "2014-03-18T11:30:50+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_urlcode.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "urlfilter",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/kataweb/libvmod-urlfilter.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "5e3ce1d9629837c9891b98238f00943299c66924",
+      "head_date": "2013-09-27T16:26:14+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_urlfilter.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "urlsort",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/cyberroadie/varnish-urlsort.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "d1cee8abed39e7f4553a2cd1d828e65fd25c1d78",
+      "head_date": "2026-03-22T22:58:15Z",
+      "error": null,
+      "vcc_files": [
+        "vmod/src/vmod_urlsort.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "utf8",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/fgsch/libvmod-utf8.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 3,
+      "claimed_branches_missing": [],
+      "head_commit": "9c08c6996886df5ce6db222e56d4e42f21369ad9",
+      "head_date": "2019-01-02T11:33:03Z",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_utf8.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "utils",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://github.com/thomsonreuters/libvmod-utils.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 1,
+      "claimed_branches_missing": [],
+      "head_commit": "6082919ac3997c9c475991b18c7a364bb09ecb54",
+      "head_date": "2019-11-04T15:34:46+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_utils.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {},
+      "configure_varnish_refs": [
+        "varnishapi"
+      ]
+    },
+    {
+      "name": "uuid",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/otto-de/libvmod-uuid.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 11,
+      "claimed_branches_missing": [],
+      "head_commit": "2376dee2afb3333a8eaa6b12ec7481f7e0f5fe75",
+      "head_date": "2026-04-24T20:43:54+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_uuid.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "valkey",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/carlosabalde/libvmod-valkey.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 4,
+      "claimed_branches_missing": [],
+      "head_commit": "b31145b5c98bc464ad29ec3f2e4211bf686aec6d",
+      "head_date": "2025-08-20T14:58:35+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_valkey.vcc"
+      ],
+      "abi": "strict",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 4
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "var",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/varnish/varnish-modules.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 31,
+      "claimed_branches_missing": [],
+      "head_commit": "1f0a412dcca23ab3adc17de1d3327a1f7d8faefe",
+      "head_date": "2026-07-23T10:46:59-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_header.vcc",
+        "src/vmod_tcp.vcc",
+        "src/vmod_saintmode.vcc",
+        "src/vmod_xkey.vcc",
+        "src/vmod_accept.vcc",
+        "src/vmod_bodyaccess.vcc",
+        "src/vmod_vsthrottle.vcc",
+        "src/vmod_str.vcc",
+        "src/vmod_var.vcc"
+      ],
+      "abi": "strict+vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 3,
+        "cache_varnishd.h": 2,
+        "struct objcore": 2,
+        "struct worker": 2,
+        "EXP_": 1,
+        "struct busyobj": 2,
+        "HSH_": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "variable",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://git.gnu.org.ua/vmod-variable.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 3,
+      "claimed_branches_missing": [
+        "6.0",
+        "7.0",
+        "main"
+      ],
+      "head_commit": "a55b451dfdb8ce05844a0dab2981b2422ef30188",
+      "head_date": "2026-03-25T12:53:32+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/variable.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI"
+      ]
+    },
+    {
+      "name": "vmod-modsecurity",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/xdecock/vmod-modsecurity.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 5,
+      "claimed_branches_missing": [],
+      "head_commit": "ba37be4a65d6065d2b82a2678c1f09f08c4a9464",
+      "head_date": "2023-06-21T15:22:20+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_sec.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache_varnishd.h": 1,
+        "struct objcore": 1,
+        "struct worker": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "vslp",
+      "origin": "homepage",
+      "inactive": true,
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-vslp.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 4,
+      "claimed_branches_missing": [
+        "main"
+      ],
+      "head_commit": "588a320513ef7c1d7bf9a3856ae37e494820f6db",
+      "head_date": "2016-09-08T15:56:08+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_vslp.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 3
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_VMOD_INCLUDES"
+      ]
+    },
+    {
+      "name": "vsthrottle",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/varnish/varnish-modules.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 31,
+      "claimed_branches_missing": [],
+      "head_commit": "1f0a412dcca23ab3adc17de1d3327a1f7d8faefe",
+      "head_date": "2026-07-23T10:46:59-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_header.vcc",
+        "src/vmod_tcp.vcc",
+        "src/vmod_saintmode.vcc",
+        "src/vmod_xkey.vcc",
+        "src/vmod_accept.vcc",
+        "src/vmod_bodyaccess.vcc",
+        "src/vmod_vsthrottle.vcc",
+        "src/vmod_str.vcc",
+        "src/vmod_var.vcc"
+      ],
+      "abi": "strict+vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 3,
+        "cache_varnishd.h": 2,
+        "struct objcore": 2,
+        "struct worker": 2,
+        "EXP_": 1,
+        "struct busyobj": 2,
+        "HSH_": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "weightadjust",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://gitlab.com/uplex/varnish/libvmod-weightadjust.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 11,
+      "claimed_branches_missing": [],
+      "head_commit": "e792e0099b9766cd718f459b6beaee8e0907a7f3",
+      "head_date": "2025-05-23T17:38:05+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_weightadjust.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 4
+      },
+      "configure_varnish_refs": [
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "xcounter",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/xcir/libvmod-xcounter.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 7,
+      "claimed_branches_missing": [],
+      "head_commit": "9b7fa57fd247e9956c258c8999dc2d73e9d5ce85",
+      "head_date": "2026-03-20T11:01:31+09:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_xcounter.vcc"
+      ],
+      "abi": "vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "xkey",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/varnish/varnish-modules.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 31,
+      "claimed_branches_missing": [],
+      "head_commit": "1f0a412dcca23ab3adc17de1d3327a1f7d8faefe",
+      "head_date": "2026-07-23T10:46:59-07:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_header.vcc",
+        "src/vmod_tcp.vcc",
+        "src/vmod_saintmode.vcc",
+        "src/vmod_xkey.vcc",
+        "src/vmod_accept.vcc",
+        "src/vmod_bodyaccess.vcc",
+        "src/vmod_vsthrottle.vcc",
+        "src/vmod_str.vcc",
+        "src/vmod_var.vcc"
+      ],
+      "abi": "strict+vrt",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 3,
+        "cache_varnishd.h": 2,
+        "struct objcore": 2,
+        "struct worker": 2,
+        "EXP_": 1,
+        "struct busyobj": 2,
+        "HSH_": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    },
+    {
+      "name": "zipflow",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://code.uplex.de/uplex-varnish/libvmod-zipflow.git",
+      "ok": true,
+      "clone_state": "cloned-full",
+      "default_branch": null,
+      "remote_branches": 7,
+      "claimed_branches_missing": [],
+      "head_commit": "90e576d5d7b3fdb1391f7a1f142989b98056ba83",
+      "head_date": "2026-03-30T14:16:39+02:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_zipflow.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1,
+        "struct worker": 1
+      },
+      "configure_varnish_refs": [
+        "VINYL_PREREQ"
+      ]
+    },
+    {
+      "name": "zlib",
+      "origin": "homepage",
+      "inactive": false,
+      "clone_url": "https://github.com/thomsonreuters/libvmod-zlib.git",
+      "ok": true,
+      "clone_state": "cached",
+      "default_branch": null,
+      "remote_branches": 2,
+      "claimed_branches_missing": [],
+      "head_commit": "1e7d03c3e8e66a7dc684355a676c6a641ad1781e",
+      "head_date": "2021-01-22T15:45:54+01:00",
+      "error": null,
+      "vcc_files": [
+        "src/vmod_zlib.vcc"
+      ],
+      "abi": "undeclared(strict-default)",
+      "build_system": [
+        "autotools"
+      ],
+      "private_includes": {
+        "cache/cache.h": 1
+      },
+      "configure_varnish_refs": [
+        "VARNISHAPI",
+        "varnishapi",
+        "VARNISH_PREREQ",
+        "VARNISH_VMODS"
+      ]
+    }
+  ]
+}

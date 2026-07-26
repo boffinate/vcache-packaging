@@ -26,6 +26,14 @@ __pycache__/
 *.orig.tar.*
 *.debian.tar.*
 
+# VMOD survey working state. Fetched directory files, third-party repo
+# clones, and sweep results are regenerable; the committed snapshots live in
+# survey/data/ and the concluded reports in docs/.
+
+/survey/cache/
+/survey/results/
+/survey/harness/stage/
+
 # Local scratch space
 
 scratchpad/
