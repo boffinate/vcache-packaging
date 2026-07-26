@@ -794,4 +794,10 @@ tests:
   # same run, but not against the production-hardened package build the plan
   # asks for. No lane does that yet.
   full_behavior_suite: pending
-  upgrade_transactions: pending
+  # nightly-transactions.yml run 30192509993: the synthetic mismatch and
+  # same-ABI fixtures rebuilt from this cohort's own RPMs, then 17 dnf
+  # scenarios in fresh containers. Reproduces the step-9 findings on the real
+  # cohort id: plain dnf upgrade refuses the whole transaction under
+  # best=True, and the four destructive paths are all --allowerasing with a
+  # package named alongside it.
+  upgrade_transactions: pass

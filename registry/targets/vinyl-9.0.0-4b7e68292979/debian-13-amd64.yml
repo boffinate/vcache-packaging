@@ -438,4 +438,11 @@ tests:
   # does that yet: it needs vinyltest driven against the installed vmoddir,
   # which is a harness that does not exist. Left pending rather than claimed.
   full_behavior_suite: pending
-  upgrade_transactions: pending
+  # nightly-transactions.yml run 30193144553: the synthetic mismatch and
+  # same-ABI fixtures rebuilt from this cohort's own packages, then 16 apt
+  # scenarios in fresh containers. Reproduces the step-9 findings on the real
+  # cohort id -- apt upgrade holds Vinyl back, full-upgrade and a direct
+  # versioned install remove the VMOD, apt-mark hold refuses even that -- and
+  # confirms the cohort-qualified provide does its job: the same-ABI candidate
+  # is held back rather than upgraded (s12).
+  upgrade_transactions: pass
