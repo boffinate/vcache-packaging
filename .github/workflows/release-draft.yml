@@ -262,6 +262,19 @@ jobs:
         with:
           path: vcache-packaging
 
+      # release-manifest.sh reads the registry through release_tool.py, and
+      # every subcommand of that tool cross-checks cachetag.version against
+      # AC_INIT in a libvmod-cachetag checkout -- a hard error, deliberately,
+      # because that cross-check is the only thing tying a manifest to a real
+      # cachetag release. This job is the one that needs it and did not have
+      # it, because until the registry became the source of the release's
+      # identity, assembling a release needed no registry at all.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: boffinate/libvmod-cachetag
+          ref: ${{ inputs.cachetag_ref }}
+          path: libvmod-cachetag
+
       # Downloaded into separate subdirectories, not one shared "assets"
       # directory: both lanes produce a file literally named SHA256SUMS, and
       # a shared directory would silently let the second download clobber
@@ -289,6 +302,7 @@ jobs:
       - name: assemble the upload directory, RELEASE-SHA256SUMS and release-manifest.json
         env:
           RELEASE_ALLOW_INCOMPLETE_EVIDENCE: ${{ inputs.allow_incomplete_evidence && '1' || '0' }}
+          CACHETAG_SRC: ${{ github.workspace }}/libvmod-cachetag
         run: |
           bash scripts/ci/release-manifest.sh \
             "$GITHUB_WORKSPACE/assets" \
