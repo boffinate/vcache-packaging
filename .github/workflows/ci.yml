@@ -293,10 +293,12 @@ jobs:
           {
             echo "## Combined checksum summary"
             echo
-            echo "Native package filenames as built. These are NOT the plan's"
-            echo "release-asset names (\`libvmod-cachetag-1.0.0-1-debian-13-amd64.deb\`)"
-            echo "-- those require a \`candidate\` cohort manifest, which does not"
-            echo "exist yet (see DESIGN.md open question #2)."
+            echo "Native package filenames as built, which are also the names"
+            echo "release-draft.yml publishes them under; the distro-bearing"
+            echo "release-asset name the registry generates"
+            echo "(\`libvmod-cachetag-1.0.0-1-debian-13-amd64.deb\`) is recorded in"
+            echo "\`release-manifest.json\` rather than used as a filename, because"
+            echo "renaming a .deb contradicts the .changes and .buildinfo beside it."
             echo
             echo "### debian-13"
             echo '```text'

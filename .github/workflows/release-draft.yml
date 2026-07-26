@@ -1,6 +1,8 @@
 name: Release draft assembly
 
-# Draft, unreviewed and unexecuted (see ../DESIGN.md). Manual-trigger only:
+# Design notes: docs/20260725_1740_note_step-10-ci-design.md (the file the
+# other comments here call DESIGN.md; it was renamed into docs/ under this
+# repository's dated-note convention). Manual-trigger only:
 # this is the plan's release workflow steps 1-12 ("Upload every asset to an
 # internal draft GitHub Release for final validation"), NOT step 14
 # ("publish it as a GitHub pre-release"). Publishing the pre-release stays a
@@ -18,12 +20,24 @@ on:
     inputs:
       cachetag_ref:
         description: >-
-          libvmod-cachetag ref to build from. Defaults to the tracked
-          development branch; pin an exact tag/commit once one exists
-          (see DESIGN.md open question #1).
+          libvmod-cachetag ref to build from. Defaults to the v1.0.0 tag,
+          which points at the commit CACHETAG_SOURCE_SHA256 below is a
+          function of. Overriding it is for dry runs only: a mismatch fails
+          the archive digest assertion rather than publishing a different
+          source.
         required: false
-        default: packaging-plan-implementation
+        default: v1.0.0
         type: string
+      release_archive:
+        description: >-
+          Build the source archive in --release mode, which refuses to run
+          unless the working tree is clean and HEAD carries the annotated
+          vX.Y.Z tag. Only the metadata sidecar's mode/release_stamp differ;
+          the archive bytes are a function of the commit, so the digest must
+          not move.
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -50,17 +64,18 @@ jobs:
           path: libvmod-cachetag
       - run: python3 tools/release_tool.py selftest
         working-directory: vcache-packaging
-      # --require-releasable is EXPECTED to fail while the checked-in cohort
-      # is still `template` (see DESIGN.md open question #2). This step is
-      # informational for now: it records why a real cohort-aware release
-      # cannot be assembled yet, rather than blocking the draft build, which
-      # is still useful evidence on its own.
-      - name: validate --require-releasable (informational until a candidate cohort exists)
+      # A hard gate since the first real cohort was minted on 2026-07-26. It
+      # was informational while every checked-in cohort was a `template`, and
+      # a release could not be release-ready by construction. Now it can, so a
+      # failure here means the registry does not describe something publishable
+      # -- a pending test verdict, a missing artifact digest, a hand-written
+      # VMOD directory -- and the run must stop rather than assemble a draft
+      # the registry cannot vouch for.
+      - name: validate --require-releasable
         run: |
           python3 tools/release_tool.py \
             --cachetag-src "$GITHUB_WORKSPACE/libvmod-cachetag" \
-            validate --require-releasable || \
-            echo "::warning::registry is not release-ready yet (expected while the cohort is `template`; see DESIGN.md #10.2)"
+            validate --require-releasable
         working-directory: vcache-packaging
 
   cachetag-source-archive:
@@ -93,13 +108,15 @@ jobs:
           bash "$GITHUB_WORKSPACE/vcache-packaging/scripts/ci/source-archive.sh" \
             "$GITHUB_WORKSPACE/vinyl-cache" \
             "$VINYL_GIT_COMMIT" \
-            "$CACHETAG_SOURCE_SHA256"
+            "$CACHETAG_SOURCE_SHA256" \
+            "${{ inputs.release_archive && 'release' || 'dev' }}"
         working-directory: libvmod-cachetag
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: release-cachetag-source-archive
           path: |
             libvmod-cachetag/release/dist/libvmod-cachetag-*.tar.gz
+            libvmod-cachetag/release/dist/libvmod-cachetag-*.tar.gz.sha256
             libvmod-cachetag/release/dist/libvmod-cachetag-*.metadata.json
           if-no-files-found: error
           retention-days: 14
@@ -234,40 +251,35 @@ jobs:
           name: release-el9-packages
           path: assets/el9
 
-      - name: assemble release-manifest.json and the aggregate SHA256SUMS
+      # This one script now assembles the upload directory, the merged
+      # checksum file and the manifest, so that the names in
+      # RELEASE-SHA256SUMS are by construction the names the assets are
+      # published under. The workflow used to flatten the assets itself with
+      # its own copy of every glob while the script wrote lane-prefixed paths
+      # into the checksum file, which matched nothing a user could download.
+      - name: assemble the upload directory, RELEASE-SHA256SUMS and release-manifest.json
         run: |
           bash scripts/ci/release-manifest.sh \
             "$GITHUB_WORKSPACE/assets" \
             "$GITHUB_RUN_ID" \
-            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            "$GITHUB_WORKSPACE/upload"
         working-directory: vcache-packaging
-
-      - name: flatten release assets into one upload directory
-        run: |
-          set -eu
-          mkdir -p upload
-          # release-manifest.sh writes these two directly into assets/.
-          cp assets/RELEASE-SHA256SUMS assets/release-manifest.json upload/
-          # Per-artifact layout mirrors each upload-artifact step's `path:`
-          # globs in this same workflow -- update both together if either
-          # changes. Lane SHA256SUMS files are deliberately excluded: the
-          # merged RELEASE-SHA256SUMS above is the release asset.
-          cp assets/source-archive/*.tar.gz assets/source-archive/*.metadata.json upload/
-          cp assets/debian-13/*.deb assets/debian-13/*.dsc assets/debian-13/*.changes \
-            assets/debian-13/*.buildinfo assets/debian-13/*.tar.* upload/
-          cp assets/el9/packages/*.rpm upload/
 
       - name: create the internal draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
+          cohort=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cohort"])' \
+            "$GITHUB_WORKSPACE/upload/release-manifest.json")
           tag="draft-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA:0:12}"
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --draft \
             --title "Draft: $tag" \
-            --notes "Internal draft assembled by release-draft.yml, run $GITHUB_RUN_ID. \
+            --notes "Internal draft assembled by release-draft.yml, run $GITHUB_RUN_ID, \
+          cohort $cohort, cachetag ref ${{ inputs.cachetag_ref }}. \
           NOT a public pre-release. A human/orchestrator publishes the real \
           pre-release from a validated draft, per the step-10 gate decision." \
-            upload/*
+            "$GITHUB_WORKSPACE"/upload/*

@@ -12,7 +12,10 @@
 #
 # Usage (run from the libvmod-cachetag checkout root; ci.yml sets
 # working-directory: libvmod-cachetag before invoking this):
-#   scripts/ci/source-archive.sh VINYL_GIT_DIR VINYL_GIT_COMMIT PINNED_SHA256
+#   scripts/ci/source-archive.sh VINYL_GIT_DIR VINYL_GIT_COMMIT PINNED_SHA256 [MODE]
+#
+# MODE is `dev` (default) or `release`. See the comment on the invocation
+# below for what the difference is and, importantly, what it is not.
 #
 # Requires: docker/vinyl-cache-ubuntu-build.Dockerfile already built as the
 # image `vinyl-cache-ubuntu-build` (a separate workflow step, so its own log
@@ -23,6 +26,7 @@ set -euo pipefail
 vinyl_git_dir=${1:?VINYL_GIT_DIR required}
 vinyl_git_commit=${2:?VINYL_GIT_COMMIT required}
 pinned_sha256=${3:?PINNED_SHA256 required}
+mode=${4:-dev}
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) # vcache-packaging root
 . "$here/scripts/ci/lib/common.sh"
@@ -32,15 +36,31 @@ here=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) # vcache-packaging root
 
 note "release-source-archive.sh: pinned Vinyl commit $vinyl_git_commit"
 
-# dev mode (no --release): this is a CI process-proof run against a moving
-# development branch (see DESIGN.md open question #1), not a tagged release
-# build. --release additionally demands a clean tree and an annotated
-# vX.Y.Z tag on HEAD, which release-draft.yml's manual, human-gated flow is
-# the place to add once libvmod-cachetag actually cuts v1.0.0.
+# dev mode (the default) is for ci.yml, which builds from a commit rather than
+# from a tag. --release additionally demands a clean tree and an annotated
+# vX.Y.Z tag on HEAD; release-draft.yml passes it now that libvmod-cachetag has
+# cut v1.0.0.
+#
+# The mode does NOT change the archive. release-source-archive.sh uses it only
+# for the `mode` and `release_stamp` fields of the metadata sidecar and its own
+# console output; the tarball's contents and its file mtimes are functions of
+# the commit alone. The digest assertion below is therefore the same assertion
+# in both modes, and if it ever fails only in release mode, that is a finding
+# about the script, not a licence to move the pin.
+release_flag=""
+case "$mode" in
+	dev) ;;
+	release) release_flag="--release" ;;
+	*) die "unknown MODE: $mode (expected dev or release)" ;;
+esac
+note "archive mode: $mode"
+
+# shellcheck disable=SC2086 # release_flag is deliberately word-split (empty or one flag)
 scripts/release-source-archive.sh \
 	--vinyl-git "$vinyl_git_dir" \
 	--vinyl-ref "$vinyl_git_commit" \
 	--build-profile diagnostic \
+	$release_flag \
 	--from-archive-target check
 
 archive=$(ls release/dist/libvmod-cachetag-*.tar.gz 2>/dev/null | grep -v dist-raw || true)
