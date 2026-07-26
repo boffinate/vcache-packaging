@@ -56,12 +56,19 @@ set -eu
 # fixture derived from an unrecorded input would be worthless as evidence.
 ###############################################################################
 
-BASE_ABI=25761f8505817ac50df994270bfe75b60073e33e
-BASE_VERSION=9.0.0~git20260520.25761f8505-1
-# Must match build.sh's COHORT_ID: it is what the baseline runtime advertises as
-# vinyld-cohort-<id>, and the transformation below asserts it is present before
-# rewriting it.
-BASE_COHORT=unassigned-local-process-proof
+# Read from the single definition of the lane's pinned inputs rather than
+# mirrored here. Until 2026-07-26 these were three hand-written copies, and the
+# cohort mint moved COHORT_ID in pins.env while this file kept saying
+# 'unassigned-local-process-proof' -- a divergence that turns every assertion
+# below into a false negative, because the fixture would be derived from a
+# baseline it no longer describes.
+. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/pins.env"
+
+BASE_ABI=$VINYL_STRICT_ABI
+BASE_VERSION=$VINYL_PACKAGE_VERSION
+# It is what the baseline runtime advertises as vinyld-cohort-<id>, and the
+# transformation below asserts it is present before rewriting it.
+BASE_COHORT=$COHORT_ID
 
 ###############################################################################
 # SYNTHETIC FIXTURE IDENTITY
