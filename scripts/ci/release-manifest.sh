@@ -102,6 +102,37 @@ for v in deb_native deb_asset rpm_native rpm_asset source_archive; do
 done
 
 ###############################################################################
+note "release-readiness gate"
+###############################################################################
+# The registry's own answer to "is there something publishable here?". A
+# release must not be able to claim more evidence than the manifests record,
+# so the gate runs here, next to the assembly, and not only as an early
+# workflow step that a later change could quietly stop feeding.
+#
+# RELEASE_ALLOW_INCOMPLETE_EVIDENCE=1 downgrades it for an explicitly
+# experimental pre-release -- but it does not make the shortfall disappear:
+# every failing check is copied verbatim into release-manifest.json as
+# evidence_gaps, so the published artefact says what it is missing.
+gaps=""
+if python3 "$repo/tools/release_tool.py" \
+	--cachetag-src "${CACHETAG_SRC:-$repo/../libvmod-cachetag}" \
+	validate --require-releasable > "$assets/validate-releasable.log" 2>&1
+then
+	printf 'OK: the registry reports cohort %s releasable\n' "$COHORT_ID"
+else
+	cat "$assets/validate-releasable.log"
+	gaps=$(sed -n 's/^ERROR *//p' "$assets/validate-releasable.log")
+	[ -n "$gaps" ] || gaps="validate --require-releasable failed without naming a check"
+	if [ "${RELEASE_ALLOW_INCOMPLETE_EVIDENCE:-0}" != 1 ]; then
+		die "the registry does not describe a releasable cohort (see above).
+Fix the evidence, or dispatch with allow_incomplete_evidence for an explicitly
+experimental pre-release, which records every gap in release-manifest.json."
+	fi
+	printf '\nW: assembling an experimental release with %d recorded evidence gap(s)\n' \
+		"$(printf '%s\n' "$gaps" | wc -l | tr -d ' ')"
+fi
+
+###############################################################################
 note "assembling $upload"
 ###############################################################################
 rm -rf "$upload"
@@ -178,6 +209,17 @@ cat "$assets/RELEASE-SHA256SUMS"
 ###############################################################################
 note "writing $upload/release-manifest.json"
 ###############################################################################
+# JSON-escape and wrap the gap lines as an array. They come from the
+# validator, so they contain no control characters; quotes and backslashes are
+# escaped anyway rather than assumed absent.
+if [ -n "$gaps" ]; then
+	gaps_json=$(printf '%s\n' "$gaps" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
+		-e 's/^/    "/' -e 's/$/",/' | sed '$ s/,$//')
+	gaps_json=$(printf '\n%s\n  ' "$gaps_json")
+else
+	gaps_json=""
+fi
+
 cat > "$assets/release-manifest.json" <<JSON
 {
   "schema": "vcache-packaging-release-manifest/v1",
@@ -185,6 +227,7 @@ cat > "$assets/release-manifest.json" <<JSON
   "cohort": "$COHORT_ID",
   "cohort_status": "candidate",
   "channel": "pre-release",
+  "evidence_gaps": [$gaps_json],
   "cachetag": {
     "version": "$CACHETAG_VERSION",
     "git_commit": "$CACHETAG_GIT_COMMIT",

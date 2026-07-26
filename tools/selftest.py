@@ -285,6 +285,31 @@ def test_valid_manifest_passes() -> None:
     )
 
 
+def test_buildroot_names_may_be_distribution_shaped() -> None:
+    # RPM buildroots resolve names NAME_RE would reject. Recording them
+    # exactly is the EL9 lane's reproducibility evidence, so the schema has to
+    # accept them -- but only for build_dependencies, not for package names
+    # this project chooses.
+    rpm_names = VALID_TARGET.replace(
+        "    - name: debhelper\n      version: 13.24.1",
+        "    - name: perl-Text-Tabs+Wrap\n      version: 2021.0814-460.el9.noarch",
+        1,
+    )
+    checked, errors = _validate_synthetic(VALID_COHORT, rpm_names, require_releasable=True)
+    check(
+        "validate: a buildroot dependency may carry an RPM-shaped name",
+        errors == [],
+        "; ".join(errors),
+    )
+    bad = VALID_TARGET.replace("binary_name: libvmod-cachetag", "binary_name: LibVmod-Cachetag", 1)
+    checked, errors = _validate_synthetic(VALID_COHORT, bad)
+    check(
+        "validate: a package name is still held to lower-case",
+        errors != [],
+        "; ".join(errors),
+    )
+
+
 def test_version_mismatch_fails() -> None:
     bad = VALID_COHORT.replace("version: 1.0.0", "version: 1.0.1", 1)
     checked, errors = _validate_synthetic(bad, VALID_TARGET)
@@ -760,6 +785,7 @@ def main(repo_root: Path = None, cachetag_src=None) -> int:
     test_parser()
     test_digest()
     test_valid_manifest_passes()
+    test_buildroot_names_may_be_distribution_shaped()
     test_version_mismatch_fails()
     test_bad_cohort_id_fails()
     test_schema_failures()

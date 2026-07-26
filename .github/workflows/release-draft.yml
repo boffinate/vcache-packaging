@@ -38,6 +38,15 @@ on:
         required: false
         default: true
         type: boolean
+      allow_incomplete_evidence:
+        description: >-
+          Assemble a draft even when the registry does not describe a
+          releasable cohort. For an explicitly experimental pre-release only.
+          Every failing check is copied into release-manifest.json as
+          evidence_gaps, so the published artefact states what it is missing.
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -73,9 +82,29 @@ jobs:
       # the registry cannot vouch for.
       - name: validate --require-releasable
         run: |
-          python3 tools/release_tool.py \
+          set -o pipefail
+          if python3 tools/release_tool.py \
             --cachetag-src "$GITHUB_WORKSPACE/libvmod-cachetag" \
-            validate --require-releasable
+            validate --require-releasable | tee validate.log
+          then
+            exit 0
+          fi
+          if [ "${{ inputs.allow_incomplete_evidence }}" != "true" ]; then
+            exit 1
+          fi
+          {
+            echo "### Registry is not release-ready"
+            echo
+            echo "Assembling anyway: \`allow_incomplete_evidence\` was set."
+            echo "Every line below is recorded in release-manifest.json as an"
+            echo "evidence gap, and belongs in the release notes."
+            echo
+            echo '```text'
+            sed -n 's/^ERROR *//p' validate.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          sed -n 's/^ERROR *//p' validate.log |
+            while read -r gap; do echo "::warning::evidence gap: $gap"; done
         working-directory: vcache-packaging
 
   cachetag-source-archive:
@@ -258,6 +287,8 @@ jobs:
       # its own copy of every glob while the script wrote lane-prefixed paths
       # into the checksum file, which matched nothing a user could download.
       - name: assemble the upload directory, RELEASE-SHA256SUMS and release-manifest.json
+        env:
+          RELEASE_ALLOW_INCOMPLETE_EVIDENCE: ${{ inputs.allow_incomplete_evidence && '1' || '0' }}
         run: |
           bash scripts/ci/release-manifest.sh \
             "$GITHUB_WORKSPACE/assets" \

@@ -81,6 +81,13 @@ COHORT_ID_RE = r"^vinyl-[0-9]+\.[0-9]+\.[0-9]+-" + INPUT_ID_RE + r"$"
 TARGET_ID_RE = r"^[a-z][a-z0-9]*(?:-[a-z0-9._]+)+$"
 DISTRO_ID_RE = r"^[a-z][a-z0-9]*(?:-[a-z0-9._]+)*$"
 NAME_RE = r"^[a-z][a-z0-9+._-]*$"
+# Buildroot package names belong to the distribution, not to this project, and
+# RPM ships plenty that NAME_RE would reject: perl-AutoLoader, hunspell-en-US,
+# perl-Text-Tabs+Wrap. Recording the exactly resolved buildroot is the EL9
+# lane's whole reproducibility story -- Mock resolves from live mirrors with no
+# snapshot service to pin -- so the pattern has to admit the names that lane
+# actually resolves.
+BUILDROOT_NAME_RE = r"^[A-Za-z0-9][A-Za-z0-9+._-]*$"
 FILENAME_RE = r"^[A-Za-z0-9][A-Za-z0-9._+-]*$"
 FREE_TEXT_RE = r"^[^\s].*$"
 IMAGE_DIGEST_RE = r"^sha256:[0-9a-f]{64}$"
@@ -180,7 +187,9 @@ _BUILD_FIELDS = {
     "ldflags": _s(FREE_TEXT_RE),
     "source_date_epoch": _s(r"^(?:[0-9]+|PLACEHOLDER)$"),
     "hardening_check": _enum(TEST_STATUS),
-    "build_dependencies": _list(_map({"name": _s(NAME_RE), "version": _s(FREE_TEXT_RE)}), min_len=0),
+    "build_dependencies": _list(
+        _map({"name": _s(BUILDROOT_NAME_RE), "version": _s(FREE_TEXT_RE)}), min_len=0
+    ),
 }
 
 # Installed layout resolved from the Vinyl development package at build time.
