@@ -18,13 +18,26 @@ echo "::lane::${LANE}::daemon=${DAEMON}"
 # unset variable turns into a bogus '-I /aclocal'.
 VARNISHAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir varnishapi 2>/dev/null || true)
 VINYLAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir vinylapi 2>/dev/null || true)
+LIBVARNISHAPI_DATAROOTDIR=$VARNISHAPI_DATAROOTDIR
+LIBVINYLAPI_DATAROOTDIR=$VINYLAPI_DATAROOTDIR
 export VARNISHAPI_DATAROOTDIR VINYLAPI_DATAROOTDIR
+export LIBVARNISHAPI_DATAROOTDIR LIBVINYLAPI_DATAROOTDIR
 
 echo "::stage::copy"
 cp -a /src "$WORK" && cd "$WORK" || { echo "::result::copy-failed"; exit 10; }
 chmod -R u+w .
 
 echo "::stage::bootstrap"
+# Some repositories keep the whole autotools build in a subdirectory
+# (e.g. urlsort's vmod/). Descend when the root has no build system and
+# exactly one direct subdirectory does.
+if [ ! -f configure ] && [ ! -f configure.ac ] && [ ! -f autogen.sh ] && [ ! -f bootstrap ]; then
+    candidates=$(for d in */; do [ -f "$d/configure.ac" ] && echo "$d"; done)
+    if [ "$(echo "$candidates" | grep -c .)" = 1 ]; then
+        echo "::note::descending into ${candidates}"
+        cd "$candidates"
+    fi
+fi
 if [ ! -f configure ]; then
     if [ -f bootstrap ]; then
         # varnish-modules style: computes the aclocal include itself and may
@@ -50,7 +63,8 @@ echo "::stage::build"
 make -j"$(nproc)" || make || { echo "::result::build-failed"; exit 13; }
 
 echo "::stage::load"
-sos=$(find . -path '*/.libs/libvmod_*.so' -type f | sort)
+# No -type filter: libtool leaves the .so as a symlink for some modules.
+sos=$(find . -path '*/.libs/libvmod_*.so' | sort)
 if [ -z "$sos" ]; then
     echo "::result::no-vmod-built"
     exit 14

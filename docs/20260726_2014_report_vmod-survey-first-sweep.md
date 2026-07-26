@@ -17,13 +17,13 @@ Both lanes carry naming shims in both directions (varnish↔vinyl pc/m4/tool nam
 
 | verdict | count | meaning |
 | --- | --- | --- |
-| green | 35 | passes both Varnish 9 and Vinyl 9 |
+| green | 36 | passes both Varnish 9 and Vinyl 9 |
 | DIVERGENT | 7 | passes Varnish 9, fails Vinyl 9 |
-| fails-both | 66 | needs 9.x modernisation regardless of fork |
+| fails-both | 65 | needs 9.x modernisation regardless of fork |
 | bundled | 5 | ships inside the daemon distribution; excluded |
 | (dead) | 2 | repository gone (`authentication`) or empty result |
 
-Per-lane pass counts: varnish9 42, vinyl9 35.
+Per-lane pass counts: varnish9 43, vinyl9 36. (Numbers updated after the harness v2 fixes below; the initial sweep read 35/7/66.)
 
 ## The divergence set
 
@@ -43,16 +43,16 @@ No VMOD passes Vinyl and fails Varnish: the earlier `tbf` case was a parallel-ma
 ## Other findings with packaging consequences
 
 - **10 configure runs demand a daemon source tree** (`Need VINYLSRC` / `VINYLSRC must be set`): `pesi`, `slash`, `tus`, `zipflow` and the rest of that uplex family. These build against daemon internals, not the installed dev package, so they can never be packaged downstream as currently written — directly relevant to the downstream plan's dev-package-surface gate.
-- **The 66 fails-both are bimodal.** Roughly half are pre-2017 relics (VRT eras 3.x–5.x). The actively maintained failures have concrete, mostly small causes: `valkey` needs libvalkey (not in Debian 13), `variable` needs PCRE1 (removed from Debian 13), `brotli` builds a differently-named .so the harness doesn't yet smoke, `urlsort` has no autotools build, `ip2location` has a broken aclocal include path.
+- **The 65 fails-both are bimodal.** Roughly half are pre-2017 relics (VRT eras 3.x–5.x). The actively maintained failures have concrete causes: `valkey` needs libvalkey (not in Debian 13), `variable` needs PCRE1 (removed from Debian 13), `ip2location` needs the IP2Location C library (vendor source install, not packaged in Debian).
 - **The directory data is stale but structurally sound**: 32 of 113 entries are marked inactive, only ~44 repos have 2026 commits, `authentication`'s repo is gone, and the claimed-version branch maps top out around 6.x–7.x. The registration JSON format works well as a machine-readable worklist source.
 
 ## Harness lessons (recorded for reruns)
 
-Iterations needed to make the sweep honest, all now baked in: varnish 9 requires sphinx and libssl at build time; `ACLOCAL_AMFLAGS` referencing `${VARNISHAPI_DATAROOTDIR}` needs the variable exported; 13 repos vendor build machinery in git submodules; uplex configure scripts need autoconf-archive; old vmodtool Makefile rules race under `make -j`; and the naming shims must be symmetric and must strip vinyl's `m4_pattern_forbid` tripwires.
+Iterations needed to make the sweep honest, all now baked in: varnish 9 requires sphinx and libssl at build time; `ACLOCAL_AMFLAGS` referencing `${VARNISHAPI_DATAROOTDIR}` (or the `LIBVARNISHAPI_`/vinyl variants) needs the variables exported; 13 repos vendor build machinery in git submodules; uplex configure scripts need autoconf-archive; old vmodtool Makefile rules race under `make -j`; libtool sometimes leaves the module `.so` as a symlink (the load smoke must not filter on `-type f`); some repos keep the build system in a subdirectory (`urlsort`); and the naming shims must be symmetric and must strip vinyl's `m4_pattern_forbid` tripwires.
 
 ## Follow-ups
 
 1. Decide the compat-shim product question with these numbers (4 VMODs green-able by one header alias; build-name shims already drafted in `survey/harness/`).
 2. Report divergence findings upstream where cheap (varnish-modules `cache_varnishd.h` include, `file`'s `VRT_synth_page`).
-3. Candidates for packaging lanes / directory refresh: the 35 green VMODs, starting with the actively maintained ones.
-4. Harness v2 items: smoke non-`libvmod_*.so` module names (brotli), optional claimed-branch fallback sweeps, rerun cadence against vinyl trunk (the trunk-vmod-ci workflow is the natural home).
+3. Candidates for packaging lanes / directory refresh: the 36 green VMODs, starting with the actively maintained ones.
+4. Harness v2 items remaining: optional claimed-branch fallback sweeps, rerun cadence against vinyl trunk (the trunk-vmod-ci workflow is the natural home).
