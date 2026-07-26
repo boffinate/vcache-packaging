@@ -131,7 +131,15 @@ die() { printf 'E: %s\n' "$*" >&2; exit 1; }
 DEB_HOST_ARCH=$(sed -n 1p "$out_dir/work/target.txt" 2>/dev/null || true)
 [ -n "$DEB_HOST_ARCH" ] || die "cannot read the target architecture from $out_dir/work/target.txt"
 
-mkdir -p "$log_dir"
+# Both directories are created here, by the host, before any container runs.
+# container/make-mismatch.sh would create dist/debian-13/mismatch/ itself, as
+# root, and on a Linux runner the host user then cannot add PROVENANCE to it --
+# which is exactly how this failed on its first CI run
+# (nightly-transactions.yml run 30192509993: "cannot create .../PROVENANCE:
+# Permission denied", after every fixture had already been built correctly).
+# It never showed up locally because Docker Desktop maps bind-mount ownership
+# to the calling user.
+mkdir -p "$log_dir" "$mismatch_dir"
 
 ###############################################################################
 # Verify the fixture source before deriving anything from it.
