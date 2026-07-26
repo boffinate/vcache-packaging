@@ -234,5 +234,28 @@ mock_as -r "$mock_cfg" --no-clean \
 find "$resultdir/cachetag" -name 'libvmod-cachetag*.rpm' -exec cp -p {} /out/packages/ \;
 cp -p "$cachetag_srpm" /out/packages/
 
+###############################################################################
+say "rpmbuild logs: the effective configure line and build flags"
+###############################################################################
+# Mock's own build.log is the only record of what %configure expanded to and
+# which CFLAGS/LDFLAGS redhat-rpm-config supplied. The tee'd files above are
+# Mock's stdout, which for --rebuild is a progress summary and contains none of
+# it. Without this copy the registry target manifest's build.configure_options,
+# build.cflags and build.ldflags fields -- "recorded output", per
+# registry/README.md -- have no source on this lane but a guess at what the
+# distribution's macros expand to, which is exactly the kind of hand-written
+# value this repository's rules forbid. The Debian lane needs no equivalent:
+# dh_auto_configure echoes the line and libtool echoes every compile and link
+# command into the job log.
+for pkg in vinyl cachetag; do
+	if [ -f "$resultdir/$pkg/build.log" ]; then
+		cp -p "$resultdir/$pkg/build.log" "$logdir/mock-$pkg-rpmbuild.log"
+		printf 'copied %s build.log (%s lines)\n' \
+			"$pkg" "$(wc -l < "$logdir/mock-$pkg-rpmbuild.log" | tr -d ' ')"
+	else
+		printf 'W: no %s/build.log in %s\n' "$pkg" "$resultdir" >&2
+	fi
+done
+
 say "container-mock.sh complete"
 ls -la /out/packages
