@@ -633,6 +633,7 @@ def validate_registry_tree(
         errors.append(f"{cohorts_dir}: no cohort manifests found")
 
     seen_target_dirs = set()
+    releasable_cohorts: list = []
     for cohort_path in cohort_files:
         rel_path = cohort_path.relative_to(root)
         checked.append(str(rel_path))
@@ -641,7 +642,22 @@ def validate_registry_tree(
         except yaml_subset.ManifestSyntaxError as exc:
             errors.append(str(exc))
             continue
-        cohort_errors = validate_cohort(cohort, str(rel_path), expected_version, require_releasable)
+        # A template is a schema exemplar that lives in the registry
+        # permanently -- registry/README.md's "template convention", and the
+        # self-tests read the checked-in ones. It is never releasable, and
+        # asking one to be releasable is a category error rather than a
+        # finding, so in --require-releasable mode a template is held to the
+        # schema and the tree-level requirement below is what actually bites:
+        # some cohort must be releasable. Selecting a template with --cohort
+        # is still an error, because that names a specific thing to release.
+        is_template = cohort.get("status") == "template"
+        cohort_releasable = require_releasable and not is_template
+        if require_releasable and is_template and only_cohort == cohort.get("cohort"):
+            errors.append(
+                f"{rel_path}: --cohort {only_cohort!r} selects a template manifest, "
+                "which is never releasable"
+            )
+        cohort_errors = validate_cohort(cohort, str(rel_path), expected_version, cohort_releasable)
         if cohort_path.stem != cohort.get("cohort"):
             cohort_errors.append(f"{rel_path}: file name stem must equal the cohort identifier")
         errors.extend(cohort_errors)
@@ -665,6 +681,7 @@ def validate_registry_tree(
             errors.append(
                 f"{rel_path}: cohort targets {listed} do not match the manifests present {present}"
             )
+        cohort_target_errors: list = []
         for target_path in sorted(target_dir.glob("*.yml")):
             target_rel = target_path.relative_to(root)
             checked.append(str(target_rel))
@@ -673,15 +690,18 @@ def validate_registry_tree(
             except yaml_subset.ManifestSyntaxError as exc:
                 errors.append(str(exc))
                 continue
-            errors.extend(
+            cohort_target_errors.extend(
                 validate_target(
                     target,
                     str(target_rel),
                     cohort=cohort,
                     cohort_status=cohort["status"],
-                    require_releasable=require_releasable,
+                    require_releasable=cohort_releasable,
                 )
             )
+        errors.extend(cohort_target_errors)
+        if cohort_releasable and not cohort_errors and not cohort_target_errors:
+            releasable_cohorts.append(cohort["cohort"])
 
     for stray in sorted(targets_dir.iterdir()) if targets_dir.is_dir() else []:
         if stray.is_dir() and stray.name not in seen_target_dirs and not only_cohort:
@@ -700,10 +720,21 @@ def validate_registry_tree(
                 validate_target(
                     native,
                     str(native_rel),
-                    require_releasable=require_releasable,
+                    # Same rule as the cohort lane: a distro-native template is
+                    # a schema exemplar, not a release candidate that happens
+                    # to be unfinished. There is no distro Vinyl 9 package to
+                    # build one against yet.
+                    require_releasable=require_releasable and native.get("status") != "template",
                     distro_native=True,
                     expected_version=expected_version,
                 )
             )
+
+    if require_releasable and not releasable_cohorts:
+        errors.append(
+            "no releasable cohort: every cohort manifest is a template, or the only "
+            "non-template ones failed the checks above. --require-releasable exists to "
+            "answer 'is there something publishable here?', and the answer is no"
+        )
 
     return checked, errors

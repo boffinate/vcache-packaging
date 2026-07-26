@@ -35,7 +35,7 @@ A target manifest's status must equal its cohort's status.
 
 ### The template convention
 
-The first concrete cohort identifier must not be derived yet: the plan forbids deriving it from the mutable sibling `../vinyl-cache` checkout, and it can only be assigned once the Vinyl source archive, the ordered downstream patch set, and the production build-profile revision are pinned. The checked-in manifests are therefore templates.
+The first concrete cohort identifier could not be derived until the Vinyl source archive, the ordered downstream patch set, and the production build-profile revision were pinned, and the plan forbids deriving it from the mutable sibling `../vinyl-cache` checkout. All three were pinned by 2026-07-25 and `vinyl-9.0.0-4b7e68292979` was minted on 2026-07-26; `vinyl-9.0.0-000000000000` and `registry/distro-native/debian-13-amd64.yml` remain as the schema exemplars.
 
 A placeholder is any of:
 
@@ -48,10 +48,21 @@ A placeholder is any of:
 
 The validator enforces both directions:
 
-- a `template` manifest must use the reserved input-id `000000000000` and the placeholder `vinyl.source_sha256`, so a template can never masquerade as a real cohort, and it is rejected outright in `--require-releasable` mode;
+- a `template` manifest must use the reserved input-id `000000000000` and the placeholder `vinyl.source_sha256`, so a template can never masquerade as a real cohort, and it is rejected outright when it is the manifest being asked to be releasable;
 - a `candidate` or `released` manifest must contain no placeholder anywhere, and its cohort input-id must equal the digest of its recorded inputs.
 
 Placeholder values are exempt from the ordinary pattern checks so that a template can still be fully schema-checked.
+
+### What `--require-releasable` asks of a whole tree
+
+The templates are permanent: they are the schema exemplars, and the self-tests read the checked-in ones. So `validate --require-releasable` cannot mean "every manifest here is releasable" — that would be unsatisfiable by construction. It means:
+
+- every **non-template** manifest must be release-ready;
+- at least one cohort must come through releasable, otherwise the tree is reported as having nothing publishable in it;
+- template manifests are held to the schema only — until the first real cohort was minted on 2026-07-26 this distinction did not arise, because nothing in the tree could be releasable anyway;
+- `validate --require-releasable --cohort <id>` names one specific thing to release, so selecting a template that way is an error rather than a skip.
+
+`.github/workflows/release-draft.yml` runs the whole-tree form as a hard gate before it assembles anything.
 
 ## File format
 
@@ -319,7 +330,6 @@ Module map:
 
 ## Deliberately not here yet
 
-- **The first real cohort identifier.** Assigned only when the Vinyl source archive, patch series, and production build-profile revision are pinned, per the plan.
 - **`debian/changelog` and RPM `%changelog` generation.** The plan lists them under the same Phase 0 bullet; they belong with the packaging recipes — cachetag's in its own repository, Vinyl's in this one — and they need release-note text that no manifest field holds.
 - **A VMOD registry.** `required_vmods` is a flat list because cachetag is the only independently packaged VMOD. Generic reverse-dependency scheduling arrives with the second one.
-- **`release-manifest.json` emission.** The per-release artifact described in the plan's release artifact contract is assembled by the release workflow from these manifests plus CI-only facts (workflow URL, run id), which cannot be checked in ahead of the run.
+- **`release-manifest.json` emission from this tooling.** The per-release artifact described in the plan's release artifact contract is assembled by [`scripts/ci/release-manifest.sh`](../scripts/ci/release-manifest.sh) from these manifests, read through `release_tool.py metadata`, plus CI-only facts (workflow URL, run id) that cannot be checked in ahead of the run. Whether the generator belongs in `tools/` instead is an open question; it lives in `scripts/ci/` because everything else it needs — the assembled asset directory and the run's identity — only exists inside a workflow run.

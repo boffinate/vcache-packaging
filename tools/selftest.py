@@ -458,16 +458,41 @@ def test_repo_templates(repo_root: Path, cachetag_src: Path) -> None:
         )["cachetag"]["version"],
         str(cachetag_src),
     )
+    cohort = manifest.load_cohort(
+        repo_root / "registry" / "cohorts" / "vinyl-9.0.0-000000000000.yml"
+    )
+    check(
+        "repo: a template cohort is refused for release use",
+        any(
+            "never releasable" in e
+            for e in manifest.validate_cohort(cohort, "synthetic", "1.0.0", require_releasable=True)
+        ),
+    )
+    # Selecting a template by id in --require-releasable mode names a specific
+    # thing to release, so it is an error...
+    checked, errors = manifest.validate_registry_tree(
+        repo_root=repo_root,
+        require_releasable=True,
+        only_cohort="vinyl-9.0.0-000000000000",
+        cachetag_src=cachetag_src,
+    )
+    check(
+        "repo: --require-releasable --cohort <template id> is refused",
+        any("never releasable" in e for e in errors),
+        "; ".join(errors),
+    )
+    # ...while the mere presence of the template exemplars, which live in the
+    # registry permanently, must not make the whole tree unreleasable. Before
+    # the first real cohort existed this distinction did not arise, because
+    # nothing in the tree could be releasable anyway.
     checked, errors = manifest.validate_registry_tree(
         repo_root=repo_root, require_releasable=True, cachetag_src=cachetag_src
     )
     check(
-        "repo: checked-in templates are refused for release use",
-        any("never releasable" in e for e in errors),
+        "repo: template exemplars alone do not fail --require-releasable",
+        not any("vinyl-9.0.0-000000000000" in e for e in errors)
+        and not any("distro-native" in e for e in errors),
         "; ".join(errors),
-    )
-    cohort = manifest.load_cohort(
-        repo_root / "registry" / "cohorts" / "vinyl-9.0.0-000000000000.yml"
     )
     check(
         "repo: the template cohort id is the reserved placeholder input-id",
