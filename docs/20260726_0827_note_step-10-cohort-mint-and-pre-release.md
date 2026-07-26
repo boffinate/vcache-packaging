@@ -56,10 +56,14 @@ This is why the target manifests name the run their artifact digests come from. 
 
 ## Evidence gaps this pre-release ships with
 
-`validate --require-releasable` does not pass, and the manifests were not edited to make it. Two verdicts are `pending` on both targets:
+`validate --require-releasable` does not pass, and the manifests were not edited to make it. Two verdicts started `pending` on both targets; **one was closed by running the missing lane**, and one remains:
 
 - **`full_behavior_suite`.** The complete 53-test suite (52 VTCs plus the WAL unit test) ran twice in the same CI run, on x86_64, from the byte-identical pinned source archive the packages are built from — but in the **diagnostic** profile, in the source harness, against the VMOD the harness builds rather than the one the package installs. The plan asks for the suite "against the production-hardened package build". No lane does that. Doing it needs `vinyltest` driven against the installed `vmoddir` with the VTCs unpacked from the release archive; `vinyltest` is shipped in the EL9 runtime package, so the missing piece is a harness, not a packaging change.
-- **`upgrade_transactions`.** Produced by `nightly-transactions.yml`, which had never run before today.
+- **`upgrade_transactions`. Closed.** `nightly-transactions.yml` had never run; it was dispatched twice today and both lanes now record `pass` — 16 apt scenarios in [run 30193144553](https://github.com/boffinate/vcache-packaging/actions/runs/30193144553) and 17 dnf scenarios in [run 30192509993](https://github.com/boffinate/vcache-packaging/actions/runs/30192509993), each scenario in a fresh container, both against the minted cohort. Every step-9 finding reproduces, and the cohort-qualified provide is visibly doing its job: the same-ABI candidate that used to upgrade cleanly through every apt path is now held back on `apt upgrade` (s12) and removes the VMOD loudly on the destructive ones.
+
+  Run 30193144553 is also the first end-to-end green run of `nightly-transactions.yml` itself: both lanes, build through mismatch fixture through matrix.
+
+  The first dispatch found a real portability bug rather than a packaging one. The Debian lane died one line from the end of the mismatch fixture — every variant built, every digest verified — with `cannot create dist/debian-13/mismatch/PROVENANCE: Permission denied`. `container/make-mismatch.sh` creates that directory as root inside the container, and on a Linux runner the host user cannot then add a file to it. Docker Desktop maps bind-mount ownership to the calling user, so the local process proof could never have seen it. The host now creates the directory first.
 
 Rather than either lying or blocking, the release workflow gained `allow_incomplete_evidence`: off by default, and when set it copies every failing check verbatim into `release-manifest.json` as `evidence_gaps` and into the run summary as warnings. A release can now be published that states precisely what it has not proved.
 
@@ -81,7 +85,13 @@ A third, now fixed: Mock's `build.log` was not kept, so the EL9 target manifest'
 
 ## Release assembly
 
-`release-draft.yml` had never run. Findings from driving it are below; the workflow changes it needed were made before the first dispatch, from reading it against the now-real registry:
+`release-draft.yml` had never run. Four dispatches; the two failures were both about a release describing itself wrongly, not about a build:
+
+1. **Cancelled before it could fail.** The assemble job checks out only this repository, and `release-manifest.sh` now reads the registry through `release_tool.py`, whose every subcommand cross-checks `cachetag.version` against `AC_INIT` in a `libvmod-cachetag` checkout — a hard error by design. The job would have died at the last step of a fifteen-minute run. Caught by reading the job against the script; the run was cancelled rather than watched.
+2. **The first assembled draft published assets under names its own checksum file did not use.** GitHub rewrites any character outside `[A-Za-z0-9._-]` in a release asset name, and the Vinyl snapshot version contains a tilde — deliberately, because `~` sorts below a future real `9.0.0` in both dpkg and rpm. So sixteen assets went up as `9.0.0.git20260520...` while `RELEASE-SHA256SUMS` named them `9.0.0~git20260520...`, and `sha256sum -c` failed on every one. This is the same defect as the lane-prefixed checksum paths, from a different direction: **a checksum file has to describe what a user can actually download.** Fixed by renaming the files to their GitHub-safe names before the checksums are computed; the version inside the package metadata is untouched, because apt and dnf read it from the control header rather than the filename.
+3. **Re-dispatched after closing the transaction-evidence gap**, so the published `release-manifest.json` would not record a gap that had since been measured.
+
+The workflow changes below were made before the first dispatch, from reading it against the now-real registry:
 
 - the source archive is built with `--release` from the `v1.0.0` tag. That mode refuses a dirty tree or a missing annotated tag, and it does **not** change the archive: `release_stamp` reaches only the metadata sidecar, so the pinned digest `a262ac7a…` must hold across the mode change, and the same assertion runs in both modes.
 - `RELEASE-SHA256SUMS` used to list lane-prefixed paths (`debian-13/foo.deb`) while the workflow published the files flat, so the checksum file described names nobody could download. One script now assembles the upload directory and computes the checksums over it.
@@ -89,5 +99,19 @@ A third, now fixed: Mock's `build.log` was not kept, so the EL9 target manifest'
 
 ## Published
 
-- libvmod-cachetag `v1.0.0`: annotated tag on `fcc369d23b199cc8e41086f28f2322256a8843d9`, the exact commit the pinned archive digest is a function of. No pin moved to make the tag possible.
-- Release URLs and asset digests: see the release-assembly section above and the releases themselves.
+Both marked **pre-release**, both deletable, both explicitly experimental.
+
+| | |
+| --- | --- |
+| Source | [libvmod-cachetag v1.0.0](https://github.com/boffinate/libvmod-cachetag/releases/tag/v1.0.0) — annotated tag on `fcc369d23b199cc8e41086f28f2322256a8843d9`, the exact commit the pinned archive digest is a function of. No pin moved to make the tag possible. Three assets: the CI-built archive, its digest, its metadata sidecar. |
+| Packages | [cohort-vinyl-9.0.0-4b7e68292979](https://github.com/boffinate/vcache-packaging/releases/tag/cohort-vinyl-9.0.0-4b7e68292979) — 31 assets: both lanes' binary, source and debug packages, the Vinyl runtime and development packages they are ABI-bound to, the source archive, `RELEASE-SHA256SUMS` and `release-manifest.json`. |
+
+The published assets were downloaded again afterwards and `sha256sum -c RELEASE-SHA256SUMS` passed on all 29 listed files, 0 failures — the check that failed on the first draft.
+
+`CACHETAG_SOURCE_URL`, pinned in both lane recipes and substituted into the RPM `Source0` and the Debian `Homepage`, now resolves: `curl -IL` returns 200. It was a dangling reference until the moment of publication, which is why the EL9 rpmlint triage carries `W: invalid-url Source0` with a note to revisit it after a release exists. That warning can go on the next rebuild.
+
+The draft releases were deleted after the pre-release was cut from the validated one. The tag `cohort-vinyl-9.0.0-4b7e68292979` names the cohort rather than a version of this repository, which has none: what is being released is a set of packages, and the cohort id is that set's identity.
+
+### Digests: what is and is not stable
+
+The published Debian `.deb` digest `d4c1b367…` is identical to the one the earlier ci.yml run of the same inputs produced. The published EL9 RPM digest is not, so the EL9 target manifest's `artifacts` were refreshed from the publishing run and the Debian one did not need to be. That asymmetry is a property of the two package formats, and it is worth knowing before anyone tries to verify a rebuild.

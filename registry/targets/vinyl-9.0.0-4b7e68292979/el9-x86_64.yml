@@ -768,15 +768,21 @@ install:
   # which fails the build when it disagrees with this value.
   vmoddir: /usr/lib64/vinyl-cache/vmods
   vmoddir_source: pkg-config
+# The digests of the RPMs actually published, from release-draft.yml run
+# 30193639092. They are NOT the digests the ci.yml run of the same inputs
+# produced: RPM headers carry build-time state that SOURCE_DATE_EPOCH does not
+# pin, so every EL9 rebuild of identical inputs yields different bytes. The
+# Debian lane's .deb, by contrast, is bit-identical across runs, which is why
+# that manifest's digests did not need refreshing at publication.
 artifacts:
   - filename: libvmod-cachetag-1.0.0-1.el9.x86_64.rpm
-    sha256: "e9237bcb932bca617ea2a989c4ad1e7f9ee977600a5e34ed962565bbd9d89f4f"
+    sha256: "19ad3338dc92ae01d6248dfd8bca6ae6186043bfaa1a123866849274453203c3"
   - filename: libvmod-cachetag-debuginfo-1.0.0-1.el9.x86_64.rpm
-    sha256: "a6fad62cbe94c036ebc2b5877df7c9ec6ac435b47a12192c6e840a3c8a47e0d6"
+    sha256: "452567ab698edde281ab50314efa6802dabecf0b829db96b90231da12e1f90ff"
   - filename: libvmod-cachetag-debugsource-1.0.0-1.el9.x86_64.rpm
-    sha256: "415807f700b53373cb986d75eb0855be74371b19a3ffd6f2125405e881f89146"
+    sha256: "b08fcb4d943831f3669402bedc3135e0a67e7299abf3524e137a7cb725472ac7"
   - filename: libvmod-cachetag-1.0.0-1.el9.src.rpm
-    sha256: "61437cbcf3b8d9287e3062c2b3ca731a0518bcbcf15515b3e2793ac645667277"
+    sha256: "aa4a18a202f56f8ceb0d21ed093dc80d8458fdec563192d010cd0b116c6b6935"
 tests:
   # rpmlint over all nine packages in ci.yml run 30192249530: 5 errors and 22
   # warnings, exactly the set triaged item by item in
@@ -794,7 +800,7 @@ tests:
   # same run, but not against the production-hardened package build the plan
   # asks for. No lane does that yet.
   full_behavior_suite: pending
-  # nightly-transactions.yml run 30192509993: the synthetic mismatch and
+  # nightly-transactions.yml runs 30192509993 and 30193144553: the mismatch and
   # same-ABI fixtures rebuilt from this cohort's own RPMs, then 17 dnf
   # scenarios in fresh containers. Reproduces the step-9 findings on the real
   # cohort id: plain dnf upgrade refuses the whole transaction under
