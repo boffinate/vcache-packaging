@@ -168,6 +168,39 @@ cp -p "$assets"/el9/packages/*.rpm "$upload/"
 # still published, as data rather than as a filename that contradicts its own
 # metadata. Both native names already carry the architecture, and the RPM
 # carries the dist tag, so nothing is ambiguous in a flat release.
+###############################################################################
+note "renaming assets GitHub would rename anyway"
+###############################################################################
+# GitHub rewrites characters outside [A-Za-z0-9._-] in a release asset name.
+# The Vinyl snapshot version contains a tilde -- 9.0.0~git20260520.25761f8505,
+# deliberately, because ~ sorts below a future real 9.0.0 in both dpkg and rpm
+# -- so every Vinyl asset was published as ...9.0.0.git..., while
+# RELEASE-SHA256SUMS named it ...9.0.0~git.... `sha256sum -c` then failed on
+# every one of them, which is the same defect as the lane-prefixed paths this
+# script was already fixing, arriving from a different direction (observed on
+# draft-20260726T074622Z).
+#
+# So rename here, before the checksums are computed, and let the checksum file
+# describe what is actually downloadable. The package version inside the
+# metadata is untouched: apt and dnf read it from the control header, not from
+# the filename, and release-manifest.json still records the true version.
+for f in "$upload"/*; do
+	b=$(basename -- "$f")
+	safe=$(printf '%s' "$b" | tr -c 'A-Za-z0-9._-' '.')
+	if [ "$b" != "$safe" ]; then
+		printf 'renaming %s -> %s\n' "$b" "$safe"
+		mv "$f" "$upload/$safe"
+	fi
+done
+# The cachetag names carry no tilde, so these are unchanged by the rename and
+# release-manifest.json's filenames stay true. Assert rather than assume.
+for n in "$deb_native" "$rpm_native" "$source_archive"; do
+	safe=$(printf '%s' "$n" | tr -c 'A-Za-z0-9._-' '.')
+	[ "$n" = "$safe" ] || die \
+		"$n would be renamed to $safe on upload, so release-manifest.json would
+name a file that is not published. Teach the manifest the published name."
+done
+
 [ -f "$upload/$deb_native" ] || die "the Debian lane produced no $deb_native"
 [ -f "$upload/$rpm_native" ] || die "the EL9 lane produced no $rpm_native"
 [ -f "$upload/$source_archive" ] || die "no $source_archive in the source-archive artifact"

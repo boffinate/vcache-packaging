@@ -48,9 +48,11 @@ Every package build, by contrast, happens in a container. See [AGENTS.md](AGENTS
 
 ## Status
 
-Early. The checked-in cohort is a `template` with placeholder identity values: the first real cohort identifier is assigned only once the Vinyl source archive, the ordered downstream patch set, and the production build-profile revision are pinned, and the plan forbids deriving it from a mutable sibling checkout. The vendored `upstream/pkg-vinyl-cache` recipes are audit input, not a release-ready base.
+Early, and now with one experimental pre-release behind it.
 
-Nothing here is published, signed, or supported yet.
+The first real cohort, `vinyl-9.0.0-4b7e68292979`, was minted on 2026-07-26 and both lanes — Debian 13 amd64 and EL9 x86_64 — build it in CI clean rooms. `vinyl-9.0.0-000000000000` and the distro-native manifest remain as schema exemplars. The vendored `upstream/pkg-vinyl-cache` recipes are audit input, not a release-ready base.
+
+What that pre-release is not: signed, repository-published, or supported. There is no security SLA, no advisory feed, and no repository metadata — the packages are direct downloads from a GitHub Release. Two required verifications are recorded as *not done* in the registry and repeated in the release notes: the behaviour suite has not been run against the production-hardened package build, and the Debian upgrade-transaction matrix has not yet run in CI. See [`docs/20260726_0827_note_step-10-cohort-mint-and-pre-release.md`](docs/20260726_0827_note_step-10-cohort-mint-and-pre-release.md).
 
 ## Support statement
 
