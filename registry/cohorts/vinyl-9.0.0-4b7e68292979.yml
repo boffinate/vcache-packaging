@@ -1,0 +1,58 @@
+# FIRST REAL COHORT - candidate
+#
+# Minted 2026-07-26 (packaging plan step 10) from the values the two lane
+# drivers already pin: recipes/debian-13/pins.env and recipes/el9/cohort.env.
+# The identity is derived, not chosen: see the canonical input blob in
+# registry/README.md and reproduce it with
+#
+#   python3 tools/release_tool.py cohort-id --cohort vinyl-9.0.0-4b7e68292979
+#
+# status: candidate -- real pinned inputs, evidence recorded per target as the
+# CI lanes produce it. It becomes `released` when the pre-release is published
+# and every target records the digests of the artifacts actually published.
+schema: cachetag-cohort/v1
+status: candidate
+cohort: vinyl-9.0.0-4b7e68292979
+cachetag:
+  version: 1.0.0
+  # Archive digest and commit move together: the archive's file mtimes are
+  # pinned to this commit's committer date. Reproduced identically on two
+  # amd64 CI runners and the arm64 harness.
+  source_sha256: "a262ac7a74a1464d4c0a4cc6f072ea04a77ff660b25bf0befd32dc63c18fb329"
+  git_commit: "fcc369d23b199cc8e41086f28f2322256a8843d9"
+vinyl:
+  version: 9.0.0
+  # Vinyl publishes no release tarball for this revision. The pinned archive is
+  # assembled from this repository at vinyl.git_commit by
+  # recipes/debian-13/container/assemble-source.sh, inside the pinned buildroot
+  # image so that the tar implementation cannot move the digest; the same
+  # procedure is used by libvmod-cachetag/scripts/release-source-archive.sh.
+  # This is therefore where the pinned archive's bytes were fetched from, not a
+  # URL that serves the archive itself.
+  source_url: https://code.vinyl-cache.org/vinyl-cache/vinyl-cache.git
+  source_sha256: "27568cc1cdf914b3a328fc633d90137b62134fc7d375ca16010656a26d53f507"
+  git_commit: "25761f8505817ac50df994270bfe75b60073e33e"
+  vrt: "23.0"
+  # Vinyl bakes VMOD_ABI_Version as "<PACKAGE_STRING> <commit>", so the strict
+  # ABI token is this commit id by construction.
+  strict_abi: "25761f8505817ac50df994270bfe75b60073e33e"
+  patches: []
+build_profile:
+  name: production
+  # Revision 1: the production build profile has had exactly one definition
+  # since it was introduced in libvmod-cachetag 6df6c72 (plan step 6), and the
+  # only later commit touching that script (c4259a0) changed a tar exclusion,
+  # not a compiler or configure flag.
+  revision: 1
+required_vmods:
+  - cachetag
+storage_support:
+  - default
+targets:
+  - debian-13-amd64
+  - el9-x86_64
+support:
+  channel: pre-release
+  release_owner: Boffinate
+  fellow: excluded
+  buddy: source-harness-only

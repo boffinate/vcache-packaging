@@ -1,0 +1,62 @@
+# Debian 13 (trixie) amd64, project-cohort lane -- candidate.
+#
+# Every recorded output below comes from the pbuilder clean-room lane in CI
+# (.github/workflows/ci.yml, job "Debian 13 amd64 (pbuilder)"), never from a
+# laptop build. The buildroot is doubly pinned: the toolchain container by
+# image digest, and the chroot mmdebstrap builds from the snapshot.debian.org
+# mirror snapshot DEBIAN_SNAPSHOT=20260701T000000Z recorded in
+# recipes/debian-13/pins.env.
+schema: cachetag-target/v1
+status: candidate
+lane: cohort
+cohort: vinyl-9.0.0-4b7e68292979
+target:
+  id: debian-13-amd64
+  distro: debian
+  distro_release: 13
+  distro_id: debian-13
+  arch: amd64
+  package_format: deb
+  dist_tag: ""
+package:
+  revision: 1
+  source_name: libvmod-cachetag
+  binary_name: libvmod-cachetag
+vinyl_packages:
+  origin: cohort
+  runtime_name: vinyl-cache
+  runtime_version: "9.0.0~git20260520.25761f8505-1"
+  dev_name: vinyl-cache-dev
+  dev_version: "9.0.0~git20260520.25761f8505-1"
+build:
+  profile: production
+  image_ref: debian:trixie
+  image_digest: "sha256:fac46bff2e02f51425b6e33b0e1169f55dfb053d83511ca28aa50c09fd5ed7a4"
+  compiler: "gcc 14.2.0-19 (Debian trixie, dpkg gcc 4:14.2.0-1)"
+  # dh_auto_configure's effective line for the libvmod-cachetag build.
+  configure_options: "./configure --build=x86_64-linux-gnu --prefix=/usr --includedir=${prefix}/include --mandir=${prefix}/share/man --infodir=${prefix}/share/info --sysconfdir=/etc --localstatedir=/var --disable-option-checking --disable-silent-rules --libdir=${prefix}/lib/x86_64-linux-gnu --runstatedir=/run --disable-maintainer-mode --disable-dependency-tracking --libdir=/usr/lib/x86_64-linux-gnu --docdir=/usr/share/doc/libvmod-cachetag"
+  # dpkg-buildflags with DEB_BUILD_MAINT_OPTIONS=hardening=+all, as they reach
+  # the compiler: read off the libtool compile and link lines in the lane log,
+  # not from a restatement of what dpkg-buildflags is expected to emit.
+  cflags: "-Wdate-time -D_FORTIFY_SOURCE=2 -g -O2 -Werror=implicit-function-declaration -ffile-prefix-map=/build/libvmod-cachetag-1.0.0=. -fstack-protector-strong -fstack-clash-protection -Wformat -Werror=format-security -fcf-protection"
+  ldflags: "-Wl,-z,relro -Wl,-z,now"
+  # Committer date of the pinned cachetag commit, and the value dpkg recorded
+  # in the .buildinfo Environment block.
+  source_date_epoch: "1784997430"
+  # scripts/ci/debian13/assert-packages.sh inspects the built ELF objects:
+  # stack protector, GNU_RELRO, BIND_NOW, ELF type DYN, and __*_chk symbols,
+  # for both vinyld and libvmod_cachetag.so.
+  hardening_check: pass
+  build_dependencies: []
+install:
+  # Read from the installed vinyl-cache-dev package by debian/rules
+  #   pkg-config --define-variable=libdir=<libdir> --variable=vmoddir vinylapi
+  # which refuses to build when it disagrees with this value.
+  vmoddir: /usr/lib/x86_64-linux-gnu/vinyl-cache/vmods
+  vmoddir_source: pkg-config
+artifacts: []
+tests:
+  package_lint: pending
+  installed_package_smoke: pending
+  full_behavior_suite: pending
+  upgrade_transactions: pending
