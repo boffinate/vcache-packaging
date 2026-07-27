@@ -9,12 +9,17 @@
 
 set -eu
 
+# Same pinned version surface as the vinyl lane's shims (see pins.env), so
+# VINYL_PREREQ floors resolve identically on both lanes.
+version="${SHIM_API_VERSION:?SHIM_API_VERSION must be set (see harness/pins.env)}"
+
 pc_src=$(find /usr/local/lib /usr/lib -name varnishapi.pc 2>/dev/null | head -n 1)
 [ -n "$pc_src" ] || { echo "varnishapi.pc not found" >&2; exit 1; }
 pc_dir=$(dirname "$pc_src")
 
 sed -e "s/^Name:.*/Name: VinylAPI (varnish survey shim)/" \
     -e "s/^Description:.*/Description: Vinyl API name shim over varnishapi/" \
+    -e "s/^Version:.*/Version: ${version}/" \
     "$pc_src" > "$pc_dir/vinylapi.pc"
 
 aclocal_dir=$(dirname "$(find /usr/local/share/aclocal /usr/share/aclocal -name varnish.m4 2>/dev/null | head -n 1)")

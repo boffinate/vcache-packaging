@@ -26,8 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY stage/debs /tmp/debs
 RUN apt-get update && apt-get install -y /tmp/debs/*.deb && rm -rf /tmp/debs /var/lib/apt/lists/*
 
+ARG SHIM_API_VERSION
 COPY make-shim.sh /harness/make-shim.sh
-RUN sh /harness/make-shim.sh
+RUN SHIM_API_VERSION="${SHIM_API_VERSION}" sh /harness/make-shim.sh
 
 RUN vinyld -V && pkg-config --modversion varnishapi && varnishd -V
 

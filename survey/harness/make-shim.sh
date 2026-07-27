@@ -8,28 +8,31 @@
 # not something the vinyl packages ship.
 #
 # Three parts:
-#   varnishapi.pc      copy of vinylapi.pc with a numeric Version (the trunk
-#                      package says "Version: trunk", which breaks the
-#                      AS_VERSION_COMPARE in VARNISH_PREREQ)
+#   varnishapi.pc      copy of vinylapi.pc advertising SHIM_API_VERSION (the
+#                      trunk package says "Version: trunk", which breaks the
+#                      AS_VERSION_COMPARE in VARNISH_PREREQ; a deb-derived
+#                      number would skew VARNISH_PREREQ floors against the
+#                      varnish lane's release version — see pins.env)
 #   varnish.m4         vinyl.m4 with the macro/variable/module names renamed
 #   varnish* symlinks  for configure scripts probing the tool names
+#
+# The native vinylapi.pc's Version is rewritten to the same value, so both
+# names present the identical version surface on both lanes.
 
 set -eu
+
+version="${SHIM_API_VERSION:?SHIM_API_VERSION must be set (see harness/pins.env)}"
+pkg_version=$(dpkg-query -W -f '${Version}' vinyl-cache)
 
 pc_src=$(find /usr/lib -name vinylapi.pc | head -n 1)
 [ -n "$pc_src" ] || { echo "vinylapi.pc not found" >&2; exit 1; }
 pc_dir=$(dirname "$pc_src")
 
-version=$(dpkg-query -W -f '${Version}' vinyl-cache | sed 's/^\([0-9][0-9.]*\).*/\1/')
-case "$version" in
-    [0-9]*) : ;;
-    *) echo "could not derive numeric version from vinyl-cache package" >&2; exit 1 ;;
-esac
-
 sed -e "s/^Name:.*/Name: VarnishAPI (vinyl survey shim)/" \
     -e "s/^Description:.*/Description: Varnish API name shim over vinylapi/" \
     -e "s/^Version:.*/Version: ${version}/" \
     "$pc_src" > "$pc_dir/varnishapi.pc"
+sed -i "s/^Version:.*/Version: ${version}/" "$pc_src"
 
 # Rename the macro files, dropping vinyl's m4_pattern_forbid tripwires: they
 # exist to catch un-migrated VARNISH_* usage, which is exactly what the shim
@@ -52,4 +55,4 @@ for tool in vinyld vinyladm vinylstat vinyllog vinylncsa vinylhist vinyltop viny
     ln -sf "$path" "/usr/local/bin/$alias_name"
 done
 
-echo "shim installed: $pc_dir/varnishapi.pc (Version: ${version}), /usr/share/aclocal/varnish.m4"
+echo "shim installed: $pc_dir/varnishapi.pc (Version: ${version}, package: ${pkg_version}), /usr/share/aclocal/varnish.m4"

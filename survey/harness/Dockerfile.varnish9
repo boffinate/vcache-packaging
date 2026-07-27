@@ -40,8 +40,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # by default.
 ENV ACLOCAL_PATH=/usr/local/share/aclocal
 
+ARG SHIM_API_VERSION
 COPY make-reverse-shim.sh /harness/make-reverse-shim.sh
-RUN sh /harness/make-reverse-shim.sh
+RUN SHIM_API_VERSION="${SHIM_API_VERSION}" sh /harness/make-reverse-shim.sh
 
 RUN varnishd -V && pkg-config --modversion varnishapi && pkg-config --modversion vinylapi && vinyld -V
 

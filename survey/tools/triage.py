@@ -6,6 +6,13 @@ harness containers. Per repository this records: reachability, default branch,
 head commit and date, the .vcc $ABI declaration, private-header usage, build
 system, and whether the claimed compatibility branches actually exist.
 
+The recorded head_commit doubles as the survey's pin: by default a rerun
+checks out exactly the commit the existing triage snapshot records (also
+after the cache directory was deleted), so the committed snapshot and the
+sweep always describe the same code. Moving the survey to current upstream
+HEADs is an explicit act: --repin. With --only, untouched entries keep their
+existing records instead of being dropped from the snapshot.
+
 Python 3 standard library only, per the repository tooling rule.
 """
 
@@ -72,25 +79,50 @@ def clone(url, dest, branch):
     if (dest / ".git").exists():
         return "cached"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    args = ["clone", "--depth", "1", "--no-tags", "--single-branch"]
+    # Full history: a shallow clone cannot check out the recorded pin commit
+    # once the branch has moved, and dumb-HTTP remotes (code.uplex.de) reject
+    # shallow clones anyway. These repos are small.
+    args = ["clone", "--no-tags", "--single-branch"]
     if branch:
         args += ["--branch", branch]
-    proc = run_git([*args, url, str(dest)], timeout=600)
-    if proc.returncode == 0:
-        if (dest / ".gitmodules").exists():
-            run_git(["submodule", "update", "--init", "--recursive"], timeout=600, cwd=dest)
-        return "cloned"
-    stderr = proc.stderr.strip()
-    if "dumb http transport" in stderr:
-        # Self-hosted dumb-HTTP remotes (code.uplex.de) reject shallow clones.
-        args = ["clone", "--no-tags", "--single-branch"]
-        if branch:
-            args += ["--branch", branch]
-        proc = run_git([*args, url, str(dest)], timeout=900)
-        if proc.returncode == 0:
-            return "cloned-full"
+    proc = run_git([*args, url, str(dest)], timeout=900)
+    if proc.returncode != 0:
         stderr = proc.stderr.strip()
-    raise RuntimeError(f"clone failed: {stderr.splitlines()[-1] if stderr else 'unknown error'}")
+        raise RuntimeError(f"clone failed: {stderr.splitlines()[-1] if stderr else 'unknown error'}")
+    return "cloned"
+
+
+def init_submodules(dest):
+    # After checkout, not after clone: .gitmodules can differ per commit.
+    if (dest / ".gitmodules").exists():
+        run_git(["submodule", "update", "--init", "--recursive"], timeout=600, cwd=dest)
+
+
+def ensure_pin(dest, pin):
+    """Make the cache tree match the recorded pin, fetching as needed."""
+    def checkout():
+        return run_git(["checkout", "--quiet", "--detach", pin], timeout=120, cwd=dest).returncode == 0
+    if not checkout():
+        # Pre-pinning caches are shallow; deepen until the pin is reachable.
+        for fetch in (["fetch", "--quiet", "origin", pin],
+                      ["fetch", "--quiet", "--unshallow"],
+                      ["fetch", "--quiet", "origin"]):
+            run_git(fetch, timeout=900, cwd=dest)
+            if checkout():
+                break
+        else:
+            raise RuntimeError(f"pinned commit {pin[:12]} not reachable from the remote")
+    init_submodules(dest)
+
+
+def advance(dest, branch):
+    """Move the checkout to the tip of the remote default branch (--repin)."""
+    run_git(["fetch", "--quiet", "origin"], timeout=900, cwd=dest)
+    target = f"origin/{branch}" if branch else "FETCH_HEAD"
+    proc = run_git(["checkout", "--quiet", "--detach", target], timeout=120, cwd=dest)
+    if proc.returncode != 0:
+        raise RuntimeError(f"repin failed: cannot check out {target}")
+    init_submodules(dest)
 
 
 def head_info(dest):
@@ -151,7 +183,7 @@ def scan_tree(dest):
     return signals
 
 
-def triage_one(entry):
+def triage_one(entry, pin=None, repin=False):
     result = {
         "name": entry["name"],
         "origin": entry["origin"],
@@ -177,6 +209,12 @@ def triage_one(entry):
         claimed = set(entry.get("branches", {}).values())
         result["claimed_branches_missing"] = sorted(claimed - set(branches))
         result["clone_state"] = clone(entry["clone_url"], dest, default)
+        if repin:
+            advance(dest, default)
+        elif pin:
+            ensure_pin(dest, pin)
+        else:
+            init_submodules(dest)
         result["head_commit"], result["head_date"] = head_info(dest)
         result.update(scan_tree(dest))
         result["ok"] = True
@@ -191,6 +229,8 @@ def main():
     parser.add_argument("--output", type=Path, default=DATA_DIR / "triage.json")
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--only", nargs="*", help="triage only these vmod names")
+    parser.add_argument("--repin", action="store_true",
+                        help="advance pins to the remote default-branch tips instead of honouring the recorded head commits")
     args = parser.parse_args()
 
     worklist = json.loads(args.worklist.read_text())
@@ -198,14 +238,32 @@ def main():
     if args.only:
         entries = [entry for entry in entries if entry["name"] in set(args.only)]
 
+    prior_results = {}
+    if args.output.exists():
+        try:
+            prior_results = {r["name"]: r for r in json.loads(args.output.read_text()).get("results", [])}
+        except ValueError:
+            prior_results = {}
+    pins = {} if args.repin else {name: r.get("head_commit") for name, r in prior_results.items()}
+
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futures = {pool.submit(triage_one, entry): entry["name"] for entry in entries}
+        futures = {
+            pool.submit(triage_one, entry, pins.get(entry["name"]), args.repin): entry["name"]
+            for entry in entries
+        }
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             results.append(result)
             state = "ok" if result["ok"] else f"FAIL ({result['error']})"
             print(f"  {result['name']:<24} {state}", file=sys.stderr)
+
+    if args.only:
+        # Merge into the existing snapshot: --only must not truncate the pin
+        # store for every unselected VMOD.
+        merged = dict(prior_results)
+        merged.update({r["name"]: r for r in results})
+        results = list(merged.values())
 
     results.sort(key=lambda r: r["name"])
     ok = [r for r in results if r["ok"]]

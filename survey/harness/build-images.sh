@@ -53,12 +53,14 @@ note "building vmod-survey-varnish9"
 docker build $platform -f Dockerfile.varnish9 \
     --build-arg IMAGE="$IMAGE" \
     --build-arg VARNISH_SOURCE_SHA256="$VARNISH_SOURCE_SHA256" \
+    --build-arg SHIM_API_VERSION="$SHIM_API_VERSION" \
     -t vmod-survey-varnish9 .
 
 note "building vmod-survey-vinyl9"
 # shellcheck disable=SC2086
 docker build $platform -f Dockerfile.vinyl9 \
     --build-arg IMAGE="$IMAGE" \
+    --build-arg SHIM_API_VERSION="$SHIM_API_VERSION" \
     -t vmod-survey-vinyl9 .
 
 note "lane images ready"
