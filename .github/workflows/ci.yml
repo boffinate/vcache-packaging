@@ -6,6 +6,14 @@ name: CI
 # assemble or publish a release (see release-draft.yml) -- per the plan's
 # "Tiered CI workflow" section and "keep release credentials out of
 # pull-request workflows".
+#
+# Builds BOTH Vinyl tracks (added 2026-07-26): the trunk lanes build the
+# pinned trunk snapshot and catch problems introduced by Vinyl core changes
+# early; the release lanes build the packages users will actually install,
+# from the digest-pinned upstream release tarball. The release lanes were
+# drafted 2026-07-26 and are unexecuted; their first real run is what
+# validates the tarball source path end to end. See
+# docs/20260726_1235_note_two-track-release-and-trunk.md.
 
 on:
   pull_request:
@@ -24,6 +32,11 @@ env:
   # scripts run. NEVER edit these to make a failing assertion pass -- a
   # mismatch here means the pinned value and the actual input disagree, and
   # that is the thing this workflow exists to catch.
+  # The TRUNK-track pin (mirrors the trunk block of
+  # recipes/debian-13/pins.env); used only by the ci_checkout_vinyl_cache
+  # steps below, which run for the trunk matrix leg only. The release
+  # matrix leg never reads this -- it builds from the digest-pinned upstream
+  # tarball instead, resolved by each lane's own pins.env/cohort.env.
   VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
   VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
   CACHETAG_VERSION: 1.0.0
@@ -124,10 +137,16 @@ jobs:
           retention-days: 14
 
   debian-13:
-    name: Debian 13 amd64 (pbuilder)
+    name: Debian 13 amd64 (pbuilder, ${{ matrix.track }})
     needs: cachetag-source-archive
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        track: [trunk, release]
+    env:
+      VINYL_TRACK: ${{ matrix.track }}
     steps:
       - name: checkout vcache-packaging
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -141,7 +160,11 @@ jobs:
           ref: ${{ env.CACHETAG_REF }}
           path: libvmod-cachetag
 
+      # The release lane builds from the digest-pinned upstream tarball
+      # (downloaded by build.sh and verified against the pinned sha256) and
+      # never reads a Vinyl git checkout, so this step is trunk-only.
       - name: checkout ../vinyl-cache (pinned commit)
+        if: matrix.track == 'trunk'
         run: |
           set -eu
           . vcache-packaging/scripts/ci/lib/common.sh
@@ -186,7 +209,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: debian-13-packages
+          name: debian-13-packages-${{ matrix.track }}
           path: |
             vcache-packaging/dist/debian-13/*.deb
             vcache-packaging/dist/debian-13/*.ddeb
@@ -201,10 +224,16 @@ jobs:
           retention-days: 14
 
   el9:
-    name: EL9 x86_64 (Mock)
+    name: EL9 x86_64 (Mock, ${{ matrix.track }})
     needs: cachetag-source-archive
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        track: [trunk, release]
+    env:
+      VINYL_TRACK: ${{ matrix.track }}
     steps:
       - name: checkout vcache-packaging
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -218,7 +247,11 @@ jobs:
           ref: ${{ env.CACHETAG_REF }}
           path: libvmod-cachetag
 
+      # The release lane builds from the digest-pinned upstream tarball
+      # (downloaded by build.sh and verified against the pinned sha256) and
+      # never reads a Vinyl git checkout, so this step is trunk-only.
       - name: checkout ../vinyl-cache (pinned commit)
+        if: matrix.track == 'trunk'
         run: |
           set -eu
           . vcache-packaging/scripts/ci/lib/common.sh
@@ -261,7 +294,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: el9-packages
+          name: el9-packages-${{ matrix.track }}
           path: |
             vcache-packaging/dist/el9/packages/*.rpm
             vcache-packaging/dist/el9/SHA256SUMS
@@ -276,17 +309,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: download debian-13 artifacts
+      - name: download debian-13 artifacts (trunk)
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: debian-13-packages
-          path: debian-13
+          name: debian-13-packages-trunk
+          path: debian-13-trunk
 
-      - name: download el9 artifacts
+      - name: download debian-13 artifacts (release)
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: el9-packages
-          path: el9
+          name: debian-13-packages-release
+          path: debian-13-release
+
+      - name: download el9 artifacts (trunk)
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: el9-packages-trunk
+          path: el9-trunk
+
+      - name: download el9 artifacts (release)
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: el9-packages-release
+          path: el9-release
 
       - name: write the combined summary
         run: |
@@ -300,13 +345,23 @@ jobs:
             echo "\`release-manifest.json\` rather than used as a filename, because"
             echo "renaming a .deb contradicts the .changes and .buildinfo beside it."
             echo
-            echo "### debian-13"
+            echo "### debian-13 (trunk)"
             echo '```text'
-            cat debian-13/SHA256SUMS
+            cat debian-13-trunk/SHA256SUMS
             echo '```'
             echo
-            echo "### el9"
+            echo "### debian-13 (release)"
             echo '```text'
-            cat el9/SHA256SUMS
+            cat debian-13-release/SHA256SUMS
+            echo '```'
+            echo
+            echo "### el9 (trunk)"
+            echo '```text'
+            cat el9-trunk/SHA256SUMS
+            echo '```'
+            echo
+            echo "### el9 (release)"
+            echo '```text'
+            cat el9-release/SHA256SUMS
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

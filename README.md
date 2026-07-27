@@ -46,11 +46,20 @@ Manifests record cachetag's version, which is cross-checked against `AC_INIT` in
 
 Every package build, by contrast, happens in a container. See [AGENTS.md](AGENTS.md).
 
+## Tracks
+
+Since 2026-07-26 the packaging maintains two Vinyl pin tracks, selected by the `VINYL_TRACK` environment variable and defined in each lane's pin file (`recipes/debian-13/pins.env`, `recipes/el9/cohort.env`):
+
+- **release** — built from the upstream release tarball (currently 9.0.1). This is what published packages are built from and what most people should install.
+- **trunk** — built from a pinned trunk snapshot, plus a scheduled unpinned harness run against trunk HEAD. This is the early-warning machinery for Vinyl core changes: it finds VMOD breakage and `$ABI strict` churn before a release forces the issue.
+
+Both tracks build in the same CI lanes. See [`docs/20260726_1235_note_two-track-release-and-trunk.md`](docs/20260726_1235_note_two-track-release-and-trunk.md) for the policy, the release-track pins and their verification, and the cutover checklist.
+
 ## Status
 
 Early, and now with one experimental pre-release behind it.
 
-The first real cohort, `vinyl-9.0.0-4b7e68292979`, was minted on 2026-07-26 and both lanes — Debian 13 amd64 and EL9 x86_64 — build it in CI clean rooms. `vinyl-9.0.0-000000000000` and the distro-native manifest remain as schema exemplars. The vendored `upstream/pkg-vinyl-cache` recipes are audit input, not a release-ready base.
+The first real cohort, `vinyl-9.0.0-4b7e68292979` (trunk track), was minted on 2026-07-26 and both lanes — Debian 13 amd64 and EL9 x86_64 — build it in CI clean rooms. The release track is pinned to upstream 9.0.1 with the derived cohort id `vinyl-9.0.1-ac4f719c16f4`; its registry manifest is minted at the first release-track build. `vinyl-9.0.0-000000000000` and the distro-native manifest remain as schema exemplars. The vendored `upstream/pkg-vinyl-cache` recipes are audit input, not a release-ready base.
 
 What that pre-release is not: signed, repository-published, or supported. There is no security SLA, no advisory feed, and no repository metadata — the packages are direct downloads from a GitHub Release. Two required verifications are recorded as *not done* in the registry and repeated in the release notes: the behaviour suite has not been run against the production-hardened package build, and the Debian upgrade-transaction matrix has not yet run in CI. See [`docs/20260726_0827_note_step-10-cohort-mint-and-pre-release.md`](docs/20260726_0827_note_step-10-cohort-mint-and-pre-release.md).
 

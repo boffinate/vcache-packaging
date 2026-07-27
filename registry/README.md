@@ -21,6 +21,10 @@ Two deliberate deviations from the illustrative paths in the plan:
 - Target files are named `debian-13-amd64.yml`, not `debian-13.yml`. The plan's Tier 1 matrix has two architectures per distro release and a single file cannot record two sets of resolved build dependencies, flags, and artifact digests.
 - Distro-native files use the same `<distro-id>-<arch>.yml` convention, for the same reason.
 
+## Tracks
+
+Since 2026-07-26 the packaging distinguishes a **release** track (built from an upstream release tarball; what users install) from a **trunk** track (pinned trunk snapshots; the early-warning lane for Vinyl core changes). The registry does not carry an explicit field for this: a cohort's track is derivable from `vinyl.version` — a snapshot suffix (`~git…`, or `+git…` for future post-release snapshots) means trunk, a bare release version such as `9.0.1` means release. The convention, the pins, and the cutover plan are recorded in [`docs/20260726_1235_note_two-track-release-and-trunk.md`](../docs/20260726_1235_note_two-track-release-and-trunk.md).
+
 ## Status lifecycle
 
 Every manifest carries a `status`:
@@ -329,6 +333,9 @@ Module map:
 | `selftest.py` | tests, including the hand-computed digest vectors |
 
 ## Deliberately not here yet
+
+- **An explicit `track` field on cohort manifests.** The track is currently derivable from `vinyl.version` (see Tracks above). A schema field becomes worth its validation rules when a policy decision has to read it mechanically — for example a gate requiring `stable`-channel releases to come from the release track.
+- **A "pinned but unbuilt" status.** The release cohort `vinyl-9.0.1-ac4f719c16f4` has every digest input pinned and its id derived, but no manifest: `candidate` requires recorded build outputs that only exist once the lanes have run, and `template` requires placeholder identity. A pre-build status would let such a cohort be registered before its evidence exists; until it earns its keep, the derived id lives in the lane pins and the mint happens at first build.
 
 - **`debian/changelog` and RPM `%changelog` generation.** The plan lists them under the same Phase 0 bullet; they belong with the packaging recipes — cachetag's in its own repository, Vinyl's in this one — and they need release-note text that no manifest field holds.
 - **A VMOD registry.** `required_vmods` is a flat list because cachetag is the only independently packaged VMOD. Generic reverse-dependency scheduling arrives with the second one.

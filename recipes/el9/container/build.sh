@@ -77,6 +77,39 @@ stage_deps() {
 # The generated headers are therefore synthesised here, from the pinned commit,
 # exactly as `make dist` from a git checkout would have shipped them.
 stage_source() {
+	case "${VINYL_SOURCE_KIND:-git}" in
+	tarball) stage_source_tarball ;;
+	git)     stage_source_git ;;
+	*) echo "E: unknown VINYL_SOURCE_KIND '${VINYL_SOURCE_KIND:-}' (git|tarball)" >&2; exit 1 ;;
+	esac
+}
+
+# Drafted 2026-07-26, unexecuted until the first release-track run. The
+# driver (recipes/el9/build.sh) already fetched and digest-checked the
+# upstream tarball on the host and placed it at /out; this re-verifies the
+# digest in-container as defence in depth, then stages it exactly where
+# stage_vinyl expects the source RPM's Source0 to be.
+stage_source_tarball() {
+	say "verify and stage the upstream Vinyl tarball (release track)"
+	src=/out/vinyl-cache-$VINYL_VERSION.tgz
+	test -f "$src" || { echo "E: $src not found (expected the driver to have staged it)" >&2; exit 1; }
+	echo "$VINYL_SOURCE_SHA256  $src" | sha256sum -c -
+
+	cp "$src" "$srcdir/$vinyl_srcname.tar.gz"
+
+	got=$(tar -xzO -f "$src" "$vinyl_srcname/include/vmod_abi.h" \
+		| sed -n 's/^#define VMOD_ABI_Version "\(.*\)"$/\1/p')
+	echo "baked VMOD_ABI_Version: [$got]"
+	if [ "$got" != "$VINYL_PACKAGE_STRING $VINYL_GIT_COMMIT" ]; then
+		echo "E: baked ABI string does not match the pinned value [$VINYL_PACKAGE_STRING $VINYL_GIT_COMMIT]" >&2
+		exit 1
+	fi
+	echo "OK: baked strict VMOD ABI string matches the pinned value"
+
+	sha256sum "$srcdir/$vinyl_srcname.tar.gz" | tee "$logdir/vinyl-source.sha256"
+}
+
+stage_source_git() {
 	say "export pinned Vinyl source"
 	git config --global --add safe.directory /vinyl-src
 	git config --global --add safe.directory /vinyl-src/bin/vinyltest/vtest2

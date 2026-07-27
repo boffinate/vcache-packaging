@@ -86,31 +86,58 @@ stage_source() {
 	rm -rf "$work_dir"
 	mkdir -p "$work_dir/pin" "$work_dir/build"
 
-	[ -d "$VINYL_SRC/.git" ] || die "$VINYL_SRC is not a Git checkout"
-	_have=$(git -C "$VINYL_SRC" rev-parse --verify "$VINYL_GIT_COMMIT^{commit}")
-	[ "$_have" = "$VINYL_GIT_COMMIT" ] || die "pinned Vinyl commit not found in $VINYL_SRC"
+	case $VINYL_SOURCE_KIND in
+	tarball)
+		# Drafted 2026-07-26, unexecuted until the first release-track run.
+		# The upstream tarball is the source, not a Git checkout: no git
+		# checks, no `git archive`, no submodule splice. It is cached at
+		# $out_dir rather than under $work_dir because the `rm -rf
+		# "$work_dir"` above runs on every stage_source and would otherwise
+		# force a re-download on every invocation.
+		_vinyl_tarball="$out_dir/vinyl-cache-$VINYL_UPSTREAM_VERSION.tgz"
+		if [ ! -f "$_vinyl_tarball" ]; then
+			# The one permitted host-side network step: a read-only fetch of
+			# the upstream release tarball. It is not trusted on its own --
+			# the sha256 check just below is the authority; a digest
+			# mismatch fails the build regardless of what curl fetched.
+			note "downloading upstream Vinyl tarball (release track)"
+			curl -fsSL -o "$_vinyl_tarball" "$VINYL_SOURCE_URL"
+		fi
+		_got=$(sha256 "$_vinyl_tarball")
+		[ "$_got" = "$VINYL_SOURCE_SHA256" ] ||
+			die "upstream Vinyl tarball digest $_got != pinned $VINYL_SOURCE_SHA256"
+		printf 'OK: upstream Vinyl tarball digest matches the pinned value\n'
+		cp "$_vinyl_tarball" "$work_dir/vinyl-cache-$VINYL_UPSTREAM_VERSION.tgz"
+		;;
+	git)
+		[ -d "$VINYL_SRC/.git" ] || die "$VINYL_SRC is not a Git checkout"
+		_have=$(git -C "$VINYL_SRC" rev-parse --verify "$VINYL_GIT_COMMIT^{commit}")
+		[ "$_have" = "$VINYL_GIT_COMMIT" ] || die "pinned Vinyl commit not found in $VINYL_SRC"
 
-	# The canonical pinned Vinyl source archive. This reproduces, byte for
-	# byte, the procedure in libvmod-cachetag/scripts/release-source-archive.sh,
-	# so its digest is the value the cohort manifest records as
-	# vinyl.source_sha256 and the value the cohort identity is hashed over.
-	git -C "$VINYL_SRC" archive --format=tar --prefix="vinyl-src/" \
-		"$VINYL_GIT_COMMIT" > "$work_dir/pin/00-superproject.tar"
+		# The canonical pinned Vinyl source archive. This reproduces, byte for
+		# byte, the procedure in libvmod-cachetag/scripts/release-source-archive.sh,
+		# so its digest is the value the cohort manifest records as
+		# vinyl.source_sha256 and the value the cohort identity is hashed over.
+		git -C "$VINYL_SRC" archive --format=tar --prefix="vinyl-src/" \
+			"$VINYL_GIT_COMMIT" > "$work_dir/pin/00-superproject.tar"
 
-	git -C "$VINYL_SRC" ls-tree -r "$VINYL_GIT_COMMIT" |
-		awk '$2 == "commit" { print $3" "$4 }' | sort -k2,2 > "$work_dir/submodules.txt"
+		git -C "$VINYL_SRC" ls-tree -r "$VINYL_GIT_COMMIT" |
+			awk '$2 == "commit" { print $3" "$4 }' | sort -k2,2 > "$work_dir/submodules.txt"
 
-	_idx=1
-	while read -r _sub_commit _sub_path; do
-		[ -n "${_sub_path:-}" ] || continue
-		git -C "$VINYL_SRC/$_sub_path" cat-file -e "$_sub_commit^{commit}" 2>/dev/null ||
-			die "submodule $_sub_path does not contain $_sub_commit"
-		printf 'pinned submodule: %s at %s\n' "$_sub_path" "$_sub_commit"
-		git -C "$VINYL_SRC/$_sub_path" archive --format=tar \
-			--prefix="vinyl-src/$_sub_path/" "$_sub_commit" \
-			> "$work_dir/pin/$(printf '%02d' "$_idx")-$(printf '%s' "$_sub_path" | tr '/' '_').tar"
-		_idx=$((_idx + 1))
-	done < "$work_dir/submodules.txt"
+		_idx=1
+		while read -r _sub_commit _sub_path; do
+			[ -n "${_sub_path:-}" ] || continue
+			git -C "$VINYL_SRC/$_sub_path" cat-file -e "$_sub_commit^{commit}" 2>/dev/null ||
+				die "submodule $_sub_path does not contain $_sub_commit"
+			printf 'pinned submodule: %s at %s\n' "$_sub_path" "$_sub_commit"
+			git -C "$VINYL_SRC/$_sub_path" archive --format=tar \
+				--prefix="vinyl-src/$_sub_path/" "$_sub_commit" \
+				> "$work_dir/pin/$(printf '%02d' "$_idx")-$(printf '%s' "$_sub_path" | tr '/' '_').tar"
+			_idx=$((_idx + 1))
+		done < "$work_dir/submodules.txt"
+		;;
+	*) die "unknown VINYL_SOURCE_KIND '$VINYL_SOURCE_KIND' (git|tarball)" ;;
+	esac
 
 	# The cachetag orig tarball is the canonical release archive verbatim.
 	[ -f "$CACHETAG_TARBALL" ] || die "canonical cachetag archive not found: $CACHETAG_TARBALL"
@@ -146,6 +173,8 @@ stage_source() {
 		-e "VINYL_UPSTREAM_VERSION=$VINYL_UPSTREAM_VERSION" \
 		-e "VINYL_SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH" \
 		-e "VINYL_ABI_STRING=$VINYL_ABI_STRING" \
+		-e "VINYL_SOURCE_KIND=$VINYL_SOURCE_KIND" \
+		-e "VINYL_SOURCE_SHA256=$VINYL_SOURCE_SHA256" \
 		-e "CACHETAG_VERSION=$CACHETAG_VERSION" \
 		"$IMAGE" bash /stage/assemble-source.sh > "$log_dir/source.log" 2>&1 || {
 			tail -n 60 "$log_dir/source.log" >&2
@@ -153,11 +182,17 @@ stage_source() {
 		}
 	tail -n 20 "$log_dir/source.log"
 
-	_got=$(sha256 "$work_dir/vinyl-source-$VINYL_GIT_COMMIT.tar")
-	printf 'canonical Vinyl source archive sha256: %s\n' "$_got"
-	[ "$_got" = "$VINYL_SOURCE_SHA256" ] ||
-		die "canonical Vinyl source digest $_got != pinned $VINYL_SOURCE_SHA256"
-	printf 'OK: matches the digest recorded by the cachetag release script\n'
+	if [ "$VINYL_SOURCE_KIND" = git ]; then
+		_got=$(sha256 "$work_dir/vinyl-source-$VINYL_GIT_COMMIT.tar")
+		printf 'canonical Vinyl source archive sha256: %s\n' "$_got"
+		[ "$_got" = "$VINYL_SOURCE_SHA256" ] ||
+			die "canonical Vinyl source digest $_got != pinned $VINYL_SOURCE_SHA256"
+		printf 'OK: matches the digest recorded by the cachetag release script\n'
+	fi
+	# Tarball mode (drafted 2026-07-26, unexecuted until the first
+	# release-track run): there is no assembled superproject tar to assert
+	# against here -- assemble-source.sh re-verifies the tarball digest
+	# itself, in-container, as defence in depth.
 }
 
 # Token substitution. Both recipe trees are templates; an unsubstituted token

@@ -26,6 +26,10 @@ This repository owns the Vinyl Cache **cohort registry** and **Vinyl packaging**
 
 Use the structure `YYYYMMDD_HHMM_[type]_[description].md`, where `[type]` is `note`, `plan`, `report`, or another descriptive term, and `[description]` is a short hyphen-separated description. If it relates to a planned step, put that first, for example `step-7a` or `phase-2`.
 
+## Tracks
+
+The packaging maintains two Vinyl pin tracks, selected with the `VINYL_TRACK` environment variable (`release` | `trunk`) and defined inside each lane's pin file (`recipes/debian-13/pins.env`, `recipes/el9/cohort.env`). `release` builds from the upstream release tarball and is what users install; `trunk` builds a pinned trunk snapshot and, via the scheduled trunk-HEAD workflow, is the early-warning lane for Vinyl core changes. Policy and cutover state: `docs/20260726_1235_note_two-track-release-and-trunk.md`.
+
 ## Common commands
 
 Registry validation and metadata generation (host-safe, stdlib only):

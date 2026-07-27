@@ -48,13 +48,46 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-for d in "$vinyl_src" "$cachetag_src"; do
-	[ -d "$d" ] || { printf 'missing checkout: %s\n' "$d" >&2; exit 2; }
-done
+sha256() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | awk '{print $1}'
+	else
+		shasum -a 256 "$1" | awk '{print $1}'
+	fi
+}
+
+[ -d "$cachetag_src" ] || { printf 'missing checkout: %s\n' "$cachetag_src" >&2; exit 2; }
 
 mkdir -p "$out"
 
-printf '\n########## EL9 lane ##########\n'
+# The Vinyl checkout is a git-mode input only. In tarball mode (release track)
+# nothing reads /vinyl-src, so mount an empty stub instead of requiring the
+# sibling checkout to exist -- CI's release lanes deliberately skip it.
+if [ "${VINYL_SOURCE_KIND:-git}" = git ]; then
+	[ -d "$vinyl_src" ] || { printf 'missing checkout: %s\n' "$vinyl_src" >&2; exit 2; }
+else
+	vinyl_src=$out/vinyl-src-unused
+	mkdir -p "$vinyl_src"
+fi
+
+# Release track (drafted 2026-07-26, unexecuted until the first release-track
+# run): the upstream tarball, not the Vinyl checkout, is the source. It is
+# fetched and digest-checked once, on the host, before the build container
+# ever starts, so the same logic as the Debian lane's stage_source applies:
+# a read-only network fetch, with the sha256 check as the sole authority.
+if [ "${VINYL_SOURCE_KIND:-git}" = tarball ]; then
+	_vinyl_tarball="$out/vinyl-cache-$VINYL_VERSION.tgz"
+	if [ ! -f "$_vinyl_tarball" ]; then
+		printf 'downloading upstream Vinyl tarball (release track): %s\n' "$VINYL_SOURCE_URL"
+		curl -fsSL -o "$_vinyl_tarball" "$VINYL_SOURCE_URL"
+	fi
+	_got=$(sha256 "$_vinyl_tarball")
+	[ "$_got" = "$VINYL_SOURCE_SHA256" ] ||
+		{ printf 'E: upstream Vinyl tarball digest %s != pinned %s\n' "$_got" "$VINYL_SOURCE_SHA256" >&2; exit 1; }
+	printf 'OK: upstream Vinyl tarball digest matches the pinned value\n'
+fi
+
+printf '\n########## EL9 lane (%s track) ##########\n' "$VINYL_TRACK"
 printf 'image          : %s\n' "$image"
 printf 'vinyl source   : %s @ %s\n' "$vinyl_src" "$VINYL_GIT_COMMIT"
 printf 'cachetag source: %s (%s)\n' "$cachetag_src" "$CACHETAG_TARBALL"
@@ -74,6 +107,7 @@ if [ -n "$stages" ]; then
 		-v "$cachetag_src:/cachetag:ro" \
 		-v "$out:/out" \
 		-e "VINYL_UNPACKAGED_OK=${list_files:-}" \
+		-e "VINYL_TRACK=$VINYL_TRACK" \
 		-w /out \
 		"$image" \
 		bash /recipes/container/build.sh $stages
@@ -87,6 +121,7 @@ if [ -n "$run_smoke" ]; then
 	docker run --rm \
 		-v "$here:/recipes:ro" \
 		-v "$out:/out:ro" \
+		-e "VINYL_TRACK=$VINYL_TRACK" \
 		-w /tmp \
 		"$image" \
 		bash /recipes/smoke/smoke.sh > "$out/logs/smoke.log" 2>&1 ||

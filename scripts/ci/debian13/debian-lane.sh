@@ -28,9 +28,13 @@ out_dir=$repo_dir/dist/debian-13
 	die "no chroot tarball at $CHROOT_TARBALL; run make-chroot.sh first"
 
 note "building both packages inside $IMAGE"
+# container-pbuilder.sh re-sources pins.env inside the container, so the
+# resolved track must travel with it: without this, a release-track run would
+# build 9.0.1 source trees against trunk pin values in there.
 docker run --privileged --rm \
 	-v "$repo_dir:/repo:ro" \
 	-v "$out_dir:/out" \
+	-e "VINYL_TRACK=$VINYL_TRACK" \
 	-w /out \
 	"$IMAGE" \
 	bash /repo/scripts/ci/debian13/container-pbuilder.sh
