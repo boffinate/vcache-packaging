@@ -96,9 +96,9 @@ Discovery already yields both VMODs from file names, and the collector already r
 | `release_tool.py selftest` | 138/138 |
 | `ci_matrix.py selftest` | **188/188** (was 179; 9 added for R-A/R-B) |
 | `vmod_recipe.py selftest` | 125/125 |
-| `ledger --tier ci` | 14 rows, 4 engine rows |
+| `ledger --tier ci` | **15 rows, 14 selected**, 4 engine rows. The unselected one is cachetag's `vinyl-trunk-head` source-harness lane, which no tier-`ci` workflow runs |
 | containerized `actionlint`, all 5 workflows | clean — **and it caught D4** |
-| containerized `shellcheck`, all lane scripts | clean |
+| containerized `shellcheck --severity=error`, all lane scripts | clean. Bare `shellcheck` exits 1 on this project's established `CDPATH= cd --` idiom (SC1007) and on `SC1091` for sourced files it was not given; both are excluded deliberately, not incidentally |
 | cachetag lane diff vs `main` | empty |
 
 ### Collector simulations
@@ -107,7 +107,7 @@ Hand-written result records reconciled against the real ledger. The point of eac
 
 | # | Scenario | Result |
 | --- | --- | --- |
-| 1 | all-green two-VMOD run | exit 0; 14 expected, 14 passed |
+| 1 | all-green two-VMOD run | exit 0; 14 expected, 14 passed, 1 lane not selected for this tier |
 | 2 | dict `recipe_generation` fails, cachetag green | exit 1; 13 passed, 1 failed. **All six cachetag rows PASS** |
 | 3 | cachetag `debian_build` fails both engines, dict green | exit 1; 12 passed, 2 failed. **All four dict rows PASS** |
 | 4 | dict `suppress_result` on the Debian row | exit 1; 1 row `missing_result_record`, synthesized by the collector |
@@ -119,10 +119,14 @@ Simulation 5 is the one D2 made impossible. The trunk-pinned engine rows disappe
 
 Unchanged from the A2 note, now with the mechanism in place to prove it:
 
-1. **Baseline both-VMOD run.** All 14 rows green.
+1. **Baseline both-VMOD run.** All 14 selected rows green.
 2. **Two-way isolation.** `debian_build`, `el9_build`, `source_checkout`, `source_digest`, `suppress_result` and `manifest` fail only cachetag rows; `dict_source`, `dict_build` and `recipe_generation` fail only dict rows. Simulations 2, 3 and 5 model the reconciliation; Wave B proves the workflow produces those records.
 3. **`recipe_generation`.** Exactly one dict row classified `failed_recipe_generation`, and no other row.
-4. **Equivalence for cachetag against `main`.** Debian digests byte-identical excluding `.buildinfo` and `.changes`; EL9 by the Step 3 normalized semantic comparison. Nine `if:`/`needs:` lines changed and nothing cachetag builds from, so any difference is a finding about the workflow.
+4. **Equivalence for cachetag against `main`.** Debian digests byte-identical excluding `.buildinfo` and `.changes`; EL9 by the Step 3 normalized semantic comparison.
+
+   The reasoning has to be stated precisely, because "nothing changed" is not quite true. `metadata.py`'s `rpm_requires` **did** change for cachetag on every cohort — from the Debian virtual-package names to the arch-qualified `vinyld(abi)%{?_isa}`, `vinyld(vrt)%{?_isa}` and `vinyld(cohort-…)%{?_isa}` capabilities RPM actually provides. It is inert **because it is unconsumed**, not because it is unchanged: nothing on cachetag's build path reads `RPM_REQUIRES`. The EL9 lane substitutes tokens into cachetag's own audited spec, which spells those Requires itself; only the *generated* spec template renders them from this function. `scripts/ci/release-manifest.sh` reads `CACHETAG_ABI_DEB_DEPENDS`, `CACHETAG_ABI_COHORT_PROVIDE` and `CACHETAG_ABI_RPM_COHORT_PROVIDE`, all byte-identical.
+
+   So: nine `if:`/`needs:` lines changed, and one generated value changed that no cachetag consumer reads. **If EL9 equivalence moves in Wave B, `Requires` is the first place to look** — that is the one place where a wrong belief about who reads what would show up.
 5. **dict evidence populated.** Both `vmods.dict` entries move `pending` → `recorded`, after which `--require-releasable` goes green — the gate closing.
 6. **Behaviour suites green on installed packages**, both VMODs, both targets. For dict: `dict_cs.vtc` and `dict_ci.vtc` against the packaged `.so` through `-p vmod_path`, `num.dict` from the digest-verified archive, upstream's expected values unmodified.
 7. **The new gates fire.** dict's payload allowlist and its strict `lintian`/`rpmlint` expectations have never run. A first pass is itself evidence; a first failure is a finding about the templates or the overlay, never a reason to relax the gate.

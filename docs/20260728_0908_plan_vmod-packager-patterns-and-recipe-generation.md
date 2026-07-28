@@ -297,7 +297,7 @@ The generator and workflow are not complete until these cases have been demonstr
 7. An unexpected installed file fails the payload allowlist.
 8. An incompatible engine package cannot satisfy the generated ABI or cohort dependency.
 9. A missing or failed generated-recipe result is reported by the global collector without cancelling other VMODs.
-10. A reviewed patch changes the source and evidence digests and cannot be omitted or replaced silently.
+10. A reviewed patch changes the source and evidence digests and cannot be omitted or replaced silently. **Relocated to Step 7 (2026-07-28).** The adapter has no patch capability yet and `vmod-dict` needs none, so this case cannot be demonstrated in Step 6 — there is nothing to patch and nothing to patch it with. Phase 3 is where the adapter first gains a reviewed patch stack, and that is where the case belongs; leaving it here would have made the Step 6 exit gate depend on machinery Step 6 deliberately does not build. Recorded rather than quietly skipped, because a verification case that nobody can run and nobody has moved is indistinguishable from one that was forgotten.
 11. An upstream-recipe VMOD and a generated-recipe VMOD coexist in the same release completeness gate.
 12. A source-harness-only VMOD cannot accidentally produce a publishable package result.
 

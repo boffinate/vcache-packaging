@@ -126,7 +126,7 @@ That is the Step 6 exit gate — "both package families meet the same evidence p
 
 #### Byte-neutrality evidence
 
-`release_tool.py metadata` was captured for all six cohort/target pairs plus distro-native, in both `json` and `shell` formats, from the pre-migration branch tip (`8bf584f`) and again after. **Every existing value is byte-identical.** The complete diff, across all 13 files, is one added key:
+`release_tool.py metadata` was captured for all six cohort/target pairs plus distro-native, in both `json` and `shell` formats, from the pre-migration branch tip (`8bf584f`) and again after. **Every existing value is byte-identical.** The complete diff, across all 14 files, is one added key:
 
 ```diff
    }
@@ -200,10 +200,10 @@ Nothing from the Wave A2 brief. The workflow wiring, the one item outstanding wh
 | `ci_matrix.py check-catalog` | OK, 2 VMODs |
 | `ci_matrix.py ledger --tier ci` | **14 selected rows**, asserted exactly by a self-test; dict adds **no** engine row |
 | containerized `actionlint` (`rhysd/actionlint`), all 5 workflow files | clean, exit 0 |
-| containerized `shellcheck` (`koalaman/shellcheck:stable`), all 9 new scripts | clean, exit 0 |
+| containerized `shellcheck --severity=error` (`koalaman/shellcheck:stable`), all new scripts | clean, exit 0. Bare `shellcheck` exits 1 on the project's established `CDPATH= cd --` idiom (SC1007) and SC1091; both excluded deliberately |
 | `generate.sh` dry run, both targets | renders, refuses tokens, lays out the tree, stages scripts and VTCs |
 | `generate.sh --inject-token` | refused, non-zero |
-| `metadata` byte-neutrality, 13 files, pre- vs post-migration | one added key, everything else identical |
+| `metadata` byte-neutrality, 14 files, pre- vs post-migration | one added key, everything else identical |
 | `git diff main -- .github/` | empty |
 | `git diff main -- recipes/debian-13/ recipes/el9/ scripts/ci/debian13/ scripts/ci/el9/` | empty |
 
