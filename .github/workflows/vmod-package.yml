@@ -1,0 +1,651 @@
+name: VMOD package
+
+# One complete, self-contained invocation for ONE VMOD: its manifest, its
+# source, and its package targets. Phase 1 of
+# docs/20260728_0833_plan_vmod-matrix-failure-isolation.md.
+#
+# The containment is the point. The caller's VMOD matrix runs this whole
+# workflow per entry with fail-fast: false, so a source failure here cannot
+# skip another VMOD's package jobs -- which is exactly what one shared
+# cachetag-source-archive job did before. For the same reason this file uses
+# ordinary jobs and never calls a further reusable workflow: the caller has
+# already consumed the one nesting level a matrix invocation gets.
+#
+# The build commands and pins below are moved UNCHANGED from ci.yml. Phase 1
+# proves failure isolation without changing package content: any diff in what
+# these steps run is a bug in this migration, not an improvement.
+
+on:
+  workflow_call:
+    inputs:
+      manifest:
+        description: path to the VMOD manifest, relative to the repository root
+        required: true
+        type: string
+      vmod_id:
+        description: >-
+          the trusted discovery id, derived by the caller from the manifest file
+          name. The manifest's own declared id is checked against it here.
+        required: true
+        type: string
+      tier:
+        description: workflow tier (ci, nightly, release, trunk)
+        required: true
+        type: string
+      inject:
+        description: >-
+          deliberate failure injection for the plan's verification cases. Always
+          `none` unless a human dispatched the caller with something else.
+        required: false
+        type: string
+        default: none
+
+permissions:
+  contents: read
+
+env:
+  # Engine pins, moved unchanged from ci.yml. They stay workflow-level in Phase
+  # 1 because the engine is still built inside each VMOD package row; Phase 2
+  # of the plan moves engine production out into its own artifacts and these
+  # pins go with it. The cachetag source pins that used to sit beside them are
+  # gone from here on purpose: they now live in the VMOD manifest.
+  VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
+  VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
+  # Index digest resolved 2026-07-25 (`docker buildx imagetools inspect
+  # almalinux:9`); must match EL9_IMAGE in recipes/el9/cohort.env, which is
+  # authoritative (build.sh re-sources cohort.env, clobbering any env
+  # override, so the pin lives there and is mirrored here for steps that
+  # run containers directly).
+  EL9_IMAGE: almalinux:9@sha256:d2515c769e7b73f95c4fde38c0a505336ff38f14990c0b7253b77060a049a743
+
+jobs:
+  plan:
+    name: ${{ inputs.vmod_id }} manifest and lanes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sources: ${{ steps.expand.outputs.sources }}
+      targets: ${{ steps.expand.outputs.targets }}
+      source_count: ${{ steps.expand.outputs.source_count }}
+      target_count: ${{ steps.expand.outputs.target_count }}
+      harness_count: ${{ steps.expand.outputs.harness_count }}
+      repository: ${{ steps.expand.outputs.repository }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+
+      # Injection case 2 from the plan's verification list: a malformed
+      # manifest must be classified failed_manifest_validation without
+      # preventing any other VMOD invocation. No build script is touched.
+      - name: inject a malformed manifest
+        if: inputs.inject == 'manifest'
+        shell: bash
+        run: |
+          set -eu
+          printf 'schema: vmod-ci/v1\nid: %s\n' "${{ inputs.vmod_id }}" \
+            > "${{ inputs.manifest }}"
+        working-directory: vcache-packaging
+
+      - name: validate this VMOD's manifest
+        id: validate
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          python3 tools/ci_matrix.py validate-vmod \
+            --manifest "${{ inputs.manifest }}" \
+            --id "${{ inputs.vmod_id }}" \
+            --tier "${{ inputs.tier }}"
+        working-directory: vcache-packaging
+
+      - name: expand this VMOD's lanes for the tier
+        id: expand
+        if: steps.validate.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          python3 tools/ci_matrix.py expand \
+            --manifest "${{ inputs.manifest }}" \
+            --id "${{ inputs.vmod_id }}" \
+            --tier "${{ inputs.tier }}" \
+            --inject "${{ inputs.inject }}" \
+            --format github | tee -a "$GITHUB_OUTPUT"
+        working-directory: vcache-packaging
+
+      - name: record the invocation result
+        if: always()
+        shell: bash
+        run: |
+          set -eu
+          status=passed
+          detail=""
+          if [ "${{ steps.validate.outcome }}" = "failure" ]; then
+            status=failed_manifest_validation
+            detail="${{ inputs.manifest }} did not validate as vmod-ci/v1"
+          elif [ "${{ steps.expand.outcome }}" != "success" ]; then
+            status=failed_manifest_validation
+            detail="lane expansion for tier ${{ inputs.tier }} failed"
+          fi
+          python3 tools/ci_matrix.py record \
+            --out "$GITHUB_WORKSPACE/results/invocation.json" \
+            --kind invocation \
+            --vmod "${{ inputs.vmod_id }}" \
+            --status "$status" \
+            --stage manifest \
+            --detail "$detail"
+        working-directory: vcache-packaging
+
+      - name: upload the invocation result record
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: result-${{ inputs.vmod_id }}-invocation
+          path: results/invocation.json
+          if-no-files-found: error
+          retention-days: 14
+
+      # The classified record is written and uploaded first, then the job fails
+      # explicitly. A step-local continue-on-error that reaches result
+      # generation must never leave a required failure looking green.
+      - name: fail when the manifest did not validate
+        if: steps.validate.outcome == 'failure' || steps.expand.outcome != 'success'
+        run: exit 1
+
+  source:
+    name: ${{ inputs.vmod_id }} source (${{ matrix.channel }})
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.source_count != '0' }}
+    runs-on: ubuntu-latest
+    # Measured 2026-07-25 across six green runs: 6m09s-8m02s, the spread
+    # being runner-to-runner variance on identical input. 20 minutes is a
+    # "something has hung" guard, not a target.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.sources) }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+
+      - name: checkout the VMOD source
+        id: checkout
+        continue-on-error: true
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ needs.plan.outputs.repository }}
+          ref: ${{ matrix.ref }}
+          path: libvmod-cachetag
+          fetch-depth: 0 # release-source-archive.sh reads git commit/committer-date metadata
+
+      - name: verify the release tag and expected commit
+        id: verify
+        if: steps.checkout.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_verify_cachetag_release_checkout \
+            "$GITHUB_WORKSPACE/libvmod-cachetag" \
+            "${{ matrix.ref }}" "${{ matrix.expected_commit }}"
+
+      - name: checkout ../vinyl-cache (pinned commit, not a GitHub remote)
+        id: vinyl
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
+
+      - name: build docker/vinyl-cache-ubuntu-build.Dockerfile
+        id: image
+        if: steps.vinyl.outcome == 'success'
+        continue-on-error: true
+        run: |
+          docker build -t vinyl-cache-ubuntu-build \
+            -f docker/vinyl-cache-ubuntu-build.Dockerfile docker
+        working-directory: libvmod-cachetag
+
+      - name: scripts/release-source-archive.sh
+        id: archive
+        if: steps.image.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          bash "$GITHUB_WORKSPACE/vcache-packaging/scripts/ci/source-archive.sh" \
+            "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$VINYL_GIT_COMMIT" \
+            "${{ matrix.archive_sha256 }}" \
+            "${{ matrix.expected_commit }}" \
+            release 2>&1 | tee "$GITHUB_WORKSPACE/source-archive.log"
+        working-directory: libvmod-cachetag
+
+      - name: upload the pinned source archive
+        if: steps.archive.outcome == 'success'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.source_artifact }}
+          path: |
+            libvmod-cachetag/release/dist/libvmod-cachetag-*.tar.gz
+            libvmod-cachetag/release/dist/libvmod-cachetag-*.tar.gz.sha256
+            libvmod-cachetag/release/dist/libvmod-cachetag-*.metadata.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: classify and record the source result
+        if: always()
+        shell: bash
+        run: |
+          set -eu
+          # First failing stage wins, so a stage skipped because an earlier one
+          # failed is never mistaken for the cause. Checking for `failure`
+          # rather than "not success" is what makes that true.
+          status=passed
+          detail=""
+          set_status() { status=$1; detail=$2; }
+          if [ "${{ steps.checkout.outcome }}" = "failure" ]; then
+            set_status failed_source_checkout \
+              "checkout of ${{ needs.plan.outputs.repository }}@${{ matrix.ref }} failed"
+          elif [ "${{ steps.verify.outcome }}" = "failure" ]; then
+            set_status failed_source_checkout \
+              "${{ matrix.ref }} did not resolve to ${{ matrix.expected_commit }}"
+          elif [ "${{ steps.vinyl.outcome }}" = "failure" ] \
+            || [ "${{ steps.image.outcome }}" = "failure" ]; then
+            set_status failed_engine_build \
+              "the Vinyl input the archive derivation builds against was unavailable"
+          elif [ "${{ steps.archive.outcome }}" = "failure" ]; then
+            if grep -q "does not match the pinned" "$GITHUB_WORKSPACE/source-archive.log" 2>/dev/null
+            then
+              set_status failed_source_digest \
+                "derived archive digest does not match ${{ matrix.archive_sha256 }}"
+            else
+              set_status failed_source_archive "source archive derivation failed"
+            fi
+          elif [ "${{ steps.archive.outcome }}" != "success" ]; then
+            set_status failed_infrastructure "the source archive stage did not run"
+          fi
+          python3 tools/ci_matrix.py record \
+            --out "$GITHUB_WORKSPACE/results/source-${{ matrix.channel }}.json" \
+            --kind source \
+            --vmod "${{ inputs.vmod_id }}" \
+            --channel "${{ matrix.channel }}" \
+            --status "$status" \
+            --stage source \
+            --detail "$detail" \
+            --artifact "${{ matrix.source_artifact }}" \
+            --ref "${{ matrix.ref }}" \
+            --commit "${{ matrix.expected_commit }}" \
+            --version "${{ matrix.version }}" \
+            --digest "${{ matrix.archive_sha256 }}"
+        working-directory: vcache-packaging
+
+      - name: upload the source result record and logs
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.result_artifact }}
+          path: |
+            results/source-${{ matrix.channel }}.json
+            source-archive.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: fail when the source stage failed
+        if: >-
+          steps.checkout.outcome == 'failure' || steps.verify.outcome == 'failure'
+          || steps.vinyl.outcome == 'failure' || steps.image.outcome == 'failure'
+          || steps.archive.outcome != 'success'
+        run: exit 1
+
+  target:
+    name: ${{ inputs.vmod_id }} ${{ matrix.target }} (${{ matrix.engine }})
+    needs: [plan, source]
+    # Deliberately NOT ordinary `needs` semantics: this job must start after a
+    # failed source job and decide from its own requested artifact whether it
+    # can proceed, so a blocked row is reported as blocked rather than silently
+    # skipped. An intentional cancellation still stops it.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.target_count != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.targets) }}
+    env:
+      VINYL_TRACK: ${{ matrix.vinyl_track }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+
+      - name: checkout the VMOD source
+        id: checkout
+        continue-on-error: true
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ needs.plan.outputs.repository }}
+          ref: ${{ matrix.ref }}
+          path: libvmod-cachetag
+
+      - name: verify the release tag and expected commit
+        id: verify
+        if: steps.checkout.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_verify_cachetag_release_checkout \
+            "$GITHUB_WORKSPACE/libvmod-cachetag" \
+            "${{ matrix.ref }}" "${{ matrix.expected_commit }}"
+
+      # The release engine builds from the digest-pinned upstream tarball
+      # (downloaded by build.sh and verified against the pinned sha256) and
+      # never reads a Vinyl git checkout, so this step is trunk-only.
+      - name: checkout ../vinyl-cache (pinned commit)
+        id: vinyl
+        if: matrix.vinyl_track == 'trunk' && steps.verify.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
+
+      # Allowed to fail so the row can reach its result record: a source
+      # artifact that does not exist is a blocked row with a named cause, not
+      # an unclassified download error.
+      - name: download the pinned VMOD source archive
+        id: download
+        if: steps.verify.outcome == 'success' && steps.vinyl.outcome != 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ matrix.source_artifact }}
+          path: libvmod-cachetag/release/dist
+
+      # ---- Debian 13 amd64 (pbuilder). Commands unchanged from ci.yml. ----
+      - name: assemble the pinned source trees (unchanged, build.sh source)
+        id: deb_source
+        if: matrix.family == 'deb' && steps.download.outcome == 'success'
+        continue-on-error: true
+        run: recipes/debian-13/build.sh source
+        working-directory: vcache-packaging
+
+      - name: build the pinned buildroot with mmdebstrap
+        id: deb_chroot
+        if: matrix.family == 'deb' && steps.deb_source.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/make-chroot.sh
+        working-directory: vcache-packaging
+
+      - name: injected Debian package-build failure
+        id: deb_inject
+        if: matrix.family == 'deb' && inputs.inject == 'debian_build' && steps.deb_chroot.outcome == 'success'
+        continue-on-error: true
+        run: exit 1
+
+      - name: build both packages in the pinned debian:trixie container (pbuilder)
+        id: deb_build
+        if: matrix.family == 'deb' && steps.deb_chroot.outcome == 'success' && steps.deb_inject.outcome != 'failure'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/debian-lane.sh
+        working-directory: vcache-packaging
+
+      - name: ABI and hardening assertions (mirrors stage-vinyl.sh / stage-cachetag.sh)
+        id: deb_abi
+        if: matrix.family == 'deb' && steps.deb_build.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/assert-packages.sh
+        working-directory: vcache-packaging
+
+      - name: lint (unchanged, build.sh lint)
+        id: deb_lint
+        if: matrix.family == 'deb' && steps.deb_abi.outcome == 'success'
+        continue-on-error: true
+        run: recipes/debian-13/build.sh lint
+        working-directory: vcache-packaging
+
+      - name: installed-package smoke, fresh container (unchanged, build.sh smoke)
+        id: deb_smoke
+        if: matrix.family == 'deb' && steps.deb_lint.outcome == 'success'
+        continue-on-error: true
+        run: recipes/debian-13/build.sh smoke
+        working-directory: vcache-packaging
+
+      - name: installed-package VTC suite, fresh container (unchanged, build.sh vtc-suite)
+        id: deb_vtc
+        if: matrix.family == 'deb' && steps.deb_smoke.outcome == 'success'
+        continue-on-error: true
+        run: recipes/debian-13/build.sh vtc-suite
+        working-directory: vcache-packaging
+
+      - name: checksums (unchanged, build.sh sums)
+        id: deb_sums
+        if: matrix.family == 'deb' && steps.deb_vtc.outcome == 'success'
+        continue-on-error: true
+        run: recipes/debian-13/build.sh sums
+        working-directory: vcache-packaging
+
+      # ---- EL9 x86_64 (Mock). Commands unchanged from ci.yml. ----
+      - name: injected EL9 package-build failure
+        id: el9_inject
+        if: matrix.family == 'rpm' && inputs.inject == 'el9_build' && steps.download.outcome == 'success'
+        continue-on-error: true
+        run: exit 1
+
+      - name: Mock build (vinyl-cache, then libvmod-cachetag)
+        id: el9_build
+        if: matrix.family == 'rpm' && steps.download.outcome == 'success' && steps.el9_inject.outcome != 'failure'
+        continue-on-error: true
+        run: |
+          bash scripts/ci/el9/mock-build.sh \
+            "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$GITHUB_WORKSPACE/libvmod-cachetag" \
+            "$EL9_IMAGE"
+        working-directory: vcache-packaging
+
+      # `deps` first because this is a fresh container: stage_lint calls
+      # rpmlint directly and stage_deps is what installs it. In the local
+      # lane all stages share one container, so deps has always already run
+      # by the time lint does; here it has not.
+      - name: report + rpmlint (unchanged, container/build.sh stage_deps stage_report stage_lint)
+        id: el9_lint
+        if: matrix.family == 'rpm' && steps.el9_build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          docker run --rm \
+            -v "$PWD/recipes/el9:/recipes:ro" \
+            -v "$PWD/dist/el9:/out" \
+            -w /out \
+            "$EL9_IMAGE" \
+            bash /recipes/container/build.sh deps report lint
+        working-directory: vcache-packaging
+
+      - name: installed-package smoke, fresh container (unchanged, build.sh --smoke-only)
+        id: el9_smoke
+        if: matrix.family == 'rpm' && steps.el9_lint.outcome == 'success'
+        continue-on-error: true
+        run: recipes/el9/build.sh --smoke-only
+        working-directory: vcache-packaging
+
+      - name: installed-package VTC suite, fresh container (unchanged, build.sh --vtc-suite-only)
+        id: el9_vtc
+        if: matrix.family == 'rpm' && steps.el9_smoke.outcome == 'success'
+        continue-on-error: true
+        run: recipes/el9/build.sh --vtc-suite-only
+        working-directory: vcache-packaging
+
+      # ---- Result, then evidence, then the explicit failure. ----
+      - name: classify and record the target result
+        id: record
+        if: always()
+        shell: bash
+        run: |
+          set -eu
+          status=passed
+          detail=""
+          set_status() { status=$1; detail=$2; }
+          if [ "${{ steps.checkout.outcome }}" = "failure" ] \
+            || [ "${{ steps.verify.outcome }}" = "failure" ]; then
+            set_status failed_source_checkout \
+              "${{ matrix.ref }} did not check out at ${{ matrix.expected_commit }}"
+          elif [ "${{ steps.vinyl.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "the pinned Vinyl input was unavailable"
+          elif [ "${{ steps.download.outcome }}" != "success" ]; then
+            set_status blocked_by_vmod_source \
+              "source artifact ${{ matrix.source_artifact }} was not available"
+          elif [ "${{ steps.deb_source.outcome }}" = "failure" ]; then
+            set_status failed_package_build "build.sh source failed"
+          elif [ "${{ steps.deb_chroot.outcome }}" = "failure" ]; then
+            set_status failed_infrastructure "the mmdebstrap buildroot could not be built"
+          elif [ "${{ steps.deb_inject.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_inject.outcome }}" = "failure" ]; then
+            set_status failed_package_build "injected package-build failure"
+          elif [ "${{ steps.deb_build.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_build.outcome }}" = "failure" ]; then
+            set_status failed_package_build "the native package build failed"
+          elif [ "${{ steps.deb_abi.outcome }}" = "failure" ]; then
+            set_status failed_abi_or_hardening "assert-packages.sh failed"
+          elif [ "${{ steps.deb_lint.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_lint.outcome }}" = "failure" ]; then
+            set_status failed_lint "package lint failed"
+          elif [ "${{ steps.deb_smoke.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_smoke.outcome }}" = "failure" ]; then
+            set_status failed_install_or_smoke "the installed-package smoke failed"
+          elif [ "${{ steps.deb_vtc.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_vtc.outcome }}" = "failure" ]; then
+            set_status failed_behavior "the installed-package VTC suite failed"
+          elif [ "${{ matrix.family }}" = "deb" ] \
+            && [ "${{ steps.deb_sums.outcome }}" != "success" ]; then
+            set_status failed_infrastructure "the Debian row did not reach its checksums"
+          elif [ "${{ matrix.family }}" = "rpm" ] \
+            && [ "${{ steps.el9_vtc.outcome }}" != "success" ]; then
+            set_status failed_infrastructure "the EL9 row did not reach its VTC suite"
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          python3 tools/ci_matrix.py record \
+            --out "$GITHUB_WORKSPACE/results/${{ matrix.target }}-${{ matrix.engine }}.json" \
+            --kind package-target \
+            --vmod "${{ inputs.vmod_id }}" \
+            --channel "${{ matrix.channel }}" \
+            --engine "${{ matrix.engine }}" \
+            --target "${{ matrix.target }}" \
+            --status "$status" \
+            --stage "${{ matrix.family }}" \
+            --detail "$detail" \
+            --artifact "${{ matrix.packages_artifact }}" \
+            --ref "${{ matrix.ref }}" \
+            --commit "${{ matrix.expected_commit }}" \
+            --version "${{ matrix.version }}"
+        working-directory: vcache-packaging
+
+      # if-no-files-found: warn, not error. A compiler failure must stay
+      # "compiler failed" rather than becoming an unrelated "no files found"
+      # from the evidence upload; the row's classified result record is the
+      # guaranteed evidence.
+      - name: upload the Debian package artifacts
+        if: always() && matrix.family == 'deb'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.packages_artifact }}
+          path: |
+            vcache-packaging/dist/debian-13/*.deb
+            vcache-packaging/dist/debian-13/*.ddeb
+            vcache-packaging/dist/debian-13/*.dsc
+            vcache-packaging/dist/debian-13/*.changes
+            vcache-packaging/dist/debian-13/*.buildinfo
+            vcache-packaging/dist/debian-13/*.tar.*
+            vcache-packaging/dist/debian-13/SHA256SUMS
+            vcache-packaging/dist/debian-13/logs/**
+            vcache-packaging/dist/debian-13/work/target.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: upload the EL9 package artifacts
+        if: always() && matrix.family == 'rpm'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.packages_artifact }}
+          path: |
+            vcache-packaging/dist/el9/packages/*.rpm
+            vcache-packaging/dist/el9/SHA256SUMS
+            vcache-packaging/dist/el9/logs/**
+            vcache-packaging/dist/el9/image.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Injection case 8: suppress exactly one expected result artifact and
+      # confirm the collector synthesizes missing_result_record for that row.
+      - name: upload the target result record
+        if: >-
+          always() && !(inputs.inject == 'suppress_result'
+          && matrix.family == 'deb' && matrix.engine == 'vinyl-release')
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.result_artifact }}
+          path: results/${{ matrix.target }}-${{ matrix.engine }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: fail when this row failed
+        if: steps.record.outputs.status != 'passed'
+        run: exit 1
+
+  summary:
+    name: ${{ inputs.vmod_id }} summary
+    needs: [plan, source, target]
+    # Runs after ordinary failures, respects an intentional cancellation, and
+    # never fails on a row failure: the row already failed and the caller's
+    # collector owns the verdict. This job's job is to make sure every expected
+    # row of this VMOD has an outcome recorded somewhere, including when the
+    # source job failed and every target row was skipped.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+
+      - name: download this VMOD's result records
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: result-${{ inputs.vmod_id }}-*
+          path: results
+
+      - name: reconcile this VMOD's expected rows and synthesize the missing ones
+        shell: bash
+        run: |
+          set -eu
+          python3 tools/ci_matrix.py summarize-vmod \
+            --manifest "${{ inputs.manifest }}" \
+            --id "${{ inputs.vmod_id }}" \
+            --tier "${{ inputs.tier }}" \
+            --results "$GITHUB_WORKSPACE/results" \
+            --out "$GITHUB_WORKSPACE/vmod-result/result.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
+        working-directory: vcache-packaging
+
+      - name: upload this VMOD's merged result record
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: result-${{ inputs.vmod_id }}-summary
+          path: vmod-result/result.json
+          if-no-files-found: error
+          retention-days: 14

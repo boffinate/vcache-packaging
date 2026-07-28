@@ -409,6 +409,7 @@ def vmod_rows(data: dict, tier: str, manifest_path: str) -> list:
                 _row("source-harness", vmod, required, selected, channel=channel, engine=engine)
             )
             continue
+        source = data["sources"][channel]
         for target in lane["targets"]:
             lane_rows.append(
                 _row(
@@ -421,6 +422,12 @@ def vmod_rows(data: dict, tier: str, manifest_path: str) -> list:
                     target=target,
                     vinyl_track=ENGINES[engine]["vinyl_track"],
                     family=TARGETS[target]["family"],
+                    # The row's own copy of the source identity. A package row
+                    # checks the VMOD out itself in Phase 1, and must verify the
+                    # same pinned ref and commit the source row did.
+                    ref=source["ref"],
+                    expected_commit=source.get("expected_commit", ""),
+                    version=source.get("version", ""),
                     packages_artifact=packages_artifact(vmod, channel, engine, target),
                     source_artifact=source_artifact(vmod, channel),
                 )
@@ -531,6 +538,9 @@ def expand(data: dict, tier: str, inject: str = "none") -> dict:
                 "target": row["target"],
                 "family": row["family"],
                 "timeout_minutes": TARGETS[row["target"]]["timeout_minutes"],
+                "ref": row["ref"],
+                "expected_commit": row["expected_commit"],
+                "version": row["version"],
                 "row_key": row["row_key"],
                 "packages_artifact": row["packages_artifact"],
                 "source_artifact": row["source_artifact"],
