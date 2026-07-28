@@ -36,8 +36,16 @@ die() {
 mkdir -p "$out" "$topdir/SPECS" "$topdir/SOURCES" "$topdir/SRPMS" "$topdir/RPMS"
 
 note "build toolchain"
-dnf -y -q install mock rpm-build createrepo_c >/dev/null
-rpm -q mock createrepo_c
+# epel-release first, and mock-core-configs alongside mock. mock is not in
+# AlmaLinux 9's own repositories -- `dnf install mock` there fails with
+# "Unable to find a match" -- and mock-core-configs is what supplies the
+# alma+epel-9-x86_64 root this lane names below. Exactly the sequence
+# scripts/ci/el9/container-mock.sh:122-123 has always used; this lane was
+# written from that script's structure and did not inherit these two lines,
+# which cost Wave B run 30405770446 its EL9 row.
+dnf -y -q install epel-release >/dev/null
+dnf -y -q install mock mock-core-configs rpm-build createrepo_c >/dev/null
+rpm -q mock mock-core-configs createrepo_c
 
 note "publishing the verified engine packages as a local repository"
 # The generated spec BuildRequires the engine development package at an exact
