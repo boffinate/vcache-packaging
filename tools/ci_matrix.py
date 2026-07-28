@@ -52,7 +52,13 @@ ENGINE_SCHEMA = "engine-artifact/v1"
 # graphs until Phase 4 of the plan migrates them.
 TIERS = ["ci", "nightly", "release", "trunk"]
 
-ADAPTERS = ["cachetag"]
+# The packaging adapters a manifest may name. `cachetag` is the audited
+# upstream-owned recipe in the libvmod-cachetag repository; `autotools` is the
+# default generated-recipe adapter, whose reviewed data lives in
+# recipes/vmods/adapters/autotools/ and whose recipes tools/vmod_recipe.py
+# renders. An adapter name here is a promise that checked-in, reviewed code and
+# data exist for it -- never a free-text field.
+ADAPTERS = ["autotools", "cachetag"]
 
 LANE_KINDS = ["package", "source-harness"]
 
@@ -175,7 +181,14 @@ REPOSITORY_RE = r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$"
 REF_RE = r"^[A-Za-z0-9][A-Za-z0-9._/-]*$"
 COMMIT_RE = r"^[0-9a-f]{40}$"
 SHA256_RE = r"^[0-9a-f]{64}$"
-VERSION_RE = r"^[0-9]+\.[0-9]+\.[0-9]+$"
+# Two or more dot-separated numeric components. It was three exactly until
+# 2026-07-28, which was a generalisation from cachetag's own versioning rather
+# than a rule: vmod-dict releases as 1.7, and refusing to record that version
+# would mean either declining a selected VMOD over a regex or writing a version
+# its own AC_INIT does not agree with. Neither is acceptable, and the checks
+# that matter -- the peeled commit, the archive digest, and the source
+# cross-check against the VMOD's own configure.ac -- are unaffected.
+VERSION_RE = r"^[0-9]+(?:\.[0-9]+)+$"
 
 
 class CatalogError(Exception):
@@ -1617,9 +1630,18 @@ def cmd_reconcile(args) -> int:
 
 
 def cmd_selftest(args) -> int:
+    # Both VMOD-side tools' tests run here. The recipe generator is the second
+    # half of the same catalog: it reads the manifests this tool validates and
+    # renders the recipes those manifests' package lanes build. Running its
+    # tests from here means the CI structural-validation gate covers them
+    # without learning a third command, and a generator regression cannot land
+    # green because nothing invoked it.
     import ci_matrix_selftest
+    import vmod_recipe_selftest
 
-    return ci_matrix_selftest.main()
+    status = ci_matrix_selftest.main()
+    print()
+    return vmod_recipe_selftest.main() or status
 
 
 def build_parser() -> argparse.ArgumentParser:
