@@ -195,9 +195,32 @@ jobs:
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "${{ matrix.ref }}" "${{ matrix.expected_commit }}"
 
+      # The source-coupled half of registry validation, which used to sit in
+      # the global registry gate and made a cachetag repository problem look
+      # like a registry failure. It needs a checkout, so it belongs here: the
+      # manifest's recorded version against the source's own configure.ac, and
+      # the registry's cachetag.version against the same checkout.
+      - name: cross-check the manifest and registry against the checked-out source
+        id: cross_check
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          python3 tools/ci_matrix.py validate-vmod \
+            --manifest "${{ inputs.manifest }}" \
+            --id "${{ inputs.vmod_id }}" \
+            --tier "${{ inputs.tier }}" \
+            --source-channel "${{ matrix.channel }}" \
+            --source-dir "$GITHUB_WORKSPACE/libvmod-cachetag"
+          python3 tools/release_tool.py \
+            --cachetag-src "$GITHUB_WORKSPACE/libvmod-cachetag" \
+            validate
+        working-directory: vcache-packaging
+
       - name: checkout ../vinyl-cache (pinned commit, not a GitHub remote)
         id: vinyl
-        if: steps.verify.outcome == 'success'
+        if: steps.cross_check.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
@@ -260,6 +283,9 @@ jobs:
           elif [ "${{ steps.verify.outcome }}" = "failure" ]; then
             set_status failed_source_checkout \
               "${{ matrix.ref }} did not resolve to ${{ matrix.expected_commit }}"
+          elif [ "${{ steps.cross_check.outcome }}" = "failure" ]; then
+            set_status failed_manifest_validation \
+              "the manifest or registry disagrees with the checked-out source"
           elif [ "${{ steps.vinyl.outcome }}" = "failure" ] \
             || [ "${{ steps.image.outcome }}" = "failure" ]; then
             set_status failed_engine_build \
@@ -304,8 +330,8 @@ jobs:
       - name: fail when the source stage failed
         if: >-
           steps.checkout.outcome == 'failure' || steps.verify.outcome == 'failure'
-          || steps.vinyl.outcome == 'failure' || steps.image.outcome == 'failure'
-          || steps.archive.outcome != 'success'
+          || steps.cross_check.outcome == 'failure' || steps.vinyl.outcome == 'failure'
+          || steps.image.outcome == 'failure' || steps.archive.outcome != 'success'
         run: exit 1
 
   target:

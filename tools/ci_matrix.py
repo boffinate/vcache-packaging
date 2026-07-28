@@ -912,37 +912,55 @@ def cmd_validate_vmod(args) -> int:
     if args.tier and args.tier not in TIERS:
         errors.append(f"{path}: unknown tier {args.tier!r}")
     if args.source_dir:
-        errors.extend(source_cross_check_errors(data, str(path), args.source_dir))
+        errors.extend(
+            source_cross_check_errors(data, str(path), args.source_dir, args.source_channel)
+        )
     if errors:
         for error in errors:
             print(f"ERROR    {error}", file=sys.stderr)
         return 1
     print(f"OK: {path} is a valid {SCHEMA} manifest for {data['id']}")
     if args.source_dir:
-        print(f"OK: {data['adapter']} source cross-check against {args.source_dir}")
+        pinned = data["sources"].get(args.source_channel, {}).get("version")
+        if pinned:
+            print(
+                f"OK: {data['adapter']} source cross-check, {args.source_channel} version "
+                f"{pinned} against {args.source_dir}"
+            )
+        else:
+            print(
+                f"note: source channel {args.source_channel} records no version, so there is "
+                "nothing to cross-check; its resolved commit is evidence, not a pin"
+            )
     return 0
 
 
-def source_cross_check_errors(data: dict, path: str, source_dir) -> list:
+def source_cross_check_errors(data: dict, path: str, source_dir, channel: str = "release") -> list:
     """Adapter-specific checks that need the VMOD's source checked out.
 
     This is the half of validation that used to live in the global registry
     gate. It runs inside the VMOD's own invocation, after its checkout, so a
     cachetag source problem is a cachetag failure rather than a global registry
     failure.
+
+    A moving channel records no version, and there is nothing to cross-check
+    against: what it resolved to is evidence, not a pin.
     """
     if data["adapter"] != "cachetag":
         return [f"{path}: no source cross-check is implemented for adapter {data['adapter']!r}"]
-    release = data["sources"].get("release")
-    if release is None:
-        return [f"{path}: the cachetag adapter needs a release source to cross-check"]
+    source = data["sources"].get(channel)
+    if source is None:
+        return [f"{path}: source channel {channel!r} is not declared"]
+    version = source.get("version")
+    if not version:
+        return []
     try:
         found = manifest_mod.configure_ac_version(source_dir)
     except manifest_mod.ValidationError as exc:
         return [f"{path}: {exc}"]
-    if found != release["version"]:
+    if found != version:
         return [
-            f"{path}: sources.release.version {release['version']!r} does not match configure.ac "
+            f"{path}: sources.{channel}.version {version!r} does not match configure.ac "
             f"AC_INIT {found!r} in {source_dir}"
         ]
     return []
@@ -1121,6 +1139,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_val.add_argument(
         "--source-dir",
         help="the VMOD's checked-out source, for the adapter's version cross-check",
+    )
+    p_val.add_argument(
+        "--source-channel",
+        default="release",
+        choices=SOURCE_CHANNELS,
+        help="which source channel --source-dir holds (default: release)",
     )
     p_val.set_defaults(func=cmd_validate_vmod)
 

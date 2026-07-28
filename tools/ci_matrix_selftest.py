@@ -296,6 +296,13 @@ def test_source_cross_check() -> None:
             any("configure.ac" in e for e in errors),
             str(errors),
         )
+        # The trunk channel records no version: what it resolved to is
+        # evidence, not a pin, so there is nothing to compare against.
+        check(
+            "cross-check: a moving channel has nothing to cross-check",
+            ci_matrix.source_cross_check_errors(data, "m", src, channel="trunk") == [],
+            str(ci_matrix.source_cross_check_errors(data, "m", src, channel="trunk")),
+        )
 
 
 # --- expansion -------------------------------------------------------------
