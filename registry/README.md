@@ -110,7 +110,7 @@ Values containing `#`, `{`, `}`, `[`, `]`, `&`, `*`, `!`, `|`, `>`, `%`, `@`, a 
 | `engine` | wiring | which engine input built this cohort: `vinyl-release` or `vinyl-trunk-pinned`. Not a digest input, so it cannot change a cohort id |
 | `build_profile.name` | **digest input** | `production` for any releasable cohort |
 | `build_profile.revision` | **digest input** | integer starting at 1 |
-| `required_vmods` | policy | every VMOD the cohort must contain; currently `cachetag` alone |
+| `required_vmods` | policy | every VMOD the cohort must contain. Cross-checked against `registry/vmods/` in both directions: a VMOD whose lanes build a package for this cohort's `engine` on its `targets` must be listed, and one whose lanes do not must not be, because nothing could ever produce its evidence |
 | `storage_support` | policy | `default`, and `buddy` only once unpatched Slash is packaged |
 | `targets` | wiring | target ids; must match the files in `registry/targets/<cohort-id>/` exactly |
 | `support.channel` | policy | `pre-release` or `stable` |

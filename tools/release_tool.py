@@ -128,7 +128,9 @@ def cmd_cohort_id(args) -> int:
     root = Path(args.repo_root).resolve()
     path = _cohort_path(root, args.cohort)
     data = manifest.load_cohort(path)
-    errors = manifest.validate_cohort(data, str(path), _expected_version(args, root))
+    errors = manifest.validate_cohort(
+        data, str(path), _expected_version(args, root), repo_root=root
+    )
     blob = manifest.cohort_input_blob(data)
     print("canonical cohort-input blob:")
     print("---8<---")
@@ -169,7 +171,9 @@ def cmd_metadata(args) -> int:
         cohort = manifest.load_cohort(cohort_path)
         target_path = root / "registry" / "targets" / cohort["cohort"] / f"{args.target}.yml"
         target = manifest.load_target(target_path)
-        errors = manifest.validate_cohort(cohort, str(cohort_path), _expected_version(args, root))
+        errors = manifest.validate_cohort(
+            cohort, str(cohort_path), _expected_version(args, root), repo_root=root
+        )
         errors += manifest.validate_target(
             target,
             str(target_path),
@@ -207,7 +211,9 @@ def cmd_release_notes(args) -> int:
     root = Path(args.repo_root).resolve()
     path = _cohort_path(root, args.cohort)
     data = manifest.load_cohort(path)
-    errors = manifest.validate_cohort(data, str(path), _expected_version(args, root))
+    errors = manifest.validate_cohort(
+        data, str(path), _expected_version(args, root), repo_root=root
+    )
     if errors:
         for error in errors:
             print(f"ERROR    {error}", file=sys.stderr)

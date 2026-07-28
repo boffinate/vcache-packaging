@@ -724,12 +724,18 @@ def test_validation_split() -> None:
         "; ".join(errors),
     )
 
-    # And the direct entry points take None for the same reason.
+    # And the direct entry points take None for the same reason. A synthetic
+    # workspace is supplied so the required_vmods cross-check has the synthetic
+    # catalog to compare against rather than the real one, which lists a second
+    # VMOD this fixture knows nothing about.
     cohort = yaml_subset.parse(VALID_COHORT)
+    with tempfile.TemporaryDirectory() as tmp:
+        synthetic_root, _ = _write_workspace(Path(tmp), VALID_COHORT, VALID_TARGET)
+        errors = manifest.validate_cohort(cohort, "synthetic", None, repo_root=synthetic_root)
     check(
         "split: validate_cohort accepts no expected version",
-        manifest.validate_cohort(cohort, "synthetic", None) == [],
-        str(manifest.validate_cohort(cohort, "synthetic", None)),
+        errors == [],
+        str(errors),
     )
 
 
@@ -908,6 +914,55 @@ def test_metadata() -> None:
         "metadata: shell rendering does not double the CACHETAG_ prefix",
         "CACHETAG_VERSION='1.0.0'" in shell and "CACHETAG_CACHETAG_VERSION" not in shell,
         shell,
+    )
+
+
+def test_required_vmods_matches_the_catalog(repo_root: Path) -> None:
+    """required_vmods, checked against the catalog in both directions.
+
+    A list of what a cohort "must contain" that nobody compares against what is
+    actually built for it is a comment with a colon in it. Same argument as the
+    per-target evidence map: a VMOD whose lanes build for this cohort's engine
+    on its targets is required by construction, and one whose lanes do not
+    cannot ever produce evidence, so listing it would block every release.
+    """
+    import copy
+
+    path = repo_root / "registry" / "cohorts" / "vinyl-9.0.1-ac4f719c16f4.yml"
+    cohort = manifest.load_cohort(path)
+    check(
+        "required_vmods: the release cohort requires both selected VMODs",
+        sorted(cohort["required_vmods"]) == ["cachetag", "dict"],
+        str(cohort["required_vmods"]),
+    )
+
+    missing = copy.deepcopy(cohort)
+    missing["required_vmods"] = ["cachetag"]
+    errors = manifest.validate_cohort(missing, str(path), repo_root=repo_root)
+    check(
+        "required_vmods: a selected VMOD left out is an error",
+        any("'dict' is missing" in e for e in errors),
+        str(errors),
+    )
+
+    extra = copy.deepcopy(cohort)
+    extra["required_vmods"] = ["cachetag", "dict", "nosuch"]
+    errors = manifest.validate_cohort(extra, str(path), repo_root=repo_root)
+    check(
+        "required_vmods: a VMOD nothing builds here is an error",
+        any("'nosuch' has no catalog lane" in e for e in errors),
+        str(errors),
+    )
+
+    # The trunk cohorts must NOT require dict: it declares no vinyl-trunk-pinned
+    # lane, so nothing could ever produce its evidence there.
+    trunk = manifest.load_cohort(
+        repo_root / "registry" / "cohorts" / "vinyl-9.0.0-4b7e68292979.yml"
+    )
+    check(
+        "required_vmods: a trunk cohort requires cachetag only",
+        trunk["required_vmods"] == ["cachetag"] and trunk["engine"] == "vinyl-trunk-pinned",
+        str(trunk["required_vmods"]),
     )
 
 
@@ -1160,6 +1215,7 @@ def main(repo_root: Path = None, cachetag_src=None) -> int:
     test_validation_split()
     test_repo_templates(root)
     test_repo_cachetag_cross_check(root, src)
+    test_required_vmods_matches_the_catalog(root)
     test_per_vmod_evidence(root)
     test_metadata_is_byte_neutral_across_the_v2_migration(root)
     test_distro_native(root)

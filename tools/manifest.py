@@ -589,7 +589,13 @@ def load_target(path) -> dict:
     return yaml_subset.parse_file(path)
 
 
-def validate_cohort(data: dict, path: str, expected_version=None, require_releasable: bool = False) -> list:
+def validate_cohort(
+    data: dict,
+    path: str,
+    expected_version=None,
+    require_releasable: bool = False,
+    repo_root=None,
+) -> list:
     """Return a list of error strings ([] means valid).
 
     ``expected_version`` is the authoritative cachetag version read from a
@@ -605,6 +611,37 @@ def validate_cohort(data: dict, path: str, expected_version=None, require_releas
         return [f"{path}: {e}" for e in errors]
 
     status = data["status"]
+
+    # required_vmods against the catalog, in both directions and for the same
+    # reason the per-target evidence map is checked that way: a list of what a
+    # cohort "must contain" that nobody compares to what is actually built for
+    # it is a comment with a colon in it. A VMOD whose lanes build for this
+    # cohort's engine on its targets is required by construction; one whose
+    # lanes do not is not, and listing it would block every release on evidence
+    # nothing produces.
+    try:
+        expected_required = set()
+        for target_id in data["targets"]:
+            expected_required.update(
+                expected_vmods_for(data["engine"], target_id, repo_root)
+            )
+    except Exception as exc:  # noqa: BLE001 - a catalog problem must be legible
+        errors.append(f"required_vmods: could not read the VMOD catalog to check this list ({exc})")
+    else:
+        declared = set(data["required_vmods"])
+        for missing in sorted(expected_required - declared):
+            errors.append(
+                f"required_vmods: {missing!r} is missing. Its catalog lanes build a package "
+                f"for engine {data['engine']} on this cohort's targets, so a release without "
+                "it is incomplete by construction."
+            )
+        for extra in sorted(declared - expected_required):
+            errors.append(
+                f"required_vmods: {extra!r} has no catalog lane building for engine "
+                f"{data['engine']} on this cohort's targets, so nothing can ever produce its "
+                "evidence and every release would be blocked on it."
+            )
+
     version = data["cachetag"]["version"]
     if expected_version is not None and version != expected_version:
         errors.append(
@@ -964,7 +1001,9 @@ def validate_registry_tree(
                 f"{rel_path}: --cohort {only_cohort!r} selects a template manifest, "
                 "which is never releasable"
             )
-        cohort_errors = validate_cohort(cohort, str(rel_path), expected_version, cohort_releasable)
+        cohort_errors = validate_cohort(
+            cohort, str(rel_path), expected_version, cohort_releasable, repo_root=root
+        )
         if cohort_path.stem != cohort.get("cohort"):
             cohort_errors.append(f"{rel_path}: file name stem must equal the cohort identifier")
         errors.extend(cohort_errors)

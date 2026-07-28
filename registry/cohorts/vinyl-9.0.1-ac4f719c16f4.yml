@@ -54,8 +54,13 @@ build_profile:
   # Revision 1: same single production profile definition as the trunk
   # cohort records.
   revision: 1
+# Every VMOD whose catalog lanes build a package for this cohort's engine on
+# its targets. Not a hand-maintained wish list: validate_cohort compares it
+# against registry/vmods/ in both directions, so a selected VMOD cannot be
+# forgotten here and a VMOD nothing builds cannot block every release.
 required_vmods:
   - cachetag
+  - dict
 storage_support:
   - default
 targets:
