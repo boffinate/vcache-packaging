@@ -1,0 +1,6 @@
+# There is no upstream watch URL to track. The source package is built from the
+# archive the VMOD manifest names, whose digest is pinned and verified by the
+# release tooling; a watch file would describe a weaker check than the one
+# already performed.
+@SOURCE_NAME@ source: debian-watch-file-is-missing
+@SOURCE_LINTIAN_OVERRIDES@

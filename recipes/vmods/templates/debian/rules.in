@@ -1,0 +1,89 @@
+#!/usr/bin/make -f
+#
+# @BINARY_NAME@ -- Debian packaging rules.
+#
+# GENERATED FILE. Produced by tools/vmod_recipe.py from the @VMOD_ID@ manifest,
+# the @ADAPTER@ adapter (revision @ADAPTER_REVISION@) and the @VMOD_ID@ overlay
+# (revision @OVERLAY_REVISION@). Do not edit it, not even to unblock a build:
+# the edit is lost on the next generation and hides the input that is wrong.
+#
+# The policy encoded here is the same policy cachetag's hand-written recipe
+# encodes, which is why cachetag is the regression oracle for this template:
+#   - build from the recorded release source archive, never a git checkout;
+#   - build against an installed Vinyl Cache development package, never an
+#     unpackaged prefix;
+#   - stage through DESTDIR;
+#   - ship the VMOD shared object, its manual page and declared documentation,
+#     and nothing else;
+#   - remove libtool archives and static libraries;
+#   - install no daemon, user, service unit, default VCL or restart hook;
+#   - leave distribution hardening, shlibdeps and debug-symbol splitting to
+#     debhelper.
+
+# Full distribution hardening. Vinyl Cache's own diagnostic harness configures
+# with --disable-stack-protector, and a package build must never inherit that,
+# so the intent is stated rather than assumed.
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+# The VMOD must be installed into the directory the *installed* runtime
+# searches, which vinylapi.pc reports as ${libdir}/vinyl-cache/vmods. Take
+# libdir from the development package rather than from debhelper's multiarch
+# default, then require the result to equal the value the target manifest
+# recorded.
+VINYL_LIBDIR := $(shell pkg-config --variable=libdir vinylapi)
+VINYL_VMODDIR := $(shell pkg-config --define-variable=libdir=$(VINYL_LIBDIR) --variable=vmoddir vinylapi)
+VINYL_INCDIR := $(shell pkg-config --variable=pkgincludedir vinylapi)
+
+EXPECTED_VMODDIR := @VINYL_VMODDIR@
+EXPECTED_STRICT_ABI := @VINYL_STRICT_ABI@
+
+PKG := @BINARY_NAME@
+STAGEDIR := debian/$(PKG)
+VMOD_OBJECT := @VMOD_OBJECT@
+
+%:
+	dh $@@DH_ARGS@
+
+override_dh_auto_configure:
+	@if [ -z "$(VINYL_LIBDIR)" ]; then \
+		echo "E: vinylapi.pc not found; the Vinyl Cache development package is not installed" >&2; \
+		exit 1; \
+	fi
+	@if [ "$(VINYL_VMODDIR)" != "$(EXPECTED_VMODDIR)" ]; then \
+		echo "E: vinylapi vmoddir '$(VINYL_VMODDIR)' does not match the manifest" >&2; \
+		echo "E: value '$(EXPECTED_VMODDIR)'. Refusing to build a VMOD that the" >&2; \
+		echo "E: packaged runtime would not find." >&2; \
+		exit 1; \
+	fi
+	dh_auto_configure -- \
+		--libdir=$(VINYL_LIBDIR)@CONFIGURE_ARGS_CONTINUED@
+
+@DEB_AUTO_TEST_BLOCK@
+override_dh_auto_install:
+	dh_auto_install
+	find $(STAGEDIR) -name '*.la' -delete
+	find $(STAGEDIR) -name '*.a' -delete
+	@if [ ! -f "$(STAGEDIR)$(EXPECTED_VMODDIR)/$(VMOD_OBJECT)" ]; then \
+		echo "E: $(VMOD_OBJECT) was not staged in $(EXPECTED_VMODDIR)" >&2; \
+		exit 1; \
+	fi
+
+# Fail the build when the installed development package does not carry the
+# strict ABI the manifest promised, rather than shipping a package whose
+# vinyld-abi-<hash> dependency is a lie. vmod_abi.h holds
+#   #define VMOD_ABI_Version "Vinyl Cache <version> <hash>"
+# and the trailing field is the hash the virtual package name uses.
+override_dh_install:
+	dh_install
+	@set -e; \
+	hdr="$(VINYL_INCDIR)/vmod_abi.h"; \
+	if [ ! -f "$$hdr" ]; then \
+		echo "E: $$hdr not found in the Vinyl Cache development package" >&2; \
+		exit 1; \
+	fi; \
+	abi=$$(sed -n 's/^#define[[:space:]]\+VMOD_ABI_Version[[:space:]]\+"\(.*\)"[[:space:]]*$$/\1/p' "$$hdr" | awk 'NR == 1 { print $$NF }'); \
+	if [ "$$abi" != "$(EXPECTED_STRICT_ABI)" ]; then \
+		echo "E: installed Vinyl Cache strict ABI '$$abi' does not match the" >&2; \
+		echo "E: manifest value '$(EXPECTED_STRICT_ABI)'" >&2; \
+		exit 1; \
+	fi

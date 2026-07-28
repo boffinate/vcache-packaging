@@ -1,0 +1,18 @@
+Source: @SOURCE_NAME@
+Section: @DEBIAN_SECTION@
+Priority: optional
+Maintainer: @MAINTAINER_NAME@ <@MAINTAINER_EMAIL@>
+Build-Depends:
+@DEB_BUILD_DEPENDS@
+Standards-Version: @DEBIAN_STANDARDS_VERSION@
+Rules-Requires-Root: no
+Homepage: @HOMEPAGE@
+Vcs-Git: @VCS_GIT@
+Vcs-Browser: @VCS_BROWSER@
+
+Package: @BINARY_NAME@
+Architecture: any
+Depends:
+@DEB_DEPENDS@
+Description: @SUMMARY@
+@DEB_DESCRIPTION@

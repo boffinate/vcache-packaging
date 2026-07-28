@@ -1,0 +1,99 @@
+# @RPM_NAME@ -- RPM spec for the @TARGET_ID@ lane.
+#
+# GENERATED FILE. Produced by tools/vmod_recipe.py from the @VMOD_ID@ manifest,
+# the @ADAPTER@ adapter (revision @ADAPTER_REVISION@) and the @VMOD_ID@ overlay
+# (revision @OVERLAY_REVISION@). Do not edit it, not even to unblock a build:
+# the edit is lost on the next generation and hides the input that is wrong.
+#
+# Intended build venue: Mock with an AlmaLinux or Rocky Linux 9 chroot. Mock
+# supplies the minimal buildroot that exposes an undeclared BuildRequires; a
+# host rpmbuild does not and must not be treated as a clean build.
+#
+# Deliberately NOT done here, matching cachetag's audited spec:
+#   - no AutoReq/AutoProv disabling: automatically generated ELF requires stay
+#     on so the real libc and libvinylapi dependencies are discovered;
+#   - no "%%global debug_package %%{nil}": native debuginfo and debugsource
+#     generation is left to the EL9 macros;
+#   - no daemon, user, service unit, default VCL, tmpfiles entry or restart
+#     scriptlet: this package installs a plugin and nothing else;
+#   - no hand-copied dependency list shared with the Debian recipe. Both are
+#     rendered from the same normalized model.
+
+# Vinyl Cache reports vmoddir as ${libdir}/vinyl-cache/vmods through
+# vinylapi.pc. %%build asserts that the installed development package agrees
+# with this expansion and with the target manifest.
+%global vinyl_vmoddir %{_libdir}/vinyl-cache/vmods
+
+# The VMOD is a dlopen()ed plugin, not a system library. Suppress the automatic
+# soname Provides for it while leaving Requires generation intact.
+%global __provides_exclude_from ^%{vinyl_vmoddir}/.*\\.so$
+
+Name:           @RPM_NAME@
+Version:        @UPSTREAM_VERSION@
+Release:        @PACKAGE_REVISION@%{?dist}
+Summary:        @SUMMARY@
+
+License:        @LICENSE_EXPRESSION@
+URL:            @HOMEPAGE@
+Source0:        @SOURCE_URL@
+
+@RPM_BUILD_REQUIRES@
+
+@RPM_REQUIRES@
+
+%description
+@RPM_DESCRIPTION@
+
+Cohort: @COHORT_ID@.
+Built against Vinyl Cache @VINYL_PACKAGE_VERSION@, VRT @VINYL_VRT@, strict ABI
+@VINYL_STRICT_ABI@.
+
+%prep
+%autosetup -n @SOURCE_DIRECTORY@
+
+%build
+# Refuse to build unless the installed development package puts VMODs where the
+# manifest says, so the runtime can actually find the result.
+vmoddir=$(pkg-config --define-variable=libdir=%{_libdir} \
+	--variable=vmoddir vinylapi)
+if [ "$vmoddir" != "%{vinyl_vmoddir}" ] || \
+   [ "$vmoddir" != "@VINYL_VMODDIR@" ]; then
+	echo "E: vinylapi vmoddir '$vmoddir' does not match %{vinyl_vmoddir}" >&2
+	echo "E: and the manifest value '@VINYL_VMODDIR@'" >&2
+	exit 1
+fi
+
+# Refuse to build unless the installed development package carries the strict
+# ABI the manifest promised; otherwise the Requires above would be a lie.
+# vmod_abi.h holds:
+#   #define VMOD_ABI_Version "Vinyl Cache <version> <hash>"
+incdir=$(pkg-config --variable=pkgincludedir vinylapi)
+abi=$(sed -n 's/^#define[[:space:]]\+VMOD_ABI_Version[[:space:]]\+"\(.*\)"[[:space:]]*$/\1/p' \
+	"$incdir/vmod_abi.h" | awk 'NR == 1 { print $NF }')
+if [ "$abi" != "@VINYL_STRICT_ABI@" ]; then
+	echo "E: installed Vinyl Cache strict ABI '$abi' does not match the" >&2
+	echo "E: manifest value '@VINYL_STRICT_ABI@'" >&2
+	exit 1
+fi
+@RPM_BOOTSTRAP_BLOCK@
+# %%configure supplies the distribution's hardened compiler and linker flags.
+# Do not override them and do not import an upstream diagnostic profile.
+%configure@CONFIGURE_ARGS_CONTINUED@
+%make_build@RPM_MAKE_FLAGS@
+
+%install
+%make_install
+# libtool archives and static archives are not shipped.
+find %{buildroot} -name '*.la' -delete
+find %{buildroot} -name '*.a' -delete
+test -f %{buildroot}%{vinyl_vmoddir}/@VMOD_OBJECT@
+
+@RPM_CHECK_BLOCK@
+%files
+@RPM_FILES@
+
+%changelog
+* @RPM_CHANGELOG_DATE@ @MAINTAINER_NAME@ <@MAINTAINER_EMAIL@> - @UPSTREAM_VERSION@-@PACKAGE_REVISION@
+- Generated from the VMOD manifest, adapter and overlay; do not edit by hand.
+- Built from @SOURCE_ARCHIVE@, sha256 @SOURCE_SHA256@.
+- Cohort @COHORT_ID@, built against Vinyl Cache @VINYL_PACKAGE_VERSION@.

@@ -1,0 +1,90 @@
+# The default packaging adapter: a conventional Autotools VMOD built against an
+# installed Vinyl Cache development package.
+#
+# This file is the reviewed, checked-in half of the adapter contract in
+# docs/20260728_0908_plan_vmod-packager-patterns-and-recipe-generation.md. It
+# holds what is true of *every* conventional Autotools VMOD; a per-VMOD overlay
+# in ../../overlays/<id>/ holds what is true of one of them. Nothing here is a
+# hook: there is no shell in this file and none in an overlay, because the plan
+# forbids arbitrary unreviewed shell in packaging data.
+#
+# The lifecycle this encodes, from the plan's "default adapter" section:
+#
+#   1. unpack the verified release source archive;
+#   2. install the declared build dependencies in a clean buildroot;
+#   3. read include paths, pkg-config data, the VMOD directory and the strict
+#      ABI from the *installed* engine development package;
+#   4. bootstrap only when the archive needs it (see `bootstrap` below);
+#   5. configure with the distribution's hardened flags;
+#   6. build, and run only the build-time test subset the overlay declares safe;
+#   7. stage through DESTDIR;
+#   8. ship exactly the declared payload;
+#   9. hand the native source package to the authoritative buildroot.
+#
+# Steps 1-9 happen in the buildroot. This file, and the generator that reads it,
+# only render the recipe that expresses them.
+schema: vmod-adapter/v1
+adapter: autotools
+
+# Bump on any change to this file or to the templates it drives. It is recorded
+# in the generated changelog and in the generation record, so a recipe can
+# always be traced to the adapter revision that produced it.
+revision: "1"
+
+defaults:
+  # `none` assumes a `make dist` archive that already carries configure,
+  # Makefile.in, aclocal.m4 and build-aux. `autoreconf` regenerates them, which
+  # is required when the archive is a git tree.
+  #
+  # `none` is the default on purpose. Regenerating the build system with
+  # whatever autotools a buildroot happens to carry replaces the build system
+  # the release was tested with, and on EL9 it is not merely undesirable: EL9
+  # ships autoconf 2.69 and automake 1.16.2, so any upstream declaring a newer
+  # AC_PREREQ or AM_INIT_AUTOMAKE cannot be bootstrapped there at all.
+  bootstrap: none
+
+  # Appended to `%configure` and to `dh_auto_configure --`, in this order,
+  # after the libdir the engine's pkg-config reported. --disable-static is
+  # conventional for a dlopen()ed plugin: the static archive is never used and
+  # the payload rules delete it anyway.
+  configure_args:
+    - --disable-static
+
+  # `none` means no build-time test target is run at all. A VMOD test suite
+  # that needs a running daemon belongs to the installed-package behaviour
+  # gate, not to the package build; running it here would prove the build tree
+  # works and say nothing about the package.
+  build_time_tests: none
+
+  # `no` serialises make. Some VMODs have generator rules whose prerequisites
+  # are not fully declared, which is harmless at -j1 and a race above it.
+  parallel_build: "yes"
+
+# Build dependencies every conventional Autotools VMOD needs, per package
+# family. An overlay adds to these; it cannot remove one, because a removal
+# would be a claim about the shared lifecycle rather than about one VMOD.
+#
+# The engine development package is NOT here: it is generated from the exact
+# engine row, at the exact version, by the generator.
+build_dependencies:
+  debian:
+    - debhelper-compat (= 13)
+    - pkgconf
+  rpm:
+    - gcc
+    - make
+    - pkgconfig
+
+# Extra build dependencies implied by `bootstrap: autoreconf`. They are listed
+# separately so that an archive needing no bootstrap does not drag the whole
+# autotools chain into its buildroot.
+bootstrap_dependencies:
+  debian:
+    - autoconf
+    - automake
+    - libtool
+  rpm:
+    - autoconf
+    - automake
+    - libtool
+    - pkgconf-m4

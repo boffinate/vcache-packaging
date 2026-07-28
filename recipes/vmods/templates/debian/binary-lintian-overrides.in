@@ -1,0 +1,4 @@
+# This package is not in Debian and has no Debian bug tracker, so there are no
+# bugs for its first upload to close.
+@BINARY_NAME@: initial-upload-closes-no-bugs
+@BINARY_LINTIAN_OVERRIDES@
