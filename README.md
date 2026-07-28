@@ -2,11 +2,13 @@
 
 Packaging and release-coordination repository for the Vinyl Cache package cohort.
 
-This repository owns the parts of the [binary packaging and distribution plan](../libvmod-cachetag/docs/20260724_1526_plan_binary-packaging-and-distribution.md) that are about the *cohort* rather than about any single VMOD:
+The normative project boundary is [SCOPE.md](SCOPE.md). In short, this repository builds and tests a selected package set, publishes directly installable artifacts, and may publish them through narrowly focused managed APT and RPM repositories. It does not aim to become a distribution or build general-purpose package and source-archive infrastructure.
+
+This repository owns the package-cohort work described by the historical [binary packaging and distribution plan](../libvmod-cachetag/devdocs/docs/20260724_1526_plan_binary-packaging-and-distribution.md), within the narrower boundary established by `SCOPE.md`:
 
 - **the cohort registry** — the compatibility manifests that pin exactly which Vinyl source, patch set, build profile, and strict ABI a set of packages was built from, plus the tooling that validates them and generates every native package version string, artifact filename, and ABI dependency expression from them;
 - **Vinyl Cache packaging** — the Debian, RPM, and other native recipes that build the `vinyl-cache` runtime, development, and debug packages themselves;
-- **repository publication tooling** — the signed, cohort-aware apt/RPM repository staging, promotion, retention, and rollback machinery that a supported channel needs.
+- **repository publication tooling** — the signed, cohort-aware APT/RPM repository staging, promotion, retention, and rollback integration that the selected package set needs, preferably through a managed service rather than infrastructure operated here.
 
 Individual VMODs are packaged in their own repositories. `libvmod-cachetag` keeps its own `packaging/` recipes, source-archive script, configure-time ABI checks, and security policy, so that each VMOD release records the exact recipes used for its own artifacts.
 
@@ -25,9 +27,10 @@ registry/            the cohort registry: compatibility manifests
   targets/           one file per distro/arch build within a cohort
   distro-native/     builds against a distribution's own Vinyl packages
 tools/               Python 3 stdlib tooling: validation and package-metadata generation
-upstream/            vendored third-party source material, with provenance
-  pkg-vinyl-cache/   the audited upstream packaging recipes (not yet modernised)
+upstream/            legacy audited packaging-recipe input, with provenance
+  pkg-vinyl-cache/   audited upstream recipes; not a general source archive store
 docs/                design notes and session records
+SCOPE.md             normative project boundary
 ```
 
 ## Quick start
@@ -65,6 +68,6 @@ What that pre-release is not: signed, repository-published, or supported. There 
 
 ## Support statement
 
-The durable statement this repository exists to make true, quoted from the plan:
+The durable statement this repository exists to make true is:
 
-> Official VMOD binaries are supported with the Vinyl packages from the same repository and release cohort. Distribution-provided Vinyl packages are supported only where a VMOD package has been built and tested specifically against that distribution package revision.
+> A VMOD package is claimed compatible only with the exact Vinyl Cache or Varnish Cache package revision and target against which it was built, installed, and tested.

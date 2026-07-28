@@ -1,12 +1,18 @@
 # Agent Runbook
 
-This repository owns the Vinyl Cache **cohort registry** and **Vinyl packaging**. It does not contain the cachetag VMOD sources, and it must not be used to build or test that VMOD; see the sibling `../libvmod-cachetag` repository and its own `AGENTS.md` for that.
+This repository owns the Vinyl Cache **cohort registry**, **Vinyl packaging**, and package-level compatibility/release coordination for the selected package set. It does not contain the cachetag VMOD sources; source-level cachetag changes and authoritative VMOD verification belong in the sibling `../libvmod-cachetag` repository under its own `AGENTS.md`.
+
+## Scope
+
+Read [SCOPE.md](SCOPE.md) before proposing architecture or expanding release machinery. It is normative over older plans and design notes.
+
+This is a packaging and compatibility-testing project with a narrow publication surface, not a distribution platform. Managed APT and RPM repository integration for this project’s selected packages is in scope. Do not design or implement custom repository servers, signing services, mirrors, archival source storage, provider-independent promotion systems, or generalized packaging platforms unless the maintainer explicitly changes `SCOPE.md`.
 
 ## Layout
 
 - `registry/` — compatibility manifests (`cohorts/`, `targets/`, `distro-native/`) and their normative schema description in `registry/README.md`.
 - `tools/` — Python 3 standard-library tooling that validates the manifests and generates native package version metadata. Entry point `tools/release_tool.py`.
-- `upstream/` — vendored third-party material with a `PROVENANCE.md` recording source, commit, and audit verdict. Vendored content is not modified in place without recording why.
+- `upstream/` — legacy audited packaging-recipe input with a `PROVENANCE.md` recording source, commit, and audit verdict. It is not a general store for upstream release archives. Vendored content is not modified in place without recording why.
 - `docs/` — design notes and session records.
 - `../libvmod-cachetag` is the expected sibling cachetag checkout. The manifests cross-check `cachetag.version` against its `configure.ac`.
 - `../vinyl-cache` is the expected sibling Vinyl Cache source checkout. It belongs to the wider workspace; do not edit it from here.
@@ -45,4 +51,4 @@ The cachetag checkout used for the `configure.ac` version cross-check defaults t
 
 ## If unsure
 
-Read the [binary packaging and distribution plan](../libvmod-cachetag/docs/20260724_1526_plan_binary-packaging-and-distribution.md) and `registry/README.md` before running build or packaging commands. Where those conflict with a tempting shortcut, the documented container workflow wins.
+Read `SCOPE.md`, then the historical [binary packaging and distribution plan](../libvmod-cachetag/devdocs/docs/20260724_1526_plan_binary-packaging-and-distribution.md) and `registry/README.md` before running build or packaging commands. `SCOPE.md` controls what work belongs in the project; the historical plan provides technical context only. Where the runbook conflicts with a tempting shortcut, the documented container workflow wins.
