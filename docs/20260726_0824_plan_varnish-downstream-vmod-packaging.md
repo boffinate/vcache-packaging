@@ -67,7 +67,7 @@ The upstream `varnish-dev`/`varnish-devel` package ships the full header set (in
 
 ### A naming precedent worth noting
 
-Varnish's own bundled and Varnish Software-published VMOD RPMs advertise a `vmod(<name>)` virtual provide (for example `vmod(std)`, `vmod(directors)`). If this project ever needs a capability-style provide for a VMOD — as opposed to the ABI-identity provides above — that convention already exists in the ecosystem and is worth matching rather than inventing a parallel one. This is an observation, not a decision; nothing in the Vinyl lane emits such a provide today.
+Varnish's own bundled and Varnish Software-published VMOD RPMs advertise a capability-style virtual provide of the shape `vmod(<name>)`. Resolve the exact published provide names from the target repository at implementation time rather than assuming any particular one. If this project ever needs a capability-style provide for a VMOD — as opposed to the ABI-identity provides above — that convention already exists in the ecosystem and is worth matching rather than inventing a parallel one. This is an observation, not a decision; nothing in the Vinyl lane emits such a provide today.
 
 ## Scope and first milestone
 
