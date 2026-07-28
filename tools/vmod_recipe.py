@@ -1166,6 +1166,39 @@ def cmd_model(args) -> int:
     return 0
 
 
+def cmd_lane_env(args) -> int:
+    """Shell assignments the containerised lane stages need.
+
+    Derived, never typed: the package names and versions come from the same
+    model the recipe was rendered from, and the engine facts from the registry.
+    A lane script that computed any of these itself would be a second place for
+    them to be wrong.
+    """
+    model = _inspect(args)
+    package = model["package"]
+    engine = model["engine"]
+    payload = model["payload"]
+    values = {
+        "VMOD_SOURCE_NAME": package["debian_source_name"],
+        "VMOD_BINARY_NAME": package["debian_binary_name"],
+        "VMOD_RPM_NAME": package["rpm_name"],
+        "VMOD_UPSTREAM_VERSION": model["source"]["version"],
+        "VMOD_DEBIAN_VERSION": package["versions"]["debian"]["version"],
+        "VMOD_RPM_RELEASE": package["versions"]["rpm"]["release"],
+        "VMOD_SOURCE_DATE_EPOCH": model["source"]["source_date_epoch"],
+        "VMOD_OBJECT": payload["vmod_object"],
+        "VMOD_MAN_PAGE": payload["man_pages"][0],
+        "VINYL_VMODDIR": engine["vmoddir"],
+        "VINYL_STRICT_ABI": engine["strict_abi"],
+        "VINYL_VRT": engine["vrt"],
+        "COHORT_ID": engine["cohort"],
+    }
+    for key, value in values.items():
+        escaped = str(value).replace("'", "'\\''")
+        print(f"{key}='{escaped}'")
+    return 0
+
+
 def cmd_selftest(args) -> int:
     import vmod_recipe_selftest
 
@@ -1203,6 +1236,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_model = sub.add_parser("model", help="print the normalized package model")
     _add_common(p_model)
     p_model.set_defaults(func=cmd_model)
+
+    p_env = sub.add_parser(
+        "lane-env", help="shell assignments the containerised lane stages need"
+    )
+    _add_common(p_env)
+    p_env.set_defaults(func=cmd_lane_env)
 
     p_self = sub.add_parser("selftest", help="run this tool's own tests")
     p_self.set_defaults(func=cmd_selftest)

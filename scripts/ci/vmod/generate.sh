@@ -139,5 +139,23 @@ if [ -d "$recipe_dir/debian" ]; then
 	[ ! -d "$srcdir/debian/source" ] || chmod 0755 "$srcdir/debian/source"
 fi
 
+note "stage the verification scripts and the ported VTCs into the lane"
+# The verify stages run in a container that mounts ONLY the lane directory --
+# no repository checkout, deliberately, because a fresh container that has
+# never seen the build tree is the whole point. So everything they need has to
+# be placed here first.
+mkdir -p "$out/scripts" "$out/tests"
+cp -p "$here/container/verify-deb.sh" "$here/container/verify-rpm.sh" "$out/scripts/"
+chmod 0755 "$out/scripts"/*.sh
+tests_dir=$repo/recipes/vmods/overlays/$vmod_id/tests
+if [ -d "$tests_dir" ]; then
+	cp -p "$tests_dir"/*.vtc "$out/tests/"
+	ls -1 "$out/tests"
+else
+	die "$tests_dir does not exist: a VMOD with no ported behaviour suite cannot be
+verified against its installed package, and load-only verification is
+explicitly insufficient (Step 5 exit gate)."
+fi
+
 note "generate stage complete"
 find "$out" -maxdepth 3 -type f | sort
