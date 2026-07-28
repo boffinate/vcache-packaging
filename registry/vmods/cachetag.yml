@@ -1,0 +1,75 @@
+# libvmod-cachetag: the one VMOD the maintainer has placed in scope (SCOPE.md).
+#
+# This is a catalog entry, not repository discovery: nothing scans GitHub for
+# VMODs, and nothing here is built unless a lane below says so. The file name
+# stem is the discovery id -- ci.yml's discovery job derives it without parsing
+# this file, so a syntax error in here fails exactly one matrix copy instead of
+# hiding every other VMOD.
+#
+# The pins below are the same values .github/workflows/*.yml carried as
+# workflow-wide environment variables before Phase 1 of
+# docs/20260728_0833_plan_vmod-matrix-failure-isolation.md. NEVER edit them to
+# make a failing assertion pass: a mismatch means the recorded source identity
+# and the actual source disagree, which is the thing the checks exist to catch.
+schema: vmod-ci/v1
+id: cachetag
+repository: boffinate/libvmod-cachetag
+required: true
+adapter: cachetag
+
+# The two source channels that were previously hidden inside CACHETAG_REF.
+# `release` is the packaged, publishable source; `trunk` is a moving branch
+# used for source-level early warning and can never become a package merely
+# because its build passed.
+sources:
+  release:
+    ref: v1.0.1
+    expected_commit: a3897aaccf1d6996c00ee14b2c6e1ddac91ac982
+    version: 1.0.1
+    archive_sha256: 9aba3effcb20cfc70b77a4729990e3cd2ae1712ad242f4e4c45a664e1949eac2
+    publishable: true
+  trunk:
+    ref: main
+    publishable: false
+
+# Explicit rows. This is deliberately not a Cartesian product: each lane exists
+# because it answers a compatibility or publication question this project has
+# chosen to support.
+#
+# `engine` names the Vinyl input, replacing ci.yml's generic `track` axis, so a
+# VMOD source channel can never be confused with the engine channel:
+#   vinyl-release      the digest-pinned upstream release tarball (VINYL_TRACK=release)
+#   vinyl-trunk-pinned the pinned trunk snapshot (VINYL_TRACK=trunk)
+#   vinyl-trunk-head   unpinned trunk HEAD, source harness only
+#
+# `tiers` lists the workflow tiers that run the lane today. nightly is absent on
+# purpose: nightly-transactions.yml still runs its own graph and migrates in
+# Phase 4 of the plan, so claiming a nightly row here would put a row in the
+# expected ledger that nothing produces.
+lanes:
+  - kind: package
+    source: release
+    engine: vinyl-release
+    tiers:
+      - ci
+      - release
+    targets:
+      - debian-13-amd64
+      - el9-x86_64
+  - kind: package
+    source: release
+    engine: vinyl-trunk-pinned
+    tiers:
+      - ci
+    targets:
+      - debian-13-amd64
+      - el9-x86_64
+  # trunk-vmod-ci.yml's weekly early-warning job: cachetag's default branch
+  # against Vinyl trunk HEAD. It builds no native package and publishes
+  # nothing. Recorded here so the trunk source channel is visible in the
+  # catalog; that workflow migrates onto this manifest in Phase 4.
+  - kind: source-harness
+    source: trunk
+    engine: vinyl-trunk-head
+    tiers:
+      - trunk
