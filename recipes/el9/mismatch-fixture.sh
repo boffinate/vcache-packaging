@@ -70,7 +70,14 @@ docker image inspect "$image" >/dev/null 2>&1 || docker pull "$image"
 mkdir -p "$out/mismatch/logs"
 
 status=0
+# VINYL_TRACK must cross the container boundary: container.sh re-sources
+# cohort.env inside the container, and without the variable the pin dispatch
+# falls back to trunk while this host script (and its header above) resolved
+# release -- which is exactly how nightly run 30357124289 came to look for a
+# trunk-shaped baseline filename in a release dist/. Same passthrough as
+# build.sh's container invocations.
 docker run --rm \
+	-e "VINYL_TRACK=$VINYL_TRACK" \
 	-v "$here:/recipes:ro" \
 	-v "$out:/out" \
 	-w /out \
@@ -94,6 +101,7 @@ if [ -n "$check_reproducible" ]; then
 	printf '\n########## reproducibility check: second build ##########\n'
 	cp "$out/mismatch/SHA256SUMS" "$out/mismatch/logs/SHA256SUMS.first"
 	docker run --rm \
+		-e "VINYL_TRACK=$VINYL_TRACK" \
 		-v "$here:/recipes:ro" \
 		-v "$out:/out" \
 		-w /out \

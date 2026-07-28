@@ -127,7 +127,14 @@ for s in $scenarios; do
 	case $s in same-abi*) candidate_repo=sameabi ;; esac
 
 	rc=0
+	# VINYL_TRACK must cross the container boundary: scenario.sh re-sources
+	# cohort.env inside the container, and without the variable its
+	# baseline EVR falls back to the trunk pin block regardless of which
+	# track built the repositories it is resolving against. Same
+	# passthrough as build.sh's container invocations; prep.sh needs no
+	# equivalent because it copies by glob and reads no pin.
 	docker run --rm \
+		-e "VINYL_TRACK=$VINYL_TRACK" \
 		-e "CANDIDATE_REPO=$candidate_repo" \
 		-v "$here:/recipes:ro" \
 		-v "$repos:/repos:ro" \
