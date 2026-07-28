@@ -131,6 +131,51 @@ Unchanged from the A2 note, now with the mechanism in place to prove it:
 6. **Behaviour suites green on installed packages**, both VMODs, both targets. For dict: `dict_cs.vtc` and `dict_ci.vtc` against the packaged `.so` through `-p vmod_path`, `num.dict` from the digest-verified archive, upstream's expected values unmodified.
 7. **The new gates fire.** dict's payload allowlist and its strict `lintian`/`rpmlint` expectations have never run. A first pass is itself evidence; a first failure is a finding about the templates or the overlay, never a reason to relax the gate.
 
+## Wave B run 1: baseline, and where it stopped
+
+**Run 1 — `inject=none`, [30405770446](https://github.com/boffinate/vcache-packaging/actions/runs/30405770446), conclusion `failure`.** Stopped here per the no-silent-iteration rule; runs 2-13 were not dispatched.
+
+**12 of 14 selected rows green on the first live run**, and everything the wiring was supposed to prove about itself proved itself:
+
+| Row group | Result |
+| --- | --- |
+| 4 engine rows | PASS |
+| cachetag: invocation, source, 4 targets | **all PASS** — the strategy gates dispatch correctly and the cachetag path is untouched in practice, not only in the diff |
+| dict: invocation, `source-generated` | PASS — download, sha256, `ls-remote` tag-peel and the `AC_INIT` cross-check all worked against the live upstream |
+| dict: `target-generated` × 2 | **FAIL**, both `failed_package_build` |
+| collector | reconciled all 14 rows, reported exactly the two failures |
+
+Everything in `target-generated` up to the build worked on the first attempt: engine download, `engine-identity.sh`, `verify-engine-metadata`, the cohort id read back out of the identity file, the `make-chroot.sh` invocation and tarball copy, recipe generation, the generation-record upload, and the classification chain — which emitted `failed_package_build` correctly, and correctly *after* `failed_recipe_generation` rather than instead of it.
+
+The two failures are **real defects in the dict lane scripts, not in the wiring**, and neither touches cachetag.
+
+### B1 — `parallel_build: "no"` is honoured on RPM and silently ignored on Debian
+
+```text
+FileNotFoundError: [Errno 2] No such file or directory: 'vcc_if.c.tmp2'
+make[3]: *** [Makefile:784: vcc_if.c] Error 1
+make[3]: *** Waiting for unfinished jobs....
+dh_auto_build: error: make -j4 returned exit code 2
+```
+
+Upstream's `src/Makefile.am` generates `vcc_if.c`, `vcc_if.h` and `vmod_dict.man.rst` from one rule and builds `vmod_dict.3` from the last of those, without declaring that edge. dict's overlay declares `build.parallel_build: "no"` for exactly this reason, and the generator renders it into the spec as `%make_build -j1` — but the Debian `rules` template has no equivalent, so `dh_auto_build` ran at `-j4` and the race fired.
+
+The [Wave A1 note](20260728_2216_note_step-6-wave-a1-recipe-generator.md) recorded this as open question 5: *"`parallel_build: "no"` for dict is a precaution, not a measurement… If Wave B's builds are slow because of it, measure before relaxing it."* Wave B measured it. The race is real, it is not a precaution, and the correct reading of the finding is the opposite of the one anticipated: the field was right and one of its two consumers was missing.
+
+**Fix shape:** the Debian template needs `override_dh_auto_build` with `-j1` (or `DEB_BUILD_OPTIONS=parallel=1`) rendered from the same field, plus a self-test asserting that a `parallel_build: "no"` overlay produces a serialising directive on **both** backends — the absence of that assertion is why a declared field could be ignored by half the generator without anything noticing.
+
+### B2 — `mock` is not installable in the pinned container without EPEL
+
+```text
+Error: Unable to find a match: mock
+```
+
+`scripts/ci/vmod/container/build-rpm.sh` runs `dnf -y -q install mock rpm-build createrepo_c`. `mock` is in EPEL, not in AlmaLinux 9's own repositories. The cachetag lane's `scripts/ci/el9/container-mock.sh:122-123` does `dnf -y install epel-release` first and then `mock mock-core-configs`; the generated lane was written from that script's *structure* and did not inherit that pair of lines.
+
+**Fix shape:** install `epel-release` first and add `mock-core-configs`, which is also what supplies the `alma+epel-9-x86_64` root the lane names.
+
+Both are a consequence of the deliberate lane duplication recorded above: the duplication bounded the blast radius to dict, and it also meant two known-good lines did not come along. That is the trade working as described, and it is worth recording on both sides of the ledger.
+
 ## Open questions for the audit
 
 1. **`target-generated` has one classification for six distinct checks.** `verify-deb.sh` covers payload, ABI, hardening, lint, install smoke and behaviour in one step, so all six classify as `failed_install_or_smoke`. The cachetag path separates `failed_abi_or_hardening`, `failed_lint`, `failed_install_or_smoke` and `failed_behavior` because it has four steps. Splitting the verify script into four container invocations would restore the distinction at the cost of four container starts per row; leaving it means the summary names the log to read rather than the stage that failed. Worth deciding before Wave B, since Wave B is what will make anybody read those classifications in anger.
