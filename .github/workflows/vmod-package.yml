@@ -1111,6 +1111,7 @@ jobs:
             lane/out/*
             lane/recipe/**
             lane/names.json
+            lane/logs/**
           if-no-files-found: warn
           retention-days: 14
 

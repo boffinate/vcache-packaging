@@ -78,9 +78,15 @@ echo "OK: no libtool archives or static libraries"
 # Nothing may be installed outside the VMOD directory and the documentation
 # and manual trees. A generated recipe with a wrong payload declaration would
 # otherwise ship whatever `make install` happened to produce.
+# The recipe's own lintian override file is named exactly, not allowed by
+# directory: debhelper installs debian/<binary>.lintian-overrides at
+# /usr/share/lintian/overrides/<binary>, and cachetag ships one too. Narrowness
+# is this check's entire value, so it gets the one path it is owed and not the
+# directory it sits in.
 unexpected=$(printf '%s\n' "$contents" | awk '{ print $NF }' |
 	grep -v '/$' |
 	grep -vF "$VINYL_VMODDIR/$VMOD_OBJECT" |
+	grep -vFx "./usr/share/lintian/overrides/$VMOD_BINARY_NAME" |
 	{ grep -vE '^\./usr/share/(man|doc)/' || true; })
 [ -z "$unexpected" ] || die "unexpected files in the payload:
 $unexpected"
