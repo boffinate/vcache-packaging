@@ -17,6 +17,7 @@
 #   cachetag   build libvmod-cachetag against the INSTALLED vinyl-cache-dev
 #   lint       run lintian over every produced package
 #   smoke      the plan's 11-step installed-package scenario, fresh container
+#   vtc-suite  the full cachetag VTC suite against the INSTALLED runtime pair
 #
 # Artifacts land in dist/debian-13/, logs in dist/debian-13/logs/.
 
@@ -66,6 +67,8 @@ run_in_container() {
 		-e "CACHETAG_VERSION=$CACHETAG_VERSION" \
 		-e "CACHETAG_DEBIAN_VERSION=$CACHETAG_DEBIAN_VERSION" \
 		-e "CACHETAG_SOURCE_DATE_EPOCH=$CACHETAG_SOURCE_DATE_EPOCH" \
+		-e "CACHETAG_SOURCE_SHA256=$CACHETAG_SOURCE_SHA256" \
+		-e "CACHETAG_VTC_COUNT=$CACHETAG_VTC_COUNT" \
 		"$@" \
 		"$IMAGE" bash "/stage/$_script" > "$log_dir/$_log.log" 2>&1 || {
 			tail -n 120 "$log_dir/$_log.log" >&2
@@ -289,6 +292,11 @@ stage_smoke() {
 		-e "VINYL_VMODDIR=$(sed -n 3p "$work_dir/target.txt")"
 }
 
+stage_vtc_suite() {
+	run_in_container vtc-suite stage-vtc-suite.sh \
+		-e "VINYL_VMODDIR=$(sed -n 3p "$work_dir/target.txt")"
+}
+
 stage_sums() {
 	note "checksums"
 	( cd "$out_dir" && ls -1 *.deb *.ddeb *.dsc *.tar.* *.changes *.buildinfo 2>/dev/null |
@@ -304,12 +312,13 @@ printf '*\n' > "$out_dir/.gitignore"
 stages=${*:-all}
 for s in $stages; do
 	case $s in
-	all)      stage_source; stage_vinyl; stage_cachetag; stage_lint; stage_smoke; stage_sums ;;
+	all)      stage_source; stage_vinyl; stage_cachetag; stage_lint; stage_smoke; stage_vtc_suite; stage_sums ;;
 	source)   stage_source ;;
 	vinyl)    stage_vinyl ;;
 	cachetag) stage_cachetag ;;
 	lint)     stage_lint ;;
 	smoke)    stage_smoke ;;
+	vtc-suite) stage_vtc_suite ;;
 	sums)     stage_sums ;;
 	subst)    substitute_recipes ;;
 	*) die "unknown stage: $s" ;;

@@ -12,6 +12,7 @@
 #   build.sh                       deps source vinyl cachetag report lint, then smoke
 #   build.sh --stages "vinyl lint" run only those container stages, no smoke
 #   build.sh --smoke-only          re-run only the installed-package smoke
+#   build.sh --vtc-suite-only      run only the installed-package VTC suite
 #   build.sh --list-files          tolerate unpackaged files and dump the buildroot
 #
 # Environment:
@@ -34,6 +35,7 @@ out=$repo/dist/el9
 
 stages="deps source vinyl cachetag report lint"
 run_smoke=yes
+run_vtc_suite=
 list_files=
 
 while [ $# -gt 0 ]; do
@@ -42,6 +44,7 @@ while [ $# -gt 0 ]; do
 	# what puts git, gcc and rpmbuild in the container in the first place.
 	--stages)   stages="deps $2"; run_smoke=; shift 2 ;;
 	--smoke-only) stages=; shift ;;
+	--vtc-suite-only) stages=; run_smoke=; run_vtc_suite=yes; shift ;;
 	--list-files) list_files=1; stages="deps source vinyl"; run_smoke=; shift ;;
 	-h|--help)  sed -n '2,25p' "$0"; exit 0 ;;
 	*) printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
@@ -130,6 +133,27 @@ if [ -n "$run_smoke" ]; then
 	[ "$smoke_status" -eq 0 ] || {
 		printf '\nsmoke test FAILED (exit %s)\n' "$smoke_status" >&2
 		exit "$smoke_status"
+	}
+fi
+
+if [ -n "$run_vtc_suite" ]; then
+	printf '\n########## installed-package VTC suite, fresh container ##########\n'
+	# Same shape as the smoke: a brand new container, only the built RPMs and
+	# the pinned source archive from the read-only /out mount. /out is ro, so
+	# the suite's evidence is its log, captured here like the smoke's.
+	vtc_status=0
+	docker run --rm \
+		-v "$here:/recipes:ro" \
+		-v "$out:/out:ro" \
+		-e "VINYL_TRACK=$VINYL_TRACK" \
+		-w /tmp \
+		"$image" \
+		bash /recipes/vtc-suite/vtc-suite.sh > "$out/logs/vtc-suite.log" 2>&1 ||
+		vtc_status=$?
+	cat "$out/logs/vtc-suite.log"
+	[ "$vtc_status" -eq 0 ] || {
+		printf '\nVTC suite FAILED (exit %s)\n' "$vtc_status" >&2
+		exit "$vtc_status"
 	}
 fi
 
