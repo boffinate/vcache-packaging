@@ -52,7 +52,10 @@ fi
 [ "$vmoddir" = "$(rpm --eval %{_libdir})/vinyl-cache/vmods" ] ||
 	die "vmoddir $vmoddir is not the runtime's standard VMOD directory"
 
-found=$(find / \( -path /proc -o -path /sys \) -prune -o -name 'libvmod_cachetag.so' -print 2>/dev/null)
+# || true: find's own exit status (an unreadable path, an ENOENT race) must
+# not kill the script messageless under set -e; the comparison below is the
+# assertion and carries the diagnostic.
+found=$(find / \( -path /proc -o -path /sys \) -prune -o -name 'libvmod_cachetag.so' -print 2>/dev/null || true)
 [ "$found" = "$vmoddir/libvmod_cachetag.so" ] ||
 	die "libvmod_cachetag.so not uniquely at the VMOD directory (found: $found)"
 rpm -qf "$vmoddir/libvmod_cachetag.so"

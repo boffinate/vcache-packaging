@@ -32,13 +32,20 @@ grep -E '^(Package|Version|Provides|Depends):' Packages
 
 apt-get install -y vinyl-cache libvmod-cachetag || die "runtime pair install failed"
 dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' vinyl-cache libvmod-cachetag
-if dpkg-query -W vinyl-cache-dev >/dev/null 2>&1; then
+# Status-field check, not bare dpkg-query -W: installed vinyl-cache carries
+# Suggests: vinyl-cache-dev, and the relationship reference alone gives the
+# status db a placeholder entry ("unknown ok not-installed") that a bare
+# dpkg-query -W exits 0 for. The guard must fire on the package being
+# INSTALLED, not on dpkg having heard of it.
+[ "$(dpkg-query -W -f='${db:Status-Status}' vinyl-cache-dev 2>/dev/null)" != "installed" ] ||
 	die "vinyl-cache-dev is installed; the suite must prove the runtime pair suffices"
-fi
 echo "OK: runtime pair installed, no -dev package present"
 
 note "2 -- prove the installed .so and driver are the test subjects"
-found=$(find / \( -path /proc -o -path /sys \) -prune -o -name 'libvmod_cachetag.so' -print 2>/dev/null)
+# || true: find's own exit status (an unreadable path, an ENOENT race) must
+# not kill the script messageless under set -e; the comparison below is the
+# assertion and carries the diagnostic.
+found=$(find / \( -path /proc -o -path /sys \) -prune -o -name 'libvmod_cachetag.so' -print 2>/dev/null || true)
 [ "$found" = "$VINYL_VMODDIR/libvmod_cachetag.so" ] ||
 	die "libvmod_cachetag.so not uniquely at \$VINYL_VMODDIR (found: $found)"
 dpkg -S "$VINYL_VMODDIR/libvmod_cachetag.so"
