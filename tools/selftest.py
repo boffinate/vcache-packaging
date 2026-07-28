@@ -679,10 +679,13 @@ def test_metadata() -> None:
 def test_distro_native(repo_root: Path) -> None:
     path = repo_root / "registry" / "distro-native" / "debian-13-amd64.yml"
     data = manifest.load_target(path)
-    errors = manifest.validate_target(data, str(path), distro_native=True, expected_version="1.0.0")
+    # Unlike the synthetic fixtures above, this validates the checked-in
+    # template, so the expected version is the real pinned cachetag version
+    # and moves with every re-pin that changes it.
+    errors = manifest.validate_target(data, str(path), distro_native=True, expected_version="1.0.1")
     check("distro-native: template is schema-valid", errors == [], "; ".join(errors))
     errors = manifest.validate_target(
-        data, str(path), distro_native=True, expected_version="1.0.0", require_releasable=True
+        data, str(path), distro_native=True, expected_version="1.0.1", require_releasable=True
     )
     check(
         "distro-native: template is refused for release use",

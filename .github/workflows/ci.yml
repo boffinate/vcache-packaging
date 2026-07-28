@@ -39,13 +39,13 @@ env:
   # tarball instead, resolved by each lane's own pins.env/cohort.env.
   VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
   VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
-  CACHETAG_VERSION: 1.0.0
-  CACHETAG_SOURCE_SHA256: 23c378029c50072ca287d045208756a9acd0a648c261d2f0e2bca4fdbf7a1644
+  CACHETAG_VERSION: 1.0.1
+  CACHETAG_SOURCE_SHA256: 9aba3effcb20cfc70b77a4729990e3cd2ae1712ad242f4e4c45a664e1949eac2
   # Build the named upstream release, and record the peeled commit separately
   # as evidence. Every checkout verifies that the annotated tag still resolves
   # to this commit; the archive digest remains the content gate.
-  CACHETAG_REF: v1.0.0
-  CACHETAG_GIT_COMMIT: 368a01f11d25256644154d02ec255db545154c1c
+  CACHETAG_REF: v1.0.1
+  CACHETAG_GIT_COMMIT: a3897aaccf1d6996c00ee14b2c6e1ddac91ac982
   # Index digest resolved 2026-07-25 (`docker buildx imagetools inspect
   # almalinux:9`); must match EL9_IMAGE in recipes/el9/cohort.env, which is
   # authoritative (build.sh re-sources cohort.env, clobbering any env
@@ -375,7 +375,7 @@ jobs:
             echo "Native package filenames as built, which are also the names"
             echo "release-draft.yml publishes them under; the distro-bearing"
             echo "release-asset name the registry generates"
-            echo "(\`libvmod-cachetag-1.0.0-2-debian-13-amd64.deb\`) is recorded in"
+            echo "(\`libvmod-cachetag-1.0.1-1-debian-13-amd64.deb\`) is recorded in"
             echo "\`release-manifest.json\` rather than used as a filename, because"
             echo "renaming a .deb contradicts the .changes and .buildinfo beside it."
             echo

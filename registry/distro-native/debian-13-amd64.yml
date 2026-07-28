@@ -9,7 +9,7 @@ schema: cachetag-distro-native/v1
 status: template
 lane: distro-native
 cachetag:
-  version: 1.0.0
+  version: 1.0.1
   source_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
 target:
   id: debian-13-amd64

@@ -161,7 +161,7 @@ cp -p "$assets"/el9/packages/*.rpm "$upload/"
 
 # The native names are kept as the published names, deliberately, even though
 # registry/README.md also generates a distro-bearing release-asset name
-# (libvmod-cachetag-1.0.0-2-debian-13-amd64.deb). Renaming the .deb would break
+# (libvmod-cachetag-1.0.1-1-debian-13-amd64.deb). Renaming the .deb would break
 # the .changes and .buildinfo files published beside it, which reference the
 # native filename and its digest, and dpkg/apt tooling expects that name. The
 # generated asset name is recorded in release-manifest.json instead, so it is

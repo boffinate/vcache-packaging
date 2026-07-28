@@ -19,7 +19,7 @@ target:
   package_format: deb
   dist_tag: ""
 package:
-  revision: 2
+  revision: 1
   source_name: libvmod-cachetag
   binary_name: libvmod-cachetag
 vinyl_packages:
@@ -40,11 +40,11 @@ build:
   # not from a restatement of what dpkg-buildflags is expected to emit.
   cflags: "-Wdate-time -D_FORTIFY_SOURCE=2 -g -O2 -Werror=implicit-function-declaration -ffile-prefix-map=/build/libvmod-cachetag-1.0.0=. -fstack-protector-strong -fstack-clash-protection -Wformat -Werror=format-security -fcf-protection"
   ldflags: "-Wl,-z,relro -Wl,-z,now"
-  # Committer date of the current cachetag v1.0.0 release commit. The next
+  # Committer date of the current cachetag v1.0.1 release commit. The next
   # clean-room build must confirm dpkg records the same value.
-  source_date_epoch: "1785138016"
-  # Evidence from revision 1 was cleared when the cachetag release source was
-  # deliberately re-pinned. The revision 2 lane will repopulate this verdict.
+  source_date_epoch: "1785230737"
+  # Evidence was cleared at the 2026-07-28 re-pins (unbuildable v1.0.0, then
+  # v1.0.1); the 1.0.1-1 lane will repopulate this verdict.
   hardening_check: pending
   build_dependencies: []
 install:

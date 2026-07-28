@@ -14,11 +14,13 @@ schema: cachetag-cohort/v1
 status: candidate
 cohort: vinyl-9.0.0-4b7e68292979
 cachetag:
-  version: 1.0.0
-  # The named v1.0.0 release tag is the build input. Its peeled commit and the
+  version: 1.0.1
+  # The named v1.0.1 release tag is the build input. Its peeled commit and the
   # deterministic archive digest are recorded as evidence and verified by CI.
-  source_sha256: "23c378029c50072ca287d045208756a9acd0a648c261d2f0e2bca4fdbf7a1644"
-  git_commit: "368a01f11d25256644154d02ec255db545154c1c"
+  # Re-pinned 2026-07-28: the v1.0.0 archive was missing docs/vmod_cachetag.rst
+  # and could never build the packages its own recipes describe.
+  source_sha256: "9aba3effcb20cfc70b77a4729990e3cd2ae1712ad242f4e4c45a664e1949eac2"
+  git_commit: "a3897aaccf1d6996c00ee14b2c6e1ddac91ac982"
 vinyl:
   version: 9.0.0
   # Vinyl publishes no release tarball for this revision. The pinned archive is
