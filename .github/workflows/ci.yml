@@ -145,6 +145,27 @@ jobs:
       - name: checkout vcache-packaging
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      # The fourth ledger builder. Engine rows are derived from the package
+      # lanes that declare them, so this job is one of the places that decides
+      # what the run is *supposed* to contain -- and Phase 1's rule applies:
+      # any injection that changes what the ledger should contain must reach
+      # every builder of it. Without this step, `inject=manifest` would derive
+      # four engine rows from a manifest the rest of the run treats as
+      # unparseable, and the run would end with four stray `passed` engine
+      # records that no expected row claims. With it, engine-matrix sees no
+      # valid lane, emits count=0, the engine job's `!= '0'` guard skips it,
+      # and the summary collapses to the single failed_manifest_validation row
+      # the case exists to demonstrate.
+      - name: inject a malformed manifest
+        if: github.event_name == 'workflow_dispatch' && inputs.inject == 'manifest'
+        shell: bash
+        run: |
+          set -eu
+          for manifest in registry/vmods/*.yml; do
+            printf 'schema: vmod-ci/v1\nid: %s\n' "$(basename "$manifest" .yml)" \
+              > "$manifest"
+          done
+
       # This job does parse the VMOD manifests, because the engine rows are
       # derived from the package lanes that consume them. It is still not a
       # global gate: ci_matrix.py drops a manifest that does not parse, so a

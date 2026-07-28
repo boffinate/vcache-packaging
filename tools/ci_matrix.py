@@ -162,6 +162,15 @@ INJECTIONS = [
 INJECT_ENGINE_ROW = ("vinyl-trunk-pinned", "debian-13-amd64")
 
 ID_RE = r"^[a-z][a-z0-9-]*$"
+
+# VMOD ids that would collide with a non-VMOD row kind in the artifact and row
+# key namespaces. A VMOD literally called `engine` would mint
+# `result-engine-<channel>-<engine>-<target>` artifact names alongside the
+# engine rows' `result-engine-<engine>-<target>`, and the collector keys results
+# by name. Reject the id rather than escaping the namespace: the cost is one
+# forbidden word, and the alternative is a silent collision in the one place the
+# whole reconciliation depends on being unambiguous.
+RESERVED_VMOD_IDS = ["engine", "vmod"]
 REPOSITORY_RE = r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$"
 REF_RE = r"^[A-Za-z0-9][A-Za-z0-9._/-]*$"
 COMMIT_RE = r"^[0-9a-f]{40}$"
@@ -254,6 +263,11 @@ def validate_vmod_manifest(data: dict, path: str, discovery_id: str = None) -> l
     stem = Path(path).stem
     if data["id"] != stem:
         problems.append(f"id {data['id']!r} must equal the file name stem {stem!r}")
+    if data["id"] in RESERVED_VMOD_IDS:
+        problems.append(
+            f"id {data['id']!r} is reserved: it names a row kind, and a VMOD using it would "
+            f"produce artifact names that collide with them ({RESERVED_VMOD_IDS})"
+        )
     if discovery_id is not None and data["id"] != discovery_id:
         problems.append(
             f"id {data['id']!r} does not match the discovery id {discovery_id!r} this "

@@ -229,6 +229,25 @@ def test_manifest_validation() -> None:
         str(errors),
     )
 
+    # A VMOD called `engine` would mint result-engine-<channel>-<engine>-<target>
+    # artifact names next to the engine rows' result-engine-<engine>-<target>,
+    # in the one namespace the collector keys results by.
+    for reserved in ci_matrix.RESERVED_VMOD_IDS:
+        clash = yaml_subset.parse(_manifest_text(reserved))
+        errors = ci_matrix.validate_vmod_manifest(
+            clash, f"registry/vmods/{reserved}.yml", discovery_id=reserved
+        )
+        check(
+            f"manifest: the reserved id {reserved!r} is rejected",
+            any("is reserved" in e for e in errors),
+            str(errors),
+        )
+        check(
+            f"manifest: rejecting {reserved!r} is the only complaint about it",
+            len(errors) == 1,
+            str(errors),
+        )
+
     broken = yaml_subset.parse(BROKEN_MANIFEST)
     errors = ci_matrix.validate_vmod_manifest(broken, "registry/vmods/broken.yml")
     check(
