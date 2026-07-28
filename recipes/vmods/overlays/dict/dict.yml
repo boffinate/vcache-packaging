@@ -1,0 +1,60 @@
+# vmod-dict: the second VMOD the maintainer has placed in scope (SCOPE.md).
+#
+# STAGED FOR WAVE A2. This is the intended content of registry/vmods/dict.yml,
+# held here rather than in the catalog because putting it in registry/vmods/
+# would put a row in the expected-row ledger that no workflow yet produces, and
+# a ledger row nothing can satisfy is exactly the "missing execution evidence"
+# failure the collector exists to report. Wave A2 moves this file into
+# registry/vmods/dict.yml in the same change that wires up the workflow.
+#
+# Until then, tools/vmod_recipe.py reads it from here through --manifest, and
+# the generator self-tests validate it against ci_matrix.py's vmod-ci/v1
+# schema, so it cannot drift into something the catalog would reject.
+#
+# NEVER edit a pin here to make an assertion pass: a mismatch means the
+# recorded source identity and the actual source disagree, which is the thing
+# the checks exist to catch.
+schema: vmod-ci/v1
+id: dict
+
+# Not a GitHub owner/name. vmod-ci/v1's `repository` pattern happens to accept
+# this host/name form, which is enough for validation, but the field is a
+# GitHub-shaped identity everywhere else in the tooling and the per-VMOD
+# workflow checks source out with actions/checkout. Wave A2 owns adding an
+# explicit clone-URL field and a non-actions/checkout path; the clone URL that
+# field will carry is already recorded in overlay.yml as source.clone_url.
+repository: git.gnu.org.ua/vmod-dict
+required: true
+adapter: autotools
+
+sources:
+  release:
+    ref: v1.7
+    # The v1.7 PGP-signed annotated tag peels to this commit; AC_INIT and NEWS
+    # both say 1.7, and it is the commit the compatibility survey swept.
+    expected_commit: 784584d272894a39cf995377618aad551a196424
+    version: "1.7"
+    # Upstream's published release tarball,
+    # https://download.gnu.org.ua/release/vmod-dict/vmod-dict-1.7.tar.gz,
+    # 414559 bytes, fetched and digested 2026-07-28. A detached PGP signature
+    # is published alongside it; verifying that signature is a Wave A2 job
+    # once the signing key is recorded.
+    archive_sha256: eb2a86a780ba9628106dbe858d17ec4589ad6dcb70c6ad53decb5d32824e098c
+    publishable: true
+
+# vinyl-release only. vinyl-trunk-pinned is excluded because Vinyl trunk's
+# AC_INIT still says `trunk`, so vinylapi.pc carries `Version: trunk`, and
+# acvmod.m4 splits that modversion on "." and does configure-time arithmetic on
+# the major component. See docs/20260728_2127_note_step-5-second-vmod-selection.md,
+# ruling 4. Adding the lane back is a manifest edit once Vinyl trunk emits a
+# numeric snapshot version.
+lanes:
+  - kind: package
+    source: release
+    engine: vinyl-release
+    tiers:
+      - ci
+      - release
+    targets:
+      - debian-13-amd64
+      - el9-x86_64
