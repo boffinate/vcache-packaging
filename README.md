@@ -10,7 +10,16 @@ This repository owns the package-cohort work described by the historical [binary
 - **Vinyl Cache packaging** — the Debian, RPM, and other native recipes that build the `vinyl-cache` runtime, development, and debug packages themselves;
 - **repository publication tooling** — the signed, cohort-aware APT/RPM repository staging, promotion, retention, and rollback integration that the selected package set needs, preferably through a managed service rather than infrastructure operated here.
 
-Individual VMODs are packaged in their own repositories. `libvmod-cachetag` keeps its own `packaging/` recipes, source-archive script, configure-time ABI checks, and security policy, so that each VMOD release records the exact recipes used for its own artifacts.
+## How VMOD recipes are owned
+
+There are two cases, and which one applies depends on whether the project controls the VMOD's releases.
+
+- **A VMOD whose releases this project controls keeps its own recipes.** `libvmod-cachetag` keeps its own `packaging/` recipes, source-archive script, configure-time ABI checks, and security policy, so that each cachetag release records the exact recipes used for its own artifacts.
+- **A third-party VMOD gets Debian and RPM recipes generated here**, from reviewed per-VMOD adapter data held in this repository. We do not ask an upstream we do not control to carry packaging for us, and we do not fork it to add some.
+
+Upstream-maintained packaging is used only where it already exists, is tied to the exact release source we selected, and independently meets this project's dependency, provenance, hardening, payload, and testing requirements. That is a high bar and most third-party VMODs will not clear it, usually because their packaging targets a different distribution's conventions or has drifted from their current release.
+
+**The absence of upstream `debian/` or `rpm/` packaging is not a barrier to selecting a VMOD.** It is the normal case: the downstream provider absorbs it. Generated recipes are generated content under the rules in [AGENTS.md](AGENTS.md) — a generated recipe that disagrees with the manifest or adapter data is a generator bug, not something to hand-patch. See [`docs/20260728_0908_plan_vmod-packager-patterns-and-recipe-generation.md`](docs/20260728_0908_plan_vmod-packager-patterns-and-recipe-generation.md).
 
 ## Why the split
 
