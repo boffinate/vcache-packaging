@@ -17,12 +17,16 @@ This document is the authority on project scope. Older plans and design notes re
 The package set consists of:
 
 - Vinyl Cache runtime, development, and debugging packages where they are needed to provide a coherent installable combination;
-- selected independently packaged VMODs, currently `libvmod-cachetag`;
+- selected independently packaged VMODs:
+  - `libvmod-cachetag` (`boffinate/libvmod-cachetag`);
+  - `vmod-dict` (`git.gnu.org.ua/vmod-dict`), added 2026-07-28 by maintainer decision. The selection itself was delegated to the coordinating agent, which chose among a researched shortlist under that delegation; the rationale is recorded in [`docs/20260728_2127_note_step-5-second-vmod-selection.md`](docs/20260728_2127_note_step-5-second-vmod-selection.md). Selected source: tag `v1.7`, commit `784584d272894a39cf995377618aad551a196424`, version `1.7`. First production lane: Vinyl, engine `vinyl-release` only — `vinyl-trunk-pinned` is excluded until Vinyl trunk emits a numeric version — on targets `debian-13-amd64` and `el9-x86_64`. Packaging recipes are generated in this repository; upstream provides none. Behaviour verification: upstream's Autotest cases ported to VTC and run against the installed package with `-p vmod_path`.
 - additional cache-server or VMOD packages only after the maintainer explicitly adds them to the project.
 
 A repository survey, compatibility experiment, or possible future integration does not by itself add a package to the supported set.
 
 The project supports only the operating-system releases, architectures, Vinyl Cache releases, and Varnish Cache releases named in its current build and test matrix. There is no implied support for adjacent versions or other targets.
+
+**One engine is selected: Vinyl Cache.** Adding Varnish Cache as a second engine is a separate, explicit, future decision — expected no earlier than Step 8 of the outstanding-packaging-work roadmap — and it is not implied by any VMOD selection, including a VMOD that happens to build against both engines. `vmod-dict` builds unmodified on Varnish; that fact opens no Varnish lane. A Varnish lane means a new engine class, a new ABI-expression path, and a new transaction matrix, and it requires an amendment to this document describing that added responsibility. The technical groundwork is recorded in [`docs/20260726_0824_plan_varnish-downstream-vmod-packaging.md`](docs/20260726_0824_plan_varnish-downstream-vmod-packaging.md), which describes an unauthorized lane.
 
 ## In scope
 
@@ -124,3 +128,11 @@ Proposals involving mirrors, lookaside caches, custom signing services, archival
 The project can add another package, target, or stronger delivery promise. That requires an explicit maintainer decision and an update to this document describing the additional build, test, publication, and maintenance responsibility.
 
 Scope must not expand implicitly because a historical plan mentioned an end state, because another distribution uses a particular system, or because infrastructure might be useful later.
+
+### Responsibility added by the second VMOD (2026-07-28)
+
+Adding `vmod-dict` roughly doubles the per-cohort evidence obligation. Every cohort must now carry the full evidence set for two VMOD package families on both `debian-13-amd64` and `el9-x86_64`: clean-room build, lint under the same hard gates, installed-package smoke, installed-package behaviour suite, upgrade-transaction matrix, and hardening inspection. A cohort is releasable only when both families are complete; partial evidence is not a partial release, it is a blocked one.
+
+That evidence resets on the same triggers as cachetag's, applied independently per VMOD: a change to the engine input (Vinyl source, patch set, build profile, or package revision) resets both families, while a change to `vmod-dict`'s own selected source or its package revision resets only its own. The reset rule is the existing one in "What a package claim means"; recording it here is a statement of the cost, not a new mechanism.
+
+The maintainer accepted that cost when adding the VMOD. Any further VMOD adds the same increment again, which is why the roadmap adds them one at a time with an explicit decision each.
