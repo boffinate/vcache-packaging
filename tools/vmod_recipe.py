@@ -288,11 +288,17 @@ def build_model(
     maintainer: str,
     channel: str = "release",
     debian_distribution: str = None,
+    require_maintainer: bool = True,
 ) -> dict:
     """The one normalized VMOD build description both backends render from.
 
     Native policy stays with the backend: this returns shared facts, not
     hand-written Debian or RPM dependency strings.
+
+    ``require_maintainer`` is False only for the inspection subcommands, which
+    print names and the model and render nothing. Refusing an absent maintainer
+    is a refusal to emit a recipe, not a refusal to answer what a package would
+    be called; the rendering path always requires one.
     """
     vmod_id = vmod_manifest["id"]
     if overlay["id"] != vmod_id:
@@ -326,7 +332,7 @@ def build_model(
             "is only generated for a channel that may become a package"
         )
 
-    maintainer_name, maintainer_email = _split_maintainer(maintainer)
+    maintainer_name, maintainer_email = _split_maintainer(maintainer, require_maintainer)
 
     # 2. The engine row. The cohort and target manifests are the authority; the
     #    ABI expressions come from metadata.py so this tool holds no copy of
@@ -509,7 +515,9 @@ def build_model(
     }
 
 
-def _split_maintainer(maintainer: str):
+def _split_maintainer(maintainer: str, required: bool = True):
+    if not maintainer and not required:
+        return "", ""
     if not maintainer:
         raise GeneratorError(
             "no maintainer given. A generated recipe must not carry a placeholder "
@@ -581,14 +589,42 @@ def _expected_names(overlay, tgt, versions, version, revision, archive_name) -> 
 # ---------------------------------------------------------------------------
 
 
+# Weekday and month abbreviations, spelled out rather than taken from
+# strftime's %a and %b. Both are LC_TIME-sensitive: the same epoch renders as
+# "Wed" under C and as "mer." under fr_FR.UTF-8, which would make the recipe
+# bytes depend on the environment the generator happened to run in. Debian's
+# changelog format and RPM's %changelog both require the English abbreviations,
+# so there is nothing to localise even in principle.
+#
+# Setting LC_TIME to C at import would also work, but it mutates process-global
+# state for every other module in the interpreter. A table cannot.
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+_MONTHS = (
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)
+
+
 def debian_date(epoch: str) -> str:
     """RFC 5322 date for debian/changelog, in UTC, from a recorded epoch."""
-    return time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime(int(epoch)))
+    t = time.gmtime(int(epoch))
+    return "{}, {:02d} {} {:04d} {:02d}:{:02d}:{:02d} +0000".format(
+        _WEEKDAYS[t.tm_wday],
+        t.tm_mday,
+        _MONTHS[t.tm_mon - 1],
+        t.tm_year,
+        t.tm_hour,
+        t.tm_min,
+        t.tm_sec,
+    )
 
 
 def rpm_changelog_date(epoch: str) -> str:
     """RPM %changelog date, in UTC, from a recorded epoch."""
-    return time.strftime("%a %b %d %Y", time.gmtime(int(epoch)))
+    t = time.gmtime(int(epoch))
+    return "{} {} {:02d} {:04d}".format(
+        _WEEKDAYS[t.tm_wday], _MONTHS[t.tm_mon - 1], t.tm_mday, t.tm_year
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -939,7 +975,7 @@ def dumps_record(record: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def generate(
+def build(
     *,
     manifest_path,
     overlay_path,
@@ -950,8 +986,14 @@ def generate(
     debian_distribution: str = None,
     recipe_root=None,
     repo_root=None,
+    require_maintainer: bool = True,
 ) -> tuple:
-    """Load, model, render. Returns (model, outputs, record). Writes nothing."""
+    """Load every input and build the normalized model. Renders nothing.
+
+    Split out from :func:`generate` so the inspection subcommands can answer
+    "what would this package be called" without a maintainer, which they have
+    no use for and which the rendering path rightly refuses to go without.
+    """
     repo_root = Path(repo_root) if repo_root else REPO_ROOT
     recipe_root = Path(recipe_root) if recipe_root else repo_root / RECIPE_ROOT
 
@@ -982,19 +1024,47 @@ def generate(
         maintainer=maintainer,
         channel=channel,
         debian_distribution=debian_distribution,
+        require_maintainer=require_maintainer,
+    )
+    paths = {
+        "manifest": Path(manifest_path),
+        "overlay": Path(overlay_path),
+        "adapter": adapter_path,
+        "cohort": cohort_path,
+        "target": target_path,
+    }
+    return model, recipe_root, paths
+
+
+def generate(
+    *,
+    manifest_path,
+    overlay_path,
+    cohort_id: str,
+    target_id: str,
+    maintainer: str,
+    channel: str = "release",
+    debian_distribution: str = None,
+    recipe_root=None,
+    repo_root=None,
+) -> tuple:
+    """Load, model, render. Returns (model, outputs, record). Writes nothing."""
+    model, recipe_root, paths = build(
+        manifest_path=manifest_path,
+        overlay_path=overlay_path,
+        cohort_id=cohort_id,
+        target_id=target_id,
+        maintainer=maintainer,
+        channel=channel,
+        debian_distribution=debian_distribution,
+        recipe_root=recipe_root,
+        repo_root=repo_root,
     )
     outputs = render(model, recipe_root / "templates", recipe_root / "licenses")
     record = generation_record(
         model=model,
         outputs=outputs,
-        inputs={
-            "manifest": manifest_path,
-            "overlay": overlay_path,
-            "adapter": adapter_path,
-            "cohort": cohort_path,
-            "target": target_path,
-            **_template_inputs(recipe_root, model),
-        },
+        inputs={**paths, **_template_inputs(recipe_root, model)},
     )
     return model, outputs, record
 
@@ -1064,33 +1134,35 @@ def cmd_generate(args) -> int:
     return 0
 
 
-def cmd_names(args) -> int:
-    model, _outputs, _record = generate(
+def _inspect(args) -> dict:
+    """Model only, for the subcommands that print rather than render.
+
+    `--maintainer` is optional here. Refusing without one is a refusal to emit
+    a recipe; it should not stop anybody asking what the package will be
+    called, and a deb target's changelog suite is equally irrelevant to that
+    question.
+    """
+    model, _recipe_root, _paths = build(
         manifest_path=args.manifest,
         overlay_path=args.overlay,
         cohort_id=args.cohort,
         target_id=args.target,
         maintainer=args.maintainer,
         channel=args.channel,
-        debian_distribution=args.debian_distribution,
+        debian_distribution=args.debian_distribution or "UNSET",
         recipe_root=args.recipe_root,
+        require_maintainer=False,
     )
-    print(json.dumps(model["artifacts"], indent=2, sort_keys=True))
+    return model
+
+
+def cmd_names(args) -> int:
+    print(json.dumps(_inspect(args)["artifacts"], indent=2, sort_keys=True))
     return 0
 
 
 def cmd_model(args) -> int:
-    model, _outputs, _record = generate(
-        manifest_path=args.manifest,
-        overlay_path=args.overlay,
-        cohort_id=args.cohort,
-        target_id=args.target,
-        maintainer=args.maintainer,
-        channel=args.channel,
-        debian_distribution=args.debian_distribution,
-        recipe_root=args.recipe_root,
-    )
-    print(json.dumps(model, indent=2, sort_keys=True))
+    print(json.dumps(_inspect(args), indent=2, sort_keys=True))
     return 0
 
 

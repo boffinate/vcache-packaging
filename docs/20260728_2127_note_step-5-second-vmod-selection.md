@@ -90,14 +90,28 @@ The fix is not ours to make. Making trunk work would mean either editing `../vin
 
 ## Source archive derivation
 
-No upstream release tarball was located for `vmod-dict`, so the source archive is derived deterministically from the tag, as `SCOPE.md` permits and as the cachetag lane already does.
+### Superseded (corrected 2026-07-28, later the same day)
 
-Two things Step 6 must handle:
+**What this section said, and why it was believed:** "No upstream release tarball was located for `vmod-dict`, so the source archive is derived deterministically from the tag." The Step 5 research swept the repository, the tags, and the survey data, and found no published archive. It did not read `src/vmod_dict.vcc`.
+
+**What Step 6 Wave A1 found:** the tarball exists. `src/vmod_dict.vcc`'s DOWNLOADS section names `https://download.gnu.org.ua/release/vmod-dict`, and that directory carries `vmod-dict-1.7.tar.gz` with a detached PGP signature, both published 2026-03-25 — the same day as the tag. 414,559 bytes, sha256 `eb2a86a780ba9628106dbe858d17ec4589ad6dcb70c6ad53decb5d32824e098c`, signature verified good against Sergey Poznyakoff's key as published on `puszcza.gnu.org.ua`. It is a complete `make dist` archive.
+
+**Why the correction changes the decision rather than only the record:** the tag's tree carries no `configure`, so a derived archive must be bootstrapped, and `configure.ac` declares `AC_PREREQ([2.71])` with `AM_INIT_AUTOMAKE([1.16.5 …])`. AlmaLinux 9 ships autoconf 2.69 and automake 1.16.2. The derived archive therefore **cannot build on `el9-x86_64`**, one of the two selected targets, and the published tarball is not merely the nicer input but the only workable one.
+
+The selected input is now the published tarball: `recipes/vmods/overlays/dict/overlay.yml` declares `source.archive.method: upstream-release`, and the manifest pins that digest. Full evidence, including the container runs, is in [the Wave A1 note](20260728_2216_note_step-6-wave-a1-recipe-generator.md).
+
+**Status of the two bullets below: moot for `vmod-dict`.** The release tarball vendors the `acvmod` macros directly (`acvmod/acvmod.m4`, `gencl`, `testsuite.inc`, `top.am` are all inside it), so no submodule is fetched and no `git://` URL is ever contacted on the selected path. They are kept because they are correct about the *derived* path, which remains implemented and pinned in `scripts/ci/vmod-source-archive.sh` as the recorded fallback, and because the next tag-only VMOD will meet both.
+
+### The derived path (retained, not selected)
+
+Where an upstream publishes only a tag, the source archive is derived deterministically from it, as `SCOPE.md` permits and as the cachetag lane already does.
+
+Two things such a derivation must handle, both of which `vmod-dict` exhibits:
 
 - **The `acvmod` submodule.** `vmod-dict` carries its Autoconf macros as a submodule pinned at `4fba6604d1d1e586274376a20841be0966bf7df3`. The archive must include it, and the recorded digest must cover it, or the build will fail at `autoreconf` in a way that looks like a toolchain problem.
 - **The submodule URL is `git://`.** `.gitmodules` declares a `git://` clone URL. That protocol is commonly blocked and is unauthenticated, so the checkout needs a `git config url."https://…".insteadOf "git://…"` override. Configure it explicitly rather than relying on any ambient host or runner configuration, so the build behaves the same everywhere.
 
-Neither is a defect in the VMOD; both are the kind of thing that costs an hour if discovered during implementation and five minutes if written down first.
+Neither is a defect in the VMOD; both are the kind of thing that costs an hour if discovered during implementation and five minutes if written down first. Both were handled, and the derived archive reproduces at sha256 `499f48cbcf5a961633f053778403b95658f22abeb72849d3da13f9ca35c893e4`.
 
 ## Held for Step 7
 
@@ -109,6 +123,6 @@ The caveat to settle before Step 7 commits to it: its 20 VTCs need live Redis or
 
 - Manifest: a `registry/vmods/dict.yml` on `vmod-ci/v1`, extended with the non-GitHub source fields.
 - Lanes: `kind: package`, `source: release`, `engine: vinyl-release`, targets `debian-13-amd64` and `el9-x86_64`.
-- Recipes: generated, per the [recipe-generation plan](20260728_0908_plan_vmod-packager-patterns-and-recipe-generation.md). Upstream provides none, which is the normal case.
+- Recipes: generated, per the [recipe-generation plan](20260728_0908_plan_vmod-packager-patterns-and-recipe-generation.md). Upstream provides no *packaging*, which is the normal case; that is unaffected by the source-archive correction above.
 - Behaviour gate: `tests/ci.at` and `tests/cs.at` ported to VTC, `import dict;` resolved through `-p vmod_path`, `num.dict` staged, run against the installed package in the existing fresh-container harness, upstream's expected values as the oracle.
-- Archive: derived from tag `v1.7` including the `acvmod` submodule, with the `git://` override configured.
+- ~~Archive: derived from tag `v1.7` including the `acvmod` submodule, with the `git://` override configured.~~ **Corrected 2026-07-28:** the archive is upstream's published, signed release tarball, digest-pinned. See "Source archive derivation" above.

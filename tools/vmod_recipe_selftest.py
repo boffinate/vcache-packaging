@@ -374,6 +374,106 @@ def test_dates_come_from_the_recorded_epoch(root: Path) -> None:
     )
 
 
+def test_dates_are_locale_independent() -> None:
+    """strftime's %a and %b follow LC_TIME; the recipe bytes must not.
+
+    Under fr_FR.UTF-8 the same epoch renders "mer." rather than "Wed", which
+    would make a package's changelog depend on the environment the generator
+    happened to run in. Debian and RPM both require the English abbreviations,
+    so there is nothing to localise even in principle.
+    """
+    source = (Path(__file__).resolve().parent / "vmod_recipe.py").read_text(encoding="utf-8")
+    # Calls, not the word: the comment above the date tables says "strftime"
+    # and should keep saying it.
+    code = "\n".join(
+        line for line in source.split("\n") if not line.lstrip().startswith("#")
+    )
+    check(
+        "dates: the generator never calls strftime",
+        "strftime(" not in code,
+        "a strftime call appears in vmod_recipe.py; %a/%b are LC_TIME-sensitive",
+    )
+    check(
+        "dates: setlocale is not called either (it mutates global state)",
+        "setlocale(" not in code,
+        "a setlocale call appears in vmod_recipe.py",
+    )
+    # One epoch per weekday and one per month, so every table entry is
+    # exercised rather than only the one dict happens to land on.
+    weekdays = {vr.debian_date(str(345600 + 86400 * i)).split(",")[0] for i in range(7)}
+    check(
+        "dates: every weekday abbreviation is the English one",
+        weekdays == {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"},
+        str(sorted(weekdays)),
+    )
+    months = {vr.debian_date(str(e)).split()[2] for e in _MONTH_EPOCHS}
+    check(
+        "dates: every month abbreviation is the English one",
+        months
+        == {
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        },
+        str(sorted(months)),
+    )
+    check(
+        "dates: the RPM changelog date uses the same English tables",
+        vr.rpm_changelog_date("1774429462") == "Wed Mar 25 2026"
+        and vr.rpm_changelog_date("0") == "Thu Jan 01 1970",
+        vr.rpm_changelog_date("0"),
+    )
+    check(
+        "dates: single-digit days are zero-padded on both backends",
+        vr.debian_date("1767225600").startswith("Thu, 01 Jan 2026")
+        and vr.rpm_changelog_date("1767225600") == "Thu Jan 01 2026",
+        vr.debian_date("1767225600") + " / " + vr.rpm_changelog_date("1767225600"),
+    )
+
+
+# 2026-<month>-15T00:00:00Z for each month, so all twelve names are covered.
+_MONTH_EPOCHS = (
+    1768435200, 1771113600, 1773532800, 1776211200, 1778803200, 1781481600,
+    1784073600, 1786752000, 1789430400, 1792022400, 1794700800, 1797292800,
+)
+
+
+def test_inspection_commands_do_not_need_a_maintainer(root: Path) -> None:
+    """`names` and `model` answer a question a maintainer is irrelevant to."""
+    model, _recipe_root, _paths = vr.build(
+        manifest_path=root / DICT_MANIFEST,
+        overlay_path=root / DICT_OVERLAY,
+        cohort_id=RELEASE_COHORT,
+        target_id="debian-13-amd64",
+        maintainer="",
+        debian_distribution="UNSET",
+        repo_root=root,
+        require_maintainer=False,
+    )
+    check(
+        "inspect: names resolve with no maintainer",
+        model["artifacts"]["native_filenames"] == ["vmod-dict_1.7-1_amd64.deb"],
+        json.dumps(model["artifacts"]),
+    )
+    check(
+        "inspect: the model records the maintainer as absent, not invented",
+        model["maintainer"] == {"name": "", "email": ""},
+        json.dumps(model["maintainer"]),
+    )
+    _expect_error(
+        "inspect: generate still refuses without a maintainer",
+        lambda: vr.generate(
+            manifest_path=root / DICT_MANIFEST,
+            overlay_path=root / DICT_OVERLAY,
+            cohort_id=RELEASE_COHORT,
+            target_id="debian-13-amd64",
+            maintainer="",
+            debian_distribution="trixie",
+            repo_root=root,
+        ),
+        "maintainer",
+    )
+
+
 def test_generator_never_builds(root: Path) -> None:
     """Contract 8: rendering text must not shell out, install or read a clock."""
     source = (Path(__file__).resolve().parent / "vmod_recipe.py").read_text(encoding="utf-8")
@@ -999,6 +1099,8 @@ def main(repo_root: Path = None) -> int:
     test_dict_rpm_render(root)
     test_determinism(root)
     test_dates_come_from_the_recorded_epoch(root)
+    test_dates_are_locale_independent()
+    test_inspection_commands_do_not_need_a_maintainer(root)
     test_generator_never_builds(root)
     test_tokens_undeclared_is_refused()
     test_tokens_surviving_substitution_is_refused()
