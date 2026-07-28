@@ -40,12 +40,12 @@ env:
   VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
   VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
   CACHETAG_VERSION: 1.0.0
-  CACHETAG_SOURCE_SHA256: a262ac7a74a1464d4c0a4cc6f072ea04a77ff660b25bf0befd32dc63c18fb329
-  # Exact pinned commit (closes DESIGN.md #10.1); the archive digest above is
-  # a function of this commit (mtimes are pinned to its committer date), so
-  # the two move together, and with the lane pins in recipes/debian-13/build.sh
-  # and recipes/el9/cohort.env. Point v1.0.0 at this commit when tagging.
-  CACHETAG_REF: fcc369d23b199cc8e41086f28f2322256a8843d9
+  CACHETAG_SOURCE_SHA256: 23c378029c50072ca287d045208756a9acd0a648c261d2f0e2bca4fdbf7a1644
+  # Build the named upstream release, and record the peeled commit separately
+  # as evidence. Every checkout verifies that the annotated tag still resolves
+  # to this commit; the archive digest remains the content gate.
+  CACHETAG_REF: v1.0.0
+  CACHETAG_GIT_COMMIT: 368a01f11d25256644154d02ec255db545154c1c
   # Index digest resolved 2026-07-25 (`docker buildx imagetools inspect
   # almalinux:9`); must match EL9_IMAGE in recipes/el9/cohort.env, which is
   # authoritative (build.sh re-sources cohort.env, clobbering any env
@@ -70,6 +70,17 @@ jobs:
           repository: boffinate/libvmod-cachetag
           ref: ${{ env.CACHETAG_REF }}
           path: libvmod-cachetag
+
+      - name: verify the cachetag release tag
+        run: |
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_verify_cachetag_release_checkout \
+            "$GITHUB_WORKSPACE/libvmod-cachetag" \
+            "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
+
+      - name: scripts/ci/test-common.sh
+        run: scripts/ci/test-common.sh
+        working-directory: vcache-packaging
 
       - name: tools/release_tool.py selftest
         run: python3 tools/release_tool.py selftest
@@ -104,6 +115,13 @@ jobs:
           path: libvmod-cachetag
           fetch-depth: 0 # release-source-archive.sh reads git commit/committer-date metadata
 
+      - name: verify the cachetag release tag
+        run: |
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_verify_cachetag_release_checkout \
+            "$GITHUB_WORKSPACE/libvmod-cachetag" \
+            "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
+
       - name: checkout ../vinyl-cache (pinned commit, not a GitHub remote)
         run: |
           set -eu
@@ -122,7 +140,9 @@ jobs:
           bash "$GITHUB_WORKSPACE/vcache-packaging/scripts/ci/source-archive.sh" \
             "$GITHUB_WORKSPACE/vinyl-cache" \
             "$VINYL_GIT_COMMIT" \
-            "$CACHETAG_SOURCE_SHA256"
+            "$CACHETAG_SOURCE_SHA256" \
+            "$CACHETAG_GIT_COMMIT" \
+            release
         working-directory: libvmod-cachetag
 
       - name: upload the pinned source archive
@@ -159,6 +179,13 @@ jobs:
           repository: boffinate/libvmod-cachetag
           ref: ${{ env.CACHETAG_REF }}
           path: libvmod-cachetag
+
+      - name: verify the cachetag release tag
+        run: |
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_verify_cachetag_release_checkout \
+            "$GITHUB_WORKSPACE/libvmod-cachetag" \
+            "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
 
       # The release lane builds from the digest-pinned upstream tarball
       # (downloaded by build.sh and verified against the pinned sha256) and
@@ -246,6 +273,13 @@ jobs:
           repository: boffinate/libvmod-cachetag
           ref: ${{ env.CACHETAG_REF }}
           path: libvmod-cachetag
+
+      - name: verify the cachetag release tag
+        run: |
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_verify_cachetag_release_checkout \
+            "$GITHUB_WORKSPACE/libvmod-cachetag" \
+            "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
 
       # The release lane builds from the digest-pinned upstream tarball
       # (downloaded by build.sh and verified against the pinned sha256) and
@@ -341,7 +375,7 @@ jobs:
             echo "Native package filenames as built, which are also the names"
             echo "release-draft.yml publishes them under; the distro-bearing"
             echo "release-asset name the registry generates"
-            echo "(\`libvmod-cachetag-1.0.0-1-debian-13-amd64.deb\`) is recorded in"
+            echo "(\`libvmod-cachetag-1.0.0-2-debian-13-amd64.deb\`) is recorded in"
             echo "\`release-manifest.json\` rather than used as a filename, because"
             echo "renaming a .deb contradicts the .changes and .buildinfo beside it."
             echo

@@ -15,11 +15,10 @@ status: candidate
 cohort: vinyl-9.0.0-4b7e68292979
 cachetag:
   version: 1.0.0
-  # Archive digest and commit move together: the archive's file mtimes are
-  # pinned to this commit's committer date. Reproduced identically on two
-  # amd64 CI runners and the arm64 harness.
-  source_sha256: "a262ac7a74a1464d4c0a4cc6f072ea04a77ff660b25bf0befd32dc63c18fb329"
-  git_commit: "fcc369d23b199cc8e41086f28f2322256a8843d9"
+  # The named v1.0.0 release tag is the build input. Its peeled commit and the
+  # deterministic archive digest are recorded as evidence and verified by CI.
+  source_sha256: "23c378029c50072ca287d045208756a9acd0a648c261d2f0e2bca4fdbf7a1644"
+  git_commit: "368a01f11d25256644154d02ec255db545154c1c"
 vinyl:
   version: 9.0.0
   # Vinyl publishes no release tarball for this revision. The pinned archive is

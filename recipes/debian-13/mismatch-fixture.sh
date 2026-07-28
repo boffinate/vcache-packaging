@@ -148,7 +148,7 @@ mkdir -p "$log_dir" "$mismatch_dir"
 note "verifying the baseline cohort debs against dist/debian-13/SHA256SUMS"
 for _pkg in vinyl-cache vinyl-cache-dev libvmod-cachetag; do
 	case $_pkg in
-	libvmod-cachetag) _v=1.0.0-1 ;;
+	libvmod-cachetag) _v=1.0.0-2 ;;
 	*)                _v=$BASE_VERSION ;;
 	esac
 	_deb=${_pkg}_${_v}_${DEB_HOST_ARCH}.deb

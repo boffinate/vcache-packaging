@@ -8,11 +8,10 @@
 # recipes/el9/cohort.env), so a mismatch fails the run rather than silently
 # feeding a different archive into the package lanes.
 #
-# DRAFT, unexecuted -- see ../../DESIGN.md section 6.3.
-#
 # Usage (run from the libvmod-cachetag checkout root; ci.yml sets
 # working-directory: libvmod-cachetag before invoking this):
-#   scripts/ci/source-archive.sh VINYL_GIT_DIR VINYL_GIT_COMMIT PINNED_SHA256 [MODE]
+#   scripts/ci/source-archive.sh VINYL_GIT_DIR VINYL_GIT_COMMIT PINNED_SHA256
+#     CACHETAG_GIT_COMMIT [MODE]
 #
 # MODE is `dev` (default) or `release`. See the comment on the invocation
 # below for what the difference is and, importantly, what it is not.
@@ -26,7 +25,8 @@ set -euo pipefail
 vinyl_git_dir=${1:?VINYL_GIT_DIR required}
 vinyl_git_commit=${2:?VINYL_GIT_COMMIT required}
 pinned_sha256=${3:?PINNED_SHA256 required}
-mode=${4:-dev}
+cachetag_git_commit=${4:?CACHETAG_GIT_COMMIT required}
+mode=${5:-dev}
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) # vcache-packaging root
 . "$here/scripts/ci/lib/common.sh"
@@ -36,10 +36,14 @@ here=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) # vcache-packaging root
 
 note "release-source-archive.sh: pinned Vinyl commit $vinyl_git_commit"
 
-# dev mode (the default) is for ci.yml, which builds from a commit rather than
-# from a tag. --release additionally demands a clean tree and an annotated
-# vX.Y.Z tag on HEAD; release-draft.yml passes it now that libvmod-cachetag has
-# cut v1.0.0.
+cachetag_head=$(git rev-parse HEAD)
+[ "$cachetag_head" = "$cachetag_git_commit" ] ||
+	die "cachetag checkout HEAD is $cachetag_head, not recorded CACHETAG_GIT_COMMIT $cachetag_git_commit"
+note "cachetag release commit: $cachetag_git_commit"
+
+# dev mode remains available for an explicit development checkout. Every
+# package workflow passes release mode: it additionally demands a clean tree
+# and an annotated vX.Y.Z tag on HEAD.
 #
 # The mode does NOT change the archive. release-source-archive.sh uses it only
 # for the `mode` and `release_stamp` fields of the metadata sidecar and its own

@@ -2,6 +2,8 @@
 
 Date: 2026-07-25
 
+Superseded on 2026-07-28 by `docs/20260728_0743_note-nightly-cachetag-ref-failure.md`: the cachetag public-release rewrite deliberately removed `fcc369d…`, so the full source pin set moved to the annotated `v1.0.0` release commit and its newly proven archive digest. The account below is retained as historical evidence for the earlier candidate.
+
 ## What CI caught
 
 The first real run of `ci.yml`'s source-archive job rebuilt the cachetag archive from a clean checkout and computed `a262ac7a74a1464d4c0a4cc6f072ea04a77ff660b25bf0befd32dc63c18fb329`; the pinned `CACHETAG_SOURCE_SHA256` was `c7054e69…`. The pinned archive's own metadata sidecar explained the mismatch: `worktree_dirty: true`, built from uncommitted state seven commits behind the branch head, against the old Vinyl pin. No commit anywhere could reproduce that digest — the pin was a laptop artifact of exactly the kind the plan's no-laptop-publishing rule exists to exclude, and the clean-room job caught it on its first opportunity.

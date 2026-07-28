@@ -19,6 +19,34 @@ sha256_file() {
 	fi
 }
 
+# ci_verify_cachetag_release_checkout CHECKOUT TAG EXPECTED_COMMIT
+#
+# Package workflows name the upstream release tag because that is the source
+# identity a maintainer understands and can inspect. The peeled commit remains
+# recorded separately as evidence of exactly what was tested. Verify both here:
+# a moved tag, a lightweight tag, or a checkout at some other commit must fail
+# before an archive or package build starts.
+ci_verify_cachetag_release_checkout() {
+	_src=$1; _tag=$2; _expected_commit=$3
+
+	git -C "$_src" rev-parse --git-dir >/dev/null 2>&1 ||
+		die "$_src is not a git checkout"
+
+	_tag_type=$(git -C "$_src" cat-file -t "refs/tags/$_tag" 2>/dev/null || true)
+	[ "$_tag_type" = tag ] ||
+		die "cachetag release ref $_tag is not an annotated tag in $_src (found: ${_tag_type:-missing})"
+
+	_tag_commit=$(git -C "$_src" rev-parse "refs/tags/$_tag^{commit}")
+	[ "$_tag_commit" = "$_expected_commit" ] ||
+		die "cachetag release tag $_tag resolves to $_tag_commit, not recorded commit $_expected_commit"
+
+	_head=$(git -C "$_src" rev-parse HEAD)
+	[ "$_head" = "$_expected_commit" ] ||
+		die "cachetag checkout HEAD is $_head, not recorded commit $_expected_commit from $_tag"
+
+	printf 'OK: cachetag %s -> %s (annotated tag)\n' "$_tag" "$_head"
+}
+
 # ci_checkout_vinyl_cache DEST_DIR SUPERPROJECT_COMMIT VTEST2_COMMIT
 #
 # vinyl-cache is not a GitHub repository -- its Vcs-Git fields (see
