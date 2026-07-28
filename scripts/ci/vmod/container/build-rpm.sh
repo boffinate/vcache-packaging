@@ -108,10 +108,29 @@ rpm -q mock mock-core-configs createrepo_c
 
 note "an unprivileged user for mock"
 # container-mock.sh:126-148.
-build_uid=$(stat -c %u "$out")
-build_gid=$(stat -c %g "$out")
-[ "$build_uid" -ne 0 ] ||
-	die "$out is owned by root; mock cannot run as root and could not write its results"
+# The BIND MOUNT, not a subdirectory. container-mock.sh stats /out because /out
+# is its mount point; the equivalent here is /lane. Statting $out would ask who
+# owns a directory this script may have just created itself as root, which is
+# an artefact of this script rather than a fact about the caller.
+#
+# What mock actually needs is A non-root uid that can write the results back.
+# On a Linux runner the bind mount carries the caller's uid, so that is the
+# right one to use and the results land owned by the account that started the
+# job -- container-mock.sh's reasoning exactly. On a macOS Docker host the
+# file-sharing layer reports the mount as root-owned whatever the host
+# ownership is, and maps writes back to the host user regardless of the
+# in-container uid, so any unprivileged uid serves. Taking the mount owner
+# where it is meaningful and falling back where it is not keeps the CI
+# guarantee intact and makes the lane debuggable locally, which is where four
+# of this wave's defects should have been found.
+build_uid=$(stat -c %u "$lane")
+build_gid=$(stat -c %g "$lane")
+if [ "$build_uid" -eq 0 ]; then
+	printf 'W: %s reports root ownership; this is a non-Linux bind mount.\n' "$lane" >&2
+	printf 'W: using uid/gid 1000 so mock has an unprivileged account to drop to.\n' >&2
+	build_uid=1000
+	build_gid=1000
+fi
 getent group "$build_gid" >/dev/null || groupadd -g "$build_gid" mockbuild
 getent passwd "$build_uid" >/dev/null ||
 	useradd -o -u "$build_uid" -g "$build_gid" -m -d /home/mockbuild mockbuild

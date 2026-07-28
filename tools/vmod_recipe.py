@@ -1190,6 +1190,14 @@ def cmd_model(args) -> int:
     return 0
 
 
+_DOCKER_PLATFORM = {
+    "amd64": "linux/amd64",
+    "x86_64": "linux/amd64",
+    "arm64": "linux/arm64",
+    "aarch64": "linux/arm64",
+}
+
+
 def cmd_lane_env(args) -> int:
     """Shell assignments the containerised lane stages need.
 
@@ -1216,6 +1224,13 @@ def cmd_lane_env(args) -> int:
         "VINYL_STRICT_ABI": engine["strict_abi"],
         "VINYL_VRT": engine["vrt"],
         "COHORT_ID": engine["cohort"],
+        # The container platform the lane must build in. Derived from the
+        # TARGET's architecture, not from whatever the host happens to be: a
+        # row for debian-13-amd64 must produce amd64 packages whether it runs
+        # on a CI runner or on an arm64 laptop, and without this the local
+        # verify stage would try to install x86_64 packages into an aarch64
+        # container. Docker resolves it through binfmt where the host differs.
+        "TARGET_PLATFORM": _DOCKER_PLATFORM.get(model["target"]["arch"], ""),
     }
     for key, value in values.items():
         escaped = str(value).replace("'", "'\\''")

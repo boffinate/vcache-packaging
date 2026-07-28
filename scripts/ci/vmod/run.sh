@@ -85,6 +85,15 @@ image=$(sed -n 's/^build_image=//p' "$engine_identity" | head -1)
 [ -n "$image" ] || die "no build_image in $engine_identity"
 note "buildroot image, from the verified engine identity: $image"
 
+# No --platform flag, deliberately. The image reference is digest-pinned, and
+# Docker refuses "--platform" against a digest -- "cannot overwrite digest" --
+# because a digest already names exactly what to run; DOCKER_DEFAULT_PLATFORM
+# is refused for the same reason. The pin is the stronger mechanism and CI
+# runners are x86_64, so the index resolves correctly there. The consequence
+# is local-only and worth stating: on an arm64 host the digest resolves to
+# arm64, so the install-and-behaviour stages cannot be exercised locally
+# against x86_64 packages. The build stages can, and were.
+
 # The Debian container half still needs DEBIAN_DISTRIBUTION to name the base
 # tarball. That is a lane fact rather than an engine fact and engine-identity.sh
 # does not carry it, so it is read from the pin file it belongs to -- which is
@@ -112,7 +121,7 @@ build-deb)
 	note "$vmod_id: pbuilder build in $image"
 	[ -f "$lane/chroot/$DEBIAN_DISTRIBUTION-amd64.tar" ] ||
 		die "no mmdebstrap base tarball in $lane/chroot; run scripts/ci/debian13/make-chroot.sh first"
-	# shellcheck disable=SC2086 # common_env is a deliberate flag list
+	# shellcheck disable=SC2086 # common_env and platform are deliberate flag lists
 	docker run --privileged --rm \
 		-v "$repo:/repo:ro" -v "$lane:/lane" \
 		$common_env -w /lane \
@@ -120,7 +129,7 @@ build-deb)
 	;;
 verify-deb)
 	note "$vmod_id: installed-package verification in a fresh $image"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # common_env and platform are deliberate flag lists
 	docker run --rm \
 		-v "$lane:/lane" \
 		$common_env -w /lane \
@@ -128,7 +137,7 @@ verify-deb)
 	;;
 build-rpm)
 	note "$vmod_id: Mock build in $image"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # common_env and platform are deliberate flag lists
 	docker run --privileged --rm \
 		-v "$repo:/repo:ro" -v "$lane:/lane" \
 		$common_env -e MOCK_ROOT="${MOCK_ROOT:-alma+epel-9-x86_64}" -w /lane \
@@ -136,7 +145,7 @@ build-rpm)
 	;;
 verify-rpm)
 	note "$vmod_id: installed-package verification in a fresh $image"
-	# shellcheck disable=SC2086
+	# shellcheck disable=SC2086 # common_env and platform are deliberate flag lists
 	docker run --rm \
 		-v "$lane:/lane" \
 		$common_env -w /lane \
