@@ -2,7 +2,7 @@
 
 Date: 2026-07-28
 
-Status: Implemented on branch `step3-failure-isolation-phase1`, unexecuted in CI
+Status: Implemented on branch `step3-failure-isolation-phase1`, first-pass audit fixes applied, unexecuted in CI
 
 Implements items 1–6 of [Phase 1 of the VMOD matrix failure-isolation plan](20260728_0833_plan_vmod-matrix-failure-isolation.md), which is step 3 of [the outstanding-work roadmap](20260728_0916_roadmap_outstanding-packaging-work.md). Item 7 — the live failure-injection runs — is deliberately not done here; the hooks it needs exist and are described below.
 
@@ -58,7 +58,7 @@ collect (if: !cancelled()): reconcile the expected ledger, then fail if a requir
 
 **Booleans are the strings `true` / `false`.** The subset parser deliberately does no implicit typing, so `required`, `publishable` and friends are validated as a two-value enum. The files still read exactly like the plan's sketch.
 
-**Engine ids and target facts live in `ci_matrix.py`, not in the manifest.** `ENGINES` maps `vinyl-release` / `vinyl-trunk-pinned` / `vinyl-trunk-head` onto the `VINYL_TRACK` value the existing lane scripts already select on, and `TARGETS` records each target's package family and the job timeout ci.yml already used. These belong to the target and the engine, not to a VMOD, and a second VMOD must not be able to redefine them. In Phase 2 `ENGINES` becomes the expected engine-row ledger.
+**Engine ids and target facts live in `ci_matrix.py`, not in the manifest.** `ENGINES` maps `vinyl-release` / `vinyl-trunk-pinned` / `vinyl-trunk-head` onto the `VINYL_TRACK` value the existing lane scripts already select on, and `TARGETS` records each target's package family and the job timeout ci.yml already used. These belong to the target and the engine, not to a VMOD, and a second VMOD must not be able to redefine them. In Phase 2 `ENGINES` becomes the expected engine-row ledger, and that is the point at which to reconsider whether `TARGETS` should move into the registry as manifests rather than staying a table in the tool: a target that gains resolved build inputs of its own is registry data, while a table of package families and job timeouts is not.
 
 **The `plan` job emits the matrices; the collector recomputes the ledger.** The plan warns against obtaining per-row artifact names from aggregate matrix-job outputs, so every artifact name is derived from the stable logical row key on both sides: producers compute it from the expanded row, and the collector computes the same name from the checked-in manifest without reading any job output. The collector never trusts a run's own idea of what it was supposed to do.
 
@@ -121,14 +121,16 @@ Classification uses per-step ids and checks for `outcome == 'failure'` explicitl
 
 | Value | Where it acts | Expected classification |
 | --- | --- | --- |
-| `manifest` | overwrites the manifest copy in the `plan` job's checkout | `failed_manifest_validation` on the invocation row, no invented lane rows |
+| `manifest` | overwrites the manifest in **every** job that rebuilds the ledger: the `plan` job, the per-VMOD `summary` job, and ci.yml's `collect` job | `failed_manifest_validation` on the invocation row, and one row only |
 | `source_checkout` | `ci_matrix.py expand --inject` emits an unresolvable ref in the **sources** matrix only | `failed_source_checkout` on the source row, `blocked_by_vmod_source` on all four target rows |
 | `source_digest` | `expand --inject` emits a wrong `archive_sha256` in the sources matrix | `failed_source_digest`, then blocked target rows |
 | `debian_build` | an `exit 1` step immediately before `debian-lane.sh` | `failed_package_build` on the two Debian rows; both EL9 rows must still pass |
 | `el9_build` | an `exit 1` step immediately before `mock-build.sh` | `failed_package_build` on the two EL9 rows; both Debian rows must still pass |
 | `suppress_result` | skips the result upload for the `vinyl-release` Debian row | `missing_result_record` synthesized by the collector for exactly that row |
 
-Injection is applied to the **source** matrix only, never to the target rows' own refs. That is deliberate: with the true ref on the target rows, a `source_checkout` injection produces a clean `blocked_by_vmod_source` on the targets instead of four duplicate checkout failures, which is the more useful demonstration and the one the plan's case 1 describes.
+The `manifest` case has to be applied in three places, and the first draft applied it in one. The `summary` and `collect` jobs each rebuild the expected ledger from their own fresh checkout — that independence is exactly why the collector can report a row that never ran — so a corruption confined to the `plan` job's checkout left both of them reconciling against the full, valid lane list and reporting `blocked_by_vmod_source` for four lanes that a broken manifest never declared. The injected run would have demonstrated the opposite of the property the case exists to prove. This is a general rule for any future injection that changes what the ledger *should* contain, as opposed to what a row *did*: it must reach every ledger builder.
+
+Ref injection is applied to the **source** matrix only, never to the target rows' own refs. That is deliberate: with the true ref on the target rows, a `source_checkout` injection produces a clean `blocked_by_vmod_source` on the targets instead of four duplicate checkout failures, which is the more useful demonstration and the one the plan's case 1 describes.
 
 The plan's remaining cases need work from later phases: case 6 (a failed engine artifact) needs Phase 2's engine split, and cases 11–12 (release completeness) need Phase 4's `release-draft.yml` migration. Case 9 (cancellation) and case 10 (the required check is red after collection) are testable now.
 
@@ -136,8 +138,20 @@ The plan's remaining cases need work from later phases: case 6 (a failed engine 
 
 - **Item 7, the live proof.** Every case in the table above needs a real dispatched run on this branch. Nothing here has executed in GitHub Actions; the graph is argued from the documentation and `actionlint`, which is exactly what the plan says is not sufficient.
 - **The package-equivalence check.** The roadmap's Step 3 contract — byte-identical Debian package digests excluding `.buildinfo` and `.changes`, a normalized semantic RPM comparison, and equivalent installed-package smoke and behaviour results — cannot be evaluated on the host and has not been evaluated at all. The argument that it should hold is structural: no file under `recipes/` or `scripts/` changed, the build commands and their order are identical, and the pins are the same values read from the manifest instead of workflow environment variables. That argument is not evidence. A run of this branch and a run of `main` must be compared before Step 3's exit gate is claimed.
-- **Branch-protection check names.** The job names changed (`registry-selftest` is now `structural-validation`; `debian-13` and `el9` are now matrix rows inside a reusable workflow). If any of the old names is a required status check, that configuration needs updating; it is not visible from the repository contents.
+- **Artifact metadata is not verified by consumers.** The plan requires that every dependency artifact carry resolved-identity metadata and that consumers verify it against the manifest row before use. The source archive does carry its metadata — `release-source-archive.sh` writes `libvmod-cachetag-*.metadata.json` into the artifact — but the target rows do not read it back and compare it with their own row's `ref`, `expected_commit` and `version` before building. Today they re-verify the identity independently, by checking the tag out again and asserting the peeled commit, which is why nothing unverified reaches a package. It becomes load-bearing in Phase 2, when a target row consumes an engine artifact it did not build and no longer has a second, independent way to know what it got; the audit agreed to defer it there.
+- **Branch-protection check names.** The job names changed (`registry-selftest` is now `structural-validation`; `debian-13` and `el9` are now matrix rows inside a reusable workflow). **Before opening the PR**, the required status checks should become the collector's `collect` job — that is the job that reconciles every expected row and is red whenever a required row is — optionally alongside `structural-validation`. The old per-row names must be dropped: a required check whose job no longer exists never reports, and the PR hangs at "Expected — waiting for status" forever rather than failing. This is repository configuration and is not visible from, or fixable in, the repository contents.
 - **The duplicated pins in the three unmigrated workflows**, noted above.
+
+## Fixes applied after the first-pass audit
+
+The audit passed package neutrality, graph semantics and the tooling, and accepted every deviation above. Six things were changed before the live-proof push:
+
+- **The `manifest` injection reached only one of three ledger builders**, described in the injection section above. The most interesting defect of the set: the injection would have run green-ish and been read as proof of a property it disproved.
+- **An artifact upload could leave a record saying `passed` on a red job.** The source-archive upload had no `id` and no `continue-on-error`, so a failure there made the job red while the `if: always()` classification, which knew nothing about it, still wrote `passed` — and the explicit fail step was skipped by its implicit `success()` guard. Uploads that matter are now classified: the source archive and both package uploads run `continue-on-error` and classify as `failed_infrastructure`, the package uploads moved *ahead* of the record step so that a failure in them can be classified at all, and a lost result record fails its row explicitly rather than only turning up later as missing evidence.
+- **A source-harness row with no source row was reported `blocked_by_vmod_source`.** `vmod_rows` deliberately emits no source row for a channel no package lane consumes, so the blocking lookup was naming a cause that was never expected to run. The blocking path is now taken only when the row genuinely has an upstream source row.
+- **A green run containing optional failures said only "Every required row produced a passing result"**, which reads as "nothing failed". It now names the optional failures in the same sentence.
+- **The `tier` input advertised `trunk`**, which expands to a source-harness row no job consumes in Phase 1. The description says so, and the unused `harness_count` output is documented as deliberate rather than forgotten.
+- **The duplicated pins are now guarded.** `nightly-transactions.yml` and `release-draft.yml` keep their own `CACHETAG_*` values until Phase 4, and the lane pin files always had theirs. A selftest reads `CACHETAG_REF`, `CACHETAG_GIT_COMMIT`, `CACHETAG_SOURCE_SHA256` and `CACHETAG_VERSION` out of all four files and asserts each agrees with the manifest, and fails if a file stops carrying any recognised pin at all — so a rename cannot make the guard silently vacuous. It retires when Phase 4 removes the duplication.
 
 ## Dead ends and rejected alternatives
 
@@ -155,7 +169,9 @@ Host-safe only, per the runbook — no package was built and no container lane w
 - `python3 tools/release_tool.py validate --require-releasable` — passes.
 - `python3 tools/release_tool.py --no-cachetag-cross-check validate` — passes, and says the cross-check was skipped.
 - `python3 tools/release_tool.py selftest` — 111 pass, 0 fail; with `CACHETAG_SRC` pointing at nothing, 109 pass, 0 fail, 1 skip.
-- `python3 tools/ci_matrix.py selftest` — 70 pass, 0 fail.
+- `python3 tools/ci_matrix.py selftest` — 89 pass, 0 fail.
 - `docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:latest` — clean across all five workflow files.
 - Simulated collector runs against hand-written result records: all-green, a lint failure plus one suppressed record, a failed source row, and a malformed manifest. Each produced the expected classification, summary grouping and exit status.
+- Simulated the corrected `manifest` injection against a corrupted copy of the catalog: the collector's ledger is one invocation row, `failed_manifest_validation`, with no lane rows, and exits 1.
+- Mutated `CACHETAG_REF` in `nightly-transactions.yml` and confirmed the new pin-drift guard fails with both values named, then restored it.
 - `git diff main --stat`: no file under `recipes/` or `scripts/` is touched, and the set of build command lines in the moved jobs is identical to `main`'s.
