@@ -178,7 +178,19 @@ printf 'VMOD_ABI_Version = %%s\n' "$abi"
 # Keep the ELF objects unstripped so RPM's own debuginfo extraction, which this
 # recipe deliberately leaves enabled, has something to extract.
 export DONT_STRIP=1
-%make_install
+# The 9.0.1 release tarball predates upstream commit 4196617a18 ("Fix DESTDIR
+# builds"): its install-data-local rule mkdirs ${VINYL_STATE_DIR} with no
+# $(DESTDIR), so Mock's unprivileged %%make_install dies trying to create the
+# real /var path. The *relative* make command-line override defuses that:
+# on the DESTDIR-fixed trunk it is a no-op relocation to the identical
+# $(DESTDIR)/var/lib/vinyl-cache, and on the 9.0.1 tarball the directory lands
+# harmlessly inside the build tree. The packaged directory comes from the
+# explicit mkdir below and the %%files %%dir entry either way. No statedir
+# change is needed on this lane: %%configure already passes
+# --localstatedir=/var, yielding /var/lib/vinyl-cache (see %%build). Remove
+# the override when the release track moves to 9.0.2, which contains the fix
+# as 7c7336ab80.
+%make_install VINYL_STATE_DIR=var/lib/vinyl-cache
 
 find %{buildroot}%{_libdir} -name '*.la' -delete
 
