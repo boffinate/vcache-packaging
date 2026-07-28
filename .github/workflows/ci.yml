@@ -160,7 +160,9 @@ jobs:
     name: Debian 13 amd64 (pbuilder, ${{ matrix.track }})
     needs: cachetag-source-archive
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Raised 20 -> 35 for the installed-package VTC suite: 52 serial VTCs at
+    # -j1 with a 60s per-test budget need headroom beyond the build itself.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -228,6 +230,10 @@ jobs:
         run: recipes/debian-13/build.sh smoke
         working-directory: vcache-packaging
 
+      - name: installed-package VTC suite, fresh container (unchanged, build.sh vtc-suite)
+        run: recipes/debian-13/build.sh vtc-suite
+        working-directory: vcache-packaging
+
       - name: checksums (unchanged, build.sh sums)
         run: recipes/debian-13/build.sh sums
         working-directory: vcache-packaging
@@ -254,7 +260,9 @@ jobs:
     name: EL9 x86_64 (Mock, ${{ matrix.track }})
     needs: cachetag-source-archive
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Raised 15 -> 30 for the installed-package VTC suite: 52 serial VTCs at
+    # -j1 with a 60s per-test budget need headroom beyond the build itself.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -322,6 +330,10 @@ jobs:
 
       - name: installed-package smoke, fresh container (unchanged, build.sh --smoke-only)
         run: recipes/el9/build.sh --smoke-only
+        working-directory: vcache-packaging
+
+      - name: installed-package VTC suite, fresh container (unchanged, build.sh --vtc-suite-only)
+        run: recipes/el9/build.sh --vtc-suite-only
         working-directory: vcache-packaging
 
       - name: upload el9 artifacts

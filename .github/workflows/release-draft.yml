@@ -182,7 +182,7 @@ jobs:
         working-directory: vcache-packaging
       - run: bash scripts/ci/debian13/assert-packages.sh
         working-directory: vcache-packaging
-      - run: recipes/debian-13/build.sh lint smoke sums
+      - run: recipes/debian-13/build.sh lint smoke vtc-suite sums
         working-directory: vcache-packaging
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
@@ -241,6 +241,7 @@ jobs:
             "$EL9_IMAGE" \
             bash /recipes/container/build.sh deps report lint
           recipes/el9/build.sh --smoke-only
+          recipes/el9/build.sh --vtc-suite-only
         working-directory: vcache-packaging
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
