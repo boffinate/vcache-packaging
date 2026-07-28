@@ -14,6 +14,7 @@ drift away from the thing they stand in for.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -605,6 +606,73 @@ def test_reconcile_blocked_by_vmod_source() -> None:
         check("reconcile: a blocked required row is still a red run", resolved["ok"] is False)
 
 
+def test_reconcile_harness_row_without_a_source_row() -> None:
+    """A harness lane has no source row, so it can never be *blocked* by one.
+
+    vmod_rows emits a source row only for a channel a package lane consumes: a
+    source-harness lane on a moving branch derives no archive. Reporting its
+    missing record as blocked_by_vmod_source would name a cause that was never
+    expected to run.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _catalog(Path(tmp), {"cachetag.yml": _manifest_text("cachetag")})
+        resolved = _reconcile(root, [_invocation_record("cachetag", "passed")], tier="trunk")
+        by_key = {row["row_key"]: row for row in resolved["rows"]}
+        harness = by_key["harness/cachetag/trunk/vinyl-trunk-head"]
+        check(
+            "reconcile: an unreported harness row with no source row is missing evidence",
+            harness["selected"] and harness["status"] == "missing_result_record",
+            str(harness),
+        )
+        check(
+            "reconcile: the trunk tier does not select the package rows",
+            all(
+                row["status"] == "not_selected"
+                for row in resolved["rows"]
+                if row["kind"] in ("package-target", "source")
+            ),
+            str([(r["row_key"], r["status"]) for r in resolved["rows"]]),
+        )
+
+
+def test_summary_names_optional_failures_on_a_green_run() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _catalog(Path(tmp), {"optional.yml": _manifest_text("optional", required="false")})
+        records = [
+            _invocation_record("optional", "passed"),
+            _source_record("optional", "release", "passed"),
+            _target_record("optional", "release", "vinyl-release", "debian-13-amd64", "failed_lint"),
+            _target_record("optional", "release", "vinyl-release", "el9-x86_64", "passed"),
+            _target_record(
+                "optional", "release", "vinyl-trunk-pinned", "debian-13-amd64", "passed"
+            ),
+            _target_record("optional", "release", "vinyl-trunk-pinned", "el9-x86_64", "passed"),
+        ]
+        resolved = _reconcile(root, records)
+        text = ci_matrix.render_summary(resolved)
+        check(
+            "summary: a green run that still contains failures says so",
+            resolved["ok"] and "1 optional row(s) failed and did not redden the run." in text,
+            text,
+        )
+        all_green = [_invocation_record("optional", "passed"), _source_record("optional", "release", "passed")]
+        for engine in ("vinyl-release", "vinyl-trunk-pinned"):
+            for target in ("debian-13-amd64", "el9-x86_64"):
+                all_green.append(_target_record("optional", "release", engine, target, "passed"))
+        with tempfile.TemporaryDirectory() as tmp2:
+            clean_root = _catalog(
+                Path(tmp2), {"optional.yml": _manifest_text("optional", required="false")}
+            )
+            clean = _reconcile(clean_root, all_green)
+        check(
+            "summary: the optional-failure sentence is absent when nothing failed",
+            clean["ok"]
+            and clean["counts"]["failed"] == 0
+            and "did not redden" not in ci_matrix.render_summary(clean),
+            ci_matrix.render_summary(clean),
+        )
+
+
 def test_reconcile_manifest_validation() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = _catalog(
@@ -852,6 +920,69 @@ def test_repo_catalog(repo_root: Path) -> None:
     )
 
 
+# The lane pin files and the three workflows that still carry their own copies
+# of the cachetag source pins. ci.yml and vmod-package.yml are absent because
+# they read the manifest now; nightly-transactions.yml and release-draft.yml
+# migrate in Phase 4 and this guard retires with them.
+PIN_SOURCES = [
+    ("recipes/debian-13/pins.env", "env"),
+    ("recipes/el9/cohort.env", "env"),
+    (".github/workflows/nightly-transactions.yml", "yaml"),
+    (".github/workflows/release-draft.yml", "yaml"),
+]
+
+# Which manifest field each pin name must agree with.
+PIN_FIELDS = {
+    "CACHETAG_REF": "ref",
+    "CACHETAG_GIT_COMMIT": "expected_commit",
+    "CACHETAG_SOURCE_SHA256": "archive_sha256",
+    "CACHETAG_VERSION": "version",
+}
+
+_ENV_PIN_RE = re.compile(r"^(CACHETAG_[A-Z0-9_]+)=[\"']?([^\"'\s#]*)[\"']?\s*$")
+_YAML_PIN_RE = re.compile(r"^\s*(CACHETAG_[A-Z0-9_]+):\s*([^\s#]+)\s*$")
+
+
+def _read_pins(path: Path, kind: str) -> dict:
+    pattern = _ENV_PIN_RE if kind == "env" else _YAML_PIN_RE
+    found = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = pattern.match(line)
+        if match and match.group(1) in PIN_FIELDS:
+            found.setdefault(match.group(1), match.group(2))
+    return found
+
+
+def test_pins_do_not_drift_from_the_manifest(repo_root: Path) -> None:
+    """Every hand-maintained copy of the cachetag source pins must agree.
+
+    The manifest is the record of what cachetag source this project builds, but
+    the lane pin files and two unmigrated workflows still carry their own
+    copies. Nothing else would notice them drifting apart until a build failed
+    on a digest assertion, or worse, did not.
+    """
+    release = ci_matrix.load_vmod_manifest(repo_root / "registry" / "vmods" / "cachetag.yml")
+    release = release["sources"]["release"]
+    for relative, kind in PIN_SOURCES:
+        path = repo_root / relative
+        if not path.is_file():
+            check(f"pins: {relative} exists", False, "file not found")
+            continue
+        pins = _read_pins(path, kind)
+        check(
+            f"pins: {relative} carries at least one recognised cachetag pin",
+            bool(pins),
+            "none found; did a pin get renamed?",
+        )
+        for name, value in sorted(pins.items()):
+            expected = release[PIN_FIELDS[name]]
+            check(
+                f"pins: {relative} {name} agrees with the manifest",
+                value == expected,
+                f"{value!r} != manifest {expected!r}",
+            )
+
+
 def main(repo_root: Path = None) -> int:
     root = Path(repo_root) if repo_root else ci_matrix.REPO_ROOT
     _RESULTS.clear()
@@ -865,11 +996,14 @@ def main(repo_root: Path = None) -> int:
     test_reconcile_all_green()
     test_reconcile_classifies_failures()
     test_reconcile_blocked_by_vmod_source()
+    test_reconcile_harness_row_without_a_source_row()
+    test_summary_names_optional_failures_on_a_green_run()
     test_reconcile_manifest_validation()
     test_multi_vmod_isolation()
     test_record_precedence_and_validation()
     test_synthesize_missing()
     test_repo_catalog(root)
+    test_pins_do_not_drift_from_the_manifest(root)
 
     failed = 0
     for name, ok, detail in _RESULTS:

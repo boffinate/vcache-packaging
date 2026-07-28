@@ -718,15 +718,22 @@ def reconcile(expected: dict, observed: dict) -> dict:
             status = "failed_manifest_validation"
             detail = "; ".join(row.get("errors", [])) or "manifest failed validation"
         elif row["kind"] in ("package-target", "source-harness"):
-            upstream = source_status.get((row["vmod"], row["channel"]), "missing")
-            if upstream is not None and upstream != "passed":
-                status = "blocked_by_vmod_source"
-                detail = f"source/{row['vmod']}/{row['channel']} is {upstream}"
-            elif upstream is None:
-                status = "blocked_by_vmod_source"
-                detail = (
-                    f"source/{row['vmod']}/{row['channel']} produced no result record either"
-                )
+            # Only a row that actually has an upstream source row can be
+            # blocked by one. A source-harness lane on a moving channel derives
+            # no archive and gets no source row (see vmod_rows), so its absence
+            # of evidence is missing evidence, not a blockage by something that
+            # was never expected to run.
+            key = (row["vmod"], row["channel"])
+            if key in source_status:
+                upstream = source_status[key]
+                if upstream is None:
+                    status = "blocked_by_vmod_source"
+                    detail = (
+                        f"source/{row['vmod']}/{row['channel']} produced no result record either"
+                    )
+                elif upstream != "passed":
+                    status = "blocked_by_vmod_source"
+                    detail = f"source/{row['vmod']}/{row['channel']} is {upstream}"
             elif invocation_status.get(row["vmod"]) == "failed_manifest_validation":
                 status = "blocked_by_vmod_source"
                 detail = "the VMOD manifest failed validation"
@@ -825,6 +832,13 @@ def render_summary(resolved: dict) -> str:
     out.append("")
     if resolved["ok"]:
         out.append("Every required row produced a passing result.")
+        # A green run with failures in it must say so in the same breath.
+        # "Every required row passed" alone would read as "nothing failed".
+        if counts["failed"]:
+            out.append("")
+            out.append(
+                f"{counts['failed']} optional row(s) failed and did not redden the run."
+            )
     else:
         out.append(
             f"**{counts['required_failed']} required row(s) failed or are missing.** "
