@@ -2,7 +2,7 @@
 
 Date: 2026-07-28
 
-Status: Implemented on branch `step3-failure-isolation-phase1`, first-pass audit fixes applied, unexecuted in CI
+Status: Implemented on branch `step3-failure-isolation-phase1`, audit fixes applied, and proven live — see [the live-proof report](20260728_1856_report_step-3-failure-isolation-live-proof.md) for the run evidence and the package-equivalence tables
 
 Implements items 1–6 of [Phase 1 of the VMOD matrix failure-isolation plan](20260728_0833_plan_vmod-matrix-failure-isolation.md), which is step 3 of [the outstanding-work roadmap](20260728_0916_roadmap_outstanding-packaging-work.md). Item 7 — the live failure-injection runs — is deliberately not done here; the hooks it needs exist and are described below.
 
@@ -136,8 +136,8 @@ The plan's remaining cases need work from later phases: case 6 (a failed engine 
 
 ## What remains
 
-- **Item 7, the live proof.** Every case in the table above needs a real dispatched run on this branch. Nothing here has executed in GitHub Actions; the graph is argued from the documentation and `actionlint`, which is exactly what the plan says is not sufficient.
-- **The package-equivalence check.** The roadmap's Step 3 contract — byte-identical Debian package digests excluding `.buildinfo` and `.changes`, a normalized semantic RPM comparison, and equivalent installed-package smoke and behaviour results — cannot be evaluated on the host and has not been evaluated at all. The argument that it should hold is structural: no file under `recipes/` or `scripts/` changed, the build commands and their order are identical, and the pins are the same values read from the manifest instead of workflow environment variables. That argument is not evidence. A run of this branch and a run of `main` must be compared before Step 3's exit gate is claimed.
+- ~~**Item 7, the live proof.**~~ Done: six dispatched runs, every case observed. See [the live-proof report](20260728_1856_report_step-3-failure-isolation-live-proof.md).
+- ~~**The package-equivalence check.**~~ Done: 10/10 Debian packages byte-identical excluding `.buildinfo` and `.changes`, 18/18 EL9 RPMs semantically equivalent, smoke and behaviour unchanged, against the last green `main` run at this branch's base commit. The structural argument below turned out to be right, but it was not evidence until it was measured.
 - **Artifact metadata is not verified by consumers.** The plan requires that every dependency artifact carry resolved-identity metadata and that consumers verify it against the manifest row before use. The source archive does carry its metadata — `release-source-archive.sh` writes `libvmod-cachetag-*.metadata.json` into the artifact — but the target rows do not read it back and compare it with their own row's `ref`, `expected_commit` and `version` before building. Today they re-verify the identity independently, by checking the tag out again and asserting the peeled commit, which is why nothing unverified reaches a package. It becomes load-bearing in Phase 2, when a target row consumes an engine artifact it did not build and no longer has a second, independent way to know what it got; the audit agreed to defer it there.
 - **Branch-protection check names.** The job names changed (`registry-selftest` is now `structural-validation`; `debian-13` and `el9` are now matrix rows inside a reusable workflow). **Before opening the PR**, the required status checks should become the collector's `collect` job — that is the job that reconciles every expected row and is red whenever a required row is — optionally alongside `structural-validation`. The old per-row names must be dropped: a required check whose job no longer exists never reports, and the PR hangs at "Expected — waiting for status" forever rather than failing. This is repository configuration and is not visible from, or fixable in, the repository contents.
 - **The duplicated pins in the three unmigrated workflows**, noted above.
