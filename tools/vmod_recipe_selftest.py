@@ -38,7 +38,7 @@ import vmod_recipe as vr  # noqa: E402
 
 _RESULTS: list = []
 
-DICT_MANIFEST = "recipes/vmods/overlays/dict/dict.yml"
+DICT_MANIFEST = "registry/vmods/dict.yml"
 DICT_OVERLAY = "recipes/vmods/overlays/dict/overlay.yml"
 RELEASE_COHORT = "vinyl-9.0.1-ac4f719c16f4"
 MAINTAINER = "Boffinate <noreply@boffinate.com>"
@@ -93,23 +93,24 @@ def _expect_error(name: str, fn, fragment: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_staged_manifest_is_catalog_valid(root: Path) -> None:
-    """The staged dict.yml must be something registry/vmods/ would accept.
+def test_dict_manifest_is_catalog_valid(root: Path) -> None:
+    """The generator and the catalog must agree about dict's manifest.
 
-    It is not in the catalog yet -- Wave A2 moves it -- so nothing else would
-    notice it drifting into a shape the catalog rejects.
+    ci_matrix.py owns the schema and validates it in CI, but the generator is
+    the other consumer of the same file, and a change satisfying one and not
+    the other would otherwise be found late.
     """
     path = root / DICT_MANIFEST
     data = ci_matrix.load_vmod_manifest(path)
     errors = ci_matrix.validate_vmod_manifest(data, str(path), "dict")
-    check("staged dict.yml validates as vmod-ci/v1", not errors, "; ".join(errors))
+    check("dict.yml validates as vmod-ci/v1", not errors, "; ".join(errors))
     check(
-        "staged dict.yml names the autotools adapter",
+        "dict.yml names the autotools adapter",
         data["adapter"] == "autotools",
         data["adapter"],
     )
     check(
-        "staged dict.yml pins a two-component version",
+        "dict.yml pins a two-component version",
         data["sources"]["release"]["version"] == "1.7",
         str(data["sources"]["release"]),
     )
@@ -1092,7 +1093,7 @@ def main(repo_root: Path = None) -> int:
     root = Path(repo_root) if repo_root else vr.REPO_ROOT
     _RESULTS.clear()
 
-    test_staged_manifest_is_catalog_valid(root)
+    test_dict_manifest_is_catalog_valid(root)
     test_dict_deb_model(root)
     test_abi_expressions_are_not_duplicated(root)
     test_dict_deb_render(root)

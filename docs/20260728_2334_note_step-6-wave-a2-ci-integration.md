@@ -118,7 +118,8 @@ Nothing above is blocked; it is unfinished. The pieces that are done are the one
 | `ci_matrix.py check-catalog` | OK, 2 VMODs |
 | `ci_matrix.py ledger --tier ci` | 14 selected rows, asserted exactly by a self-test |
 | shellcheck, `koalaman/shellcheck:stable` container, all new scripts | clean |
-| `generate.sh` dry run against the real 1.7 archive | renders, refuses tokens, lays out the tree |
+| `generate.sh` dry run against the real 1.7 archive, both targets | renders, refuses tokens, lays out the tree |
+| `generate.sh --inject-token` | refused, exit non-zero — the lane catches a corrupt recipe the generator never saw |
 | `git diff main -- .github/` | empty |
 
 The 28 new `ci_matrix` tests cover: both halves of the host/address exclusivity, the recorded recipe strategy, `archive_url` being required for a generated recipe, dict expanding to `vinyl-release` only, **per-VMOD injection isolation in both directions for all six targeted cases**, `failed_recipe_generation` being a non-OK status that a record can carry, `source-facts` output for both a git and a GitHub entry, and the exact 14-row ledger.
