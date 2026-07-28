@@ -51,6 +51,46 @@ die() { printf 'E: %s\n' "$*" >&2; exit 1; }
 mkdir -p "$specdir" "$resultdir/vinyl" "$resultdir/cachetag" /out/packages "$logdir"
 
 ###############################################################################
+# rpmbuild log capture -- unconditional, via EXIT trap
+###############################################################################
+#
+# Mock's own build.log is the only record of what %configure expanded to and
+# which CFLAGS/LDFLAGS redhat-rpm-config supplied. The tee'd files below are
+# Mock's stdout, which for --rebuild is a progress summary and contains none of
+# it. Without this copy the registry target manifest's build.configure_options,
+# build.cflags and build.ldflags fields -- "recorded output", per
+# registry/README.md -- have no source on this lane but a guess at what the
+# distribution's macros expand to, which is exactly the kind of hand-written
+# value this repository's rules forbid. The Debian lane needs no equivalent:
+# dh_auto_configure echoes the line and libtool echoes every compile and link
+# command into the job log.
+#
+# It is an EXIT trap, not a success-path step: this script runs under
+# set -euo pipefail, so when a mock build fails the script dies mid-flight and
+# a copy placed after the builds never runs. That made run 30344401137's EL9
+# failures invisible -- the job uploaded no build.log, and the real rpmbuild
+# error was only diagnosable because the Debian lanes hit the same wall. The
+# trap also captures root.log, which is where a buildroot dependency failure
+# lands. Logs that do not exist yet (a failure before or between builds) are
+# tolerated and warned about, not fatal.
+copy_mock_log() { # SRC DEST
+	if [ -f "$1" ]; then
+		cp -p "$1" "$2" || true
+		printf 'copied %s (%s lines)\n' "$2" "$(wc -l < "$2" | tr -d ' ')"
+	else
+		printf 'W: no %s to copy\n' "$1" >&2
+	fi
+}
+
+copy_mock_logs() {
+	for pkg in vinyl cachetag; do
+		copy_mock_log "$resultdir/$pkg/build.log" "$logdir/mock-$pkg-rpmbuild.log"
+		copy_mock_log "$resultdir/$pkg/root.log" "$logdir/mock-$pkg-root.log"
+	done
+}
+trap copy_mock_logs EXIT
+
+###############################################################################
 say "install Mock"
 ###############################################################################
 
@@ -234,28 +274,8 @@ mock_as -r "$mock_cfg" --no-clean \
 find "$resultdir/cachetag" -name 'libvmod-cachetag*.rpm' -exec cp -p {} /out/packages/ \;
 cp -p "$cachetag_srpm" /out/packages/
 
-###############################################################################
-say "rpmbuild logs: the effective configure line and build flags"
-###############################################################################
-# Mock's own build.log is the only record of what %configure expanded to and
-# which CFLAGS/LDFLAGS redhat-rpm-config supplied. The tee'd files above are
-# Mock's stdout, which for --rebuild is a progress summary and contains none of
-# it. Without this copy the registry target manifest's build.configure_options,
-# build.cflags and build.ldflags fields -- "recorded output", per
-# registry/README.md -- have no source on this lane but a guess at what the
-# distribution's macros expand to, which is exactly the kind of hand-written
-# value this repository's rules forbid. The Debian lane needs no equivalent:
-# dh_auto_configure echoes the line and libtool echoes every compile and link
-# command into the job log.
-for pkg in vinyl cachetag; do
-	if [ -f "$resultdir/$pkg/build.log" ]; then
-		cp -p "$resultdir/$pkg/build.log" "$logdir/mock-$pkg-rpmbuild.log"
-		printf 'copied %s build.log (%s lines)\n' \
-			"$pkg" "$(wc -l < "$logdir/mock-$pkg-rpmbuild.log" | tr -d ' ')"
-	else
-		printf 'W: no %s/build.log in %s\n' "$pkg" "$resultdir" >&2
-	fi
-done
+# The rpmbuild build.log and root.log copies happen in the copy_mock_logs
+# EXIT trap registered at the top of this script, on success and failure alike.
 
 say "container-mock.sh complete"
 ls -la /out/packages
