@@ -58,6 +58,7 @@ override_dh_auto_configure:
 	dh_auto_configure -- \
 		--libdir=$(VINYL_LIBDIR)@CONFIGURE_ARGS_CONTINUED@
 
+@DEB_AUTO_BUILD_BLOCK@
 @DEB_AUTO_TEST_BLOCK@
 override_dh_auto_install:
 	dh_auto_install

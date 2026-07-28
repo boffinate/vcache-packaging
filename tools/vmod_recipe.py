@@ -705,6 +705,29 @@ def _license_stanzas(model: dict, licenses_dir: Path) -> str:
     return path.read_text(encoding="utf-8").rstrip("\n")
 
 
+def _deb_auto_build_block(model: dict) -> str:
+    """Serialise make on the Debian backend when the overlay asks for it.
+
+    `parallel_build` had exactly one consumer until 2026-07-28: the RPM backend
+    rendered it as `%make_build -j1` and the Debian backend rendered nothing at
+    all, so `dh_auto_build` ran at `-j$(nproc)`. dict declares `no` because
+    upstream's src/Makefile.am generates vcc_if.c, vcc_if.h and the man-page
+    source from one rule and builds the manual from the last of them without
+    declaring that edge; the first live CI build raced and died on a missing
+    vcc_if.c.tmp2. A declared field with one asserted consumer is a field that
+    can be half-ignored, which is what happened.
+    """
+    if model["build"]["parallel_build"] != "no":
+        return ""
+    return (
+        "# Serialised on purpose. This VMOD has a generator rule whose\n"
+        "# prerequisites are not fully declared, which is harmless at -j1 and a\n"
+        "# race above it. Declared by the VMOD overlay, not guessed here.\n"
+        "override_dh_auto_build:\n"
+        "\tdh_auto_build -- -j1\n"
+    )
+
+
 def _deb_auto_test_block(model: dict) -> str:
     tests = model["build"]["build_time_tests"]
     if tests == "none":
@@ -827,6 +850,7 @@ def token_values(model: dict, licenses_dir: Path) -> dict:
         "VMOD_OBJECT": model["payload"]["vmod_object"],
         "CONFIGURE_ARGS_CONTINUED": _continued_args(model["build"]["configure_args"]),
         "DH_ARGS": "" if model["build"]["bootstrap"] != "none" else " --without autoreconf",
+        "DEB_AUTO_BUILD_BLOCK": _deb_auto_build_block(model),
         "DEB_AUTO_TEST_BLOCK": _deb_auto_test_block(model),
         "RPM_CHECK_BLOCK": _rpm_check_block(model),
         "RPM_BOOTSTRAP_BLOCK": _rpm_bootstrap_block(model),

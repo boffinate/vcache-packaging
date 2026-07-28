@@ -974,6 +974,83 @@ def test_fixture_render_matches_the_golden(root: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_parallel_build_reaches_both_backends(root: Path) -> None:
+    """Every backend that can serialise make must be asserted to do so.
+
+    This test exists because its absence let a defect ship. `parallel_build`
+    had one asserted consumer -- the RPM `-j1` flag -- so the Debian backend
+    rendering nothing at all went unnoticed until the first live CI build ran
+    `dh_auto_build` at -j4 and raced on upstream's undeclared generator
+    prerequisites. A declared field with one asserted consumer is a field that
+    can be half-ignored.
+
+    Both directions, on both backends: `no` must serialise on each, and the
+    default must serialise on neither.
+    """
+    inputs = _inputs(root)
+    licenses = root / vr.RECIPE_ROOT / "licenses"
+    el9 = manifest_mod.load_target(
+        root / "registry" / "targets" / RELEASE_COHORT / "el9-x86_64.yml"
+    )
+
+    serial = vr.token_values(_model(root), licenses)
+    serial_rpm = vr.token_values(
+        _model(root, target=el9, debian_distribution=None), licenses
+    )
+    check(
+        "parallel: 'no' renders a serialising override on the Debian backend",
+        "override_dh_auto_build:" in serial["DEB_AUTO_BUILD_BLOCK"]
+        and "-j1" in serial["DEB_AUTO_BUILD_BLOCK"],
+        repr(serial["DEB_AUTO_BUILD_BLOCK"]),
+    )
+    check(
+        "parallel: 'no' renders -j1 on the RPM backend",
+        serial_rpm["RPM_MAKE_FLAGS"] == " -j1",
+        repr(serial_rpm["RPM_MAKE_FLAGS"]),
+    )
+
+    overlay = _clone(inputs["overlay"])
+    overlay["build"]["parallel_build"] = "yes"
+    par = vr.token_values(_model(root, overlay=overlay), licenses)
+    par_rpm = vr.token_values(
+        _model(root, overlay=overlay, target=el9, debian_distribution=None), licenses
+    )
+    check(
+        "parallel: the default renders no Debian override",
+        par["DEB_AUTO_BUILD_BLOCK"] == "",
+        repr(par["DEB_AUTO_BUILD_BLOCK"]),
+    )
+    check(
+        "parallel: the default renders no RPM flag",
+        par_rpm["RPM_MAKE_FLAGS"] == "",
+        repr(par_rpm["RPM_MAKE_FLAGS"]),
+    )
+
+    # And in the rendered files, not only in the token values: a token nothing
+    # substitutes is exactly the kind of gap this test is here to close.
+    templates = root / vr.RECIPE_ROOT / "templates"
+    rules = vr.render(_model(root), templates, licenses)["debian/rules"]
+    check(
+        "parallel: the serialising override reaches debian/rules",
+        "override_dh_auto_build:" in rules and "dh_auto_build -- -j1" in rules,
+        rules,
+    )
+    spec = vr.render(
+        _model(root, target=el9, debian_distribution=None), templates, licenses
+    )["vmod-dict.spec"]
+    check(
+        "parallel: -j1 reaches the spec's %make_build",
+        "%make_build -j1" in spec,
+        spec,
+    )
+    rules_par = vr.render(_model(root, overlay=overlay), templates, licenses)["debian/rules"]
+    check(
+        "parallel: a parallel VMOD's rules carry no override at all",
+        "override_dh_auto_build" not in rules_par,
+        rules_par,
+    )
+
+
 def test_adapter_defaults_and_overlay_overrides(root: Path) -> None:
     inputs = _inputs(root)
     model = _model(root)
@@ -1120,6 +1197,7 @@ def main(repo_root: Path = None) -> int:
     test_generation_record(root)
     test_expected_names(root)
     test_fixture_render_matches_the_golden(root)
+    test_parallel_build_reaches_both_backends(root)
     test_adapter_defaults_and_overlay_overrides(root)
 
     failed = 0
