@@ -9,13 +9,35 @@ name: Nightly package builds and upgrade-transaction matrices
 
 on:
   schedule:
+    # The schedule always runs the trunk track: the nightly's standing job is
+    # early warning on the pinned-snapshot cohort. Release-track transaction
+    # runs are deliberate, dispatched events against the minted release
+    # cohort, per the two-track note's cutover checklist
+    # (docs/20260726_1235_note_two-track-release-and-trunk.md).
     - cron: "17 3 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      track:
+        description: >-
+          Vinyl pin track. trunk (default, and what the cron schedule runs)
+          builds and tests the pinned trunk-snapshot cohort; release builds
+          from the digest-pinned upstream release tarball and runs the
+          matrices against the release cohort.
+        required: false
+        default: trunk
+        type: choice
+        options:
+          - trunk
+          - release
 
 permissions:
   contents: read
 
 env:
+  # Empty on schedule events, so the fallback keeps the cron on trunk. Every
+  # build.sh, mismatch-fixture.sh, and transactions.sh invocation below reads
+  # the lane pin files, which select their pin block on this variable.
+  VINYL_TRACK: ${{ inputs.track || 'trunk' }}
   VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
   VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
   CACHETAG_SOURCE_SHA256: 9aba3effcb20cfc70b77a4729990e3cd2ae1712ad242f4e4c45a664e1949eac2
@@ -95,7 +117,12 @@ jobs:
           ci_verify_cachetag_release_checkout \
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
+      # The release track builds from the digest-pinned upstream tarball
+      # (downloaded by build.sh and verified against the pinned sha256) and
+      # never reads a Vinyl git checkout, so this step is trunk-only --
+      # mirroring ci.yml's package jobs.
       - name: checkout ../vinyl-cache (pinned commit)
+        if: env.VINYL_TRACK == 'trunk'
         run: |
           set -eu
           . vcache-packaging/scripts/ci/lib/common.sh
@@ -164,7 +191,12 @@ jobs:
           ci_verify_cachetag_release_checkout \
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
+      # The release track builds from the digest-pinned upstream tarball
+      # (downloaded by build.sh and verified against the pinned sha256) and
+      # never reads a Vinyl git checkout, so this step is trunk-only --
+      # mirroring ci.yml's package jobs.
       - name: checkout ../vinyl-cache (pinned commit)
+        if: env.VINYL_TRACK == 'trunk'
         run: |
           set -eu
           . vcache-packaging/scripts/ci/lib/common.sh
