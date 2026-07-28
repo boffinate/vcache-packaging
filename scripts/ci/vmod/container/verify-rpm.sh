@@ -16,7 +16,13 @@
 set -euo pipefail
 export LC_ALL=C
 
-note() { printf '\n########## %s ##########\n' "$*"; }
+note() {
+	printf '\n########## %s ##########\n' "$*"
+	# The stage marker the workflow classifies from. Without it every failure
+	# in this script collapses to one status, and four statuses that exist in
+	# the vocabulary with no producer that can emit them are latent lies.
+	printf '%s\n' "$*" >/lane/verify-stage
+}
 die() {
 	printf 'FAIL: %s\n' "$*" >&2
 	exit 1

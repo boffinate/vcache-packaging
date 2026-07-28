@@ -1446,6 +1446,100 @@ def test_scoped_manifest_injection_leaves_the_other_vmod_intact(repo_root: Path)
     )
 
 
+def test_verify_stage_classification_covers_every_stage(repo_root: Path) -> None:
+    """Every stage the verify scripts can leave behind classifies correctly.
+
+    The workflow classifies a failed verification from a marker the script
+    writes, because one container invocation covers six checks. Both halves of
+    that contract are read here -- the case arms out of the workflow, the stage
+    strings out of the scripts -- so the mapping cannot drift on either side
+    without this failing. Matched on words rather than stage numbers, because
+    the RPM script has one check the Debian one does not and their numbering
+    diverges from stage 4 on.
+    """
+    workflow = (repo_root / ".github/workflows/vmod-package.yml").read_text(encoding="utf-8")
+    block = workflow.split('stage=$(cat "$GITHUB_WORKSPACE/lane/verify-stage"', 1)
+    check("stage: the workflow reads the marker file", len(block) == 2, "marker read not found")
+    if len(block) != 2:
+        return
+    arms = re.findall(r"^\s*(\*[^)]*)\)\s*$", block[1].split("esac", 1)[0], re.M)
+
+    def classify(stage: str) -> str:
+        for pattern, status in (
+            (("lintian", "rpmlint"), "failed_lint"),
+            (("behaviour", "behavior"), "failed_behavior"),
+            (("smoke",), "failed_install_or_smoke"),
+            (("ABI", "payload", "hardening", "soname"), "failed_abi_or_hardening"),
+        ):
+            if any(word in stage for word in pattern):
+                return status
+        return "failed_install_or_smoke"
+
+    # Four classifying arms plus the catch-all. If somebody adds an arm to the
+    # workflow and not to the mirror below, the count differs and this says so
+    # rather than the mirror quietly describing a mapping that no longer holds.
+    check(
+        "stage: the workflow has four classifying arms and a catch-all",
+        len(arms) == 5 and arms[-1] == "*",
+        str(arms),
+    )
+
+    expected = {
+        "ABI": "failed_abi_or_hardening",
+        "payload": "failed_abi_or_hardening",
+        "hardening": "failed_abi_or_hardening",
+        "soname": "failed_abi_or_hardening",
+        "lintian": "failed_lint",
+        "rpmlint": "failed_lint",
+        "smoke": "failed_install_or_smoke",
+        "behaviour": "failed_behavior",
+    }
+    seen: dict = {}
+    for name in ("verify-deb.sh", "verify-rpm.sh"):
+        script = (repo_root / "scripts/ci/vmod/container" / name).read_text(encoding="utf-8")
+        check(
+            f"stage: {name} writes the marker from note()",
+            "/lane/verify-stage" in script,
+            name,
+        )
+        for stage in re.findall(r'^note "([^"]*)"', script, re.M):
+            status = classify(stage)
+            check(
+                f"stage: {name!r} {stage[:44]!r} -> {status}",
+                status in ci_matrix.STATUSES,
+                status,
+            )
+            for word, want in expected.items():
+                if word in stage:
+                    seen[word] = status
+                    check(
+                        f"stage: a {word!r} failure is {want}",
+                        status == want,
+                        f"{stage} -> {status}",
+                    )
+                    break
+
+    # Every status the mapping can emit must be one the collector understands
+    # and must not be an OK status, or a failed verification would report green.
+    emitted = set(seen.values()) | {"failed_install_or_smoke"}
+    check(
+        "stage: all four verification statuses have a producer",
+        emitted
+        == {
+            "failed_abi_or_hardening",
+            "failed_lint",
+            "failed_install_or_smoke",
+            "failed_behavior",
+        },
+        str(sorted(emitted)),
+    )
+    check(
+        "stage: none of them is an OK status",
+        not (emitted & ci_matrix.OK_STATUSES),
+        str(sorted(emitted & ci_matrix.OK_STATUSES)),
+    )
+
+
 def test_recipe_generation_status_is_in_the_vocabulary() -> None:
     check(
         "classification: failed_recipe_generation exists",
@@ -1967,6 +2061,7 @@ def main(repo_root: Path = None) -> int:
     test_injections_are_confined_to_one_vmod(root)
     test_injection_scope_is_the_single_source_of_truth()
     test_scoped_manifest_injection_leaves_the_other_vmod_intact(root)
+    test_verify_stage_classification_covers_every_stage(root)
     test_recipe_generation_status_is_in_the_vocabulary()
     test_source_facts_are_emitted_for_a_lane_script(root)
     test_ledger_covers_both_vmods(root)
