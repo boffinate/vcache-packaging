@@ -135,6 +135,23 @@ def _invocation_record(vmod, status, **kw):
     return ci_matrix.make_record(kind="invocation", vmod=vmod, status=status, **kw)
 
 
+def _engine_record(engine, target, status, **kw):
+    return ci_matrix.make_record(
+        kind="engine", vmod="", engine=engine, target=target, status=status, **kw
+    )
+
+
+# The four shared engine rows every `ci`-tier fixture in this file expects,
+# because GOOD_MANIFEST declares both engines against both targets. Passing them
+# is the normal case; a test that wants an engine failure overrides one entry.
+def _green_engine_records() -> list:
+    return [
+        _engine_record(engine, target, "passed")
+        for engine in ("vinyl-release", "vinyl-trunk-pinned")
+        for target in ("debian-13-amd64", "el9-x86_64")
+    ]
+
+
 # --- catalog ---------------------------------------------------------------
 
 
@@ -412,9 +429,13 @@ def test_ledger() -> None:
         data = ci_matrix.ledger("ci", root)
         keys = sorted(row["row_key"] for row in data["rows"])
         check(
-            "ledger: one invocation row, one source row and every lane row",
+            "ledger: the shared engine rows, one invocation row, one source row, every lane row",
             keys
             == [
+                "engine/vinyl-release/debian-13-amd64",
+                "engine/vinyl-release/el9-x86_64",
+                "engine/vinyl-trunk-pinned/debian-13-amd64",
+                "engine/vinyl-trunk-pinned/el9-x86_64",
                 "harness/cachetag/trunk/vinyl-trunk-head",
                 "source/cachetag/release",
                 "target/cachetag/release/vinyl-release/debian-13-amd64",
@@ -435,6 +456,35 @@ def test_ledger() -> None:
             "ledger: every row records whether its VMOD is required",
             all(row["required"] for row in data["rows"]),
             str(data["rows"][0]),
+        )
+        engines = [row for row in data["rows"] if row["kind"] == "engine"]
+        check(
+            "ledger: an engine row belongs to no VMOD and names its own artifact",
+            len(engines) == 4
+            and all(row["vmod"] == "" for row in engines)
+            and sorted(row["engine_artifact"] for row in engines)
+            == [
+                "engine-vinyl-release-debian-13-amd64",
+                "engine-vinyl-release-el9-x86_64",
+                "engine-vinyl-trunk-pinned-debian-13-amd64",
+                "engine-vinyl-trunk-pinned-el9-x86_64",
+            ],
+            str(engines),
+        )
+        check(
+            "ledger: no engine row is derived for the source-harness-only engine",
+            all(row["engine"] != "vinyl-trunk-head" for row in engines),
+            str(engines),
+        )
+        targets = [row for row in data["rows"] if row["kind"] == "package-target"]
+        check(
+            "ledger: every package row names the engine row it consumes",
+            all(
+                row["engine_row_key"] == f"engine/{row['engine']}/{row['target']}"
+                and row["engine_artifact"] == f"engine-{row['engine']}-{row['target']}"
+                for row in targets
+            ),
+            str(targets),
         )
         check(
             "ledger: result artifact names are predictable from the row key",
@@ -477,6 +527,21 @@ def test_ledger_keeps_a_broken_manifest_as_one_row() -> None:
             len([row for row in data["rows"] if row["vmod"] == "cachetag"]) == 7,
             str(len(data["rows"])),
         )
+        check(
+            "ledger: a malformed manifest contributes no engine demand of its own",
+            sorted(
+                (row["engine"], row["target"])
+                for row in data["rows"]
+                if row["kind"] == "engine"
+            )
+            == [
+                ("vinyl-release", "debian-13-amd64"),
+                ("vinyl-release", "el9-x86_64"),
+                ("vinyl-trunk-pinned", "debian-13-amd64"),
+                ("vinyl-trunk-pinned", "el9-x86_64"),
+            ],
+            str([r["row_key"] for r in data["rows"] if r["kind"] == "engine"]),
+        )
 
     with tempfile.TemporaryDirectory() as tmp:
         root = _catalog(Path(tmp), {"cachetag.yml": _manifest_text("cachetag"), "bad.yml": "\ta: 1\n"})
@@ -500,7 +565,7 @@ def _reconcile(root: Path, records: list, tier: str = "ci") -> dict:
 def test_reconcile_all_green() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = _catalog(Path(tmp), {"cachetag.yml": _manifest_text("cachetag")})
-        records = [
+        records = _green_engine_records() + [
             _invocation_record("cachetag", "passed"),
             _source_record("cachetag", "release", "passed", source={"ref": "v1.0.1"}),
         ]
@@ -511,8 +576,13 @@ def test_reconcile_all_green() -> None:
         check("reconcile: an all-green run is ok", resolved["ok"], json.dumps(resolved["counts"]))
         check(
             "reconcile: the counts describe the selected rows only",
-            resolved["counts"]["expected"] == 6 and resolved["counts"]["passed"] == 6,
+            resolved["counts"]["expected"] == 10 and resolved["counts"]["passed"] == 10,
             json.dumps(resolved["counts"]),
+        )
+        check(
+            "reconcile: the summary has a shared engine section",
+            "### Shared engine packages" in ci_matrix.render_summary(resolved),
+            ci_matrix.render_summary(resolved),
         )
         check(
             "reconcile: the unselected trunk harness row is reported as not_selected",
@@ -533,7 +603,7 @@ def test_reconcile_all_green() -> None:
 def test_reconcile_classifies_failures() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = _catalog(Path(tmp), {"cachetag.yml": _manifest_text("cachetag")})
-        records = [
+        records = _green_engine_records() + [
             _invocation_record("cachetag", "passed"),
             _source_record("cachetag", "release", "passed"),
             _target_record(
@@ -579,7 +649,7 @@ def test_reconcile_classifies_failures() -> None:
 def test_reconcile_blocked_by_vmod_source() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = _catalog(Path(tmp), {"cachetag.yml": _manifest_text("cachetag")})
-        records = [
+        records = _green_engine_records() + [
             _invocation_record("cachetag", "passed"),
             _source_record(
                 "cachetag", "release", "failed_source_digest", detail="archive sha256 mismatch"
@@ -604,6 +674,216 @@ def test_reconcile_blocked_by_vmod_source() -> None:
             str([(r["row_key"], r["detail"]) for r in resolved["rows"]]),
         )
         check("reconcile: a blocked required row is still a red run", resolved["ok"] is False)
+
+
+def test_engine_matrix() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        entries = {f"vmod{i}.yml": _manifest_text(f"vmod{i}") for i in range(1, 4)}
+        entries["broken.yml"] = BROKEN_MANIFEST
+        root = _catalog(Path(tmp), entries)
+        matrix = ci_matrix.engine_matrix("ci", root)
+        rows = sorted((e["engine"], e["target"]) for e in matrix["include"])
+        check(
+            "engine-matrix: three VMODs naming the same engines share four engine rows",
+            rows
+            == [
+                ("vinyl-release", "debian-13-amd64"),
+                ("vinyl-release", "el9-x86_64"),
+                ("vinyl-trunk-pinned", "debian-13-amd64"),
+                ("vinyl-trunk-pinned", "el9-x86_64"),
+            ],
+            str(rows),
+        )
+        check(
+            "engine-matrix: a malformed manifest does not prevent the engine rows",
+            len(matrix["include"]) == 4,
+            str(matrix),
+        )
+        check(
+            "engine-matrix: every entry carries the artifact name, family and track",
+            all(
+                e["engine_artifact"] == f"engine-{e['engine']}-{e['target']}"
+                and e["family"] == ci_matrix.TARGETS[e["target"]]["family"]
+                and e["vinyl_track"] == ci_matrix.ENGINES[e["engine"]]["vinyl_track"]
+                and e["timeout_minutes"]
+                == ci_matrix.TARGETS[e["target"]]["engine_timeout_minutes"]
+                for e in matrix["include"]
+            ),
+            str(matrix["include"][0]),
+        )
+        check(
+            "engine-matrix: injection is inert by default",
+            all(
+                e["inject_build"] == "false" and e["suppress_artifact"] == "false"
+                for e in matrix["include"]
+            ),
+            str(matrix["include"]),
+        )
+
+        release_only = ci_matrix.engine_matrix("release", root)
+        check(
+            "engine-matrix: the release tier needs only the release-engine rows",
+            sorted((e["engine"], e["target"]) for e in release_only["include"])
+            == [
+                ("vinyl-release", "debian-13-amd64"),
+                ("vinyl-release", "el9-x86_64"),
+            ],
+            str(release_only),
+        )
+
+        for inject, field in (
+            ("engine_build", "inject_build"),
+            ("suppress_engine_artifact", "suppress_artifact"),
+        ):
+            injected = ci_matrix.engine_matrix("ci", root, inject=inject)
+            marked = [
+                (e["engine"], e["target"]) for e in injected["include"] if e[field] == "true"
+            ]
+            check(
+                f"engine-matrix: {inject} marks exactly the one documented row",
+                marked == [ci_matrix.INJECT_ENGINE_ROW],
+                str(marked),
+            )
+            check(
+                f"engine-matrix: {inject} leaves the other three rows alone",
+                sum(1 for e in injected["include"] if e[field] == "false") == 3,
+                str(injected["include"]),
+            )
+
+
+def test_reconcile_blocked_by_engine_artifact() -> None:
+    """The plan's verification case 6, in the collector.
+
+    One engine row fails; only the VMOD rows that name that exact engine and
+    target may be reported blocked, and they must name the engine row rather
+    than surfacing as an unclassified download error.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _catalog(Path(tmp), {"cachetag.yml": _manifest_text("cachetag")})
+        records = [
+            _engine_record("vinyl-release", "debian-13-amd64", "passed"),
+            _engine_record("vinyl-release", "el9-x86_64", "passed"),
+            _engine_record(
+                "vinyl-trunk-pinned",
+                "debian-13-amd64",
+                "failed_engine_build",
+                detail="injected engine-build failure",
+            ),
+            _engine_record("vinyl-trunk-pinned", "el9-x86_64", "passed"),
+            _invocation_record("cachetag", "passed"),
+            _source_record("cachetag", "release", "passed"),
+            _target_record("cachetag", "release", "vinyl-release", "debian-13-amd64", "passed"),
+            _target_record("cachetag", "release", "vinyl-release", "el9-x86_64", "passed"),
+            _target_record("cachetag", "release", "vinyl-trunk-pinned", "el9-x86_64", "passed"),
+            # The consumer of the failed engine row uploads nothing at all, so
+            # the collector has to classify it from the ledger alone.
+        ]
+        resolved = _reconcile(root, records)
+        by_key = {row["row_key"]: row for row in resolved["rows"]}
+        blocked = by_key["target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64"]
+        check(
+            "engine: the consumer of a failed engine row is blocked_by_engine_artifact",
+            blocked["status"] == "blocked_by_engine_artifact",
+            str(blocked),
+        )
+        check(
+            "engine: the blocked row names the engine row identity",
+            "engine/vinyl-trunk-pinned/debian-13-amd64" in blocked["detail"]
+            and "failed_engine_build" in blocked["detail"],
+            str(blocked),
+        )
+        check(
+            "engine: unrelated engine rows and their consumers still pass",
+            all(
+                by_key[key]["status"] == "passed"
+                for key in (
+                    "engine/vinyl-release/debian-13-amd64",
+                    "engine/vinyl-release/el9-x86_64",
+                    "engine/vinyl-trunk-pinned/el9-x86_64",
+                    "target/cachetag/release/vinyl-release/debian-13-amd64",
+                    "target/cachetag/release/vinyl-release/el9-x86_64",
+                    "target/cachetag/release/vinyl-trunk-pinned/el9-x86_64",
+                )
+            ),
+            str({k: v["status"] for k, v in by_key.items()}),
+        )
+        check(
+            "engine: a failed engine row makes the run red",
+            resolved["ok"] is False and resolved["counts"]["required_failed"] == 2,
+            json.dumps(resolved["counts"]),
+        )
+        check(
+            "engine: the summary reports the shared root cause in its own section",
+            "### Shared engine packages" in ci_matrix.render_summary(resolved)
+            and "vinyl-trunk-pinned / debian-13-amd64" in ci_matrix.render_summary(resolved),
+            ci_matrix.render_summary(resolved),
+        )
+
+
+def test_engine_row_that_never_reported_blocks_its_consumers() -> None:
+    """An engine row with no record at all is missing evidence, and still blocks.
+
+    This is the `suppress_engine_artifact` shape: the collector must not decide
+    the consumer is simply missing its own record when the thing it depended on
+    produced nothing either.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _catalog(Path(tmp), {"cachetag.yml": _manifest_text("cachetag")})
+        records = [
+            _engine_record("vinyl-release", "debian-13-amd64", "passed"),
+            _engine_record("vinyl-release", "el9-x86_64", "passed"),
+            _engine_record("vinyl-trunk-pinned", "el9-x86_64", "passed"),
+            _invocation_record("cachetag", "passed"),
+            _source_record("cachetag", "release", "passed"),
+            _target_record("cachetag", "release", "vinyl-release", "debian-13-amd64", "passed"),
+            _target_record("cachetag", "release", "vinyl-release", "el9-x86_64", "passed"),
+            _target_record("cachetag", "release", "vinyl-trunk-pinned", "el9-x86_64", "passed"),
+        ]
+        resolved = _reconcile(root, records)
+        by_key = {row["row_key"]: row for row in resolved["rows"]}
+        check(
+            "engine: an unreported engine row is missing_result_record",
+            by_key["engine/vinyl-trunk-pinned/debian-13-amd64"]["status"]
+            == "missing_result_record",
+            str(by_key["engine/vinyl-trunk-pinned/debian-13-amd64"]),
+        )
+        check(
+            "engine: its consumer is blocked rather than reported as missing its own record",
+            by_key["target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64"]["status"]
+            == "blocked_by_engine_artifact",
+            str(by_key["target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64"]),
+        )
+
+
+def test_vmod_source_failure_wins_over_an_engine_failure() -> None:
+    """Both causes apply; the row's own source failure is the one it reports.
+
+    The engine failure is not lost -- it is on the engine row, which is where a
+    shared root cause belongs.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _catalog(Path(tmp), {"cachetag.yml": _manifest_text("cachetag")})
+        records = [
+            _engine_record("vinyl-release", "debian-13-amd64", "failed_engine_build"),
+            _engine_record("vinyl-release", "el9-x86_64", "passed"),
+            _engine_record("vinyl-trunk-pinned", "debian-13-amd64", "passed"),
+            _engine_record("vinyl-trunk-pinned", "el9-x86_64", "passed"),
+            _invocation_record("cachetag", "passed"),
+            _source_record("cachetag", "release", "failed_source_digest"),
+        ]
+        resolved = _reconcile(root, records)
+        by_key = {row["row_key"]: row for row in resolved["rows"]}
+        check(
+            "engine: a row blocked by both causes reports its own VMOD source",
+            by_key["target/cachetag/release/vinyl-release/debian-13-amd64"]["status"]
+            == "blocked_by_vmod_source",
+            str(by_key["target/cachetag/release/vinyl-release/debian-13-amd64"]),
+        )
+        check(
+            "engine: the engine failure is still reported on the engine row",
+            by_key["engine/vinyl-release/debian-13-amd64"]["status"] == "failed_engine_build",
+            str(by_key["engine/vinyl-release/debian-13-amd64"]),
+        )
 
 
 def test_reconcile_harness_row_without_a_source_row() -> None:
@@ -638,7 +918,7 @@ def test_reconcile_harness_row_without_a_source_row() -> None:
 def test_summary_names_optional_failures_on_a_green_run() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = _catalog(Path(tmp), {"optional.yml": _manifest_text("optional", required="false")})
-        records = [
+        records = _green_engine_records() + [
             _invocation_record("optional", "passed"),
             _source_record("optional", "release", "passed"),
             _target_record("optional", "release", "vinyl-release", "debian-13-amd64", "failed_lint"),
@@ -655,7 +935,10 @@ def test_summary_names_optional_failures_on_a_green_run() -> None:
             resolved["ok"] and "1 optional row(s) failed and did not redden the run." in text,
             text,
         )
-        all_green = [_invocation_record("optional", "passed"), _source_record("optional", "release", "passed")]
+        all_green = _green_engine_records() + [
+            _invocation_record("optional", "passed"),
+            _source_record("optional", "release", "passed"),
+        ]
         for engine in ("vinyl-release", "vinyl-trunk-pinned"):
             for target in ("debian-13-amd64", "el9-x86_64"):
                 all_green.append(_target_record("optional", "release", engine, target, "passed"))
@@ -679,7 +962,7 @@ def test_reconcile_manifest_validation() -> None:
             Path(tmp),
             {"cachetag.yml": _manifest_text("cachetag"), "broken.yml": BROKEN_MANIFEST},
         )
-        records = [
+        records = _green_engine_records() + [
             _invocation_record("cachetag", "passed"),
             _source_record("cachetag", "release", "passed"),
         ]
@@ -720,7 +1003,10 @@ def test_multi_vmod_isolation() -> None:
         entries["optional.yml"] = _manifest_text("optional", required="false")
         root = _catalog(Path(tmp), entries)
 
-        records = []
+        # Every entry names the same four engine rows, so the shared half of the
+        # graph is built once and is green throughout: this test is about VMOD
+        # isolation, and an engine failure would blur it.
+        records = _green_engine_records()
         for i in range(1, 5):
             vmod = f"vmod{i}"
             records.append(_invocation_record(vmod, "passed"))
@@ -777,8 +1063,13 @@ def test_multi_vmod_isolation() -> None:
         )
         check(
             "multi-VMOD: the summary shows all six entries, red run included",
-            all(f"### {v}" in ci_matrix.render_summary(resolved) for v in sorted(by_vmod)),
+            all(f"### {v}" in ci_matrix.render_summary(resolved) for v in sorted(by_vmod) if v),
             ci_matrix.render_summary(resolved),
+        )
+        check(
+            "multi-VMOD: six entries share exactly four engine rows",
+            len(by_vmod[""]) == 4 and all(row["kind"] == "engine" for row in by_vmod[""]),
+            str([r["row_key"] for r in by_vmod[""]]),
         )
         # Six required failures: vmod2's source row plus its four blocked
         # target rows, and the malformed manifest. The optional VMOD's four
@@ -917,6 +1208,245 @@ def test_repo_catalog(repo_root: Path) -> None:
         == "a3897aaccf1d6996c00ee14b2c6e1ddac91ac982"
         and data["sources"]["release"]["archive_sha256"] == SHA,
         str(data["sources"]["release"]),
+    )
+
+
+# --- engine artifact metadata ----------------------------------------------
+
+IDENTITY_TEXT = """# scripts/ci/engine-identity.sh, deb
+cohort_id=vinyl-9.0.1-ac4f719c16f4
+vinyl_track=release
+vinyl_source_kind=tarball
+vinyl_strict_abi=423648c4cb6b225b3268ffc337354ea938f5efee
+vinyl_abi_string=Vinyl Cache 9.0.1 423648c4cb6b225b3268ffc337354ea938f5efee
+vinyl_package_version=9.0.1-1
+vinyl_source_sha256=2e8ec67cd213ea6864c763939d64912025557342fad2a5ffda6c7c5b59bdeb17
+"""
+
+
+def _engine_fixture(root: Path, identity_text: str = IDENTITY_TEXT) -> tuple:
+    packages = root / "packages"
+    packages.mkdir(parents=True, exist_ok=True)
+    (packages / "vinyl-cache_9.0.1-1_amd64.deb").write_bytes(b"runtime")
+    (packages / "vinyl-cache-dev_9.0.1-1_amd64.deb").write_bytes(b"development")
+    (packages / "vinyl-cache-dbgsym_9.0.1-1_amd64.deb").write_bytes(b"debug")
+    identity_path = root / "engine-identity.env"
+    identity_path.write_text(identity_text, encoding="utf-8")
+    return packages, identity_path
+
+
+def test_engine_identity_parsing() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _, identity_path = _engine_fixture(root)
+        identity = ci_matrix.parse_identity(identity_path)
+        check(
+            "engine identity: comments and blank lines are skipped, values keep their spaces",
+            identity["cohort_id"] == "vinyl-9.0.1-ac4f719c16f4"
+            and identity["vinyl_abi_string"]
+            == "Vinyl Cache 9.0.1 423648c4cb6b225b3268ffc337354ea938f5efee",
+            str(identity),
+        )
+        for text, why in (
+            ("", "an empty identity file"),
+            ("cohort_id=x\ncohort_id=y\n", "a duplicated key"),
+            ("cohort_id\n", "a line that is not key=value"),
+            ("cohort_id=x\nvinyl_track=release\n", "a missing required key"),
+            (
+                re.sub(r"vinyl_strict_abi=.*", "vinyl_strict_abi=", IDENTITY_TEXT),
+                "an empty required key",
+            ),
+        ):
+            bad = root / "bad.env"
+            bad.write_text(text, encoding="utf-8")
+            failed = False
+            try:
+                ci_matrix.parse_identity(bad)
+            except ci_matrix.EngineMetadataError:
+                failed = True
+            check(f"engine identity: {why} is rejected", failed, text)
+
+
+def test_engine_metadata_round_trip() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        packages, identity_path = _engine_fixture(root)
+        (packages / "libvmod-cachetag_1.0.1-1_amd64.deb").write_bytes(b"not the engine")
+        identity = ci_matrix.parse_identity(identity_path)
+        data = ci_matrix.engine_metadata(
+            "vinyl-release", "debian-13-amd64", identity, ci_matrix.describe_packages(packages)
+        )
+        check(
+            "engine metadata: only the engine's own files are recorded",
+            [entry["name"] for entry in data["packages"]]
+            == [
+                "vinyl-cache-dbgsym_9.0.1-1_amd64.deb",
+                "vinyl-cache-dev_9.0.1-1_amd64.deb",
+                "vinyl-cache_9.0.1-1_amd64.deb",
+            ],
+            str(data["packages"]),
+        )
+        check(
+            "engine metadata: the artifact address is derived from the row key",
+            data["artifact"] == "engine-vinyl-release-debian-13-amd64"
+            and data["row_key"] == "engine/vinyl-release/debian-13-amd64"
+            and data["family"] == "deb"
+            and data["vinyl_track"] == "release",
+            json.dumps(data, sort_keys=True),
+        )
+        check(
+            "engine metadata: the resolved identity is inside the artifact",
+            data["identity"] == identity and data["schema"] == ci_matrix.ENGINE_SCHEMA,
+            json.dumps(data, sort_keys=True),
+        )
+        check(
+            "engine metadata: a consumer with the same pins and files verifies it",
+            ci_matrix.verify_engine_metadata(
+                data, "vinyl-release", "debian-13-amd64", identity, packages
+            )
+            == [],
+            str(ci_matrix.verify_engine_metadata(
+                data, "vinyl-release", "debian-13-amd64", identity, packages
+            )),
+        )
+
+
+def test_engine_metadata_rejections() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        packages, identity_path = _engine_fixture(root)
+        identity = ci_matrix.parse_identity(identity_path)
+        good = ci_matrix.engine_metadata(
+            "vinyl-release", "debian-13-amd64", identity, ci_matrix.describe_packages(packages)
+        )
+
+        def problems(metadata=None, engine="vinyl-release", target="debian-13-amd64", ident=None,
+                     directory=None) -> list:
+            return ci_matrix.verify_engine_metadata(
+                json.loads(json.dumps(metadata if metadata is not None else good)),
+                engine,
+                target,
+                ident if ident is not None else identity,
+                directory or packages,
+            )
+
+        check(
+            "engine verify: an artifact built for another engine is rejected",
+            any("engine" in p for p in problems(engine="vinyl-trunk-pinned")),
+            str(problems(engine="vinyl-trunk-pinned")),
+        )
+        check(
+            "engine verify: an artifact built for another target is rejected",
+            any("target" in p for p in problems(target="el9-x86_64")),
+            str(problems(target="el9-x86_64")),
+        )
+
+        drifted = dict(identity, vinyl_strict_abi="0" * 40)
+        check(
+            "engine verify: an ABI the consumer did not ask for is rejected",
+            any("vinyl_strict_abi" in p for p in problems(ident=drifted)),
+            str(problems(ident=drifted)),
+        )
+        extra = dict(identity, vinyl_new_pin="something")
+        check(
+            "engine verify: a pin the artifact does not record is rejected",
+            any("vinyl_new_pin" in p for p in problems(ident=extra)),
+            str(problems(ident=extra)),
+        )
+
+        tampered = json.loads(json.dumps(good))
+        tampered["packages"][0]["sha256"] = "0" * 64
+        check(
+            "engine verify: a rewritten digest fails the roll-up before the files are read",
+            any("packages_sha256" in p for p in problems(metadata=tampered)),
+            str(problems(metadata=tampered)),
+        )
+
+        swapped = root / "swapped"
+        swapped.mkdir()
+        for path in packages.iterdir():
+            (swapped / path.name).write_bytes(path.read_bytes())
+        (swapped / "vinyl-cache_9.0.1-1_amd64.deb").write_bytes(b"a different runtime")
+        check(
+            "engine verify: a package whose bytes moved is rejected",
+            any("sha256" in p for p in problems(directory=swapped)),
+            str(problems(directory=swapped)),
+        )
+
+        missing = root / "missing"
+        missing.mkdir()
+        (missing / "vinyl-cache_9.0.1-1_amd64.deb").write_bytes(b"runtime")
+        check(
+            "engine verify: a package recorded but not delivered is rejected",
+            any("not delivered" in p for p in problems(directory=missing)),
+            str(problems(directory=missing)),
+        )
+
+        smuggled = root / "smuggled"
+        smuggled.mkdir()
+        for path in packages.iterdir():
+            (smuggled / path.name).write_bytes(path.read_bytes())
+        (smuggled / "vinyl-cache-extra_9.0.1-1_amd64.deb").write_bytes(b"where did this come from")
+        check(
+            "engine verify: an engine package nobody recorded is rejected",
+            any("not recorded" in p for p in problems(directory=smuggled)),
+            str(problems(directory=smuggled)),
+        )
+
+        check(
+            "engine verify: a foreign schema is rejected outright",
+            problems(metadata=dict(good, schema="something-else/v1"))
+            == ["engine metadata schema 'something-else/v1' is not 'engine-artifact/v1'"],
+            str(problems(metadata=dict(good, schema="something-else/v1"))),
+        )
+
+        empty = root / "empty"
+        empty.mkdir()
+        failed = False
+        try:
+            ci_matrix.engine_metadata(
+                "vinyl-release", "debian-13-amd64", identity, ci_matrix.describe_packages(empty)
+            )
+        except ci_matrix.EngineMetadataError:
+            failed = True
+        check("engine metadata: an artifact with no engine packages is refused", failed)
+
+        failed = False
+        try:
+            ci_matrix.engine_metadata(
+                "vinyl-trunk-head",
+                "debian-13-amd64",
+                identity,
+                ci_matrix.describe_packages(packages),
+            )
+        except ci_matrix.EngineMetadataError:
+            failed = True
+        check("engine metadata: the source-harness engine has no package artifact", failed)
+
+
+def test_engine_identity_script_covers_both_lanes() -> None:
+    """The one shell script in this path must emit what the tool requires.
+
+    It is not run here -- it sources a lane pin file, which is the lane's job --
+    but the key list it prints is the whole of what the comparison compares, so
+    a required key that the script never emits would make every verification
+    fail at run time and nothing here would notice.
+    """
+    script = ci_matrix.REPO_ROOT / "scripts" / "ci" / "engine-identity.sh"
+    check("engine identity: the script is checked in", script.is_file(), str(script))
+    if not script.is_file():
+        return
+    text = script.read_text(encoding="utf-8")
+    for key in ci_matrix.REQUIRED_IDENTITY_KEYS:
+        check(
+            f"engine identity: the script emits {key}",
+            f"emit {key} " in text,
+            f"{key} not emitted by {script}",
+        )
+    check(
+        "engine identity: both package families are covered",
+        "recipes/debian-13/pins.env" in text and "recipes/el9/cohort.env" in text,
+        text,
     )
 
 
@@ -1064,6 +1594,14 @@ def main(repo_root: Path = None) -> int:
     test_reconcile_all_green()
     test_reconcile_classifies_failures()
     test_reconcile_blocked_by_vmod_source()
+    test_engine_matrix()
+    test_reconcile_blocked_by_engine_artifact()
+    test_engine_row_that_never_reported_blocks_its_consumers()
+    test_vmod_source_failure_wins_over_an_engine_failure()
+    test_engine_identity_parsing()
+    test_engine_metadata_round_trip()
+    test_engine_metadata_rejections()
+    test_engine_identity_script_covers_both_lanes()
     test_reconcile_harness_row_without_a_source_row()
     test_summary_names_optional_failures_on_a_green_run()
     test_reconcile_manifest_validation()

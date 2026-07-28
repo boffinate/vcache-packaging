@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """VMOD CI catalog, matrix expansion, and result reconciliation.
 
-This is the tooling half of Phase 1 of
-docs/20260728_0833_plan_vmod-matrix-failure-isolation.md. It has four jobs:
+This is the tooling half of Phases 1 and 2 of
+docs/20260728_0833_plan_vmod-matrix-failure-isolation.md. It has five jobs:
 
   * list the selected VMOD manifests without fetching or parsing their sources
     (``list-vmods``, ``check-catalog``);
   * expand the explicitly declared lanes of one VMOD for one workflow tier
     (``validate-vmod``, ``expand``);
-  * emit the expected invocation / source / lane-row ledger (``ledger``);
+  * derive the shared engine rows those lanes need, and describe and verify the
+    artifact each one produces (``engine-matrix``, ``engine-metadata``,
+    ``verify-engine-metadata``);
+  * emit the expected engine / invocation / source / lane-row ledger
+    (``ledger``);
   * validate, reconcile, and summarize machine-readable result records
     (``record``, ``summarize-vmod``, ``reconcile``).
 
@@ -26,6 +30,7 @@ any buildroot with no install step. It builds and tests nothing.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -40,6 +45,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 CATALOG_DIR = "registry/vmods"
 SCHEMA = "vmod-ci/v1"
 RESULT_SCHEMA = "vmod-ci-result/v1"
+ENGINE_SCHEMA = "engine-artifact/v1"
 
 # Workflow tiers. `ci` and `release` exist today; `nightly` and `trunk` are
 # declared so a manifest can name them, but their workflows still run their own
@@ -52,23 +58,53 @@ LANE_KINDS = ["package", "source-harness"]
 
 SOURCE_CHANNELS = ["release", "trunk"]
 
-# The selected engine inputs. This table is the expected engine-row ledger the
-# plan refers to; in Phase 1 the engine is still built inside each VMOD package
-# row, so all it contributes is the VINYL_TRACK value the existing lane scripts
-# already select on. Phase 2 turns these into separately built artifacts.
+# The selected engine inputs. Together with the package lanes that name them,
+# this table is the expected engine-row ledger the plan refers to: Phase 2
+# builds the Vinyl runtime, development and debug packages once per
+# (engine, target) row and every VMOD package row consumes the resulting
+# artifact instead of rebuilding the engine inside itself.
+#
+# `vinyl_track` is the VINYL_TRACK value the lane pin files dispatch on, and is
+# therefore the whole of what selects a Vinyl source: recipes/debian-13/pins.env
+# and recipes/el9/cohort.env carry the rest. `builds_packages` marks the engine
+# inputs that have a native package lane at all -- `vinyl-trunk-head` is a
+# moving source used only by the source harness, so it never contributes an
+# engine package row and can never produce a publishable artifact.
 ENGINES = {
-    "vinyl-release": {"vinyl_track": "release", "pinned": True},
-    "vinyl-trunk-pinned": {"vinyl_track": "trunk", "pinned": True},
-    "vinyl-trunk-head": {"vinyl_track": "trunk", "pinned": False},
+    "vinyl-release": {"vinyl_track": "release", "pinned": True, "builds_packages": True},
+    "vinyl-trunk-pinned": {"vinyl_track": "trunk", "pinned": True, "builds_packages": True},
+    "vinyl-trunk-head": {"vinyl_track": "trunk", "pinned": False, "builds_packages": False},
 }
 
 # The selected package targets, and the facts a workflow needs about them that
 # are not in a VMOD manifest because they belong to the target, not the VMOD.
-# The timeouts are the ones the pre-Phase-1 ci.yml carried on its Debian and
-# EL9 jobs.
+# The VMOD timeouts are the ones the pre-Phase-1 ci.yml carried on its Debian
+# and EL9 jobs; `engine_timeout_minutes` is the same budget for the engine half,
+# which is the slower half of each lane.
+#
+# These two tables deliberately stay in the tool rather than moving into
+# `registry/`. `registry/targets/<cohort>/<target>.yml` already means something
+# else -- the recorded per-cohort compatibility evidence for a built cachetag
+# package -- and a second, unrelated "target" concept in the same tree would be
+# actively misleading. What is recorded here is workflow shape: a runner label,
+# a job timeout, and a package family. None of it is a compatibility claim, none
+# of it is evidence, and none of it is a resolved build input; the resolved
+# build inputs live in the lane pin files and reach the ledger through the
+# engine artifact metadata below. Revisit if a target ever gains inputs of its
+# own that the registry must record.
 TARGETS = {
-    "debian-13-amd64": {"family": "deb", "runner": "ubuntu-latest", "timeout_minutes": 35},
-    "el9-x86_64": {"family": "rpm", "runner": "ubuntu-latest", "timeout_minutes": 30},
+    "debian-13-amd64": {
+        "family": "deb",
+        "runner": "ubuntu-latest",
+        "timeout_minutes": 35,
+        "engine_timeout_minutes": 35,
+    },
+    "el9-x86_64": {
+        "family": "rpm",
+        "runner": "ubuntu-latest",
+        "timeout_minutes": 30,
+        "engine_timeout_minutes": 30,
+    },
 }
 
 # The failure vocabulary from the plan's "Failure reporting" section. Every
@@ -110,7 +146,20 @@ INJECTIONS = [
     "debian_build",
     "el9_build",
     "suppress_result",
+    # Phase 2, the plan's verification case 6: one engine row fails to build,
+    # and one engine row builds but never publishes its artifact. Both must
+    # block only the VMOD rows that name that exact engine and target.
+    "engine_build",
+    "suppress_engine_artifact",
 ]
+
+# The engine row both Phase 2 injections act on. It is a constant so the
+# workflow condition, the documentation and the tests all name the same row;
+# the workflow has to spell it out literally because YAML cannot call this
+# module. `vinyl-trunk-pinned` on Debian is chosen because its three sibling
+# engine rows and their three consumer rows then have to complete, which is the
+# isolation property the case exists to demonstrate.
+INJECT_ENGINE_ROW = ("vinyl-trunk-pinned", "debian-13-amd64")
 
 ID_RE = r"^[a-z][a-z0-9-]*$"
 REPOSITORY_RE = r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$"
@@ -314,6 +363,10 @@ def discover(repo_root=None) -> list:
 # ---------------------------------------------------------------------------
 
 
+def engine_row_key(engine: str, target: str) -> str:
+    return f"engine/{engine}/{target}"
+
+
 def invocation_row_key(vmod: str) -> str:
     return f"vmod/{vmod}"
 
@@ -330,6 +383,17 @@ def harness_row_key(vmod: str, channel: str, engine: str) -> str:
     return f"harness/{vmod}/{channel}/{engine}"
 
 
+def engine_artifact(engine: str, target: str) -> str:
+    """The stable artifact address of one engine row.
+
+    Derived from the logical row key alone: a consumer must be able to compute
+    the name of the artifact it needs without knowing any commit or version
+    that the engine job resolved at run time, and without reading an output of
+    the aggregate engine matrix job.
+    """
+    return f"engine-{engine}-{target}"
+
+
 def source_artifact(vmod: str, channel: str) -> str:
     return f"vmod-source-{vmod}-{channel}"
 
@@ -340,6 +404,8 @@ def packages_artifact(vmod: str, channel: str, engine: str, target: str) -> str:
 
 def result_artifact(row: dict) -> str:
     kind = row["kind"]
+    if kind == "engine":
+        return f"result-engine-{row['engine']}-{row['target']}"
     if kind == "invocation":
         return f"result-{row['vmod']}-invocation"
     if kind == "source":
@@ -369,7 +435,12 @@ def _row(kind: str, vmod: str, required: bool, selected: bool, **fields) -> dict
         "target": fields.get("target", ""),
     }
     row.update({k: v for k, v in fields.items() if k not in row})
-    if kind == "invocation":
+    if kind == "engine":
+        # An engine row belongs to no VMOD: it is the shared dependency several
+        # of them consume, so `vmod` is empty and the summary groups it apart.
+        row["row_key"] = engine_row_key(row["engine"], row["target"])
+        row["label"] = f"{row['engine']} / {row['target']}"
+    elif kind == "invocation":
         row["row_key"] = invocation_row_key(vmod)
         row["label"] = "manifest validation"
     elif kind == "source":
@@ -383,6 +454,48 @@ def _row(kind: str, vmod: str, required: bool, selected: bool, **fields) -> dict
         row["label"] = f"{row['channel']} / {row['engine']} / {row['target']}"
     row["result_artifact"] = result_artifact(row)
     return row
+
+
+def engine_rows(datas: list, tier: str) -> list:
+    """The shared engine package rows the selected package lanes need.
+
+    The plan says the selected engine inputs provide the expected engine-row
+    ledger, so the rows are derived rather than listed: one row per
+    (engine, target) pair that at least one selected package lane consumes,
+    across every VMOD manifest that parsed. Two VMODs naming the same engine and
+    target share one row and one artifact, which is the point of the split.
+
+    A row is required when any of its consumers is required. An engine row whose
+    only consumers are optional cannot redden the run on its own, but its
+    consumers still report `blocked_by_engine_artifact` when it fails.
+    """
+    wanted: dict = {}
+    for data in datas:
+        required = data["required"] == "true"
+        for lane in data["lanes"]:
+            if lane["kind"] != "package" or tier not in lane["tiers"]:
+                continue
+            for target in lane.get("targets") or []:
+                if lane["engine"] not in ENGINES or target not in TARGETS:
+                    continue
+                key = (lane["engine"], target)
+                wanted[key] = wanted.get(key, False) or required
+    rows = []
+    for engine, target in sorted(wanted):
+        rows.append(
+            _row(
+                "engine",
+                "",
+                wanted[(engine, target)],
+                True,
+                engine=engine,
+                target=target,
+                vinyl_track=ENGINES[engine]["vinyl_track"],
+                family=TARGETS[target]["family"],
+                engine_artifact=engine_artifact(engine, target),
+            )
+        )
+    return rows
 
 
 def vmod_rows(data: dict, tier: str, manifest_path: str) -> list:
@@ -430,6 +543,11 @@ def vmod_rows(data: dict, tier: str, manifest_path: str) -> list:
                     version=source.get("version", ""),
                     packages_artifact=packages_artifact(vmod, channel, engine, target),
                     source_artifact=source_artifact(vmod, channel),
+                    # The shared engine artifact this row consumes, addressed by
+                    # the engine row key rather than by anything the engine job
+                    # resolved at run time.
+                    engine_artifact=engine_artifact(engine, target),
+                    engine_row_key=engine_row_key(engine, target),
                 )
             )
 
@@ -475,20 +593,41 @@ def invalid_manifest_rows(vmod: str, manifest_path: str, errors: list) -> list:
     return [row]
 
 
-def ledger(tier: str, repo_root=None) -> dict:
+def valid_manifests(tier: str, repo_root=None) -> tuple:
+    """(validated manifests, rows for the manifests that did not validate).
+
+    One walk of the catalog, shared by the ledger and by the engine matrix, so
+    both agree on which manifests contributed lanes. A manifest that does not
+    parse contributes exactly one invocation row and no engine demand: inventing
+    engine rows for a manifest nobody could read would build packages for lanes
+    that were never declared.
+    """
     root = Path(repo_root) if repo_root else REPO_ROOT
-    rows: list = []
+    datas: list = []
+    broken: list = []
     for entry in discover(root):
         path = root / entry["manifest"]
         try:
             data = load_vmod_manifest(path)
         except (yaml_subset.ManifestSyntaxError, OSError) as exc:
-            rows.extend(invalid_manifest_rows(entry["id"], entry["manifest"], [str(exc)]))
+            broken.extend(invalid_manifest_rows(entry["id"], entry["manifest"], [str(exc)]))
             continue
         errors = validate_vmod_manifest(data, entry["manifest"], discovery_id=entry["id"])
         if errors:
-            rows.extend(invalid_manifest_rows(entry["id"], entry["manifest"], errors))
+            broken.extend(invalid_manifest_rows(entry["id"], entry["manifest"], errors))
             continue
+        datas.append((entry, data))
+    return datas, broken
+
+
+def ledger(tier: str, repo_root=None) -> dict:
+    datas, broken = valid_manifests(tier, repo_root)
+    # Engine rows first: they are the shared dependency, and the summary reads
+    # top-down from "what did the whole run depend on" to "what did each VMOD
+    # do with it".
+    rows: list = [dict(row, manifest_valid=True) for row in engine_rows([d for _, d in datas], tier)]
+    rows.extend(broken)
+    for entry, data in datas:
         for row in vmod_rows(data, tier, entry["manifest"]):
             row["manifest_valid"] = True
             rows.append(row)
@@ -544,6 +683,8 @@ def expand(data: dict, tier: str, inject: str = "none") -> dict:
                 "row_key": row["row_key"],
                 "packages_artifact": row["packages_artifact"],
                 "source_artifact": row["source_artifact"],
+                "engine_artifact": row["engine_artifact"],
+                "engine_row_key": row["engine_row_key"],
                 "result_artifact": row["result_artifact"],
             }
         )
@@ -573,6 +714,240 @@ def expand(data: dict, tier: str, inject: str = "none") -> dict:
     }
 
 
+def engine_matrix(tier: str, repo_root=None, inject: str = "none") -> dict:
+    """The top-level engine matrix: one entry per shared engine package row.
+
+    Tolerant of a malformed VMOD manifest by construction -- ``valid_manifests``
+    drops it, so a broken entry costs its own invocation row and whatever engine
+    rows only it asked for, never the engine rows another VMOD needs. That is
+    the same containment rule discovery follows, applied to the shared half of
+    the graph.
+    """
+    datas, _ = valid_manifests(tier, repo_root)
+    entries = []
+    for row in engine_rows([d for _, d in datas], tier):
+        entries.append(
+            {
+                "engine": row["engine"],
+                "target": row["target"],
+                "family": row["family"],
+                "vinyl_track": row["vinyl_track"],
+                "timeout_minutes": TARGETS[row["target"]]["engine_timeout_minutes"],
+                "row_key": row["row_key"],
+                "engine_artifact": row["engine_artifact"],
+                "result_artifact": row["result_artifact"],
+                # Inert unless a human dispatched the caller with an injection.
+                # Computed here rather than as a workflow expression so the tool
+                # and the workflow cannot disagree about which row is injected.
+                "inject_build": "true"
+                if inject == "engine_build" and (row["engine"], row["target"]) == INJECT_ENGINE_ROW
+                else "false",
+                "suppress_artifact": "true"
+                if inject == "suppress_engine_artifact"
+                and (row["engine"], row["target"]) == INJECT_ENGINE_ROW
+                else "false",
+            }
+        )
+    return {"include": entries}
+
+
+# ---------------------------------------------------------------------------
+# Engine artifact metadata
+# ---------------------------------------------------------------------------
+#
+# The plan requires that every dependency artifact carry machine-readable
+# resolved-identity metadata and that consumers verify it against their own row
+# before use. For a VMOD source archive the consumer has a second, independent
+# way to know what it got -- it checks the tag out again and asserts the peeled
+# commit -- but a VMOD package row does not build the engine and cannot
+# re-derive it, so for engine artifacts this metadata is the only check there
+# is. It is therefore not advisory: a mismatch fails the row.
+#
+# The identity values themselves are read out of the lane's own pin file by
+# scripts/ci/engine-identity.sh, which both the producer and the consumer run
+# from their own checkout. Keeping the key list in the shell script rather than
+# duplicating it here means a pin that gains a name cannot be silently dropped
+# from the comparison by a Python table nobody updated.
+
+# Identity keys that must be present and non-empty in every engine artifact.
+# Without this the comparison could pass vacuously -- two empty dictionaries are
+# equal -- if engine-identity.sh ever emitted nothing.
+REQUIRED_IDENTITY_KEYS = [
+    "cohort_id",
+    "vinyl_track",
+    "vinyl_strict_abi",
+    "vinyl_package_version",
+]
+
+# Which files in a lane output directory belong to the engine. Both lanes name
+# every Vinyl artifact after the source package, so one prefix covers the
+# runtime, development and debug packages and, on Debian, the source package,
+# .changes and .buildinfo beside them.
+ENGINE_FILE_PREFIX = "vinyl-cache"
+
+
+class EngineMetadataError(Exception):
+    """Raised when an engine artifact does not describe what the row asked for."""
+
+
+def parse_identity(path) -> dict:
+    """Parse scripts/ci/engine-identity.sh output: key=value, one per line."""
+    identity: dict = {}
+    for number, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            raise EngineMetadataError(f"{path}:{number}: not a key=value line: {line!r}")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise EngineMetadataError(f"{path}:{number}: empty key")
+        if key in identity:
+            raise EngineMetadataError(f"{path}:{number}: duplicate key {key!r}")
+        identity[key] = value.strip()
+    if not identity:
+        raise EngineMetadataError(f"{path}: no identity values; the check would be vacuous")
+    missing = [k for k in REQUIRED_IDENTITY_KEYS if not identity.get(k)]
+    if missing:
+        raise EngineMetadataError(f"{path}: missing or empty required identity keys {missing}")
+    return identity
+
+
+def _sha256_file(path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def engine_package_files(packages_dir) -> list:
+    """Every engine package file in a directory, sorted by name."""
+    directory = Path(packages_dir)
+    if not directory.is_dir():
+        raise EngineMetadataError(f"{packages_dir}: no such directory")
+    return sorted(
+        (p for p in directory.iterdir() if p.is_file() and p.name.startswith(ENGINE_FILE_PREFIX)),
+        key=lambda p: p.name,
+    )
+
+
+def describe_packages(packages_dir) -> list:
+    return [
+        {"name": path.name, "bytes": path.stat().st_size, "sha256": _sha256_file(path)}
+        for path in engine_package_files(packages_dir)
+    ]
+
+
+def packages_digest(packages: list) -> str:
+    """One value over the whole package set: the content identity of the artifact.
+
+    Sorted name + digest pairs, so it is independent of directory order and of
+    the sizes, which are evidence rather than identity.
+    """
+    joined = "".join(
+        f"{entry['name']}\0{entry['sha256']}\0" for entry in sorted(packages, key=lambda e: e["name"])
+    )
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+
+def engine_metadata(engine: str, target: str, identity: dict, packages: list) -> dict:
+    if engine not in ENGINES:
+        raise EngineMetadataError(f"unknown engine {engine!r}; expected one of {sorted(ENGINES)}")
+    if target not in TARGETS:
+        raise EngineMetadataError(f"unknown target {target!r}; expected one of {sorted(TARGETS)}")
+    if not ENGINES[engine]["builds_packages"]:
+        raise EngineMetadataError(f"engine {engine!r} has no native package lane")
+    if not packages:
+        raise EngineMetadataError(
+            f"no {ENGINE_FILE_PREFIX}* files were produced; an engine artifact with no engine "
+            "packages in it would be verified successfully by every consumer"
+        )
+    return {
+        "schema": ENGINE_SCHEMA,
+        "engine": engine,
+        "target": target,
+        "family": TARGETS[target]["family"],
+        "vinyl_track": ENGINES[engine]["vinyl_track"],
+        "artifact": engine_artifact(engine, target),
+        "row_key": engine_row_key(engine, target),
+        "identity": dict(identity),
+        "packages": list(packages),
+        "packages_sha256": packages_digest(packages),
+    }
+
+
+def verify_engine_metadata(metadata: dict, engine: str, target: str, identity: dict, packages_dir) -> list:
+    """Errors ([] means the artifact is what this row asked for)."""
+    problems: list = []
+    if not isinstance(metadata, dict):
+        return ["engine metadata is not an object"]
+    if metadata.get("schema") != ENGINE_SCHEMA:
+        return [f"engine metadata schema {metadata.get('schema')!r} is not {ENGINE_SCHEMA!r}"]
+    for field, expected in (
+        ("engine", engine),
+        ("target", target),
+        ("artifact", engine_artifact(engine, target)),
+        ("row_key", engine_row_key(engine, target)),
+    ):
+        if metadata.get(field) != expected:
+            problems.append(
+                f"{field} {metadata.get(field)!r} does not match the requested {expected!r}"
+            )
+    if target in TARGETS and metadata.get("family") != TARGETS[target]["family"]:
+        problems.append(
+            f"family {metadata.get('family')!r} does not match {TARGETS[target]['family']!r}"
+        )
+    if engine in ENGINES and metadata.get("vinyl_track") != ENGINES[engine]["vinyl_track"]:
+        problems.append(
+            f"vinyl_track {metadata.get('vinyl_track')!r} does not match "
+            f"{ENGINES[engine]['vinyl_track']!r}"
+        )
+
+    recorded = metadata.get("identity")
+    if not isinstance(recorded, dict) or not recorded:
+        problems.append("engine metadata records no resolved identity")
+    else:
+        for key in sorted(set(recorded) | set(identity)):
+            if recorded.get(key) != identity.get(key):
+                problems.append(
+                    f"identity {key}: artifact {recorded.get(key)!r} != this row's "
+                    f"{identity.get(key)!r}"
+                )
+        for key in REQUIRED_IDENTITY_KEYS:
+            if not recorded.get(key):
+                problems.append(f"identity {key} is missing or empty in the artifact")
+
+    entries = metadata.get("packages")
+    if not isinstance(entries, list) or not entries:
+        problems.append("engine metadata records no packages")
+        return problems
+    if metadata.get("packages_sha256") != packages_digest(entries):
+        problems.append("packages_sha256 does not match the recorded package list")
+
+    try:
+        present = {path.name: path for path in engine_package_files(packages_dir)}
+    except EngineMetadataError as exc:
+        problems.append(str(exc))
+        return problems
+    for entry in sorted(entries, key=lambda e: e.get("name", "")):
+        name = entry.get("name", "")
+        path = present.pop(name, None)
+        if path is None:
+            problems.append(f"{name}: recorded in the artifact metadata but not delivered")
+            continue
+        got = _sha256_file(path)
+        if got != entry.get("sha256"):
+            problems.append(f"{name}: sha256 {got} != recorded {entry.get('sha256')}")
+        size = path.stat().st_size
+        if size != entry.get("bytes"):
+            problems.append(f"{name}: {size} bytes != recorded {entry.get('bytes')}")
+    for name in sorted(present):
+        problems.append(f"{name}: delivered but not recorded in the artifact metadata")
+    return problems
+
+
 # ---------------------------------------------------------------------------
 # Result records
 # ---------------------------------------------------------------------------
@@ -593,7 +968,11 @@ def make_record(
 ) -> dict:
     if status not in STATUSES:
         raise ValueError(f"unknown status {status!r}; expected one of {STATUSES}")
-    if kind == "invocation":
+    if kind == "engine":
+        if vmod:
+            raise ValueError("an engine row belongs to no VMOD; --vmod must be empty")
+        row_key = engine_row_key(engine, target)
+    elif kind == "invocation":
         row_key = invocation_row_key(vmod)
     elif kind == "source":
         row_key = source_row_key(vmod, channel)
@@ -668,6 +1047,13 @@ def reconcile(expected: dict, observed: dict) -> dict:
         record = observed.get(row["row_key"])
         source_status[(row["vmod"], row["channel"])] = record["status"] if record else None
 
+    engine_status: dict = {}
+    for row in expected["rows"]:
+        if row["kind"] != "engine":
+            continue
+        record = observed.get(row["row_key"])
+        engine_status[row["row_key"]] = record["status"] if record else None
+
     invocation_status: dict = {}
     for row in expected["rows"]:
         if row["kind"] != "invocation":
@@ -724,17 +1110,34 @@ def reconcile(expected: dict, observed: dict) -> dict:
             # of evidence is missing evidence, not a blockage by something that
             # was never expected to run.
             key = (row["vmod"], row["channel"])
-            if key in source_status:
+            engine_key = row.get("engine_row_key")
+            if key in source_status and source_status[key] != "passed":
                 upstream = source_status[key]
                 if upstream is None:
                     status = "blocked_by_vmod_source"
                     detail = (
                         f"source/{row['vmod']}/{row['channel']} produced no result record either"
                     )
-                elif upstream != "passed":
+                else:
                     status = "blocked_by_vmod_source"
                     detail = f"source/{row['vmod']}/{row['channel']} is {upstream}"
-            elif invocation_status.get(row["vmod"]) == "failed_manifest_validation":
+            elif engine_key in engine_status and engine_status[engine_key] != "passed":
+                # The shared root cause, named by engine row identity rather
+                # than reported as an unclassified download error. The row's own
+                # VMOD source failure wins where both apply: that one is
+                # specific to this row, and the engine failure is reported in
+                # full on its own row regardless.
+                upstream = engine_status[engine_key]
+                status = "blocked_by_engine_artifact"
+                detail = (
+                    f"{engine_key} produced no result record either"
+                    if upstream is None
+                    else f"{engine_key} is {upstream}"
+                )
+            elif (
+                key not in source_status
+                and invocation_status.get(row["vmod"]) == "failed_manifest_validation"
+            ):
                 status = "blocked_by_vmod_source"
                 detail = "the VMOD manifest failed validation"
         elif row["kind"] == "source" and invocation_status.get(row["vmod"]) not in (None, "passed"):
@@ -780,14 +1183,18 @@ def synthesize_missing(expected: dict, observed: dict, vmod: str) -> list:
     outcome for every requested row even when the VMOD's source job failed and
     every target row was skipped.
     """
+    # Engine rows are in scope for the reconciliation but never synthesized
+    # here: the per-VMOD summary must be able to say "this row was blocked by
+    # that engine row", but the engine row belongs to the whole run and its own
+    # outcome is the caller's to record.
     scoped = {
         "tier": expected["tier"],
-        "rows": [row for row in expected["rows"] if row["vmod"] == vmod],
+        "rows": [row for row in expected["rows"] if row["vmod"] == vmod or row["kind"] == "engine"],
     }
     resolved = reconcile(scoped, observed)
     records = []
     for row in resolved["rows"]:
-        if row["observed"] or not row["selected"]:
+        if row["observed"] or not row["selected"] or row["kind"] == "engine":
             continue
         records.append(
             make_record(
@@ -846,12 +1253,34 @@ def render_summary(resolved: dict) -> str:
         )
     out.append("")
 
+    engines = [r for r in resolved["rows"] if r["kind"] == "engine"]
+    if engines:
+        out.append("### Shared engine packages")
+        out.append("")
+        out.append("| engine / target | status | evidence | detail |")
+        out.append("| --- | --- | --- | --- |")
+        for row in engines:
+            mark = _STATUS_MARK.get(row["status"], row["status"])
+            evidence = "row" if row["observed"] else "synthesized"
+            detail = row.get("detail", "") or ", ".join(row.get("artifacts", []))
+            out.append(
+                "| {label} | {mark} | {evidence} | {detail} |".format(
+                    label=row["label"],
+                    mark=mark,
+                    evidence=evidence,
+                    detail=detail.replace("|", "\\|")[:300],
+                )
+            )
+        out.append("")
+
     vmods = []
     for row in resolved["rows"]:
+        if row["kind"] == "engine":
+            continue
         if row["vmod"] not in vmods:
             vmods.append(row["vmod"])
     for vmod in vmods:
-        rows = [r for r in resolved["rows"] if r["vmod"] == vmod]
+        rows = [r for r in resolved["rows"] if r["kind"] != "engine" and r["vmod"] == vmod]
         required = "required" if rows[0]["required"] else "optional"
         out.append(f"### {vmod} ({required})")
         out.append("")
@@ -1001,6 +1430,49 @@ def cmd_expand(args) -> int:
     return 0
 
 
+def cmd_engine_matrix(args) -> int:
+    matrix = engine_matrix(args.tier, args.repo_root, inject=args.inject)
+    if args.format == "github":
+        print("matrix=" + json.dumps(matrix, sort_keys=True))
+        print("count=" + str(len(matrix["include"])))
+    else:
+        print(json.dumps(matrix, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_engine_metadata(args) -> int:
+    identity = parse_identity(args.identity)
+    packages = describe_packages(args.packages)
+    data = engine_metadata(args.engine, args.target, identity, packages)
+    text = json.dumps(data, indent=2, sort_keys=True)
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.out).write_text(text + "\n", encoding="utf-8")
+    print(text)
+    return 0
+
+
+def cmd_verify_engine_metadata(args) -> int:
+    identity = parse_identity(args.identity)
+    try:
+        data = json.loads(Path(args.metadata).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"ERROR    {args.metadata}: {exc}", file=sys.stderr)
+        return 1
+    problems = verify_engine_metadata(data, args.engine, args.target, identity, args.packages)
+    if problems:
+        for problem in problems:
+            print(f"ERROR    engine artifact {args.engine}/{args.target}: {problem}", file=sys.stderr)
+        return 1
+    print(
+        f"OK: engine artifact {data['artifact']} matches this row: "
+        f"{len(data['packages'])} package file(s), content {data['packages_sha256'][:12]}, "
+        f"cohort {data['identity'].get('cohort_id')}, "
+        f"vinyl {data['identity'].get('vinyl_package_version')}, "
+        f"ABI {data['identity'].get('vinyl_strict_abi')}"
+    )
+    return 0
+
+
 def cmd_ledger(args) -> int:
     data = ledger(args.tier, args.repo_root)
     text = json.dumps(data, indent=2, sort_keys=True)
@@ -1062,6 +1534,11 @@ def cmd_summarize_vmod(args) -> int:
         rows = vmod_rows(data, args.tier, manifest_path)
         for row in rows:
             row["manifest_valid"] = True
+        # This VMOD's share of the engine rows. Only this invocation's lanes
+        # are visible from here, which is enough: the summary needs them so a
+        # blocked row can name the engine that blocked it, and the caller's
+        # collector owns the engine rows' own outcomes.
+        rows = [dict(r, manifest_valid=True) for r in engine_rows([data], args.tier)] + rows
         expected = {"schema": "vmod-ci-ledger/v1", "tier": args.tier, "rows": rows}
 
     observed = load_records(args.results)
@@ -1170,6 +1647,37 @@ def build_parser() -> argparse.ArgumentParser:
     p_exp.add_argument("--format", choices=["json", "github"], default="json")
     p_exp.set_defaults(func=cmd_expand)
 
+    p_eng = sub.add_parser(
+        "engine-matrix", help="the shared engine package rows the selected lanes need"
+    )
+    p_eng.add_argument("--tier", required=True, choices=TIERS)
+    p_eng.add_argument("--inject", choices=INJECTIONS, default="none")
+    p_eng.add_argument("--format", choices=["json", "github"], default="json")
+    p_eng.set_defaults(func=cmd_engine_matrix)
+
+    p_emd = sub.add_parser(
+        "engine-metadata", help="describe one engine artifact's resolved identity and contents"
+    )
+    p_emd.add_argument("--engine", required=True)
+    p_emd.add_argument("--target", required=True)
+    p_emd.add_argument(
+        "--identity", required=True, help="scripts/ci/engine-identity.sh output for this row"
+    )
+    p_emd.add_argument("--packages", required=True, help="directory holding the engine packages")
+    p_emd.add_argument("--out", required=True)
+    p_emd.set_defaults(func=cmd_engine_metadata)
+
+    p_evf = sub.add_parser(
+        "verify-engine-metadata",
+        help="check a downloaded engine artifact against the consuming row",
+    )
+    p_evf.add_argument("--metadata", required=True)
+    p_evf.add_argument("--engine", required=True)
+    p_evf.add_argument("--target", required=True)
+    p_evf.add_argument("--identity", required=True)
+    p_evf.add_argument("--packages", required=True)
+    p_evf.set_defaults(func=cmd_verify_engine_metadata)
+
     p_led = sub.add_parser("ledger", help="the expected row ledger for a tier")
     p_led.add_argument("--tier", required=True, choices=TIERS)
     p_led.add_argument("--out")
@@ -1177,8 +1685,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_rec = sub.add_parser("record", help="write one machine-readable result record")
     p_rec.add_argument("--out", required=True)
-    p_rec.add_argument("--kind", required=True, choices=["invocation", "source", "package-target", "source-harness"])
-    p_rec.add_argument("--vmod", required=True)
+    p_rec.add_argument(
+        "--kind",
+        required=True,
+        choices=["engine", "invocation", "source", "package-target", "source-harness"],
+    )
+    p_rec.add_argument("--vmod", required=True, default="")
     p_rec.add_argument("--status", required=True, choices=STATUSES)
     p_rec.add_argument("--channel", default="")
     p_rec.add_argument("--engine", default="")
@@ -1220,7 +1732,13 @@ def main(argv=None) -> int:
     except yaml_subset.ManifestSyntaxError as exc:
         print(f"ERROR    {exc}", file=sys.stderr)
         return 1
-    except (CatalogError, manifest_mod.ValidationError, FileNotFoundError, ValueError) as exc:
+    except (
+        CatalogError,
+        EngineMetadataError,
+        manifest_mod.ValidationError,
+        FileNotFoundError,
+        ValueError,
+    ) as exc:
         print(f"ERROR    {exc}", file=sys.stderr)
         return 1
 
