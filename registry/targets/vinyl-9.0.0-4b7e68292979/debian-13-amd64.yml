@@ -455,6 +455,8 @@ tests:
   # then the 16 apt scenarios s01-s16 in fresh containers
   # (logs/transactions/SUMMARY.tsv). Reproduces the step-9 findings on
   # cachetag 1.0.1-1: apt upgrade holds Vinyl back, full-upgrade and a direct
-  # versioned install remove the VMOD, apt-mark hold and pinning refuse even
-  # that, and the same-ABI candidate is held back rather than upgraded (s12).
+  # versioned install remove the VMOD, apt-mark hold refuses even that (s15,
+  # exit 100), a pin blocks upgrades (s08) but not a direct versioned install
+  # (s16, REMOVED-VMOD -- the pin weakness the step-9 note records), and the
+  # same-ABI candidate is held back rather than upgraded (s12).
   upgrade_transactions: pass
