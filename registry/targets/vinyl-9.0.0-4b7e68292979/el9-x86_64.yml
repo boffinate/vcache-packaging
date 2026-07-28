@@ -47,14 +47,16 @@ build:
   configure_options: "./configure --build=x86_64-redhat-linux-gnu --host=x86_64-redhat-linux-gnu --program-prefix= --disable-dependency-tracking --prefix=/usr --exec-prefix=/usr --bindir=/usr/bin --sbindir=/usr/sbin --sysconfdir=/etc --datadir=/usr/share --includedir=/usr/include --libdir=/usr/lib64 --libexecdir=/usr/libexec --localstatedir=/var --sharedstatedir=/var/lib --mandir=/usr/share/man --infodir=/usr/share/info --disable-static --docdir=/usr/share/doc/libvmod-cachetag"
   cflags: "-O2 -flto=auto -ffat-lto-objects -fexceptions -g -grecord-gcc-switches -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -fstack-protector-strong -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -march=x86-64-v2 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection"
   ldflags: "-Wl,-z,relro -Wl,--as-needed -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1"
-  # What rpmbuild actually used, which is NOT what the lane exports. EL9's
-  # redhat-rpm-config derives SOURCE_DATE_EPOCH from the topmost %changelog
-  # entry, so the exported value is overridden and truncated to that day at
-  # midnight UTC: 1779235200 is 2026-05-20T00:00:00Z. The changelog date in
-  # turn comes from the Vinyl commit's date, not the cachetag commit's, so
-  # this package is dated to the wrong repository's history -- a real wart,
-  # recorded rather than quietly corrected. See the step-10 mint note.
-  source_date_epoch: "1779235200"
+  # Committer date of the cachetag v1.0.0 release commit -- the recorded
+  # input registry/README.md defines this field to be. The revision-1 value
+  # here was "1779235200", what rpmbuild actually used at the time: the lane
+  # had no cachetag epoch, EL9's redhat-rpm-config re-derived
+  # SOURCE_DATE_EPOCH from the topmost %changelog entry truncated to midnight
+  # UTC, and that changelog date came from the Vinyl commit -- the wrong
+  # repository's history. That story is preserved in the step-10 mint note
+  # and the step-2 epoch note; the lane now pins CACHETAG_SOURCE_DATE_EPOCH
+  # and the next clean-room build must confirm rpm recorded this value.
+  source_date_epoch: "1785138016"
   # Evidence from revision 1 was cleared when the cachetag release source was
   # deliberately re-pinned. The revision 2 lane will repopulate this verdict.
   hardening_check: pending

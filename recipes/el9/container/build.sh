@@ -25,8 +25,19 @@ mkdir -p "$topdir"/{SOURCES,SPECS,SRPMS,RPMS,BUILD,BUILDROOT} "$logdir" /out/pac
 
 say() { printf '\n===== %s =====\n' "$*"; }
 
+# The two epoch macros make the exported SOURCE_DATE_EPOCH actually reach the
+# RPM header bytes. On EL9, rpm 4.16 ships %use_source_date_epoch_as_buildtime
+# defaulting to 0, so without it the header BUILDTIME comes from the wall
+# clock, and payload file mtimes are likewise unclamped. The mismatch fixture
+# (recipes/el9/mismatch/container.sh) has set both macros since its
+# reproducibility check first proved the export alone changes nothing; the
+# production builds get the same treatment here. _buildhost is deliberately
+# NOT pinned: whole-RPM reproducibility is not this lane's contract.
 rpmb() {
-	rpmbuild --define "_topdir $topdir" "$@"
+	rpmbuild --define "_topdir $topdir" \
+		--define "use_source_date_epoch_as_buildtime 1" \
+		--define "clamp_mtime_to_source_date_epoch 1" \
+		"$@"
 }
 
 changelog_date() {
@@ -231,7 +242,12 @@ stage_cachetag() {
 
 	test "$abi" = "$VINYL_STRICT_ABI"
 
-	changelog_date=$(LC_ALL=C date -u -d "@$VINYL_SOURCE_DATE_EPOCH" '+%a %b %d %Y')
+	# The cachetag package is dated from the cachetag release commit, not
+	# from the Vinyl commit. Until 2026-07-28 this derived from
+	# VINYL_SOURCE_DATE_EPOCH, which stamped the cachetag changelog -- and,
+	# through EL9's changelog-derived SOURCE_DATE_EPOCH, the package itself
+	# -- with the wrong repository's history.
+	changelog_date=$(LC_ALL=C date -u -d "@$CACHETAG_SOURCE_DATE_EPOCH" '+%a %b %d %Y')
 
 	say "substitute the cachetag spec scaffolding"
 	sed \
@@ -256,12 +272,16 @@ stage_cachetag() {
 	install -m 0644 "/cachetag/release/dist/$CACHETAG_TARBALL" "$srcdir/"
 	echo "$CACHETAG_SHA256  $srcdir/$CACHETAG_TARBALL" | sha256sum -c -
 
+	# stage_vinyl exported the Vinyl epoch into this same shell; the cachetag
+	# builds must not inherit it.
+	export SOURCE_DATE_EPOCH="$CACHETAG_SOURCE_DATE_EPOCH"
+
 	say "libvmod-cachetag source RPM"
-	rpmbuild --define "_topdir $topdir" -bs "$topdir/SPECS/libvmod-cachetag.spec" \
+	rpmb -bs "$topdir/SPECS/libvmod-cachetag.spec" \
 		2>&1 | tee "$logdir/cachetag-srpm.log"
 
 	say "libvmod-cachetag binary RPM (rebuild from the source RPM)"
-	rpmbuild --define "_topdir $topdir" --rebuild \
+	rpmb --rebuild \
 		"$topdir/SRPMS/libvmod-cachetag-$CACHETAG_VERSION-$CACHETAG_RELEASE.el9.src.rpm" \
 		2>&1 | tee "$logdir/cachetag-build.log"
 

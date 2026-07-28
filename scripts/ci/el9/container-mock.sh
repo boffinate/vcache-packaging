@@ -159,14 +159,24 @@ mock_as -r "$mock_cfg" --init
 say "Mock: vinyl-cache buildsrpm + rebuild"
 ###############################################################################
 
+# The two epoch macros make SOURCE_DATE_EPOCH actually reach the RPM header
+# bytes: EL9's rpm 4.16 ships %use_source_date_epoch_as_buildtime defaulting
+# to 0, so without them BUILDTIME comes from the wall clock and payload
+# mtimes are unclamped. Same treatment as recipes/el9/container/build.sh's
+# rpmb() and, before that, the mismatch fixture whose reproducibility check
+# first proved the export alone changes nothing. _buildhost is deliberately
+# not pinned: whole-RPM reproducibility is not this lane's contract.
+epoch_defines=(--define "use_source_date_epoch_as_buildtime 1"
+	--define "clamp_mtime_to_source_date_epoch 1")
+
 export SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH
-mock_as -r "$mock_cfg" --no-clean \
+mock_as -r "$mock_cfg" --no-clean "${epoch_defines[@]}" \
 	--resultdir="$resultdir/vinyl" \
 	--buildsrpm --spec "$specdir/vinyl-cache.spec" --sources "$srcdir" \
 	2>&1 | tee "$logdir/mock-vinyl-srpm.log"
 
 vinyl_srpm=$(ls "$resultdir/vinyl"/vinyl-cache-"$vinyl_evr".src.rpm)
-mock_as -r "$mock_cfg" --no-clean \
+mock_as -r "$mock_cfg" --no-clean "${epoch_defines[@]}" \
 	--resultdir="$resultdir/vinyl" \
 	--rebuild "$vinyl_srpm" \
 	2>&1 | tee "$logdir/mock-vinyl-build.log"
@@ -232,7 +242,10 @@ printf 'vmoddir=%s\nvrt=%s\nabi=%s\n' "$vmoddir" "$vrt" "$abi" | tee "$logdir/ca
 say "libvmod-cachetag: generate the spec (duplicates container/build.sh stage_cachetag's substitution)"
 ###############################################################################
 
-changelog_date=$(LC_ALL=C date -u -d "@$VINYL_SOURCE_DATE_EPOCH" '+%a %b %d %Y')
+# Dated from the cachetag release commit, not the Vinyl commit; until
+# 2026-07-28 this derived from VINYL_SOURCE_DATE_EPOCH and stamped the
+# cachetag package with the wrong repository's history.
+changelog_date=$(LC_ALL=C date -u -d "@$CACHETAG_SOURCE_DATE_EPOCH" '+%a %b %d %Y')
 sed \
 	-e "s|@CACHETAG_VERSION@|$CACHETAG_VERSION|g" \
 	-e "s|@PACKAGE_REVISION@|$CACHETAG_RELEASE|g" \
@@ -257,15 +270,16 @@ echo "$CACHETAG_SHA256  $srcdir/$CACHETAG_TARBALL" | sha256sum -c -
 say "Mock: libvmod-cachetag buildsrpm + rebuild, against the installed vinyl-cache-devel"
 ###############################################################################
 
-export SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH
-mock_as -r "$mock_cfg" --no-clean \
+# The cachetag epoch, not the Vinyl epoch exported for the builds above.
+export SOURCE_DATE_EPOCH=$CACHETAG_SOURCE_DATE_EPOCH
+mock_as -r "$mock_cfg" --no-clean "${epoch_defines[@]}" \
 	--addrepo="file://$localrepo" \
 	--resultdir="$resultdir/cachetag" \
 	--buildsrpm --spec "$specdir/libvmod-cachetag.spec" --sources "$srcdir" \
 	2>&1 | tee "$logdir/mock-cachetag-srpm.log"
 
 cachetag_srpm=$(ls "$resultdir/cachetag"/libvmod-cachetag-"$CACHETAG_VERSION-$CACHETAG_RELEASE.el9".src.rpm)
-mock_as -r "$mock_cfg" --no-clean \
+mock_as -r "$mock_cfg" --no-clean "${epoch_defines[@]}" \
 	--addrepo="file://$localrepo" \
 	--resultdir="$resultdir/cachetag" \
 	--rebuild "$cachetag_srpm" \
