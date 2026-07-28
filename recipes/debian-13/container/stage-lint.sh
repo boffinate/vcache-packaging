@@ -14,8 +14,10 @@ echo "===== lintian version ====="
 lintian --version
 
 rc=0
+checked=0
 for changes in /out/*.changes; do
 	[ -e "$changes" ] || continue
+	checked=$((checked + 1))
 	echo
 	echo "================================================================"
 	echo "lintian: $(basename "$changes")"
@@ -33,6 +35,12 @@ for changes in /out/*.changes; do
 done | sort | tee /out/logs/lintian-tags.txt
 
 echo
+if [ "$checked" -eq 0 ]; then
+	echo "E: no .changes files in /out; nothing was linted" >&2
+	exit 1
+fi
 echo "lintian exit status: $rc (0 = no error-level tag)"
 echo "===== stage-lint complete ====="
-exit 0
+# The status gates the lane. Waivers live in the reviewed
+# .lintian-overrides files, never here.
+exit "$rc"
