@@ -107,6 +107,7 @@ Values containing `#`, `{`, `}`, `[`, `]`, `&`, `*`, `!`, `|`, `>`, `%`, `@`, a 
 | `vinyl.strict_abi` | immutable input | 40 hex characters, baked into the Vinyl build |
 | `vinyl.patches` | **digest input** | ordered list of `{name, sha256}`; `[]` when unpatched |
 | `vinyl.release_notes` | optional reference | pointers to **upstream's own** release statements for the pinned version, as `{title, url}` (`https://` URLs only); rendered verbatim as links into generated release content. References, never claims: upstream states what its release contains, this registry records where. Absent (the honest state for a trunk snapshot, which has no upstream release statement) means no section is rendered. Not a digest input |
+| `engine` | wiring | which engine input built this cohort: `vinyl-release` or `vinyl-trunk-pinned`. Not a digest input, so it cannot change a cohort id |
 | `build_profile.name` | **digest input** | `production` for any releasable cohort |
 | `build_profile.revision` | **digest input** | integer starting at 1 |
 | `required_vmods` | policy | every VMOD the cohort must contain; currently `cachetag` alone |
@@ -185,10 +186,14 @@ The distro-native lane has no cohort identity and therefore emits no cohort depe
 
 `registry/targets/<cohort-id>/<target-id>.yml`. The file name stem must equal `target.id`.
 
+Since 2026-07-28 this is **`cachetag-target/v2`**. v1 recorded exactly one VMOD's evidence per file, in top-level `package`, `build`, `artifacts` and `tests` blocks, and its validator hardcoded `libvmod-cachetag`. That shape cannot say what a two-VMOD cohort needs to say. v2 splits the file in two: facts about the target and its buildroot stay at the top level, and **all** per-VMOD evidence moves into a `vmods:` map keyed by VMOD id. The migration is a restructure, not an addition — the legacy blocks are gone, cachetag's data moved into `vmods.cachetag` verbatim, and nothing reads the old shape. There are no users of this project and [`AGENTS.md`](../AGENTS.md) does not require backwards compatibility, so a compatibility shim would have been a second shape to keep true rather than one.
+
+### Per-target facts
+
 | Field | Kind | Notes |
 | --- | --- | --- |
-| `schema` | fixed | `cachetag-target/v1` |
-| `status` | policy | must equal the cohort status |
+| `schema` | fixed | `cachetag-target/v2` |
+| `status` | policy | must equal its cohort's status |
 | `lane` | fixed | `cohort` |
 | `cohort` | wiring | must equal the owning cohort id |
 | `target.id` | identity | must equal `<distro_id>-<arch>` |
@@ -198,23 +203,50 @@ The distro-native lane has no cohort identity and therefore emits no cohort depe
 | `target.arch` | identity | the native architecture name for the package format: `amd64` for deb, `x86_64` for rpm |
 | `target.package_format` | identity | `deb`, `rpm`, `arch`, `freebsd`, `apk` |
 | `target.dist_tag` | identity | RPM dist tag such as `el9`; must be `""` for every other format |
-| `package.revision` | policy | canonical package revision, integer starting at 1 (see below) |
-| `package.source_name` / `package.binary_name` | fixed | `libvmod-cachetag` |
 | `vinyl_packages.*` | recorded input | the cohort Vinyl runtime/dev package names and versions this build consumed |
-| `build.profile` | policy | `production` for any releasable target |
-| `build.image_ref` / `build.image_digest` | recorded input | buildroot identity; the digest pins it |
-| `build.compiler` | recorded output | resolved compiler and version |
-| `build.configure_options` | recorded output | the effective configure command line |
-| `build.cflags` / `build.ldflags` | recorded output | the effective flags, so hardening policy is auditable |
-| `build.source_date_epoch` | recorded input | from the cachetag release commit |
-| `build.hardening_check` | evidence | `pending`, `pass`, `fail`, `not-applicable` |
-| `build.build_dependencies` | recorded output | exactly resolved buildroot packages; `[]` until recorded |
+| `buildroot.image_ref` / `buildroot.image_digest` | recorded input | buildroot identity; the digest pins it |
+| `buildroot.compiler` | recorded output | resolved compiler and version |
 | `install.vmoddir` | recorded output | the installed VMOD directory, fully resolved for this distro and architecture (see below) |
 | `install.vmoddir_source` | evidence | `pkg-config` when read from `vinylapi.pc`, `recorded` when written by hand |
-| `artifacts` | recorded output | `{filename, sha256}` per produced artifact; a releasable target needs at least one |
-| `tests.*` | evidence | `package_lint`, `installed_package_smoke`, `full_behavior_suite`, `upgrade_transactions` |
 
-`--require-releasable` additionally demands `build.profile: production`, `build.hardening_check` of `pass` or `not-applicable`, every `tests.*` entry `pass` or `not-applicable`, a non-empty `artifacts` list, and `install.vmoddir_source: pkg-config`.
+These are per-target and not per-VMOD because every VMOD built for this cohort and target is built in the same container with the same compiler against the same engine packages, and installs into the same directory. Recording any of them twice would create two copies that can disagree with no meaning attached to the disagreement.
+
+### The `vmods:` map
+
+Keyed by the VMOD id, which is the catalog file-name stem in `registry/vmods/`.
+
+| Field | Kind | Notes |
+| --- | --- | --- |
+| `evidence` | policy | `pending` or `recorded` |
+| `pending_reason` | policy | required when `evidence: pending`, forbidden otherwise |
+| `package.revision` | policy | canonical package revision, integer starting at 1 (see below) |
+| `package.source_name` / `package.binary_name` | identity | the native package names, for example `libvmod-cachetag` or `vmod-dict` |
+| `build.profile` | policy | `production` for any releasable target |
+| `build.configure_options` | recorded output | the effective configure command line |
+| `build.cflags` / `build.ldflags` | recorded output | the effective flags, so hardening policy is auditable |
+| `build.source_date_epoch` | recorded input | from this VMOD's own release commit — never another repository's |
+| `build.hardening_check` | evidence | `pending`, `pass`, `fail`, `not-applicable` |
+| `build.build_dependencies` | recorded output | exactly resolved buildroot packages; `[]` until recorded |
+| `artifacts` | recorded output | `{filename, sha256}` per produced artifact; a releasable VMOD needs at least one |
+| `tests` | evidence | `package_lint`, `installed_package_smoke`, `full_behavior_suite`, `upgrade_transactions` |
+
+**Which ids must appear is not a schema question.** It is decided by `registry/vmods/` and the lanes that select this cohort's engine input and this target, and the validator checks the map against the catalog **in both directions**:
+
+- a VMOD whose lanes build a package here and has no entry is an error, because "the release is complete" could otherwise be true with a required VMOD's results simply absent;
+- an entry for a VMOD that no lane builds here is an error, because it is either stale evidence or a lane somebody forgot to declare.
+
+That is what makes the Step 6 exit gate's *"both package families meet the same evidence policy as cachetag"* a mechanical validation rather than something a reader has to remember to look for. The releasability loop does not know which VMOD is which, so it cannot hold one to a weaker standard.
+
+### `pending` is a first-class state
+
+A VMOD selected into scope before its lanes have run records `evidence: pending` with a `pending_reason` in words. The entry exists; only its results are missing. Two consequences:
+
+- placeholder values inside a `pending` entry are exempt from the placeholder policy, because a build that has not happened has no configure line, no flags and no epoch to record. That exemption is safe precisely because —
+- `--require-releasable` rejects `pending` **by name**. A cohort carrying a pending VMOD is not releasable, and the error says which VMOD and why.
+
+`vmod-dict` was recorded as `pending` on both `vinyl-9.0.1-ac4f719c16f4` targets when it entered scope, so the release cohort is deliberately not releasable until its lanes run. That is the gate working, not a regression.
+
+`--require-releasable` additionally demands, for **every** entry in the map, `build.profile: production`, `build.hardening_check` of `pass` or `not-applicable`, every `tests.*` entry `pass` or `not-applicable`, and a non-empty `artifacts` list — plus `install.vmoddir_source: pkg-config` on the target as a whole.
 
 ### The installed VMOD directory
 
@@ -258,13 +290,17 @@ It also carries its own `cachetag.version`, which is still checked against the c
 | --- | --- | --- |
 | `schema` | fixed | `vmod-ci/v1` |
 | `id` | identity | must equal the file name stem, which is also the trusted discovery id |
-| `repository` | identity | `<owner>/<name>` |
+| `source_host` | identity | `github` or `git`. Decides how CI reaches the source, and which of the two address fields below is required |
+| `repository` | identity | `<owner>/<name>`; required for `source_host: github` and forbidden otherwise |
+| `clone_url` | identity | an `https://` clone URL; required for `source_host: git` and forbidden otherwise |
+| `recipe` | policy | `upstream` (the VMOD's own audited recipe) or `generated` (rendered by `tools/vmod_recipe.py` from its overlay). Recorded, never discovered: newly found upstream packaging must not silently displace a recorded strategy |
 | `required` | policy | `true` when a failure of this VMOD must make the run red |
-| `adapter` | wiring | the packaging adapter; currently `cachetag` only |
+| `adapter` | wiring | the packaging adapter: `cachetag` (upstream-owned) or `autotools` (the default generated-recipe adapter) |
 | `sources.<channel>.ref` | immutable or moving input | tag for `release`, branch for `trunk` |
 | `sources.<channel>.expected_commit` | immutable input | the peeled commit a release ref must resolve to |
 | `sources.<channel>.version` | immutable input | cross-checked against the VMOD source's own version after checkout |
-| `sources.<channel>.archive_sha256` | **digest input** | the derived source archive's pinned digest |
+| `sources.<channel>.archive_url` | immutable input | where the published archive lives; required when `recipe: generated`, absent when the lane derives the archive from the ref |
+| `sources.<channel>.archive_sha256` | **digest input** | the source archive's pinned digest |
 | `sources.<channel>.publishable` | policy | `true` only for a fully pinned channel; a trunk build can never become a package because it passed |
 | `lanes[].kind` | wiring | `package` (native packages for named targets) or `source-harness` (the VMOD's own test harness, no package) |
 | `lanes[].source` | wiring | the source channel this lane builds |
@@ -440,9 +476,9 @@ Module map:
 
 ## Deliberately not here yet
 
-- **An explicit `track` field on cohort manifests.** The track is currently derivable from `vinyl.version` (see Tracks above). A schema field becomes worth its validation rules when a policy decision has to read it mechanically — for example a gate requiring `stable`-channel releases to come from the release track.
+- ~~**An explicit `track` field on cohort manifests.**~~ **Arrived 2026-07-28 as `engine`.** The condition recorded here was "a schema field becomes worth its validation rules when a policy decision has to read it mechanically", and the second VMOD supplied one: the per-target evidence map must contain exactly the VMODs whose catalog lanes build for this cohort and target, and those lanes name an engine input. Deriving it from `vinyl.version` does not work — the trunk cohorts record a bare `9.0.0`, not a `~git` snapshot version — and inferring it from the shape of `source_url` would be a guess where a statement is available.
 - **A "pinned but unbuilt" status.** The release cohort `vinyl-9.0.1-ac4f719c16f4` has every digest input pinned and its id derived, but no manifest: `candidate` requires recorded build outputs that only exist once the lanes have run, and `template` requires placeholder identity. A pre-build status would let such a cohort be registered before its evidence exists; until it earns its keep, the derived id lives in the lane pins and the mint happens at first build.
 
 - **`debian/changelog` and RPM `%changelog` generation.** The plan lists them under the same Phase 0 bullet; they belong with the packaging recipes — cachetag's in its own repository, Vinyl's in this one — and they need release-note text that no manifest field holds.
-- **A VMOD registry.** `required_vmods` is a flat list because cachetag is the only independently packaged VMOD. Generic reverse-dependency scheduling arrives with the second one.
+- **Generic reverse-dependency scheduling.** `required_vmods` on a cohort is still a flat list. The per-target `vmods:` map added in v2 records evidence, not scheduling order; nothing yet needs to know that rebuilding one VMOD implies rebuilding another, because no selected VMOD depends on another.
 - **`release-manifest.json` emission from this tooling.** The per-release artifact described in the plan's release artifact contract is assembled by [`scripts/ci/release-manifest.sh`](../scripts/ci/release-manifest.sh) from these manifests, read through `release_tool.py metadata`, plus CI-only facts (workflow URL, run id) that cannot be checked in ahead of the run. Whether the generator belongs in `tools/` instead is an open question; it lives in `scripts/ci/` because everything else it needs — the assembled asset directory and the run's identity — only exists inside a workflow run.

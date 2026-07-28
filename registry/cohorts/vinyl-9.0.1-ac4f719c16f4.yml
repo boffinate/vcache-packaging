@@ -47,6 +47,8 @@ vinyl:
       url: https://vinyl-cache.org/releases/rel9.0.1.html
     - title: Changes in Vinyl Cache 9.0
       url: https://vinyl-cache.org/docs/9.0/whats-new/changes-9.0.html
+# Built from upstream's digest-pinned release tarball, VINYL_TRACK=release.
+engine: vinyl-release
 build_profile:
   name: production
   # Revision 1: same single production profile definition as the trunk

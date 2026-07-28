@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import re
 
-from manifest import PACKAGE_STEM
-
 __all__ = ["package_versions", "target_metadata", "abi_expressions", "as_shell"]
 
 # Native archive/package extension per package format.
@@ -67,29 +65,31 @@ def package_versions(version: str, revision: int, dist_tag: str = "") -> dict:
     }
 
 
-def _native_filename(fmt: str, version: str, revision: int, arch: str, versions: dict) -> str:
+def _native_filename(
+    fmt: str, version: str, revision: int, arch: str, versions: dict, stem: str
+) -> str:
     if fmt == "deb":
-        return f"{PACKAGE_STEM}_{versions['debian']['version']}_{arch}.deb"
+        return f"{stem}_{versions['debian']['version']}_{arch}.deb"
     if fmt == "rpm":
-        return f"{PACKAGE_STEM}-{version}-{versions['rpm']['release']}.{arch}.rpm"
+        return f"{stem}-{version}-{versions['rpm']['release']}.{arch}.rpm"
     if fmt == "arch":
-        return f"{PACKAGE_STEM}-{version}-{versions['arch']['pkgrel']}-{arch}.pkg.tar.zst"
+        return f"{stem}-{version}-{versions['arch']['pkgrel']}-{arch}.pkg.tar.zst"
     if fmt == "freebsd":
-        return f"{PACKAGE_STEM}-{versions['freebsd']['pkg_version']}.pkg"
+        return f"{stem}-{versions['freebsd']['pkg_version']}.pkg"
     if fmt == "apk":
-        return f"{PACKAGE_STEM}-{version}-r{versions['alpine']['pkgrel']}.apk"
+        return f"{stem}-{version}-r{versions['alpine']['pkgrel']}.apk"
     raise ValueError(f"unknown package format {fmt!r}")
 
 
-def _source_filenames(fmt: str, version: str, revision: int, versions: dict) -> list:
+def _source_filenames(fmt: str, version: str, versions: dict, stem: str) -> list:
     if fmt == "deb":
         return [
-            f"{PACKAGE_STEM}_{version}.orig.tar.gz",
-            f"{PACKAGE_STEM}_{versions['debian']['version']}.debian.tar.xz",
-            f"{PACKAGE_STEM}_{versions['debian']['version']}.dsc",
+            f"{stem}_{version}.orig.tar.gz",
+            f"{stem}_{versions['debian']['version']}.debian.tar.xz",
+            f"{stem}_{versions['debian']['version']}.dsc",
         ]
     if fmt == "rpm":
-        return [f"{PACKAGE_STEM}-{version}-{versions['rpm']['release']}.src.rpm"]
+        return [f"{stem}-{version}-{versions['rpm']['release']}.src.rpm"]
     return []
 
 
@@ -175,24 +175,42 @@ def _abi_strings(
     }
 
 
-def target_metadata(target: dict, cohort: dict = None) -> dict:
-    """Build the complete generated metadata block for one target manifest."""
+def target_metadata(target: dict, cohort: dict = None, vmod: str = "cachetag") -> dict:
+    """Build the complete generated metadata block for one target manifest.
+
+    ``vmod`` selects the entry in a cohort target's ``vmods:`` map. It defaults
+    to ``cachetag`` because every existing caller -- the release manifest
+    assembler and the lane pin cross-checks -- asks about cachetag, and the
+    v1-to-v2 schema migration must not move a byte of what they read. The
+    distro-native lane has no map: it is bound to one distribution package
+    revision and cachetag is its only VMOD by construction.
+    """
     lane = target["lane"]
     tgt = target["target"]
     fmt = tgt["package_format"]
     arch = tgt["arch"]
-    revision = int(target["package"]["revision"])
 
     if lane == "cohort":
         if cohort is None:
             raise ValueError("a cohort-lane target needs its cohort manifest")
-        version = cohort["cachetag"]["version"]
+        entry = target["vmods"].get(vmod)
+        if entry is None:
+            raise ValueError(
+                "{} records no evidence for VMOD {!r}; it has entries for {}".format(
+                    tgt["id"], vmod, sorted(target["vmods"])
+                )
+            )
+        package = entry["package"]
+        install = target["install"]
+        version = package["upstream_version"]
         vrt = cohort["vinyl"]["vrt"]
         strict_abi = cohort["vinyl"]["strict_abi"]
         cohort_id = cohort["cohort"]
         exact_package = None
         origin = {"kind": "cohort", "cohort": cohort_id}
     else:
+        package = target["package"]
+        install = target["install"]
         version = target["cachetag"]["version"]
         distro_vinyl = target["distro_vinyl"]
         vrt = distro_vinyl["vrt"]
@@ -209,11 +227,14 @@ def target_metadata(target: dict, cohort: dict = None) -> dict:
             "vinyl_binary_package_version": distro_vinyl["binary_package_version"],
         }
 
+    revision = int(package["revision"])
+    stem = package["binary_name"]
+    source_stem = package["source_name"]
     versions = package_versions(version, revision, tgt["dist_tag"])
-    native_filename = _native_filename(fmt, version, revision, arch, versions)
+    native_filename = _native_filename(fmt, version, revision, arch, versions, stem)
     extension = _EXTENSION[fmt]
     release_asset = "{}-{}-{}-{}-{}.{}".format(
-        PACKAGE_STEM, version, revision, tgt["distro_id"], arch, extension
+        stem, version, revision, tgt["distro_id"], arch, extension
     )
 
     return {
@@ -226,9 +247,10 @@ def target_metadata(target: dict, cohort: dict = None) -> dict:
         "distro_id": tgt["distro_id"],
         "arch": arch,
         "package_format": fmt,
+        "vmod": vmod if lane == "cohort" else "cachetag",
         "cachetag_version": version,
         "package_revision": revision,
-        "source_archive": f"{PACKAGE_STEM}-{version}.tar.gz",
+        "source_archive": f"{source_stem}-{version}.tar.gz",
         "versions": versions,
         "native": {
             "format": fmt,
@@ -237,17 +259,17 @@ def target_metadata(target: dict, cohort: dict = None) -> dict:
         "artifacts": {
             "native_filename": native_filename,
             "release_asset_filename": release_asset,
-            "source_package_filenames": _source_filenames(fmt, version, revision, versions),
+            "source_package_filenames": _source_filenames(fmt, version, versions, source_stem),
         },
         "abi": _abi_strings(vrt, strict_abi, exact_package, cohort_id),
         "vinyl": {"vrt": vrt, "strict_abi": strict_abi},
         "install": {
-            "vmoddir": target["install"]["vmoddir"],
-            "vmoddir_source": target["install"]["vmoddir_source"],
+            "vmoddir": install["vmoddir"],
+            "vmoddir_source": install["vmoddir_source"],
         },
         # Tokens that packaging recipes substitute into their templates.
         "substitutions": {
-            "@VINYL_VMODDIR@": target["install"]["vmoddir"],
+            "@VINYL_VMODDIR@": install["vmoddir"],
         },
     }
 

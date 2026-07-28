@@ -3,7 +3,12 @@
 # EL9-compatible x86_64, project-cohort lane. target.distro is the EL family
 # rather than one rebuild vendor; the exact builder image is recorded in
 # build.image_ref and build.image_digest. See registry/README.md.
-schema: cachetag-target/v1
+# TEMPLATE TARGET - NOT RELEASABLE
+#
+# EL9-compatible x86_64, project-cohort lane. target.distro is the EL family
+# rather than one rebuild vendor; the exact builder image is recorded in
+# build.image_ref and build.image_digest. See registry/README.md.
+schema: cachetag-target/v2
 status: template
 lane: cohort
 cohort: vinyl-9.0.0-000000000000
@@ -15,27 +20,17 @@ target:
   arch: x86_64
   package_format: rpm
   dist_tag: el9
-package:
-  revision: 1
-  source_name: libvmod-cachetag
-  binary_name: libvmod-cachetag
 vinyl_packages:
   origin: cohort
   runtime_name: vinyl-cache
   runtime_version: PLACEHOLDER
   dev_name: vinyl-cache-devel
   dev_version: PLACEHOLDER
-build:
-  profile: production
+# Facts about the BUILDROOT: one per target, shared by every VMOD built in it.
+buildroot:
   image_ref: quay.io/almalinuxorg/almalinux:9
   image_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   compiler: PLACEHOLDER
-  configure_options: PLACEHOLDER
-  cflags: PLACEHOLDER
-  ldflags: PLACEHOLDER
-  source_date_epoch: PLACEHOLDER
-  hardening_check: pending
-  build_dependencies: []
 install:
   # Expected value for this distro/arch. The package build must replace it with
   # the value actually reported by
@@ -44,9 +39,28 @@ install:
   # accordingly. Recipes consume this as @VINYL_VMODDIR@.
   vmoddir: /usr/lib64/vinyl-cache/vmods
   vmoddir_source: recorded
-artifacts: []
-tests:
-  package_lint: pending
-  installed_package_smoke: pending
-  full_behavior_suite: pending
-  upgrade_transactions: pending
+# Per-VMOD evidence, keyed by catalog id. Which ids must appear is decided by
+# registry/vmods/ and the lanes that select this cohort and target; the
+# validator checks the map against the catalog in both directions.
+vmods:
+  cachetag:
+    evidence: recorded
+    package:
+      upstream_version: 1.0.1
+      revision: 1
+      source_name: libvmod-cachetag
+      binary_name: libvmod-cachetag
+    build:
+      profile: production
+      configure_options: PLACEHOLDER
+      cflags: PLACEHOLDER
+      ldflags: PLACEHOLDER
+      source_date_epoch: PLACEHOLDER
+      hardening_check: pending
+      build_dependencies: []
+    artifacts: []
+    tests:
+      package_lint: pending
+      installed_package_smoke: pending
+      full_behavior_suite: pending
+      upgrade_transactions: pending

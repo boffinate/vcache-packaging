@@ -7,7 +7,16 @@
 # pinned: the toolchain container by image digest, and the chroot mmdebstrap
 # builds from the snapshot.debian.org mirror snapshot
 # DEBIAN_SNAPSHOT=20260701T000000Z recorded in recipes/debian-13/pins.env.
-schema: cachetag-target/v1
+# Debian 13 (trixie) amd64, project-cohort lane -- candidate.
+#
+# Every recorded output below comes from the pbuilder clean-room lane in CI
+# (.github/workflows/ci.yml, job "Debian 13 amd64 (pbuilder)", track `trunk`,
+# run 30352844760 -- the first fully green run containing every step-2
+# correctness fix), never from a laptop build. The buildroot is doubly
+# pinned: the toolchain container by image digest, and the chroot mmdebstrap
+# builds from the snapshot.debian.org mirror snapshot
+# DEBIAN_SNAPSHOT=20260701T000000Z recorded in recipes/debian-13/pins.env.
+schema: cachetag-target/v2
 status: candidate
 lane: cohort
 cohort: vinyl-9.0.0-4b7e68292979
@@ -19,453 +28,462 @@ target:
   arch: amd64
   package_format: deb
   dist_tag: ""
-package:
-  revision: 1
-  source_name: libvmod-cachetag
-  binary_name: libvmod-cachetag
 vinyl_packages:
   origin: cohort
   runtime_name: vinyl-cache
   runtime_version: "9.0.0~git20260520.25761f8505-1"
   dev_name: vinyl-cache-dev
   dev_version: "9.0.0~git20260520.25761f8505-1"
-build:
-  profile: production
+# Facts about the BUILDROOT: one per target, shared by every VMOD built in it.
+buildroot:
   image_ref: debian:trixie
   image_digest: "sha256:fac46bff2e02f51425b6e33b0e1169f55dfb053d83511ca28aa50c09fd5ed7a4"
   compiler: "gcc 14.2.0-19 (Debian trixie, dpkg gcc 4:14.2.0-1)"
-  # dh_auto_configure's effective line for the libvmod-cachetag build.
-  configure_options: "./configure --build=x86_64-linux-gnu --prefix=/usr --includedir=${prefix}/include --mandir=${prefix}/share/man --infodir=${prefix}/share/info --sysconfdir=/etc --localstatedir=/var --disable-option-checking --disable-silent-rules --libdir=${prefix}/lib/x86_64-linux-gnu --runstatedir=/run --disable-maintainer-mode --disable-dependency-tracking --libdir=/usr/lib/x86_64-linux-gnu --docdir=/usr/share/doc/libvmod-cachetag"
-  # dpkg-buildflags with DEB_BUILD_MAINT_OPTIONS=hardening=+all, as they reach
-  # the compiler: read off the libtool compile and link lines in the lane log,
-  # not from a restatement of what dpkg-buildflags is expected to emit. The
-  # -ffile-prefix-map path names the unpacked source directory, which this
-  # run's logs/source.log lists as libvmod-cachetag-1.0.1.
-  cflags: "-Wdate-time -D_FORTIFY_SOURCE=2 -g -O2 -Werror=implicit-function-declaration -ffile-prefix-map=/build/libvmod-cachetag-1.0.1=. -fstack-protector-strong -fstack-clash-protection -Wformat -Werror=format-security -fcf-protection"
-  ldflags: "-Wl,-z,relro -Wl,-z,now"
-  # Committer date of the cachetag v1.0.1 release commit. Confirmed recorded:
-  # the .buildinfo Environment block of run 30352844760 carries
-  # SOURCE_DATE_EPOCH="1785230737".
-  source_date_epoch: "1785230737"
-  # scripts/ci/debian13/assert-packages.sh inspects the built ELF objects:
-  # stack protector, GNU_RELRO, BIND_NOW, ELF type DYN, and __*_chk symbols,
-  # for both vinyld and libvmod_cachetag.so. Job-log-only evidence: the "ABI
-  # and hardening assertions" step of run 30352844760 passed.
-  hardening_check: pass
-  # Installed-Build-Depends of libvmod-cachetag_1.0.1-1_amd64.buildinfo from
-  # run 30352844760 -- dpkg's own record of every package in the build
-  # chroot, including the cohort vinyl packages the build consumed.
-  # Cross-checked against logs/buildroot-packages.txt (124 base-chroot
-  # entries, all versions agreeing).
-  build_dependencies:
-    - name: adduser
-      version: "3.152"
-    - name: autoconf
-      version: "2.72-3.1"
-    - name: automake
-      version: "1:1.17-4"
-    - name: autopoint
-      version: "0.23.1-2"
-    - name: autotools-dev
-      version: "20240727.1"
-    - name: base-files
-      version: "13.8+deb13u5"
-    - name: base-passwd
-      version: "3.6.7"
-    - name: bash
-      version: "5.2.37-2+b9"
-    - name: binutils
-      version: "2.44-3"
-    - name: binutils-common
-      version: "2.44-3"
-    - name: binutils-x86-64-linux-gnu
-      version: "2.44-3"
-    - name: bsdextrautils
-      version: "2.41-5"
-    - name: bsdutils
-      version: "1:2.41-5"
-    - name: build-essential
-      version: "12.12"
-    - name: bzip2
-      version: "1.0.8-6"
-    - name: coreutils
-      version: "9.7-3"
-    - name: cpp
-      version: "4:14.2.0-1"
-    - name: cpp-14
-      version: "14.2.0-19"
-    - name: cpp-14-x86-64-linux-gnu
-      version: "14.2.0-19"
-    - name: cpp-x86-64-linux-gnu
-      version: "4:14.2.0-1"
-    - name: dash
-      version: "0.5.12-12"
-    - name: debconf
-      version: "1.5.91"
-    - name: debhelper
-      version: "13.24.2"
-    - name: debianutils
-      version: "5.23.2"
-    - name: dh-autoreconf
-      version: "20"
-    - name: dh-strip-nondeterminism
-      version: "1.14.1-2"
-    - name: diffutils
-      version: "1:3.10-4"
-    - name: docutils-common
-      version: "0.21.2+dfsg-2"
-    - name: dpkg
-      version: "1.22.22"
-    - name: dpkg-dev
-      version: "1.22.22"
-    - name: dwz
-      version: "0.15-1+b1"
-    - name: file
-      version: "1:5.46-5"
-    - name: findutils
-      version: "4.10.0-3"
-    - name: g++
-      version: "4:14.2.0-1"
-    - name: g++-14
-      version: "14.2.0-19"
-    - name: g++-14-x86-64-linux-gnu
-      version: "14.2.0-19"
-    - name: g++-x86-64-linux-gnu
-      version: "4:14.2.0-1"
-    - name: gcc
-      version: "4:14.2.0-1"
-    - name: gcc-14
-      version: "14.2.0-19"
-    - name: gcc-14-base
-      version: "14.2.0-19"
-    - name: gcc-14-x86-64-linux-gnu
-      version: "14.2.0-19"
-    - name: gcc-x86-64-linux-gnu
-      version: "4:14.2.0-1"
-    - name: gettext
-      version: "0.23.1-2"
-    - name: gettext-base
-      version: "0.23.1-2"
-    - name: grep
-      version: "3.11-4"
-    - name: groff-base
-      version: "1.23.0-9"
-    - name: gzip
-      version: "1.13-1"
-    - name: hostname
-      version: "3.25"
-    - name: init-system-helpers
-      version: "1.69~deb13u1"
-    - name: intltool-debian
-      version: "0.35.0+20060710.6"
-    - name: libacl1
-      version: "2.3.2-2+b1"
-    - name: libarchive-zip-perl
-      version: "1.68-1"
-    - name: libasan8
-      version: "14.2.0-19"
-    - name: libatomic1
-      version: "14.2.0-19"
-    - name: libattr1
-      version: "1:2.5.2-3"
-    - name: libaudit-common
-      version: "1:4.0.2-2"
-    - name: libaudit1
-      version: "1:4.0.2-2+b2"
-    - name: libbinutils
-      version: "2.44-3"
-    - name: libblkid1
-      version: "2.41-5"
-    - name: libbsd0
-      version: "0.12.2-2"
-    - name: libbz2-1.0
-      version: "1.0.8-6"
-    - name: libc-bin
-      version: "2.41-12+deb13u3"
-    - name: libc-dev-bin
-      version: "2.41-12+deb13u3"
-    - name: libc6
-      version: "2.41-12+deb13u3"
-    - name: libc6-dev
-      version: "2.41-12+deb13u3"
-    - name: libcap-ng0
-      version: "0.8.5-4+b1"
-    - name: libcap2
-      version: "1:2.75-10+deb13u1+b1"
-    - name: libcc1-0
-      version: "14.2.0-19"
-    - name: libcrypt-dev
-      version: "1:4.4.38-1"
-    - name: libcrypt1
-      version: "1:4.4.38-1"
-    - name: libctf-nobfd0
-      version: "2.44-3"
-    - name: libctf0
-      version: "2.44-3"
-    - name: libdb5.3t64
-      version: "5.3.28+dfsg2-9"
-    - name: libdebconfclient0
-      version: "0.280"
-    - name: libdebhelper-perl
-      version: "13.24.2"
-    - name: libdpkg-perl
-      version: "1.22.22"
-    - name: libedit2
-      version: "3.1-20250104-1"
-    - name: libelf1t64
-      version: "0.192-4"
-    - name: libexpat1
-      version: "2.7.1-2"
-    - name: libffi8
-      version: "3.4.8-2"
-    - name: libfile-stripnondeterminism-perl
-      version: "1.14.1-2"
-    - name: libgcc-14-dev
-      version: "14.2.0-19"
-    - name: libgcc-s1
-      version: "14.2.0-19"
-    - name: libgdbm-compat4t64
-      version: "1.24-2"
-    - name: libgdbm6t64
-      version: "1.24-2"
-    - name: libgmp10
-      version: "2:6.3.0+dfsg-3"
-    - name: libgomp1
-      version: "14.2.0-19"
-    - name: libgprofng0
-      version: "2.44-3"
-    - name: libhwasan0
-      version: "14.2.0-19"
-    - name: libisl23
-      version: "0.27-1"
-    - name: libitm1
-      version: "14.2.0-19"
-    - name: libjansson4
-      version: "2.14-2+b3"
-    - name: libjemalloc2
-      version: "5.3.0-3"
-    - name: liblastlog2-2
-      version: "2.41-5"
-    - name: liblsan0
-      version: "14.2.0-19"
-    - name: liblzma5
-      version: "5.8.1-1"
-    - name: libmagic-mgc
-      version: "1:5.46-5"
-    - name: libmagic1t64
-      version: "1:5.46-5"
-    - name: libmd0
-      version: "1.1.0-2+b1"
-    - name: libmount1
-      version: "2.41-5"
-    - name: libmpc3
-      version: "1.3.1-1+b3"
-    - name: libmpfr6
-      version: "4.2.2-1"
-    - name: libncursesw6
-      version: "6.5+20250216-2"
-    - name: libpam-modules
-      version: "1.7.0-5"
-    - name: libpam-modules-bin
-      version: "1.7.0-5"
-    - name: libpam-runtime
-      version: "1.7.0-5"
-    - name: libpam0g
-      version: "1.7.0-5"
-    - name: libpcre2-8-0
-      version: "10.46-1~deb13u1"
-    - name: libperl5.40
-      version: "5.40.1-6"
-    - name: libpipeline1
-      version: "1.5.8-1"
-    - name: libpkgconf3
-      version: "1.8.1-4"
-    - name: libpython3-stdlib
-      version: "3.13.5-1"
-    - name: libpython3.13-minimal
-      version: "3.13.5-2+deb13u2"
-    - name: libpython3.13-stdlib
-      version: "3.13.5-2+deb13u2"
-    - name: libquadmath0
-      version: "14.2.0-19"
-    - name: libreadline8t64
-      version: "8.2-6"
-    - name: libseccomp2
-      version: "2.6.0-2"
-    - name: libselinux1
-      version: "3.8.1-1"
-    - name: libsemanage-common
-      version: "3.8.1-1"
-    - name: libsemanage2
-      version: "3.8.1-1"
-    - name: libsepol2
-      version: "3.8.1-1"
-    - name: libsframe1
-      version: "2.44-3"
-    - name: libsmartcols1
-      version: "2.41-5"
-    - name: libsqlite3-0
-      version: "3.46.1-7+deb13u1"
-    - name: libssl3t64
-      version: "3.5.6-1~deb13u1"
-    - name: libstdc++-14-dev
-      version: "14.2.0-19"
-    - name: libstdc++6
-      version: "14.2.0-19"
-    - name: libsystemd0
-      version: "257.13-1~deb13u1"
-    - name: libtinfo6
-      version: "6.5+20250216-2"
-    - name: libtool
-      version: "2.5.4-4"
-    - name: libtsan2
-      version: "14.2.0-19"
-    - name: libubsan1
-      version: "14.2.0-19"
-    - name: libuchardet0
-      version: "0.0.8-1+b2"
-    - name: libudev1
-      version: "257.13-1~deb13u1"
-    - name: libunistring5
-      version: "1.3-2"
-    - name: libunwind8
-      version: "1.8.1-0.1"
-    - name: libuuid1
-      version: "2.41-5"
-    - name: libxml2
-      version: "2.12.7+dfsg+really2.9.14-2.1+deb13u2"
-    - name: libzstd1
-      version: "1.5.7+dfsg-1"
-    - name: linux-libc-dev
-      version: "6.12.86-1"
-    - name: login.defs
-      version: "1:4.17.4-2"
-    - name: m4
-      version: "1.4.19-8"
-    - name: make
-      version: "4.4.1-2"
-    - name: man-db
-      version: "2.13.1-1"
-    - name: mawk
-      version: "1.3.4.20250131-1"
-    - name: media-types
-      version: "13.0.0"
-    - name: ncurses-base
-      version: "6.5+20250216-2"
-    - name: ncurses-bin
-      version: "6.5+20250216-2"
-    - name: netbase
-      version: "6.5"
-    - name: openssl-provider-legacy
-      version: "3.5.6-1~deb13u1"
-    - name: passwd
-      version: "1:4.17.4-2"
-    - name: patch
-      version: "2.8-2"
-    - name: perl
-      version: "5.40.1-6"
-    - name: perl-base
-      version: "5.40.1-6"
-    - name: perl-modules-5.40
-      version: "5.40.1-6"
-    - name: pkgconf
-      version: "1.8.1-4"
-    - name: pkgconf-bin
-      version: "1.8.1-4"
-    - name: po-debconf
-      version: "1.0.21+nmu1"
-    - name: python3
-      version: "3.13.5-1"
-    - name: python3-docutils
-      version: "0.21.2+dfsg-2"
-    - name: python3-minimal
-      version: "3.13.5-1"
-    - name: python3-roman
-      version: "5.0-1"
-    - name: python3.13
-      version: "3.13.5-2+deb13u2"
-    - name: python3.13-minimal
-      version: "3.13.5-2+deb13u2"
-    - name: readline-common
-      version: "8.2-6"
-    - name: rpcsvc-proto
-      version: "1.4.3-1"
-    - name: sed
-      version: "4.9-2+deb13u1"
-    - name: sensible-utils
-      version: "0.0.25"
-    - name: sgml-base
-      version: "1.31+nmu1"
-    - name: sysvinit-utils
-      version: "3.14-4"
-    - name: tar
-      version: "1.35+dfsg-3.1"
-    - name: tzdata
-      version: "2026b-0+deb13u1"
-    - name: util-linux
-      version: "2.41-5"
-    - name: vinyl-cache
-      version: "9.0.0~git20260520.25761f8505-1"
-    - name: vinyl-cache-dev
-      version: "9.0.0~git20260520.25761f8505-1"
-    - name: xml-core
-      version: "0.19"
-    - name: xz-utils
-      version: "5.8.1-1"
-    - name: zlib1g
-      version: "1:1.3.dfsg+really1.3.1-1+b1"
 install:
   # Read from the installed vinyl-cache-dev package by debian/rules
   #   pkg-config --define-variable=libdir=<libdir> --variable=vmoddir vinylapi
   # which refuses to build when it disagrees with this value.
   vmoddir: /usr/lib/x86_64-linux-gnu/vinyl-cache/vmods
   vmoddir_source: pkg-config
-# From debian-13-packages-trunk/SHA256SUMS of run 30352844760. The .deb
-# is bit-identical across rebuilds of identical inputs, unlike the EL9 RPMs.
-artifacts:
-  - filename: libvmod-cachetag_1.0.1-1_amd64.deb
-    sha256: "408f7101610be2493b30b1434e058d592c08104cbac2ff9c3d3f7a8ba1d1f6aa"
-  - filename: libvmod-cachetag-dbgsym_1.0.1-1_amd64.deb
-    sha256: "0b287d7ee88ccc6a7dbe69ecc4ca57a2f83bd6e7d9c0f32ac2fbc83b4f595574"
-  - filename: libvmod-cachetag_1.0.1-1.dsc
-    sha256: "95f30392be33de6e5113fcf9e868482f1ac7ebf4496e5dcc9c9159e341327eca"
-  - filename: libvmod-cachetag_1.0.1-1.debian.tar.xz
-    sha256: "db68bb0085d21b7535cd92afdd751b0481e4f1b9dfc9ffe9e196c5ba90cdb90d"
-tests:
-  # lintian over both source and binary packages in run 30352844760
-  # (logs/lint.log): "lintian exit status: 0" under the hard gate that has
-  # propagated the exit status since stage-lint.sh stopped swallowing it.
-  # Overrides remain the reviewed .lintian-overrides files.
-  package_lint: pass
-  # recipes/debian-13 smoke, in a container that never saw the build: apt
-  # install of the cohort packages, an unsatisfiable bogus ABI provide, an
-  # unsatisfiable foreign cohort provide, VCL compile, MISS then warm HIT, a
-  # tag purge and the post-purge MISS, clean SIGTERM, then uninstall.
-  # logs/smoke.log of run 30352844760: 19 passed, 0 failed.
-  installed_package_smoke: pass
-  # ci.yml run 30357799478 (track trunk,
-  # https://github.com/boffinate/vcache-packaging/actions/runs/30357799478),
-  # stage-vtc-suite.sh in a fresh container: the packaged vinyltest -- owned
-  # by vinyl-cache 9.0.0~git20260520.25761f8505-1 itself, vtest2 pin
-  # db5ccb4a07 -- drove the full default-storage VTC matrix against the
-  # installed libvmod-cachetag 1.0.1-1, proven the only libvmod_cachetag.so
-  # on the filesystem, sha256
-  # c24d40cb8e2103656974fe5be4b1e5884526c56fcbd835c97513bd7fb7a6c4d4 in
-  # /usr/lib/x86_64-linux-gnu/vinyl-cache/vmods. 52/52 passed, 0 skipped;
-  # the 25 Fellow/Buddy VTCs are excluded by src/Makefile.am's TESTS, and
-  # cachetag_wal_test cannot run against installed packages -- its pass
-  # stands as source-archive evidence from the 1.0.1 release proof.
-  # pm00007=clean, no retry. Mitigations in force: -j1 serial, and
-  # -p debug=+vclrel, no-op-equivalent on this trunk pin (which contains
-  # 7de492b0e8) and removable once the release track has it too.
-  full_behavior_suite: pass
-  # nightly-transactions.yml run 30350769683 (trunk track): the synthetic
-  # mismatch and same-ABI fixtures rebuilt from this cohort's own packages,
-  # then the 16 apt scenarios s01-s16 in fresh containers
-  # (logs/transactions/SUMMARY.tsv). Reproduces the step-9 findings on
-  # cachetag 1.0.1-1: apt upgrade holds Vinyl back, full-upgrade and a direct
-  # versioned install remove the VMOD, apt-mark hold refuses even that (s15,
-  # exit 100), a pin blocks upgrades (s08) but not a direct versioned install
-  # (s16, REMOVED-VMOD -- the pin weakness the step-9 note records), and the
-  # same-ABI candidate is held back rather than upgraded (s12).
-  upgrade_transactions: pass
+# Per-VMOD evidence, keyed by catalog id. Which ids must appear is decided by
+# registry/vmods/ and the lanes that select this cohort and target; the
+# validator checks the map against the catalog in both directions.
+vmods:
+  cachetag:
+    evidence: recorded
+    package:
+      upstream_version: 1.0.1
+      revision: 1
+      source_name: libvmod-cachetag
+      binary_name: libvmod-cachetag
+    build:
+      profile: production
+      # dh_auto_configure's effective line for the libvmod-cachetag build.
+      configure_options: "./configure --build=x86_64-linux-gnu --prefix=/usr --includedir=${prefix}/include --mandir=${prefix}/share/man --infodir=${prefix}/share/info --sysconfdir=/etc --localstatedir=/var --disable-option-checking --disable-silent-rules --libdir=${prefix}/lib/x86_64-linux-gnu --runstatedir=/run --disable-maintainer-mode --disable-dependency-tracking --libdir=/usr/lib/x86_64-linux-gnu --docdir=/usr/share/doc/libvmod-cachetag"
+      # dpkg-buildflags with DEB_BUILD_MAINT_OPTIONS=hardening=+all, as they reach
+      # the compiler: read off the libtool compile and link lines in the lane log,
+      # not from a restatement of what dpkg-buildflags is expected to emit. The
+      # -ffile-prefix-map path names the unpacked source directory, which this
+      # run's logs/source.log lists as libvmod-cachetag-1.0.1.
+      cflags: "-Wdate-time -D_FORTIFY_SOURCE=2 -g -O2 -Werror=implicit-function-declaration -ffile-prefix-map=/build/libvmod-cachetag-1.0.1=. -fstack-protector-strong -fstack-clash-protection -Wformat -Werror=format-security -fcf-protection"
+      ldflags: "-Wl,-z,relro -Wl,-z,now"
+      # Committer date of the cachetag v1.0.1 release commit. Confirmed recorded:
+      # the .buildinfo Environment block of run 30352844760 carries
+      # SOURCE_DATE_EPOCH="1785230737".
+      source_date_epoch: "1785230737"
+      # scripts/ci/debian13/assert-packages.sh inspects the built ELF objects:
+      # stack protector, GNU_RELRO, BIND_NOW, ELF type DYN, and __*_chk symbols,
+      # for both vinyld and libvmod_cachetag.so. Job-log-only evidence: the "ABI
+      # and hardening assertions" step of run 30352844760 passed.
+      hardening_check: pass
+      # Installed-Build-Depends of libvmod-cachetag_1.0.1-1_amd64.buildinfo from
+      # run 30352844760 -- dpkg's own record of every package in the build
+      # chroot, including the cohort vinyl packages the build consumed.
+      # Cross-checked against logs/buildroot-packages.txt (124 base-chroot
+      # entries, all versions agreeing).
+      build_dependencies:
+        - name: adduser
+          version: "3.152"
+        - name: autoconf
+          version: "2.72-3.1"
+        - name: automake
+          version: "1:1.17-4"
+        - name: autopoint
+          version: "0.23.1-2"
+        - name: autotools-dev
+          version: "20240727.1"
+        - name: base-files
+          version: "13.8+deb13u5"
+        - name: base-passwd
+          version: "3.6.7"
+        - name: bash
+          version: "5.2.37-2+b9"
+        - name: binutils
+          version: "2.44-3"
+        - name: binutils-common
+          version: "2.44-3"
+        - name: binutils-x86-64-linux-gnu
+          version: "2.44-3"
+        - name: bsdextrautils
+          version: "2.41-5"
+        - name: bsdutils
+          version: "1:2.41-5"
+        - name: build-essential
+          version: "12.12"
+        - name: bzip2
+          version: "1.0.8-6"
+        - name: coreutils
+          version: "9.7-3"
+        - name: cpp
+          version: "4:14.2.0-1"
+        - name: cpp-14
+          version: "14.2.0-19"
+        - name: cpp-14-x86-64-linux-gnu
+          version: "14.2.0-19"
+        - name: cpp-x86-64-linux-gnu
+          version: "4:14.2.0-1"
+        - name: dash
+          version: "0.5.12-12"
+        - name: debconf
+          version: "1.5.91"
+        - name: debhelper
+          version: "13.24.2"
+        - name: debianutils
+          version: "5.23.2"
+        - name: dh-autoreconf
+          version: "20"
+        - name: dh-strip-nondeterminism
+          version: "1.14.1-2"
+        - name: diffutils
+          version: "1:3.10-4"
+        - name: docutils-common
+          version: "0.21.2+dfsg-2"
+        - name: dpkg
+          version: "1.22.22"
+        - name: dpkg-dev
+          version: "1.22.22"
+        - name: dwz
+          version: "0.15-1+b1"
+        - name: file
+          version: "1:5.46-5"
+        - name: findutils
+          version: "4.10.0-3"
+        - name: g++
+          version: "4:14.2.0-1"
+        - name: g++-14
+          version: "14.2.0-19"
+        - name: g++-14-x86-64-linux-gnu
+          version: "14.2.0-19"
+        - name: g++-x86-64-linux-gnu
+          version: "4:14.2.0-1"
+        - name: gcc
+          version: "4:14.2.0-1"
+        - name: gcc-14
+          version: "14.2.0-19"
+        - name: gcc-14-base
+          version: "14.2.0-19"
+        - name: gcc-14-x86-64-linux-gnu
+          version: "14.2.0-19"
+        - name: gcc-x86-64-linux-gnu
+          version: "4:14.2.0-1"
+        - name: gettext
+          version: "0.23.1-2"
+        - name: gettext-base
+          version: "0.23.1-2"
+        - name: grep
+          version: "3.11-4"
+        - name: groff-base
+          version: "1.23.0-9"
+        - name: gzip
+          version: "1.13-1"
+        - name: hostname
+          version: "3.25"
+        - name: init-system-helpers
+          version: "1.69~deb13u1"
+        - name: intltool-debian
+          version: "0.35.0+20060710.6"
+        - name: libacl1
+          version: "2.3.2-2+b1"
+        - name: libarchive-zip-perl
+          version: "1.68-1"
+        - name: libasan8
+          version: "14.2.0-19"
+        - name: libatomic1
+          version: "14.2.0-19"
+        - name: libattr1
+          version: "1:2.5.2-3"
+        - name: libaudit-common
+          version: "1:4.0.2-2"
+        - name: libaudit1
+          version: "1:4.0.2-2+b2"
+        - name: libbinutils
+          version: "2.44-3"
+        - name: libblkid1
+          version: "2.41-5"
+        - name: libbsd0
+          version: "0.12.2-2"
+        - name: libbz2-1.0
+          version: "1.0.8-6"
+        - name: libc-bin
+          version: "2.41-12+deb13u3"
+        - name: libc-dev-bin
+          version: "2.41-12+deb13u3"
+        - name: libc6
+          version: "2.41-12+deb13u3"
+        - name: libc6-dev
+          version: "2.41-12+deb13u3"
+        - name: libcap-ng0
+          version: "0.8.5-4+b1"
+        - name: libcap2
+          version: "1:2.75-10+deb13u1+b1"
+        - name: libcc1-0
+          version: "14.2.0-19"
+        - name: libcrypt-dev
+          version: "1:4.4.38-1"
+        - name: libcrypt1
+          version: "1:4.4.38-1"
+        - name: libctf-nobfd0
+          version: "2.44-3"
+        - name: libctf0
+          version: "2.44-3"
+        - name: libdb5.3t64
+          version: "5.3.28+dfsg2-9"
+        - name: libdebconfclient0
+          version: "0.280"
+        - name: libdebhelper-perl
+          version: "13.24.2"
+        - name: libdpkg-perl
+          version: "1.22.22"
+        - name: libedit2
+          version: "3.1-20250104-1"
+        - name: libelf1t64
+          version: "0.192-4"
+        - name: libexpat1
+          version: "2.7.1-2"
+        - name: libffi8
+          version: "3.4.8-2"
+        - name: libfile-stripnondeterminism-perl
+          version: "1.14.1-2"
+        - name: libgcc-14-dev
+          version: "14.2.0-19"
+        - name: libgcc-s1
+          version: "14.2.0-19"
+        - name: libgdbm-compat4t64
+          version: "1.24-2"
+        - name: libgdbm6t64
+          version: "1.24-2"
+        - name: libgmp10
+          version: "2:6.3.0+dfsg-3"
+        - name: libgomp1
+          version: "14.2.0-19"
+        - name: libgprofng0
+          version: "2.44-3"
+        - name: libhwasan0
+          version: "14.2.0-19"
+        - name: libisl23
+          version: "0.27-1"
+        - name: libitm1
+          version: "14.2.0-19"
+        - name: libjansson4
+          version: "2.14-2+b3"
+        - name: libjemalloc2
+          version: "5.3.0-3"
+        - name: liblastlog2-2
+          version: "2.41-5"
+        - name: liblsan0
+          version: "14.2.0-19"
+        - name: liblzma5
+          version: "5.8.1-1"
+        - name: libmagic-mgc
+          version: "1:5.46-5"
+        - name: libmagic1t64
+          version: "1:5.46-5"
+        - name: libmd0
+          version: "1.1.0-2+b1"
+        - name: libmount1
+          version: "2.41-5"
+        - name: libmpc3
+          version: "1.3.1-1+b3"
+        - name: libmpfr6
+          version: "4.2.2-1"
+        - name: libncursesw6
+          version: "6.5+20250216-2"
+        - name: libpam-modules
+          version: "1.7.0-5"
+        - name: libpam-modules-bin
+          version: "1.7.0-5"
+        - name: libpam-runtime
+          version: "1.7.0-5"
+        - name: libpam0g
+          version: "1.7.0-5"
+        - name: libpcre2-8-0
+          version: "10.46-1~deb13u1"
+        - name: libperl5.40
+          version: "5.40.1-6"
+        - name: libpipeline1
+          version: "1.5.8-1"
+        - name: libpkgconf3
+          version: "1.8.1-4"
+        - name: libpython3-stdlib
+          version: "3.13.5-1"
+        - name: libpython3.13-minimal
+          version: "3.13.5-2+deb13u2"
+        - name: libpython3.13-stdlib
+          version: "3.13.5-2+deb13u2"
+        - name: libquadmath0
+          version: "14.2.0-19"
+        - name: libreadline8t64
+          version: "8.2-6"
+        - name: libseccomp2
+          version: "2.6.0-2"
+        - name: libselinux1
+          version: "3.8.1-1"
+        - name: libsemanage-common
+          version: "3.8.1-1"
+        - name: libsemanage2
+          version: "3.8.1-1"
+        - name: libsepol2
+          version: "3.8.1-1"
+        - name: libsframe1
+          version: "2.44-3"
+        - name: libsmartcols1
+          version: "2.41-5"
+        - name: libsqlite3-0
+          version: "3.46.1-7+deb13u1"
+        - name: libssl3t64
+          version: "3.5.6-1~deb13u1"
+        - name: libstdc++-14-dev
+          version: "14.2.0-19"
+        - name: libstdc++6
+          version: "14.2.0-19"
+        - name: libsystemd0
+          version: "257.13-1~deb13u1"
+        - name: libtinfo6
+          version: "6.5+20250216-2"
+        - name: libtool
+          version: "2.5.4-4"
+        - name: libtsan2
+          version: "14.2.0-19"
+        - name: libubsan1
+          version: "14.2.0-19"
+        - name: libuchardet0
+          version: "0.0.8-1+b2"
+        - name: libudev1
+          version: "257.13-1~deb13u1"
+        - name: libunistring5
+          version: "1.3-2"
+        - name: libunwind8
+          version: "1.8.1-0.1"
+        - name: libuuid1
+          version: "2.41-5"
+        - name: libxml2
+          version: "2.12.7+dfsg+really2.9.14-2.1+deb13u2"
+        - name: libzstd1
+          version: "1.5.7+dfsg-1"
+        - name: linux-libc-dev
+          version: "6.12.86-1"
+        - name: login.defs
+          version: "1:4.17.4-2"
+        - name: m4
+          version: "1.4.19-8"
+        - name: make
+          version: "4.4.1-2"
+        - name: man-db
+          version: "2.13.1-1"
+        - name: mawk
+          version: "1.3.4.20250131-1"
+        - name: media-types
+          version: "13.0.0"
+        - name: ncurses-base
+          version: "6.5+20250216-2"
+        - name: ncurses-bin
+          version: "6.5+20250216-2"
+        - name: netbase
+          version: "6.5"
+        - name: openssl-provider-legacy
+          version: "3.5.6-1~deb13u1"
+        - name: passwd
+          version: "1:4.17.4-2"
+        - name: patch
+          version: "2.8-2"
+        - name: perl
+          version: "5.40.1-6"
+        - name: perl-base
+          version: "5.40.1-6"
+        - name: perl-modules-5.40
+          version: "5.40.1-6"
+        - name: pkgconf
+          version: "1.8.1-4"
+        - name: pkgconf-bin
+          version: "1.8.1-4"
+        - name: po-debconf
+          version: "1.0.21+nmu1"
+        - name: python3
+          version: "3.13.5-1"
+        - name: python3-docutils
+          version: "0.21.2+dfsg-2"
+        - name: python3-minimal
+          version: "3.13.5-1"
+        - name: python3-roman
+          version: "5.0-1"
+        - name: python3.13
+          version: "3.13.5-2+deb13u2"
+        - name: python3.13-minimal
+          version: "3.13.5-2+deb13u2"
+        - name: readline-common
+          version: "8.2-6"
+        - name: rpcsvc-proto
+          version: "1.4.3-1"
+        - name: sed
+          version: "4.9-2+deb13u1"
+        - name: sensible-utils
+          version: "0.0.25"
+        - name: sgml-base
+          version: "1.31+nmu1"
+        - name: sysvinit-utils
+          version: "3.14-4"
+        - name: tar
+          version: "1.35+dfsg-3.1"
+        - name: tzdata
+          version: "2026b-0+deb13u1"
+        - name: util-linux
+          version: "2.41-5"
+        - name: vinyl-cache
+          version: "9.0.0~git20260520.25761f8505-1"
+        - name: vinyl-cache-dev
+          version: "9.0.0~git20260520.25761f8505-1"
+        - name: xml-core
+          version: "0.19"
+        - name: xz-utils
+          version: "5.8.1-1"
+        - name: zlib1g
+          version: "1:1.3.dfsg+really1.3.1-1+b1"
+    # From debian-13-packages-trunk/SHA256SUMS of run 30352844760. The .deb
+    # is bit-identical across rebuilds of identical inputs, unlike the EL9 RPMs.
+    artifacts:
+      - filename: libvmod-cachetag_1.0.1-1_amd64.deb
+        sha256: "408f7101610be2493b30b1434e058d592c08104cbac2ff9c3d3f7a8ba1d1f6aa"
+      - filename: libvmod-cachetag-dbgsym_1.0.1-1_amd64.deb
+        sha256: "0b287d7ee88ccc6a7dbe69ecc4ca57a2f83bd6e7d9c0f32ac2fbc83b4f595574"
+      - filename: libvmod-cachetag_1.0.1-1.dsc
+        sha256: "95f30392be33de6e5113fcf9e868482f1ac7ebf4496e5dcc9c9159e341327eca"
+      - filename: libvmod-cachetag_1.0.1-1.debian.tar.xz
+        sha256: "db68bb0085d21b7535cd92afdd751b0481e4f1b9dfc9ffe9e196c5ba90cdb90d"
+    tests:
+      # lintian over both source and binary packages in run 30352844760
+      # (logs/lint.log): "lintian exit status: 0" under the hard gate that has
+      # propagated the exit status since stage-lint.sh stopped swallowing it.
+      # Overrides remain the reviewed .lintian-overrides files.
+      package_lint: pass
+      # recipes/debian-13 smoke, in a container that never saw the build: apt
+      # install of the cohort packages, an unsatisfiable bogus ABI provide, an
+      # unsatisfiable foreign cohort provide, VCL compile, MISS then warm HIT, a
+      # tag purge and the post-purge MISS, clean SIGTERM, then uninstall.
+      # logs/smoke.log of run 30352844760: 19 passed, 0 failed.
+      installed_package_smoke: pass
+      # ci.yml run 30357799478 (track trunk,
+      # https://github.com/boffinate/vcache-packaging/actions/runs/30357799478),
+      # stage-vtc-suite.sh in a fresh container: the packaged vinyltest -- owned
+      # by vinyl-cache 9.0.0~git20260520.25761f8505-1 itself, vtest2 pin
+      # db5ccb4a07 -- drove the full default-storage VTC matrix against the
+      # installed libvmod-cachetag 1.0.1-1, proven the only libvmod_cachetag.so
+      # on the filesystem, sha256
+      # c24d40cb8e2103656974fe5be4b1e5884526c56fcbd835c97513bd7fb7a6c4d4 in
+      # /usr/lib/x86_64-linux-gnu/vinyl-cache/vmods. 52/52 passed, 0 skipped;
+      # the 25 Fellow/Buddy VTCs are excluded by src/Makefile.am's TESTS, and
+      # cachetag_wal_test cannot run against installed packages -- its pass
+      # stands as source-archive evidence from the 1.0.1 release proof.
+      # pm00007=clean, no retry. Mitigations in force: -j1 serial, and
+      # -p debug=+vclrel, no-op-equivalent on this trunk pin (which contains
+      # 7de492b0e8) and removable once the release track has it too.
+      full_behavior_suite: pass
+      # nightly-transactions.yml run 30350769683 (trunk track): the synthetic
+      # mismatch and same-ABI fixtures rebuilt from this cohort's own packages,
+      # then the 16 apt scenarios s01-s16 in fresh containers
+      # (logs/transactions/SUMMARY.tsv). Reproduces the step-9 findings on
+      # cachetag 1.0.1-1: apt upgrade holds Vinyl back, full-upgrade and a direct
+      # versioned install remove the VMOD, apt-mark hold refuses even that (s15,
+      # exit 100), a pin blocks upgrades (s08) but not a direct versioned install
+      # (s16, REMOVED-VMOD -- the pin weakness the step-9 note records), and the
+      # same-ABI candidate is held back rather than upgraded (s12).
+      upgrade_transactions: pass

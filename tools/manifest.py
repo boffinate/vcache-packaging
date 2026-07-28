@@ -132,6 +132,20 @@ def _list(item: dict, min_len: int = 0, **kw) -> dict:
     return node
 
 
+def _dynmap(item: dict, key_pattern: str, min_len: int = 0, **kw) -> dict:
+    """A mapping whose KEYS are data, not schema.
+
+    `_map` declares its field names; this one declares the shape every value
+    must have and constrains the keys with a pattern. Used for the per-target
+    `vmods:` block, whose keys are VMOD ids: which ids belong there is decided
+    by the catalog and its lanes, not by this schema, so listing them here
+    would be a second place to keep the selected set true.
+    """
+    node = {"type": "dynmap", "item": item, "key_pattern": key_pattern, "min_len": min_len}
+    node.update(kw)
+    return node
+
+
 # ---------------------------------------------------------------------------
 # Cohort manifest schema
 # ---------------------------------------------------------------------------
@@ -177,6 +191,18 @@ COHORT_SPEC = _map(
                 ),
             }
         ),
+        # Which engine input built this cohort. registry/README.md listed an
+        # explicit track field under "deliberately not here yet", with the
+        # condition that it becomes worth its validation rules "when a policy
+        # decision has to read it mechanically". That moment arrived with the
+        # second VMOD: the per-target evidence map must contain exactly the
+        # VMODs whose catalog lanes build for this cohort and target, and the
+        # lanes name an engine input. Deriving it from vinyl.version does not
+        # work -- the trunk cohorts record a bare 9.0.0, not a ~git snapshot
+        # version -- and guessing from the shape of source_url would be an
+        # inference where a statement is available. Wiring, not identity: it is
+        # not a cohort-input digest field and cannot change a cohort id.
+        "engine": _enum(["vinyl-release", "vinyl-trunk-pinned"]),
         "build_profile": _map({"name": _enum(["production", "diagnostic"]), "revision": _int(1)}),
         "required_vmods": _list(_s(NAME_RE), min_len=1),
         "storage_support": _list(_enum(["default", "buddy"]), min_len=1),
@@ -220,6 +246,32 @@ _INSTALL_FIELDS = {
     "vmoddir_source": _enum(["pkg-config", "recorded"]),
 }
 
+# Facts about the BUILDROOT, which is one per target and not one per VMOD.
+# Every VMOD built for this cohort and target is built in this container with
+# this compiler; recording that twice would make it possible for the two copies
+# to disagree, and there is no meaning to attach to the disagreement.
+_BUILDROOT_FIELDS = {
+    "image_ref": _s(FREE_TEXT_RE),
+    "image_digest": _s(IMAGE_DIGEST_RE),
+    "compiler": _s(FREE_TEXT_RE),
+}
+
+# Facts about ONE VMOD's build in that buildroot. These are per-VMOD because
+# each one is configured, flagged, dated and dependency-resolved separately:
+# cachetag and dict do not share a configure line, a SOURCE_DATE_EPOCH (each
+# comes from its own release commit) or a build-dependency set.
+_VMOD_BUILD_FIELDS = {
+    "profile": _enum(["production", "diagnostic"]),
+    "configure_options": _s(FREE_TEXT_RE),
+    "cflags": _s(FREE_TEXT_RE),
+    "ldflags": _s(FREE_TEXT_RE),
+    "source_date_epoch": _s(r"^(?:[0-9]+|PLACEHOLDER)$"),
+    "hardening_check": _enum(TEST_STATUS),
+    "build_dependencies": _list(
+        _map({"name": _s(BUILDROOT_NAME_RE), "version": _s(FREE_TEXT_RE)}), min_len=0
+    ),
+}
+
 _TARGET_FIELDS = {
     "id": _s(TARGET_ID_RE),
     "distro": _s(NAME_RE),
@@ -228,6 +280,18 @@ _TARGET_FIELDS = {
     "arch": _s(r"^[a-z0-9_]+$"),
     "package_format": _enum(["deb", "rpm", "arch", "freebsd", "apk"]),
     "dist_tag": _s(r"^(?:|[a-z0-9._]+)$"),
+}
+
+# `upstream_version` is per-VMOD: cachetag builds 1.0.1 into this cohort and
+# vmod-dict builds 1.7 into the same one. v1 could take it from the cohort's
+# `cachetag.version` because cachetag was the only VMOD; with two, that field
+# is one VMOD's version and nothing else, and the validator cross-checks
+# cachetag's entry against it so the two cannot drift.
+_VMOD_PACKAGE_FIELDS = {
+    "upstream_version": _s(FREE_TEXT_RE),
+    "revision": _int(1),
+    "source_name": _s(NAME_RE),
+    "binary_name": _s(NAME_RE),
 }
 
 _PACKAGE_FIELDS = {
@@ -245,14 +309,45 @@ _TESTS_FIELDS = {
 
 _ARTIFACTS = _list(_map({"filename": _s(FILENAME_RE), "sha256": _s(SHA256_RE)}), min_len=0)
 
+# One VMOD's complete evidence for this cohort and target.
+#
+# `evidence` is the honest state of the entry, not a test result:
+#
+#   pending   the lanes have not run for this VMOD yet, or their results were
+#             reset. `pending_reason` says why, in words, so a reader does not
+#             have to reconstruct it from the surrounding zeros. Never
+#             releasable.
+#   recorded  the fields below are outputs of a real run.
+#
+# A pending entry still has to exist. That is the point of the map: "both
+# package families meet the same evidence policy" becomes something the
+# validator checks rather than something a human remembers to look for.
+VMOD_EVIDENCE_SPEC = _map(
+    {
+        "evidence": _enum(["pending", "recorded"]),
+        "pending_reason": _s(FREE_TEXT_RE, optional=True),
+        "package": _map(dict(_VMOD_PACKAGE_FIELDS)),
+        "build": _map(dict(_VMOD_BUILD_FIELDS)),
+        "artifacts": _ARTIFACTS,
+        "tests": _map(dict(_TESTS_FIELDS)),
+    }
+)
+
 TARGET_SPEC = _map(
     {
-        "schema": _enum(["cachetag-target/v1"]),
+        # v2, 2026-07-28. v1 recorded exactly one VMOD's evidence per file, in
+        # top-level `package`, `build`, `artifacts` and `tests` blocks, and its
+        # validator hardcoded `libvmod-cachetag`. With a second VMOD that shape
+        # cannot say what it needs to say. The migration is a restructure, not
+        # an addition: the legacy blocks are gone and cachetag's data moved
+        # into vmods.cachetag verbatim. There are no users and the runbook does
+        # not require backwards compatibility, so a compatibility shim would
+        # have been two shapes to keep true rather than one.
+        "schema": _enum(["cachetag-target/v2"]),
         "status": _enum(["template", "candidate", "released"]),
         "lane": _enum(["cohort"]),
         "cohort": _s(COHORT_ID_RE),
         "target": _map(dict(_TARGET_FIELDS)),
-        "package": _map(dict(_PACKAGE_FIELDS)),
         "vinyl_packages": _map(
             {
                 "origin": _enum(["cohort"]),
@@ -262,10 +357,12 @@ TARGET_SPEC = _map(
                 "dev_version": _s(FREE_TEXT_RE),
             }
         ),
-        "build": _map(dict(_BUILD_FIELDS)),
+        "buildroot": _map(dict(_BUILDROOT_FIELDS)),
         "install": _map(dict(_INSTALL_FIELDS)),
-        "artifacts": _ARTIFACTS,
-        "tests": _map(dict(_TESTS_FIELDS)),
+        # Keyed by VMOD id. Which ids must be present is not a schema question
+        # -- it depends on which catalog lanes select this cohort and target --
+        # so it is checked in validate_target against registry/vmods/.
+        "vmods": _dynmap(VMOD_EVIDENCE_SPEC, key_pattern=r"^[a-z][a-z0-9-]*$", min_len=1),
     }
 )
 
@@ -324,6 +421,19 @@ def _check(node: dict, value, path: str, errors: list) -> None:
         for key in value:
             if key not in node["fields"]:
                 errors.append(f"{path}.{key}: unknown field" if path else f"{key}: unknown field")
+        return
+    if kind == "dynmap":
+        if not isinstance(value, dict):
+            errors.append(f"{path}: expected a mapping keyed by id")
+            return
+        if len(value) < node["min_len"]:
+            errors.append(f"{path}: needs at least {node['min_len']} entry/entries")
+        for key in sorted(value):
+            sub_path = f"{path}.{key}" if path else key
+            if not re.match(node["key_pattern"], key):
+                errors.append(f"{sub_path}: key {key!r} does not match {node['key_pattern']}")
+                continue
+            _check(node["item"], value[key], sub_path, errors)
         return
     if kind == "list":
         if not isinstance(value, list):
@@ -539,6 +649,96 @@ def validate_cohort(data: dict, path: str, expected_version=None, require_releas
     return [f"{path}: {e}" for e in errors]
 
 
+def expected_vmods_for(engine: str, target_id: str, repo_root=None) -> list:
+    """VMOD ids whose catalog lanes build a package for this engine and target.
+
+    The catalog names engine inputs, and a cohort now records which one built
+    it, so this is a lookup rather than an inference.
+
+    Imported lazily on purpose: ci_matrix imports this module, so a top-level
+    import here would be a cycle. The dependency is real but one-directional in
+    time -- the catalog is read only when a target manifest is validated.
+    """
+    import ci_matrix  # noqa: PLC0415 - see the docstring
+
+    engines = {engine}
+    found: list = []
+    for entry in ci_matrix.discover(repo_root):
+        try:
+            data = ci_matrix.load_vmod_manifest(Path(repo_root or REPO_ROOT) / entry["manifest"])
+        except (OSError, yaml_subset.ManifestSyntaxError):
+            # A malformed catalog entry is that VMOD's own failure and is
+            # reported by ci_matrix. It must not make every target manifest in
+            # the registry unvalidatable.
+            continue
+        for lane in data.get("lanes") or []:
+            if lane.get("kind") != "package":
+                continue
+            if lane.get("engine") not in engines:
+                continue
+            if target_id in (lane.get("targets") or []):
+                found.append(entry["id"])
+                break
+    return sorted(found)
+
+
+def _vmod_evidence_errors(data: dict, path: str, engine: str = None, repo_root=None) -> list:
+    """The per-VMOD evidence map against the catalog, in both directions.
+
+    Missing entry: a VMOD this cohort and target must build has no evidence
+    slot, so "the release is complete" could be true with its results absent.
+    Extra entry: evidence exists for a VMOD nothing asked to be built here,
+    which is either a stale record or a lane somebody forgot to declare.
+    Neither is allowed to be a matter of opinion.
+    """
+    errors: list = []
+    present = sorted(data["vmods"])
+    if engine is None:
+        # No cohort manifest was supplied, so there is nothing to look the
+        # expected set up against. Skipped rather than guessed: the tree
+        # validator always supplies one.
+        expected = present
+    else:
+        try:
+            expected = expected_vmods_for(engine, data["target"]["id"], repo_root)
+        except Exception as exc:  # noqa: BLE001 - a catalog problem must be legible
+            return [f"vmods: could not read the VMOD catalog to check this map ({exc})"]
+
+    for missing in sorted(set(expected) - set(present)):
+        errors.append(
+            f"vmods: no entry for {missing!r}, whose catalog lanes build a package on "
+            f"{engine} / {data['target']['id']}. Evidence may be 'pending' with a "
+            "reason, but the entry has to exist: a cohort is releasable only when every "
+            "selected VMOD's evidence is complete."
+        )
+    for extra in sorted(set(present) - set(expected)):
+        errors.append(
+            f"vmods.{extra}: no catalog lane builds {extra!r} on {engine} / "
+            f"{data['target']['id']}. Either the lane is missing from registry/vmods/, or "
+            "this evidence is stale and belongs to a lane that was removed."
+        )
+
+    for vmod_id in present:
+        entry = data["vmods"][vmod_id]
+        names = entry["package"]
+        if entry["evidence"] == "pending" and not entry.get("pending_reason", "").strip():
+            errors.append(
+                f"vmods.{vmod_id}: evidence is 'pending' without a pending_reason. A reader "
+                "should not have to reconstruct why from the surrounding zeros."
+            )
+        if entry["evidence"] == "recorded" and entry.get("pending_reason"):
+            errors.append(
+                f"vmods.{vmod_id}: evidence is 'recorded' but a pending_reason remains"
+            )
+        for field in ("source_name", "binary_name"):
+            if not names[field].startswith(("lib", "vmod")):
+                errors.append(
+                    f"vmods.{vmod_id}.package.{field} is {names[field]!r}; a VMOD package name "
+                    "starts with 'lib' or 'vmod' by this project's naming rule"
+                )
+    return errors
+
+
 def validate_target(
     data: dict,
     path: str,
@@ -547,6 +747,7 @@ def validate_target(
     require_releasable: bool = False,
     distro_native: bool = False,
     expected_version: str = None,
+    repo_root=None,
 ) -> list:
     errors: list = []
     spec = DISTRO_NATIVE_SPEC if distro_native else TARGET_SPEC
@@ -577,8 +778,20 @@ def validate_target(
     elif target["dist_tag"]:
         errors.append(f"target.dist_tag must be empty for package_format {target['package_format']!r}")
 
-    if data["package"]["source_name"] != PACKAGE_STEM or data["package"]["binary_name"] != PACKAGE_STEM:
-        errors.append(f"package.source_name and package.binary_name must both be {PACKAGE_STEM!r}")
+    if distro_native:
+        if (
+            data["package"]["source_name"] != PACKAGE_STEM
+            or data["package"]["binary_name"] != PACKAGE_STEM
+        ):
+            errors.append(
+                f"package.source_name and package.binary_name must both be {PACKAGE_STEM!r}"
+            )
+    else:
+        errors.extend(
+            _vmod_evidence_errors(
+                data, path, cohort["engine"] if cohort else None, repo_root
+            )
+        )
 
     if distro_native and expected_version is not None:
         if data["cachetag"]["version"] != expected_version:
@@ -589,6 +802,14 @@ def validate_target(
             )
 
     if not distro_native and cohort is not None:
+        entry = data["vmods"].get("cachetag")
+        if entry and entry["package"]["upstream_version"] != cohort["cachetag"]["version"]:
+            errors.append(
+                "vmods.cachetag.package.upstream_version {!r} does not match the cohort's "
+                "cachetag.version {!r}".format(
+                    entry["package"]["upstream_version"], cohort["cachetag"]["version"]
+                )
+            )
         if data["cohort"] != cohort["cohort"]:
             errors.append(f"cohort {data['cohort']!r} does not match its cohort manifest {cohort['cohort']!r}")
         if target["id"] not in cohort["targets"]:
@@ -598,6 +819,20 @@ def validate_target(
 
     placeholders: list = []
     _collect_placeholders(data, "", placeholders)
+    # A `pending` VMOD entry is placeholder by definition: its lanes have not
+    # run, so there is no configure line, no flags and no epoch to record. That
+    # is not a template masquerading as a candidate -- the entry says so in
+    # words, and --require-releasable rejects `pending` by name below, which is
+    # the check that actually protects a release. Exempting the entry keeps the
+    # candidate cohort honest about the VMOD it has not built yet instead of
+    # forcing a choice between a lie and a missing entry.
+    if not distro_native:
+        pending = tuple(
+            f"vmods.{k}."
+            for k, v in data["vmods"].items()
+            if v.get("evidence") == "pending"
+        )
+        placeholders = [p for p in placeholders if not p.startswith(pending)]
     if data["status"] == "template":
         if not placeholders:
             errors.append("status is 'template' but no placeholder values are present")
@@ -610,8 +845,9 @@ def validate_target(
                     data["status"], ", ".join(sorted(placeholders))
                 )
             )
-        if data["build"]["profile"] != "production":
-            errors.append("a releasable target must use build.profile 'production'")
+        for label, block in _evidence_blocks(data, distro_native):
+            if block["build"]["profile"] != "production":
+                errors.append(f"{label}build.profile must be 'production' for a releasable target")
         vmoddir = data["install"]["vmoddir"]
         # The Docker test harness installs Vinyl into /tmp/vinyl-prefix. That
         # path must never reach a package: it would mean the VMOD directory was
@@ -627,14 +863,36 @@ def validate_target(
                     "install.vmoddir_source must be 'pkg-config' for a releasable target; the "
                     "directory has to come from vinylapi.pc, not be written by hand"
                 )
-            for key, value in sorted(data["tests"].items()):
-                if value not in ("pass", "not-applicable"):
-                    errors.append(f"tests.{key} is {value!r}; a releasable target needs 'pass'")
-            if data["build"]["hardening_check"] not in ("pass", "not-applicable"):
-                errors.append("build.hardening_check must be 'pass' for a releasable target")
-            if not data["artifacts"]:
-                errors.append("a releasable target must record at least one artifact digest")
+            # Every VMOD's evidence, held to the same policy. This loop is the
+            # mechanical form of the Step 6 exit gate's "both package families
+            # meet the same evidence policy as cachetag": it does not know
+            # which VMOD is which, so it cannot hold one to a weaker standard.
+            for label, block in _evidence_blocks(data, distro_native):
+                if block.get("evidence") == "pending":
+                    errors.append(
+                        f"{label}evidence is 'pending' ({block.get('pending_reason', '')!r}); "
+                        "a releasable target needs recorded evidence for every selected VMOD"
+                    )
+                for key, value in sorted(block["tests"].items()):
+                    if value not in ("pass", "not-applicable"):
+                        errors.append(f"{label}tests.{key} is {value!r}; a releasable target needs 'pass'")
+                if block["build"]["hardening_check"] not in ("pass", "not-applicable"):
+                    errors.append(f"{label}build.hardening_check must be 'pass' for a releasable target")
+                if not block["artifacts"]:
+                    errors.append(f"{label}artifacts: a releasable target needs at least one artifact digest")
     return [f"{path}: {e}" for e in errors]
+
+
+def _evidence_blocks(data: dict, distro_native: bool) -> list:
+    """(label, block) for every evidence block in a target manifest.
+
+    One block on the distro-native lane, which has no cohort and therefore no
+    VMOD set to enumerate; one per entry in `vmods:` on the cohort lane. The
+    label is a path prefix so a message names the VMOD it is about.
+    """
+    if distro_native:
+        return [("", data)]
+    return [(f"vmods.{k}.", data["vmods"][k]) for k in sorted(data["vmods"])]
 
 
 def registry_dir(repo_root: Path = None) -> Path:
@@ -746,6 +1004,7 @@ def validate_registry_tree(
                     cohort=cohort,
                     cohort_status=cohort["status"],
                     require_releasable=cohort_releasable,
+                    repo_root=root,
                 )
             )
         errors.extend(cohort_target_errors)

@@ -3,7 +3,12 @@
 # Debian 13 (trixie) amd64, project-cohort lane. Every PLACEHOLDER and
 # all-zero value is filled in by the package build that produces the artifacts,
 # not by hand. See registry/README.md.
-schema: cachetag-target/v1
+# TEMPLATE TARGET - NOT RELEASABLE
+#
+# Debian 13 (trixie) amd64, project-cohort lane. Every PLACEHOLDER and
+# all-zero value is filled in by the package build that produces the artifacts,
+# not by hand. See registry/README.md.
+schema: cachetag-target/v2
 status: template
 lane: cohort
 cohort: vinyl-9.0.0-000000000000
@@ -15,27 +20,17 @@ target:
   arch: amd64
   package_format: deb
   dist_tag: ""
-package:
-  revision: 1
-  source_name: libvmod-cachetag
-  binary_name: libvmod-cachetag
 vinyl_packages:
   origin: cohort
   runtime_name: vinyl-cache
   runtime_version: PLACEHOLDER
   dev_name: vinyl-cache-dev
   dev_version: PLACEHOLDER
-build:
-  profile: production
+# Facts about the BUILDROOT: one per target, shared by every VMOD built in it.
+buildroot:
   image_ref: docker.io/library/debian:13
   image_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   compiler: PLACEHOLDER
-  configure_options: PLACEHOLDER
-  cflags: PLACEHOLDER
-  ldflags: PLACEHOLDER
-  source_date_epoch: PLACEHOLDER
-  hardening_check: pending
-  build_dependencies: []
 install:
   # Expected value for this distro/arch. The package build must replace it with
   # the value actually reported by
@@ -44,9 +39,28 @@ install:
   # accordingly. Recipes consume this as @VINYL_VMODDIR@.
   vmoddir: /usr/lib/x86_64-linux-gnu/vinyl-cache/vmods
   vmoddir_source: recorded
-artifacts: []
-tests:
-  package_lint: pending
-  installed_package_smoke: pending
-  full_behavior_suite: pending
-  upgrade_transactions: pending
+# Per-VMOD evidence, keyed by catalog id. Which ids must appear is decided by
+# registry/vmods/ and the lanes that select this cohort and target; the
+# validator checks the map against the catalog in both directions.
+vmods:
+  cachetag:
+    evidence: recorded
+    package:
+      upstream_version: 1.0.1
+      revision: 1
+      source_name: libvmod-cachetag
+      binary_name: libvmod-cachetag
+    build:
+      profile: production
+      configure_options: PLACEHOLDER
+      cflags: PLACEHOLDER
+      ldflags: PLACEHOLDER
+      source_date_epoch: PLACEHOLDER
+      hardening_check: pending
+      build_dependencies: []
+    artifacts: []
+    tests:
+      package_lint: pending
+      installed_package_smoke: pending
+      full_behavior_suite: pending
+      upgrade_transactions: pending

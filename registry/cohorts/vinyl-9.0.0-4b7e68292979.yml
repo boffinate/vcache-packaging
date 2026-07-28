@@ -41,6 +41,9 @@ vinyl:
   # No release_notes: a trunk snapshot has no upstream release statement, and
   # this registry records upstream references, never claims of its own. The
   # pinned commit above is what speaks for the snapshot's content.
+# Built from the pinned Vinyl trunk snapshot, which is what the git
+# source_url and git_commit above describe.
+engine: vinyl-trunk-pinned
 build_profile:
   name: production
   # Revision 1: the production build profile has had exactly one definition

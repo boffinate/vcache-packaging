@@ -21,6 +21,9 @@ vinyl:
   vrt: 23.0
   strict_abi: "0000000000000000000000000000000000000000"
   patches: []
+# The schema exemplar. Recorded as the trunk-pinned input because that is
+# what its git source_url describes; nothing builds from it.
+engine: vinyl-trunk-pinned
 build_profile:
   name: production
   revision: 1

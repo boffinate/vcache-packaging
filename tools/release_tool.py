@@ -171,13 +171,17 @@ def cmd_metadata(args) -> int:
         target = manifest.load_target(target_path)
         errors = manifest.validate_cohort(cohort, str(cohort_path), _expected_version(args, root))
         errors += manifest.validate_target(
-            target, str(target_path), cohort=cohort, cohort_status=cohort["status"]
+            target,
+            str(target_path),
+            cohort=cohort,
+            cohort_status=cohort["status"],
+            repo_root=root,
         )
     if errors:
         for error in errors:
             print(f"ERROR    {error}", file=sys.stderr)
         return 1
-    generated = metadata_mod.target_metadata(target, cohort)
+    generated = metadata_mod.target_metadata(target, cohort, vmod=args.vmod)
     if target["status"] == "template" and not args.allow_template:
         print(
             "error: {} is a template manifest; its generated metadata is not releasable. "
@@ -276,6 +280,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_meta.add_argument("--cohort", help="cohort id")
     p_meta.add_argument("--target", help="target id, for example debian-13-amd64")
     p_meta.add_argument("--distro-native", help="distro-native target id instead of a cohort target")
+    p_meta.add_argument(
+        "--vmod",
+        default="cachetag",
+        help=(
+            "which entry of the target's vmods map to generate for (default: cachetag, "
+            "which is what every existing caller asks about)"
+        ),
+    )
     p_meta.add_argument("--format", choices=["json", "shell"], default="json")
     p_meta.add_argument(
         "--allow-template",

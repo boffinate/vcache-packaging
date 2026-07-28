@@ -66,6 +66,7 @@ vinyl:
       sha256: "{VEC_PATCH_0}"
     - name: 0002-fix-other-thing.patch
       sha256: "{VEC_PATCH_1}"
+engine: vinyl-release
 build_profile:
   name: production
   revision: 3
@@ -82,7 +83,7 @@ support:
   buddy: source-harness-only
 """
 
-VALID_TARGET = f"""schema: cachetag-target/v1
+VALID_TARGET = f"""schema: cachetag-target/v2
 status: released
 lane: cohort
 cohort: {VALID_COHORT_ID}
@@ -94,42 +95,47 @@ target:
   arch: amd64
   package_format: deb
   dist_tag: ""
-package:
-  revision: 2
-  source_name: libvmod-cachetag
-  binary_name: libvmod-cachetag
 vinyl_packages:
   origin: cohort
   runtime_name: vinyl-cache
   runtime_version: 9.0.0-1
   dev_name: vinyl-cache-dev
   dev_version: 9.0.0-1
-build:
-  profile: production
+buildroot:
   image_ref: docker.io/library/debian:13
   image_digest: "sha256:{'3' * 64}"
   compiler: gcc 14.2.0-1
-  configure_options: --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu
-  cflags: -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIC
-  ldflags: -Wl,-z,relro -Wl,-z,now
-  source_date_epoch: 1780000000
-  hardening_check: pass
-  build_dependencies:
-    - name: debhelper
-      version: 13.24.1
-    - name: vinyl-cache-dev
-      version: 9.0.0-1
 install:
   vmoddir: /usr/lib/x86_64-linux-gnu/vinyl-cache/vmods
   vmoddir_source: pkg-config
-artifacts:
-  - filename: libvmod-cachetag_1.0.0-2_amd64.deb
-    sha256: "{'4' * 64}"
-tests:
-  package_lint: pass
-  installed_package_smoke: pass
-  full_behavior_suite: pass
-  upgrade_transactions: pass
+vmods:
+  cachetag:
+    evidence: recorded
+    package:
+      upstream_version: 1.0.0
+      revision: 2
+      source_name: libvmod-cachetag
+      binary_name: libvmod-cachetag
+    build:
+      profile: production
+      configure_options: --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu
+      cflags: -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIC
+      ldflags: -Wl,-z,relro -Wl,-z,now
+      source_date_epoch: 1780000000
+      hardening_check: pass
+      build_dependencies:
+        - name: debhelper
+          version: 13.24.1
+        - name: vinyl-cache-dev
+          version: 9.0.0-1
+    artifacts:
+      - filename: libvmod-cachetag_1.0.0-2_amd64.deb
+        sha256: "{'4' * 64}"
+    tests:
+      package_lint: pass
+      installed_package_smoke: pass
+      full_behavior_suite: pass
+      upgrade_transactions: pass
 """
 
 
@@ -155,6 +161,34 @@ def skip(name: str, reason: str) -> None:
     """
     _SKIPPED.append((name, reason))
 
+# The catalog a synthetic registry needs so its target manifests' per-VMOD
+# evidence maps have something to be validated against. One VMOD, both targets,
+# vinyl-release -- which is what the synthetic cohort records as its engine.
+SYNTHETIC_VMOD_CATALOG = """schema: vmod-ci/v1
+id: cachetag
+source_host: github
+repository: example-org/libvmod-cachetag
+required: true
+adapter: cachetag
+recipe: upstream
+sources:
+  release:
+    ref: v1.0.0
+    expected_commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    version: 1.0.0
+    archive_sha256: "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+    publishable: true
+lanes:
+  - kind: package
+    source: release
+    engine: vinyl-release
+    tiers:
+      - ci
+    targets:
+      - debian-13-amd64
+      - el9-x86_64
+"""
+
 
 def _write_workspace(
     root: Path, cohort_text: str, target_text: str, cohort_id: str = VALID_COHORT_ID
@@ -171,6 +205,13 @@ def _write_workspace(
     (registry_root / "registry" / "cohorts").mkdir(parents=True, exist_ok=True)
     (registry_root / "registry" / "targets" / cohort_id).mkdir(parents=True, exist_ok=True)
     (registry_root / "registry" / "distro-native").mkdir(parents=True, exist_ok=True)
+    # A VMOD catalog too, since 2026-07-28: the per-target evidence map is
+    # validated against the catalog's lanes, so a synthetic registry without
+    # one would be testing a tree that cannot exist.
+    (registry_root / "registry" / "vmods").mkdir(parents=True, exist_ok=True)
+    (registry_root / "registry" / "vmods" / "cachetag.yml").write_text(
+        SYNTHETIC_VMOD_CATALOG, encoding="utf-8"
+    )
     (registry_root / "registry" / "cohorts" / f"{cohort_id}.yml").write_text(
         cohort_text, encoding="utf-8"
     )
@@ -323,8 +364,13 @@ def test_buildroot_names_may_be_distribution_shaped() -> None:
 
 
 def test_version_mismatch_fails() -> None:
+    # Both registry copies move together, so the only thing left disagreeing is
+    # configure.ac. Moving only the cohort would also trip the registry-internal
+    # check that a target's recorded upstream_version matches its cohort's, and
+    # this test is about the source cross-check, not that one.
     bad = VALID_COHORT.replace("version: 1.0.0", "version: 1.0.1", 1)
-    checked, errors = _validate_synthetic(bad, VALID_TARGET)
+    bad_target = VALID_TARGET.replace("upstream_version: 1.0.0", "upstream_version: 1.0.1", 1)
+    checked, errors = _validate_synthetic(bad, bad_target)
     check(
         "validate: cachetag version not matching configure.ac fails",
         any("does not match configure.ac AC_INIT" in e for e in errors),
@@ -640,14 +686,19 @@ def test_validation_split() -> None:
     # A wrong version is still caught when a checkout is supplied, and is
     # invisible without one -- which is the whole point of moving the check to
     # the per-VMOD path rather than deleting it.
+    # Both registry copies move together, so the only thing left disagreeing is
+    # configure.ac. Moving only the cohort would also trip the registry-internal
+    # check that a target's recorded upstream_version matches its cohort's, and
+    # this test is about the source cross-check rather than that one.
     bad = VALID_COHORT.replace("version: 1.0.0", "version: 1.0.1", 1)
-    checked, errors = _validate_synthetic(bad, VALID_TARGET)
+    bad_target = VALID_TARGET.replace("upstream_version: 1.0.0", "upstream_version: 1.0.1", 1)
+    checked, errors = _validate_synthetic(bad, bad_target)
     check(
         "split: a version mismatch is still an error when a checkout is supplied",
         any("does not match configure.ac AC_INIT" in e for e in errors),
         "; ".join(errors),
     )
-    checked, errors = _validate_synthetic(bad, VALID_TARGET, cross_check_cachetag=False)
+    checked, errors = _validate_synthetic(bad, bad_target, cross_check_cachetag=False)
     check(
         "split: structural validation is silent about the version, not wrong about it",
         errors == [],
@@ -860,6 +911,131 @@ def test_metadata() -> None:
     )
 
 
+def test_per_vmod_evidence(repo_root: Path) -> None:
+    """The v2 map, and the exit-gate check it exists to make mechanical."""
+    path = repo_root / "registry" / "targets" / "vinyl-9.0.1-ac4f719c16f4" / "debian-13-amd64.yml"
+    data = manifest.load_target(path)
+    check(
+        "evidence: the release target carries an entry per selected VMOD",
+        sorted(data["vmods"]) == ["cachetag", "dict"],
+        str(sorted(data["vmods"])),
+    )
+    check(
+        "evidence: cachetag's is recorded, dict's is pending with a reason",
+        data["vmods"]["cachetag"]["evidence"] == "recorded"
+        and data["vmods"]["dict"]["evidence"] == "pending"
+        and data["vmods"]["dict"]["pending_reason"].strip(),
+        str({k: v["evidence"] for k, v in data["vmods"].items()}),
+    )
+    check(
+        "evidence: buildroot facts moved out of the per-VMOD block",
+        sorted(data["buildroot"]) == ["compiler", "image_digest", "image_ref"]
+        and "build" not in data
+        and "package" not in data
+        and "tests" not in data
+        and "artifacts" not in data,
+        str(sorted(data)),
+    )
+
+    # A missing entry must be an error, or "the release is complete" could be
+    # true with a required VMOD's results simply absent. This is the mechanical
+    # form of the Step 6 exit gate.
+    import copy
+
+    stripped = copy.deepcopy(data)
+    del stripped["vmods"]["dict"]
+    cohort = manifest.load_cohort(
+        repo_root / "registry" / "cohorts" / "vinyl-9.0.1-ac4f719c16f4.yml"
+    )
+    errors = manifest.validate_target(
+        stripped, str(path), cohort=cohort, repo_root=repo_root
+    )
+    check(
+        "evidence: a selected VMOD with no entry is an error",
+        any("no entry for 'dict'" in e for e in errors),
+        str(errors),
+    )
+
+    extra = copy.deepcopy(data)
+    extra["vmods"]["nosuch"] = copy.deepcopy(data["vmods"]["dict"])
+    errors = manifest.validate_target(extra, str(path), cohort=cohort, repo_root=repo_root)
+    check(
+        "evidence: an entry for a VMOD with no lane here is an error",
+        any("no catalog lane builds 'nosuch'" in e for e in errors),
+        str(errors),
+    )
+
+    # The field is optional in the schema, so absence -- not emptiness -- is
+    # the case the semantic check has to catch. An empty string is already
+    # refused by FREE_TEXT_RE one layer up.
+    pending_no_reason = copy.deepcopy(data)
+    del pending_no_reason["vmods"]["dict"]["pending_reason"]
+    errors = manifest.validate_target(
+        pending_no_reason, str(path), cohort=cohort, repo_root=repo_root
+    )
+    check(
+        "evidence: pending without a reason is an error",
+        any("without a pending_reason" in e for e in errors),
+        str(errors),
+    )
+
+    errors = manifest.validate_target(
+        data, str(path), cohort=cohort, require_releasable=True, repo_root=repo_root
+    )
+    check(
+        "evidence: pending evidence blocks release, by name",
+        any("vmods.dict.evidence is 'pending'" in e for e in errors),
+        str(errors),
+    )
+    check(
+        "evidence: cachetag's recorded evidence raises no releasability error",
+        not any(e.startswith(f"{path}: vmods.cachetag.") for e in errors),
+        str([e for e in errors if "cachetag" in e]),
+    )
+
+
+def test_metadata_is_byte_neutral_across_the_v2_migration(repo_root: Path) -> None:
+    """Every value a v1 target produced, a v2 target still produces.
+
+    The schema migration restructured where cachetag's evidence lives. It must
+    not have moved a single generated value, because packaging recipes and the
+    release manifest read these and a silent change would reach a package. The
+    only permitted difference is the additive `vmod` key, which names the entry
+    that was read and did not exist before.
+    """
+    expected_added = {"vmod"}
+    for cohort_id in sorted(p.stem for p in (repo_root / "registry" / "cohorts").glob("*.yml")):
+        cohort = manifest.load_cohort(
+            repo_root / "registry" / "cohorts" / f"{cohort_id}.yml"
+        )
+        for target_id in ("debian-13-amd64", "el9-x86_64"):
+            target = manifest.load_target(
+                repo_root / "registry" / "targets" / cohort_id / f"{target_id}.yml"
+            )
+            meta = metadata_mod.target_metadata(target, cohort)
+            entry = target["vmods"]["cachetag"]
+            check(
+                f"neutrality: {cohort_id}/{target_id} package identity is unchanged",
+                meta["package_revision"] == int(entry["package"]["revision"])
+                and meta["artifacts"]["native_filename"].startswith(
+                    entry["package"]["binary_name"]
+                )
+                and meta["source_archive"].startswith(entry["package"]["source_name"]),
+                str(meta["artifacts"]),
+            )
+            check(
+                f"neutrality: {cohort_id}/{target_id} adds only {sorted(expected_added)}",
+                expected_added <= set(meta),
+                str(sorted(meta)),
+            )
+            check(
+                f"neutrality: {cohort_id}/{target_id} vmoddir still comes from install",
+                meta["install"]["vmoddir"] == target["install"]["vmoddir"]
+                and meta["substitutions"]["@VINYL_VMODDIR@"] == target["install"]["vmoddir"],
+                meta["install"]["vmoddir"],
+            )
+
+
 def test_distro_native(repo_root: Path) -> None:
     path = repo_root / "registry" / "distro-native" / "debian-13-amd64.yml"
     data = manifest.load_target(path)
@@ -984,6 +1160,8 @@ def main(repo_root: Path = None, cachetag_src=None) -> int:
     test_validation_split()
     test_repo_templates(root)
     test_repo_cachetag_cross_check(root, src)
+    test_per_vmod_evidence(root)
+    test_metadata_is_byte_neutral_across_the_v2_migration(root)
     test_distro_native(root)
 
     failed = 0
