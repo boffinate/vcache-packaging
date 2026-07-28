@@ -29,7 +29,12 @@ on:
         required: true
         type: string
       tier:
-        description: workflow tier (ci, nightly, release, trunk)
+        description: >-
+          workflow tier: `ci` or `release` in Phase 1. The manifest schema also
+          accepts `nightly` and `trunk`, but this workflow has no source-harness
+          job yet, so a trunk tier would expand to a harness row nothing runs.
+          Both arrive when Phase 4 migrates nightly-transactions.yml and
+          trunk-vmod-ci.yml onto this workflow.
         required: true
         type: string
       inject:
@@ -68,6 +73,9 @@ jobs:
       targets: ${{ steps.expand.outputs.targets }}
       source_count: ${{ steps.expand.outputs.source_count }}
       target_count: ${{ steps.expand.outputs.target_count }}
+      # No job consumes the harness rows in Phase 1; the count is exposed so a
+      # tier that expands to them is visible in the job's outputs rather than
+      # silently doing nothing. The harness job lands with Phase 4.
       harness_count: ${{ steps.expand.outputs.harness_count }}
       repository: ${{ steps.expand.outputs.repository }}
     steps:
@@ -78,7 +86,14 @@ jobs:
 
       # Injection case 2 from the plan's verification list: a malformed
       # manifest must be classified failed_manifest_validation without
-      # preventing any other VMOD invocation. No build script is touched.
+      # preventing any other VMOD invocation, and without lane rows being
+      # invented for a manifest that did not parse. No build script is touched.
+      #
+      # Every job that rebuilds the expected ledger from a fresh checkout has
+      # to see the same corruption, or it would rebuild the full lane list and
+      # report the very invented rows the case exists to forbid. That means
+      # this step, the identical one in the summary job below, and the one in
+      # ci.yml's collector.
       - name: inject a malformed manifest
         if: inputs.inject == 'manifest'
         shell: bash
@@ -254,8 +269,14 @@ jobs:
             release 2>&1 | tee "$GITHUB_WORKSPACE/source-archive.log"
         working-directory: libvmod-cachetag
 
+      # The artifact every target row waits for. A failure here is a real
+      # failure of this row -- it leaves the targets with nothing to download
+      # -- so it must be classified and must fail the job, not be recorded as
+      # a pass on a red job.
       - name: upload the pinned source archive
+        id: upload
         if: steps.archive.outcome == 'success'
+        continue-on-error: true
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: ${{ matrix.source_artifact }}
@@ -300,6 +321,8 @@ jobs:
             fi
           elif [ "${{ steps.archive.outcome }}" != "success" ]; then
             set_status failed_infrastructure "the source archive stage did not run"
+          elif [ "${{ steps.upload.outcome }}" != "success" ]; then
+            set_status failed_infrastructure "the source artifact upload failed"
           fi
           python3 tools/ci_matrix.py record \
             --out "$GITHUB_WORKSPACE/results/source-${{ matrix.channel }}.json" \
@@ -332,6 +355,7 @@ jobs:
           steps.checkout.outcome == 'failure' || steps.verify.outcome == 'failure'
           || steps.cross_check.outcome == 'failure' || steps.vinyl.outcome == 'failure'
           || steps.image.outcome == 'failure' || steps.archive.outcome != 'success'
+          || steps.upload.outcome != 'success'
         run: exit 1
 
   target:
@@ -514,7 +538,52 @@ jobs:
         run: recipes/el9/build.sh --vtc-suite-only
         working-directory: vcache-packaging
 
-      # ---- Result, then evidence, then the explicit failure. ----
+      # ---- Package evidence, then the result, then the explicit failure. ----
+      #
+      # The package uploads come before the classification so that a failed
+      # upload can be classified too: a record written before its own evidence
+      # upload can only ever say `passed` on a job that then goes red. They are
+      # continue-on-error so a failure here still reaches the record step.
+      #
+      # if-no-files-found: warn, not error. A compiler failure must stay
+      # "compiler failed" rather than becoming an unrelated "no files found"
+      # from the evidence upload; the row's classified result record is the
+      # guaranteed evidence.
+      - name: upload the Debian package artifacts
+        id: deb_upload
+        if: always() && matrix.family == 'deb'
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.packages_artifact }}
+          path: |
+            vcache-packaging/dist/debian-13/*.deb
+            vcache-packaging/dist/debian-13/*.ddeb
+            vcache-packaging/dist/debian-13/*.dsc
+            vcache-packaging/dist/debian-13/*.changes
+            vcache-packaging/dist/debian-13/*.buildinfo
+            vcache-packaging/dist/debian-13/*.tar.*
+            vcache-packaging/dist/debian-13/SHA256SUMS
+            vcache-packaging/dist/debian-13/logs/**
+            vcache-packaging/dist/debian-13/work/target.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: upload the EL9 package artifacts
+        id: el9_upload
+        if: always() && matrix.family == 'rpm'
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.packages_artifact }}
+          path: |
+            vcache-packaging/dist/el9/packages/*.rpm
+            vcache-packaging/dist/el9/SHA256SUMS
+            vcache-packaging/dist/el9/logs/**
+            vcache-packaging/dist/el9/image.txt
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: classify and record the target result
         id: record
         if: always()
@@ -560,6 +629,10 @@ jobs:
           elif [ "${{ matrix.family }}" = "rpm" ] \
             && [ "${{ steps.el9_vtc.outcome }}" != "success" ]; then
             set_status failed_infrastructure "the EL9 row did not reach its VTC suite"
+          elif [ "${{ steps.deb_upload.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_upload.outcome }}" = "failure" ]; then
+            set_status failed_infrastructure \
+              "the package artifact upload failed after a successful build"
           fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
           python3 tools/ci_matrix.py record \
@@ -578,47 +651,18 @@ jobs:
             --version "${{ matrix.version }}"
         working-directory: vcache-packaging
 
-      # if-no-files-found: warn, not error. A compiler failure must stay
-      # "compiler failed" rather than becoming an unrelated "no files found"
-      # from the evidence upload; the row's classified result record is the
-      # guaranteed evidence.
-      - name: upload the Debian package artifacts
-        if: always() && matrix.family == 'deb'
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: ${{ matrix.packages_artifact }}
-          path: |
-            vcache-packaging/dist/debian-13/*.deb
-            vcache-packaging/dist/debian-13/*.ddeb
-            vcache-packaging/dist/debian-13/*.dsc
-            vcache-packaging/dist/debian-13/*.changes
-            vcache-packaging/dist/debian-13/*.buildinfo
-            vcache-packaging/dist/debian-13/*.tar.*
-            vcache-packaging/dist/debian-13/SHA256SUMS
-            vcache-packaging/dist/debian-13/logs/**
-            vcache-packaging/dist/debian-13/work/target.txt
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: upload the EL9 package artifacts
-        if: always() && matrix.family == 'rpm'
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: ${{ matrix.packages_artifact }}
-          path: |
-            vcache-packaging/dist/el9/packages/*.rpm
-            vcache-packaging/dist/el9/SHA256SUMS
-            vcache-packaging/dist/el9/logs/**
-            vcache-packaging/dist/el9/image.txt
-          if-no-files-found: warn
-          retention-days: 14
-
       # Injection case 8: suppress exactly one expected result artifact and
       # confirm the collector synthesizes missing_result_record for that row.
+      # continue-on-error for the same reason as the package uploads: a lost
+      # result record must fail this job explicitly rather than leave it red
+      # for a reason the log does not name. The collector catches the same
+      # thing independently, as missing_result_record.
       - name: upload the target result record
+        id: upload_result
         if: >-
           always() && !(inputs.inject == 'suppress_result'
           && matrix.family == 'deb' && matrix.engine == 'vinyl-release')
+        continue-on-error: true
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: ${{ matrix.result_artifact }}
@@ -627,7 +671,7 @@ jobs:
           retention-days: 14
 
       - name: fail when this row failed
-        if: steps.record.outputs.status != 'passed'
+        if: steps.record.outputs.status != 'passed' || steps.upload_result.outcome == 'failure'
         run: exit 1
 
   summary:
@@ -646,6 +690,19 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: vcache-packaging
+
+      # This job rebuilds the expected ledger from its own fresh checkout, so
+      # the injected corruption has to be reapplied here (see the plan job).
+      # Without it an injected run would synthesize blocked lane rows for a
+      # manifest that never parsed.
+      - name: inject a malformed manifest
+        if: inputs.inject == 'manifest'
+        shell: bash
+        run: |
+          set -eu
+          printf 'schema: vmod-ci/v1\nid: %s\n' "${{ inputs.vmod_id }}" \
+            > "${{ inputs.manifest }}"
+        working-directory: vcache-packaging
 
       - name: download this VMOD's result records
         continue-on-error: true

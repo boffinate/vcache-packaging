@@ -161,6 +161,21 @@ jobs:
           pattern: packages-*
           path: packages
 
+      # The collector rebuilds the expected ledger from its own fresh checkout,
+      # so an injected malformed manifest has to be reapplied here too --
+      # otherwise the injected run would reconcile against the full, valid lane
+      # list and report exactly the invented lane rows the plan's case 2
+      # forbids. Same corruption, same file, as vmod-package.yml applies.
+      - name: inject a malformed manifest
+        if: github.event_name == 'workflow_dispatch' && inputs.inject == 'manifest'
+        shell: bash
+        run: |
+          set -eu
+          for manifest in registry/vmods/*.yml; do
+            printf 'schema: vmod-ci/v1\nid: %s\n' "$(basename "$manifest" .yml)" \
+              > "$manifest"
+          done
+
       - name: note the upstream job outcomes
         shell: bash
         run: |
