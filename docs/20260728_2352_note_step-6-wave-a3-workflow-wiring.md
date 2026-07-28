@@ -176,6 +176,59 @@ Error: Unable to find a match: mock
 
 Both are a consequence of the deliberate lane duplication recorded above: the duplication bounded the blast radius to dict, and it also meant two known-good lines did not come along. That is the trade working as described, and it is worth recording on both sides of the ledger.
 
+## Wave B run 2: baseline after B1/B2, and where it stopped
+
+**Run 2 — `inject=none`, [30407186693](https://github.com/boffinate/vcache-packaging/actions/runs/30407186693), conclusion `failure`.** Stopped again per the no-silent-iteration rule; runs 3-13 not dispatched.
+
+Same 12 of 14 green, and both run-1 defects are confirmed fixed — but each fix uncovered the next thing behind it.
+
+### Confirmed fixed
+
+- **B1.** The Debian build now completes. No `-j4`, no `vcc_if.c.tmp2` race; `vmod-dict_1.7-1_amd64.deb` and `vmod-dict-dbgsym_1.7-1_amd64.deb` were both produced. **dict has native Debian packages for the first time.**
+- **B2.** `mock-6.7-1.el9` and `mock-core-configs-44.4-1.el9` installed from EPEL, and the Mock configuration was written.
+
+### F1 vindicated on its first live exercise
+
+The Debian row recorded:
+
+```json
+"status": "failed_abi_or_hardening",
+"detail": "3 -- payload is exactly what the overlay declared"
+```
+
+Before F1 that row would have said `failed_install_or_smoke` and sent a reader to the install smoke, which ran fine. The stage marker named the actual stage on the first failure it ever saw. This is the concrete answer to A3's open question 1: the distinction is worth its cost, and the cost was five lines.
+
+### B3 — the payload allowlist omits the lintian overrides directory
+
+```text
+FAIL: unexpected files in the payload:
+./usr/share/lintian/overrides/vmod-dict
+```
+
+The package is correct. `debian/vmod-dict.lintian-overrides` is a file the generated recipe deliberately ships — cachetag ships one too — and debhelper installs it at `/usr/share/lintian/overrides/<binary>`. The allowlist in `verify-deb.sh` permits the VMOD object plus `/usr/share/{man,doc}/` and nothing else, so it rejected the recipe's own output.
+
+This is a defect in the check, not in the package, and it is the first live exercise of a gate the [Wave A2 note](20260728_2334_note_step-6-wave-a2-ci-integration.md) flagged as never having run: *"a first run that fails them is a finding about the templates or the overlay, never a reason to relax the gate."* The finding is about neither — it is about the allowlist, which was written from the declared payload and forgot the packaging's own artefact.
+
+**Fix shape:** allow `/usr/share/lintian/overrides/<binary_name>` exactly, not the directory as a glob. The allowlist's value is that it is narrow.
+
+### B4 — mock refuses to run as root, and the wrapper exits 6
+
+```text
+===== Mock: source RPM =====
+Insufficient rights.
+##[error]Process completed with exit code 6.
+```
+
+`scripts/ci/el9/container-mock.sh:124-129` documents this exact failure verbatim: mock will not run from the root account, and `/usr/bin/mock` is a symlink to usermode's consolehelper which on a GitHub runner fails with "Insufficient rights." rather than degrading usefully. Its handling is a `mockbuild` user created with the uid/gid that owns the bind-mounted output directory, added to the `mock` group, with every invocation going through `runuser -u mockbuild -- mock`.
+
+The generated lane was written from that script's structure and inherited neither the EPEL lines (B2) nor this. **Three pieces of hard-won knowledge in one file, and the duplication cost all three.**
+
+**Fix shape:** the same `mockbuild`/`runuser` treatment, and the same refusal to proceed when the output directory is root-owned — mock could not write its results in that case anyway.
+
+### What the run-1 and run-2 pattern says about the duplication trade
+
+The [Q2 ruling](20260728_2334_note_step-6-wave-a2-ci-integration.md) kept the two lane implementations separate so cachetag's package bytes could not move, and that has held perfectly: cachetag's six rows have been green in both runs while dict's have failed four different ways. The cost is now measured rather than asserted, and it is higher than "some duplicated lines": every non-obvious thing `container-mock.sh` had learned had to be rediscovered by failing. Worth recording plainly when the merge is reconsidered after Wave B — the argument for merging is stronger than it looked when the trade was made.
+
 ## Open questions for the audit
 
 1. **`target-generated` has one classification for six distinct checks.** `verify-deb.sh` covers payload, ABI, hardening, lint, install smoke and behaviour in one step, so all six classify as `failed_install_or_smoke`. The cachetag path separates `failed_abi_or_hardening`, `failed_lint`, `failed_install_or_smoke` and `failed_behavior` because it has four steps. Splitting the verify script into four container invocations would restore the distinction at the cost of four container starts per row; leaving it means the summary names the log to read rather than the stage that failed. Worth deciding before Wave B, since Wave B is what will make anybody read those classifications in anger.
