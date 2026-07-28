@@ -10,7 +10,7 @@ This is a packaging and compatibility-testing project with a narrow publication 
 
 ## Layout
 
-- `registry/` — compatibility manifests (`cohorts/`, `targets/`, `distro-native/`) and their normative schema description in `registry/README.md`.
+- `registry/` — compatibility manifests (`cohorts/`, `targets/`, `distro-native/`, `vmods/`) and their normative schema description in `registry/README.md`.
 - `tools/` — Python 3 standard-library tooling that validates the manifests and generates native package version metadata. Entry point `tools/release_tool.py`.
 - `upstream/` — legacy audited packaging-recipe input with a `PROVENANCE.md` recording source, commit, and audit verdict. It is not a general store for upstream release archives. Vendored content is not modified in place without recording why.
 - `docs/` — design notes and session records.
@@ -47,7 +47,17 @@ python3 tools/release_tool.py selftest
 python3 tools/release_tool.py metadata --cohort <cohort-id> --target debian-13-amd64
 ```
 
-The cachetag checkout used for the `configure.ac` version cross-check defaults to `../libvmod-cachetag`. Override it with `--cachetag-src PATH` or `CACHETAG_SRC=PATH` when the checkout is elsewhere, such as inside a container.
+The cachetag checkout used for the `configure.ac` version cross-check defaults to `../libvmod-cachetag`. Override it with `--cachetag-src PATH` or `CACHETAG_SRC=PATH` when the checkout is elsewhere, such as inside a container. `--no-cachetag-cross-check` runs the same validation without any VMOD source checkout; it exists for the global CI gate, and the cross-check itself moved into the per-VMOD CI invocation.
+
+VMOD catalog, CI matrix expansion and result reconciliation (host-safe, stdlib only):
+
+```sh
+python3 tools/ci_matrix.py check-catalog
+python3 tools/ci_matrix.py validate-vmod --manifest registry/vmods/cachetag.yml --id cachetag
+python3 tools/ci_matrix.py expand --manifest registry/vmods/cachetag.yml --tier ci
+python3 tools/ci_matrix.py ledger --tier ci
+python3 tools/ci_matrix.py selftest
+```
 
 ## If unsure
 

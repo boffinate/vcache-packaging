@@ -12,6 +12,7 @@ The registry lives in `vcache-packaging` rather than in any VMOD repository beca
 registry/cohorts/<cohort-id>.yml              one coordinated project cohort
 registry/targets/<cohort-id>/<target-id>.yml  one distro/arch build within that cohort
 registry/distro-native/<target-id>.yml        a build against a distribution's own Vinyl packages
+registry/vmods/<vmod-id>.yml                  one selected VMOD, its source channels and its CI lanes
 ```
 
 `<target-id>` is always `<distro-id>-<arch>`, for example `debian-13-amd64` or `el9-x86_64`.
@@ -249,6 +250,32 @@ When `exposes_abi_provide` is not `yes`, the generated dependency falls back to 
 
 It also carries its own `cachetag.version`, which is still checked against the cachetag checkout's `configure.ac`.
 
+## VMOD catalog manifest
+
+`registry/vmods/<vmod-id>.yml` uses `vmod-ci/v1`. It is the checked-in list of VMODs the maintainer has placed in scope, read by [`tools/ci_matrix.py`](../tools/ci_matrix.py) and by the per-VMOD reusable workflow. It is a catalog, not repository discovery, and it describes CI rows rather than package identity: nothing in it feeds cohort identity or generated package metadata.
+
+| Field | Kind | Notes |
+| --- | --- | --- |
+| `schema` | fixed | `vmod-ci/v1` |
+| `id` | identity | must equal the file name stem, which is also the trusted discovery id |
+| `repository` | identity | `<owner>/<name>` |
+| `required` | policy | `true` when a failure of this VMOD must make the run red |
+| `adapter` | wiring | the packaging adapter; currently `cachetag` only |
+| `sources.<channel>.ref` | immutable or moving input | tag for `release`, branch for `trunk` |
+| `sources.<channel>.expected_commit` | immutable input | the peeled commit a release ref must resolve to |
+| `sources.<channel>.version` | immutable input | cross-checked against the VMOD source's own version after checkout |
+| `sources.<channel>.archive_sha256` | **digest input** | the derived source archive's pinned digest |
+| `sources.<channel>.publishable` | policy | `true` only for a fully pinned channel; a trunk build can never become a package because it passed |
+| `lanes[].kind` | wiring | `package` (native packages for named targets) or `source-harness` (the VMOD's own test harness, no package) |
+| `lanes[].source` | wiring | the source channel this lane builds |
+| `lanes[].engine` | wiring | the Vinyl input: `vinyl-release`, `vinyl-trunk-pinned`, `vinyl-trunk-head` |
+| `lanes[].tiers` | policy | which workflow tiers (`ci`, `nightly`, `release`, `trunk`) run this lane |
+| `lanes[].targets` | wiring | package targets, for `package` lanes only |
+
+The lane list is explicit on purpose. Do not multiply source channels by engines by targets: every row exists because it answers a compatibility or publication question the project has chosen to support, and the expected-row ledger the CI collector reconciles against is built from exactly these rows.
+
+The discovery id comes from the file name and never from the contents, so a malformed manifest costs one failed VMOD invocation instead of hiding the rest of the catalog. Each invocation re-validates that the declared `id` matches the discovery id it was started for.
+
 ## Package revision rules
 
 Manifests store one canonical `package.revision`, an integer starting at **1**. The tooling maps it onto each ecosystem's convention:
@@ -310,6 +337,27 @@ python3 tools/release_tool.py metadata --distro-native debian-13-amd64
 python3 tools/release_tool.py selftest
 ```
 
+The VMOD catalog, matrix expansion and CI result reconciliation live in a second tool with the same dependency rule:
+
+```sh
+# the trusted discovery list, derived from file names, and catalog structure
+python3 tools/ci_matrix.py check-catalog
+python3 tools/ci_matrix.py list-vmods --format github
+
+# one VMOD's manifest, and its source cross-check once its source is checked out
+python3 tools/ci_matrix.py validate-vmod --manifest registry/vmods/cachetag.yml --id cachetag
+python3 tools/ci_matrix.py validate-vmod --manifest registry/vmods/cachetag.yml --id cachetag \
+    --source-dir ../libvmod-cachetag
+
+# one VMOD's lanes for one tier, and the whole expected-row ledger
+python3 tools/ci_matrix.py expand --manifest registry/vmods/cachetag.yml --tier ci
+python3 tools/ci_matrix.py ledger --tier ci
+
+# reconcile a run's result records against that ledger
+python3 tools/ci_matrix.py reconcile --tier ci --results ./results
+python3 tools/ci_matrix.py selftest
+```
+
 ### The cachetag checkout
 
 `cachetag.version` is validated against `AC_INIT` in a `libvmod-cachetag` checkout, which is a different repository. Every subcommand therefore accepts `--cachetag-src PATH`; without it the tooling uses `$CACHETAG_SRC`, and failing that the sibling `../libvmod-cachetag`. `validate` prints which checkout it used, and a missing or foreign checkout is a hard error rather than a skipped check — the cross-check is the only thing tying a manifest to a real cachetag release, so it must not degrade quietly:
@@ -318,6 +366,14 @@ python3 tools/release_tool.py selftest
 python3 tools/release_tool.py --cachetag-src ../libvmod-cachetag validate
 CACHETAG_SRC=/src/libvmod-cachetag python3 tools/release_tool.py validate
 ```
+
+That cross-check is the one check in this tooling that reaches outside the registry, and since 2026-07-28 validation is split along exactly that line. `--no-cachetag-cross-check` runs everything else — schemas, cohort-input digests, target wiring, placeholder policy — and skips only the version comparison, printing that it did:
+
+```sh
+python3 tools/release_tool.py --no-cachetag-cross-check validate
+```
+
+That mode exists for the global CI validation gate, which validates the registry on behalf of every VMOD and therefore must not fail because one VMOD's repository is unreachable. The check is not weakened, only relocated: it runs inside the cachetag CI invocation after its own checkout, as `ci_matrix.py validate-vmod --source-dir`, plus the ordinary cross-checking `validate` in the same job. Local use and `release-draft.yml` keep the default, where a missing or foreign checkout is still a hard error. The self-tests report the source-coupled tests as `SKIP` with a reason when no checkout is present rather than quietly shrinking.
 
 `--format shell` emits `CACHETAG_*` assignments that are safe to `.` from a POSIX shell. Lists become `<name>_COUNT` plus `<name>_0`, `<name>_1`, ... so values containing spaces, such as `vinyld-vrt = 23.0`, survive intact. Characters that cannot appear in a shell identifier are folded to underscores, so the `@VINYL_VMODDIR@` token is exported as `CACHETAG_SUBSTITUTIONS__VINYL_VMODDIR_`; the plain `CACHETAG_INSTALL_VMODDIR` carries the same value and is the more readable name to use.
 
@@ -331,6 +387,8 @@ Module map:
 | `manifest.py` | schema, cohort-identity digest, validation; the executable copy of this document |
 | `metadata.py` | native package version, filename, and ABI string generation |
 | `release_tool.py` | command line entry point |
+| `ci_matrix.py` | VMOD catalog, lane expansion, expected-row ledger, result reconciliation |
+| `ci_matrix_selftest.py` | its tests, including the multi-VMOD isolation fixture |
 | `selftest.py` | tests, including the hand-computed digest vectors |
 
 ## Deliberately not here yet

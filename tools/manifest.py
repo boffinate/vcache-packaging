@@ -479,8 +479,16 @@ def load_target(path) -> dict:
     return yaml_subset.parse_file(path)
 
 
-def validate_cohort(data: dict, path: str, expected_version: str, require_releasable: bool = False) -> list:
-    """Return a list of error strings ([] means valid)."""
+def validate_cohort(data: dict, path: str, expected_version=None, require_releasable: bool = False) -> list:
+    """Return a list of error strings ([] means valid).
+
+    ``expected_version`` is the authoritative cachetag version read from a
+    cachetag checkout. Passing ``None`` runs every structural and identity
+    check and skips only the cross-check itself, which is what the global,
+    source-independent validation gate does: the cross-check needs a VMOD
+    source checkout, so it belongs to that VMOD's own CI invocation rather than
+    to a registry-wide gate that must never depend on one VMOD's repository.
+    """
     errors: list = []
     _check(COHORT_SPEC, data, "", errors)
     if errors:
@@ -488,7 +496,7 @@ def validate_cohort(data: dict, path: str, expected_version: str, require_releas
 
     status = data["status"]
     version = data["cachetag"]["version"]
-    if version != expected_version:
+    if expected_version is not None and version != expected_version:
         errors.append(
             f"cachetag.version {version!r} does not match configure.ac AC_INIT "
             f"{expected_version!r} in the cachetag checkout"
@@ -639,11 +647,23 @@ def validate_registry_tree(
     only_cohort: str = None,
     require_releasable: bool = False,
     cachetag_src=None,
+    cross_check_cachetag: bool = True,
 ) -> tuple:
-    """Validate every manifest in registry/. Returns (checked_paths, errors)."""
+    """Validate every manifest in registry/. Returns (checked_paths, errors).
+
+    With ``cross_check_cachetag=False`` this is pure structural and identity
+    validation: schemas, cohort-input digests, target wiring, placeholder
+    policy. It needs no VMOD source checkout and therefore cannot be broken by
+    one VMOD's repository being unreachable. The cachetag ``configure.ac``
+    cross-check is a source-coupled check and runs inside the cachetag CI
+    invocation after its checkout (see tools/ci_matrix.py's ``validate-vmod
+    --source-dir``).
+    """
     root = Path(repo_root) if repo_root else REPO_ROOT
     rel = registry_dir(root)
-    expected_version = configure_ac_version(cachetag_src, repo_root=root)
+    expected_version = (
+        configure_ac_version(cachetag_src, repo_root=root) if cross_check_cachetag else None
+    )
     checked: list = []
     errors: list = []
 

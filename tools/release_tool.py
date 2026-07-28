@@ -25,6 +25,14 @@ libvmod-cachetag checkout. That checkout lives in its own repository: pass
 --cachetag-src PATH or set CACHETAG_SRC, or let it default to the sibling
 ../libvmod-cachetag.
 
+That cross-check is source-coupled: it needs a VMOD's repository to be
+reachable. Validation is therefore split. Everything else -- schemas, cohort
+identity digests, target wiring, placeholder policy -- is structural and runs
+with --no-cachetag-cross-check in the global CI gate, which must not fail
+because one VMOD's source is unavailable. The cross-check runs inside the
+cachetag CI invocation, after its checkout, via
+`tools/ci_matrix.py validate-vmod --source-dir`.
+
 Standard library only. This tool is pure Python and is safe to run on the host;
 it never builds or tests any package.
 """
@@ -52,6 +60,27 @@ def _cachetag_src(args, repo_root: Path) -> Path:
     return manifest.default_cachetag_src(repo_root)
 
 
+def _cross_check(args) -> bool:
+    """Whether to cross-check cachetag.version against a cachetag checkout.
+
+    The cross-check is the only thing tying a manifest to a real cachetag
+    release, so it stays on by default and a missing checkout stays a hard
+    error. --no-cachetag-cross-check turns it off for the one caller that must
+    not depend on any VMOD's source: the global structural validation gate,
+    which validates the registry schemas and identities for every VMOD and
+    therefore cannot be allowed to fail because one VMOD's repository is
+    unreachable. The check itself does not disappear -- it runs inside the
+    cachetag CI invocation, after that VMOD's checkout.
+    """
+    return not getattr(args, "no_cachetag_cross_check", False)
+
+
+def _expected_version(args, repo_root: Path):
+    if not _cross_check(args):
+        return None
+    return manifest.configure_ac_version(_cachetag_src(args, repo_root), repo_root=repo_root)
+
+
 def _cohort_path(root: Path, cohort_id: str) -> Path:
     candidate = Path(cohort_id)
     if candidate.suffix == ".yml" and candidate.exists():
@@ -61,12 +90,14 @@ def _cohort_path(root: Path, cohort_id: str) -> Path:
 
 def cmd_validate(args) -> int:
     root = Path(args.repo_root).resolve()
-    cachetag_src = _cachetag_src(args, root)
+    cross_check = _cross_check(args)
+    cachetag_src = _cachetag_src(args, root) if cross_check else None
     checked, errors = manifest.validate_registry_tree(
         repo_root=root,
         only_cohort=args.cohort,
         require_releasable=args.require_releasable,
         cachetag_src=cachetag_src,
+        cross_check_cachetag=cross_check,
     )
     for path in checked:
         print(f"checked  {path}")
@@ -76,12 +107,20 @@ def cmd_validate(args) -> int:
             print(f"ERROR    {error}")
         print(f"\n{len(errors)} error(s) in {len(checked)} manifest(s)")
         return 1
-    version = manifest.configure_ac_version(cachetag_src, repo_root=root)
     mode = "releasable" if args.require_releasable else "schema"
-    print(
-        f"\nOK: {len(checked)} manifest(s) valid ({mode} mode), "
-        f"cachetag version {version} from {cachetag_src}"
-    )
+    if cross_check:
+        version = manifest.configure_ac_version(cachetag_src, repo_root=root)
+        print(
+            f"\nOK: {len(checked)} manifest(s) valid ({mode} mode), "
+            f"cachetag version {version} from {cachetag_src}"
+        )
+    else:
+        print(
+            f"\nOK: {len(checked)} manifest(s) structurally valid ({mode} mode). "
+            "The cachetag configure.ac cross-check was SKIPPED "
+            "(--no-cachetag-cross-check); it runs in the cachetag CI invocation "
+            "after that VMOD's checkout."
+        )
     return 0
 
 
@@ -89,9 +128,7 @@ def cmd_cohort_id(args) -> int:
     root = Path(args.repo_root).resolve()
     path = _cohort_path(root, args.cohort)
     data = manifest.load_cohort(path)
-    errors = manifest.validate_cohort(
-        data, str(path), manifest.configure_ac_version(_cachetag_src(args, root), repo_root=root)
-    )
+    errors = manifest.validate_cohort(data, str(path), _expected_version(args, root))
     blob = manifest.cohort_input_blob(data)
     print("canonical cohort-input blob:")
     print("---8<---")
@@ -121,9 +158,7 @@ def cmd_metadata(args) -> int:
             target,
             str(target_path),
             distro_native=True,
-            expected_version=manifest.configure_ac_version(
-                _cachetag_src(args, root), repo_root=root
-            ),
+            expected_version=_expected_version(args, root),
         )
         cohort = None
     else:
@@ -134,11 +169,7 @@ def cmd_metadata(args) -> int:
         cohort = manifest.load_cohort(cohort_path)
         target_path = root / "registry" / "targets" / cohort["cohort"] / f"{args.target}.yml"
         target = manifest.load_target(target_path)
-        errors = manifest.validate_cohort(
-            cohort,
-            str(cohort_path),
-            manifest.configure_ac_version(_cachetag_src(args, root), repo_root=root),
-        )
+        errors = manifest.validate_cohort(cohort, str(cohort_path), _expected_version(args, root))
         errors += manifest.validate_target(
             target, str(target_path), cohort=cohort, cohort_status=cohort["status"]
         )
@@ -172,9 +203,7 @@ def cmd_release_notes(args) -> int:
     root = Path(args.repo_root).resolve()
     path = _cohort_path(root, args.cohort)
     data = manifest.load_cohort(path)
-    errors = manifest.validate_cohort(
-        data, str(path), manifest.configure_ac_version(_cachetag_src(args, root), repo_root=root)
-    )
+    errors = manifest.validate_cohort(data, str(path), _expected_version(args, root))
     if errors:
         for error in errors:
             print(f"ERROR    {error}", file=sys.stderr)
@@ -192,6 +221,10 @@ def cmd_selftest(args) -> int:
     import selftest
 
     root = Path(args.repo_root).resolve()
+    # The self-tests run in the global CI job, which has no cachetag checkout.
+    # They therefore resolve the checkout themselves and report the
+    # source-coupled tests as skipped when it is absent, rather than failing on
+    # a dependency the global job deliberately does not have.
     return selftest.main(repo_root=root, cachetag_src=_cachetag_src(args, root))
 
 
@@ -212,6 +245,16 @@ def build_parser() -> argparse.ArgumentParser:
             "path to a libvmod-cachetag checkout, whose configure.ac holds the "
             "authoritative cachetag version (default: $CACHETAG_SRC, else the "
             "sibling ../libvmod-cachetag)"
+        ),
+    )
+    parser.add_argument(
+        "--no-cachetag-cross-check",
+        action="store_true",
+        help=(
+            "skip the cachetag configure.ac version cross-check, which needs a "
+            "libvmod-cachetag checkout. For the global structural validation gate, "
+            "which must not depend on any VMOD's source; the cross-check itself runs "
+            "in the cachetag CI invocation after its checkout"
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)

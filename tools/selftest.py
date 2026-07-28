@@ -138,10 +138,22 @@ class Failure(Exception):
 
 
 _RESULTS: list = []
+_SKIPPED: list = []
 
 
 def check(name: str, condition: bool, detail: str = "") -> None:
     _RESULTS.append((name, bool(condition), detail))
+
+
+def skip(name: str, reason: str) -> None:
+    """Record a test that could not run, loudly rather than silently.
+
+    Used by the source-coupled tests when no cachetag checkout is present: the
+    global CI validation job deliberately has none, and a self-test suite that
+    quietly shrank there would be worse than one that says what it did not
+    check.
+    """
+    _SKIPPED.append((name, reason))
 
 
 def _write_workspace(
@@ -515,24 +527,18 @@ def test_vmoddir() -> None:
     )
 
 
-def test_repo_templates(repo_root: Path, cachetag_src: Path) -> None:
+def test_repo_templates(repo_root: Path) -> None:
+    # Structural validation only: no cachetag checkout, because this is exactly
+    # what the global CI validation gate runs.
     checked, errors = manifest.validate_registry_tree(
-        repo_root=repo_root, cachetag_src=cachetag_src
+        repo_root=repo_root, cross_check_cachetag=False
     )
     check(
-        "repo: checked-in registry/ manifests are schema-valid",
+        "repo: checked-in registry/ manifests are schema-valid without a cachetag checkout",
         errors == [],
         "; ".join(errors),
     )
     check("repo: at least three manifests are checked", len(checked) >= 3, str(checked))
-    check(
-        "repo: the cachetag version comes from the separate cachetag checkout",
-        manifest.configure_ac_version(cachetag_src, repo_root=repo_root)
-        == manifest.load_cohort(
-            repo_root / "registry" / "cohorts" / "vinyl-9.0.0-000000000000.yml"
-        )["cachetag"]["version"],
-        str(cachetag_src),
-    )
     cohort = manifest.load_cohort(
         repo_root / "registry" / "cohorts" / "vinyl-9.0.0-000000000000.yml"
     )
@@ -549,7 +555,7 @@ def test_repo_templates(repo_root: Path, cachetag_src: Path) -> None:
         repo_root=repo_root,
         require_releasable=True,
         only_cohort="vinyl-9.0.0-000000000000",
-        cachetag_src=cachetag_src,
+        cross_check_cachetag=False,
     )
     check(
         "repo: --require-releasable --cohort <template id> is refused",
@@ -561,7 +567,7 @@ def test_repo_templates(repo_root: Path, cachetag_src: Path) -> None:
     # the first real cohort existed this distinction did not arise, because
     # nothing in the tree could be releasable anyway.
     checked, errors = manifest.validate_registry_tree(
-        repo_root=repo_root, require_releasable=True, cachetag_src=cachetag_src
+        repo_root=repo_root, require_releasable=True, cross_check_cachetag=False
     )
     check(
         "repo: template exemplars alone do not fail --require-releasable",
@@ -583,6 +589,123 @@ def test_repo_templates(repo_root: Path, cachetag_src: Path) -> None:
         any("placeholder values remain" in e for e in errors)
         and any("does not match the digest" in e for e in errors),
         "; ".join(errors),
+    )
+
+
+# --- the structural / source-coupled validation split ----------------------
+
+
+def test_validation_split() -> None:
+    """Structural validation must not need a VMOD's source checkout.
+
+    The cachetag configure.ac cross-check is the one check in this tooling that
+    reaches outside the registry. Phase 1 of the failure-isolation plan moves it
+    off the global gate and into the cachetag CI invocation, so a cachetag
+    repository problem is a cachetag failure rather than a registry failure.
+    What must NOT change is the check itself: when a checkout is supplied, a
+    disagreeing version is still an error.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        registry_root, cachetag_src = _write_workspace(Path(tmp), VALID_COHORT, VALID_TARGET)
+        # Delete the checkout entirely: the structural gate must not notice.
+        (cachetag_src / "configure.ac").unlink()
+        cachetag_src.rmdir()
+        saved = os.environ.pop(manifest.CACHETAG_SRC_ENV, None)
+        try:
+            checked, errors = manifest.validate_registry_tree(
+                repo_root=registry_root, cross_check_cachetag=False
+            )
+            check(
+                "split: structural validation passes with no cachetag checkout at all",
+                errors == [] and len(checked) == 2,
+                "; ".join(errors) or str(checked),
+            )
+            try:
+                manifest.validate_registry_tree(repo_root=registry_root)
+                check(
+                    "split: the cross-checking mode still demands a checkout",
+                    False,
+                    "no error raised",
+                )
+            except manifest.ValidationError as exc:
+                check(
+                    "split: the cross-checking mode still demands a checkout",
+                    "configure.ac" in str(exc),
+                    str(exc),
+                )
+        finally:
+            if saved is not None:
+                os.environ[manifest.CACHETAG_SRC_ENV] = saved
+
+    # A wrong version is still caught when a checkout is supplied, and is
+    # invisible without one -- which is the whole point of moving the check to
+    # the per-VMOD path rather than deleting it.
+    bad = VALID_COHORT.replace("version: 1.0.0", "version: 1.0.1", 1)
+    checked, errors = _validate_synthetic(bad, VALID_TARGET)
+    check(
+        "split: a version mismatch is still an error when a checkout is supplied",
+        any("does not match configure.ac AC_INIT" in e for e in errors),
+        "; ".join(errors),
+    )
+    checked, errors = _validate_synthetic(bad, VALID_TARGET, cross_check_cachetag=False)
+    check(
+        "split: structural validation is silent about the version, not wrong about it",
+        errors == [],
+        "; ".join(errors),
+    )
+
+    # Structural failures must still be found without a checkout: skipping the
+    # cross-check must not skip anything else.
+    broken = VALID_COHORT.replace("revision: 3", "revision: 4", 1)
+    checked, errors = _validate_synthetic(broken, VALID_TARGET, cross_check_cachetag=False)
+    check(
+        "split: the cohort input-id digest is still checked without a checkout",
+        any("does not match the digest" in e for e in errors),
+        "; ".join(errors),
+    )
+    missing_field = (
+        "\n".join(line for line in VALID_COHORT.splitlines() if not line.startswith("  vrt:")) + "\n"
+    )
+    checked, errors = _validate_synthetic(missing_field, VALID_TARGET, cross_check_cachetag=False)
+    check(
+        "split: schema checks are still applied without a checkout",
+        any("vinyl.vrt: missing required field" in e for e in errors),
+        "; ".join(errors),
+    )
+
+    # And the direct entry points take None for the same reason.
+    cohort = yaml_subset.parse(VALID_COHORT)
+    check(
+        "split: validate_cohort accepts no expected version",
+        manifest.validate_cohort(cohort, "synthetic", None) == [],
+        str(manifest.validate_cohort(cohort, "synthetic", None)),
+    )
+
+
+def test_repo_cachetag_cross_check(repo_root: Path, cachetag_src: Path) -> None:
+    """The source-coupled half, when a cachetag checkout is actually present."""
+    if not (Path(cachetag_src) / "configure.ac").is_file():
+        skip(
+            "repo: registry cachetag.version agrees with the cachetag checkout",
+            f"no cachetag checkout at {cachetag_src}; this check now runs in the "
+            "cachetag CI invocation, after its own checkout",
+        )
+        return
+    checked, errors = manifest.validate_registry_tree(
+        repo_root=repo_root, cachetag_src=cachetag_src
+    )
+    check(
+        "repo: registry cachetag.version agrees with the cachetag checkout",
+        errors == [],
+        "; ".join(errors),
+    )
+    check(
+        "repo: the cachetag version comes from the separate cachetag checkout",
+        manifest.configure_ac_version(cachetag_src, repo_root=repo_root)
+        == manifest.load_cohort(
+            repo_root / "registry" / "cohorts" / "vinyl-9.0.0-000000000000.yml"
+        )["cachetag"]["version"],
+        str(cachetag_src),
     )
 
 
@@ -835,6 +958,7 @@ def main(repo_root: Path = None, cachetag_src=None) -> int:
     root = Path(repo_root) if repo_root else manifest.REPO_ROOT
     src = Path(cachetag_src) if cachetag_src else manifest.default_cachetag_src(root)
     _RESULTS.clear()
+    _SKIPPED.clear()
     test_parser()
     test_digest()
     test_valid_manifest_passes()
@@ -846,7 +970,9 @@ def main(repo_root: Path = None, cachetag_src=None) -> int:
     test_metadata()
     test_vmoddir()
     test_cachetag_src()
-    test_repo_templates(root, src)
+    test_validation_split()
+    test_repo_templates(root)
+    test_repo_cachetag_cross_check(root, src)
     test_distro_native(root)
 
     failed = 0
@@ -856,7 +982,14 @@ def main(repo_root: Path = None, cachetag_src=None) -> int:
         else:
             failed += 1
             print(f"FAIL  {name}" + (f"\n      {detail}" if detail else ""))
-    print(f"\n# TOTAL: {len(_RESULTS)}\n# PASS:  {len(_RESULTS) - failed}\n# FAIL:  {failed}")
+    for name, reason in _SKIPPED:
+        print(f"SKIP  {name}\n      {reason}")
+    print(
+        f"\n# TOTAL: {len(_RESULTS) + len(_SKIPPED)}\n"
+        f"# PASS:  {len(_RESULTS) - failed}\n"
+        f"# FAIL:  {failed}\n"
+        f"# SKIP:  {len(_SKIPPED)}"
+    )
     return 1 if failed else 0
 
 
