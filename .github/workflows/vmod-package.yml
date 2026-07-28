@@ -339,8 +339,14 @@ jobs:
             --digest "${{ matrix.archive_sha256 }}"
         working-directory: vcache-packaging
 
+      # Same treatment as the target row's result upload: a lost result record
+      # fails its row explicitly rather than leaving the job red for a reason
+      # the log does not name. The collector catches the same thing
+      # independently, as missing_result_record.
       - name: upload the source result record and logs
+        id: upload_result
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: ${{ matrix.result_artifact }}
@@ -355,7 +361,7 @@ jobs:
           steps.checkout.outcome == 'failure' || steps.verify.outcome == 'failure'
           || steps.cross_check.outcome == 'failure' || steps.vinyl.outcome == 'failure'
           || steps.image.outcome == 'failure' || steps.archive.outcome != 'success'
-          || steps.upload.outcome != 'success'
+          || steps.upload.outcome != 'success' || steps.upload_result.outcome == 'failure'
         run: exit 1
 
   target:

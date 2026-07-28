@@ -920,37 +920,103 @@ def test_repo_catalog(repo_root: Path) -> None:
     )
 
 
-# The lane pin files and the three workflows that still carry their own copies
-# of the cachetag source pins. ci.yml and vmod-package.yml are absent because
-# they read the manifest now; nightly-transactions.yml and release-draft.yml
-# migrate in Phase 4 and this guard retires with them.
-PIN_SOURCES = [
-    ("recipes/debian-13/pins.env", "env"),
-    ("recipes/el9/cohort.env", "env"),
-    (".github/workflows/nightly-transactions.yml", "yaml"),
-    (".github/workflows/release-draft.yml", "yaml"),
-]
-
-# Which manifest field each pin name must agree with.
+# Which manifest field each pin name must agree with. The two lanes do not
+# agree on a name for the archive digest -- Debian calls it
+# CACHETAG_SOURCE_SHA256 and EL9 calls it CACHETAG_SHA256 -- and both are the
+# digest the build asserts against, so both are mapped. A guard that knows only
+# one of the two names silently ignores the other lane's most load-bearing pin.
 PIN_FIELDS = {
     "CACHETAG_REF": "ref",
     "CACHETAG_GIT_COMMIT": "expected_commit",
     "CACHETAG_SOURCE_SHA256": "archive_sha256",
+    "CACHETAG_SHA256": "archive_sha256",
     "CACHETAG_VERSION": "version",
 }
 
-_ENV_PIN_RE = re.compile(r"^(CACHETAG_[A-Z0-9_]+)=[\"']?([^\"'\s#]*)[\"']?\s*$")
-_YAML_PIN_RE = re.compile(r"^\s*(CACHETAG_[A-Z0-9_]+):\s*([^\s#]+)\s*$")
+# The lane pin files and the two workflows that still carry their own copies of
+# the cachetag source pins, and exactly which pins each one must carry. ci.yml
+# and vmod-package.yml are absent because they read the manifest now;
+# nightly-transactions.yml and release-draft.yml migrate in Phase 4 and this
+# guard retires with them.
+#
+# The expected list is per file, not "at least one pin somewhere": a rename
+# that this table does not know about must fail loudly rather than quietly
+# reduce the guard to checking nothing.
+PIN_SOURCES = [
+    (
+        "recipes/debian-13/pins.env",
+        "env",
+        ["CACHETAG_VERSION", "CACHETAG_GIT_COMMIT", "CACHETAG_SOURCE_SHA256"],
+    ),
+    (
+        "recipes/el9/cohort.env",
+        "env",
+        ["CACHETAG_VERSION", "CACHETAG_GIT_COMMIT", "CACHETAG_SHA256"],
+    ),
+    (
+        ".github/workflows/nightly-transactions.yml",
+        "yaml",
+        ["CACHETAG_REF", "CACHETAG_GIT_COMMIT", "CACHETAG_SOURCE_SHA256"],
+    ),
+    (
+        ".github/workflows/release-draft.yml",
+        "yaml",
+        ["CACHETAG_REF", "CACHETAG_GIT_COMMIT", "CACHETAG_SOURCE_SHA256"],
+    ),
+]
+
+# `export FOO=bar`, leading indentation and trailing comments all have to
+# parse: a pin the guard cannot read is a pin the guard does not check.
+_ENV_PIN_RE = re.compile(r"^\s*(?:export\s+)?(CACHETAG_[A-Z0-9_]+)=(.*)$")
+_YAML_PIN_RE = re.compile(r"^\s*(CACHETAG_[A-Z0-9_]+):\s*(.*)$")
+_QUOTED_RE = re.compile(r"""^(["'])(.*?)\1""")
+
+
+def _pin_value(raw: str) -> str:
+    """The value of a pin assignment: quotes stripped, trailing comment dropped."""
+    raw = raw.strip()
+    quoted = _QUOTED_RE.match(raw)
+    if quoted:
+        return quoted.group(2)
+    return raw.split("#", 1)[0].split()[0] if raw.split("#", 1)[0].split() else ""
 
 
 def _read_pins(path: Path, kind: str) -> dict:
     pattern = _ENV_PIN_RE if kind == "env" else _YAML_PIN_RE
     found = {}
     for line in path.read_text(encoding="utf-8").splitlines():
+        if line.lstrip().startswith("#"):
+            continue
         match = pattern.match(line)
         if match and match.group(1) in PIN_FIELDS:
-            found.setdefault(match.group(1), match.group(2))
+            found.setdefault(match.group(1), _pin_value(match.group(2)))
     return found
+
+
+def test_pin_parsing() -> None:
+    """The guard is only worth having if it can read the assignments it guards."""
+    cases = [
+        ("CACHETAG_REF=v1.0.1", "v1.0.1"),
+        ("export CACHETAG_REF=v1.0.1", "v1.0.1"),
+        ("  CACHETAG_REF=v1.0.1", "v1.0.1"),
+        ('CACHETAG_REF="v1.0.1"', "v1.0.1"),
+        ("CACHETAG_REF='v1.0.1'", "v1.0.1"),
+        ("CACHETAG_REF=v1.0.1 # re-pinned 2026-07-28", "v1.0.1"),
+        ('CACHETAG_REF="v1.0.1" # re-pinned', "v1.0.1"),
+    ]
+    for line, expected in cases:
+        match = _ENV_PIN_RE.match(line)
+        got = _pin_value(match.group(2)) if match else None
+        check(f"pins: parses {line!r}", got == expected, repr(got))
+    yaml_cases = [
+        ("  CACHETAG_REF: v1.0.1", "v1.0.1"),
+        ('  CACHETAG_REF: "v1.0.1"', "v1.0.1"),
+        ("  CACHETAG_REF: v1.0.1 # mirrored from pins.env", "v1.0.1"),
+    ]
+    for line, expected in yaml_cases:
+        match = _YAML_PIN_RE.match(line)
+        got = _pin_value(match.group(2)) if match else None
+        check(f"pins: parses {line!r}", got == expected, repr(got))
 
 
 def test_pins_do_not_drift_from_the_manifest(repo_root: Path) -> None:
@@ -963,17 +1029,19 @@ def test_pins_do_not_drift_from_the_manifest(repo_root: Path) -> None:
     """
     release = ci_matrix.load_vmod_manifest(repo_root / "registry" / "vmods" / "cachetag.yml")
     release = release["sources"]["release"]
-    for relative, kind in PIN_SOURCES:
+    for relative, kind, expected_pins in PIN_SOURCES:
         path = repo_root / relative
         if not path.is_file():
             check(f"pins: {relative} exists", False, "file not found")
             continue
         pins = _read_pins(path, kind)
-        check(
-            f"pins: {relative} carries at least one recognised cachetag pin",
-            bool(pins),
-            "none found; did a pin get renamed?",
-        )
+        for name in expected_pins:
+            if name not in pins:
+                check(
+                    f"pins: {relative} still carries {name}",
+                    False,
+                    "not found; a renamed pin must update this guard, not slip past it",
+                )
         for name, value in sorted(pins.items()):
             expected = release[PIN_FIELDS[name]]
             check(
@@ -1003,6 +1071,7 @@ def main(repo_root: Path = None) -> int:
     test_record_precedence_and_validation()
     test_synthesize_missing()
     test_repo_catalog(root)
+    test_pin_parsing()
     test_pins_do_not_drift_from_the_manifest(root)
 
     failed = 0

@@ -151,7 +151,16 @@ The audit passed package neutrality, graph semantics and the tooling, and accept
 - **A source-harness row with no source row was reported `blocked_by_vmod_source`.** `vmod_rows` deliberately emits no source row for a channel no package lane consumes, so the blocking lookup was naming a cause that was never expected to run. The blocking path is now taken only when the row genuinely has an upstream source row.
 - **A green run containing optional failures said only "Every required row produced a passing result"**, which reads as "nothing failed". It now names the optional failures in the same sentence.
 - **The `tier` input advertised `trunk`**, which expands to a source-harness row no job consumes in Phase 1. The description says so, and the unused `harness_count` output is documented as deliberate rather than forgotten.
-- **The duplicated pins are now guarded.** `nightly-transactions.yml` and `release-draft.yml` keep their own `CACHETAG_*` values until Phase 4, and the lane pin files always had theirs. A selftest reads `CACHETAG_REF`, `CACHETAG_GIT_COMMIT`, `CACHETAG_SOURCE_SHA256` and `CACHETAG_VERSION` out of all four files and asserts each agrees with the manifest, and fails if a file stops carrying any recognised pin at all — so a rename cannot make the guard silently vacuous. It retires when Phase 4 removes the duplication.
+- **The duplicated pins are now guarded.** `nightly-transactions.yml` and `release-draft.yml` keep their own `CACHETAG_*` values until Phase 4, and the lane pin files always had theirs. A selftest asserts each copy agrees with the manifest. The four files do not carry the same pins, and the table records what each one must carry:
+
+  | File | Pins checked |
+  | --- | --- |
+  | `recipes/debian-13/pins.env` | `CACHETAG_VERSION`, `CACHETAG_GIT_COMMIT`, `CACHETAG_SOURCE_SHA256` |
+  | `recipes/el9/cohort.env` | `CACHETAG_VERSION`, `CACHETAG_GIT_COMMIT`, **`CACHETAG_SHA256`** |
+  | `.github/workflows/nightly-transactions.yml` | `CACHETAG_REF`, `CACHETAG_GIT_COMMIT`, `CACHETAG_SOURCE_SHA256` |
+  | `.github/workflows/release-draft.yml` | `CACHETAG_REF`, `CACHETAG_GIT_COMMIT`, `CACHETAG_SOURCE_SHA256` |
+
+  The two lanes disagree on a name for the archive digest — Debian's `CACHETAG_SOURCE_SHA256` is EL9's `CACHETAG_SHA256` — and the first version of this guard knew only the Debian name, so a `deadbeef` digest in `cohort.env` passed every assertion. Both names are mapped now. The anti-vacuity check is per expected pin rather than "at least one pin was found", so renaming a pin fails the guard instead of quietly reducing it to checking nothing, and the assignment parser tolerates `export `, indentation, quotes and trailing comments — a pin the guard cannot read is a pin the guard does not check. It retires when Phase 4 removes the duplication.
 
 ## Dead ends and rejected alternatives
 
