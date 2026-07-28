@@ -35,7 +35,14 @@ registry/            the cohort registry: compatibility manifests
   cohorts/           one file per coordinated project cohort
   targets/           one file per distro/arch build within a cohort
   distro-native/     builds against a distribution's own Vinyl packages
+  vmods/             one file per selected VMOD: its source channels and CI lanes
+recipes/vmods/       inputs the generated third-party VMOD recipes are rendered from
+  templates/         the generic Debian and RPM recipes, as token templates
+  adapters/          what is true of every VMOD built the same way
+  overlays/          what is true of one VMOD: names, licence, payload, deps
+  licenses/          reviewed debian/copyright licence stanzas
 tools/               Python 3 stdlib tooling: validation and package-metadata generation
+  vmod_recipe.py     renders a VMOD's Debian or RPM recipe from those inputs
 upstream/            legacy audited packaging-recipe input, with provenance
   pkg-vinyl-cache/   audited upstream recipes; not a general source archive store
 docs/                design notes and session records

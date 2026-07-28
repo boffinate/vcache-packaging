@@ -11,7 +11,8 @@ This is a packaging and compatibility-testing project with a narrow publication 
 ## Layout
 
 - `registry/` — compatibility manifests (`cohorts/`, `targets/`, `distro-native/`, `vmods/`) and their normative schema description in `registry/README.md`.
-- `tools/` — Python 3 standard-library tooling that validates the manifests and generates native package version metadata. Entry point `tools/release_tool.py`.
+- `recipes/vmods/` — the reviewed inputs that third-party VMOD packaging recipes are *generated* from: `templates/` (the generic Debian and RPM recipes), `adapters/` (what is true of every VMOD built the same way), `overlays/<id>/` (what is true of one VMOD), `licenses/` (reviewed `debian/copyright` stanzas). Nothing in there is a recipe, and no generated recipe is committed. Its own `README.md` is normative for the layout. Cachetag is not generated: it keeps its audited recipe in its own repository, and that recipe is the policy reference for these templates.
+- `tools/` — Python 3 standard-library tooling that validates the manifests and generates native package version metadata. Entry point `tools/release_tool.py`; `tools/vmod_recipe.py` renders the generated VMOD recipes, and `tools/ci_matrix.py` owns the VMOD catalog and the CI ledger.
 - `upstream/` — legacy audited packaging-recipe input with a `PROVENANCE.md` recording source, commit, and audit verdict. It is not a general store for upstream release archives. Vendored content is not modified in place without recording why.
 - `docs/` — design notes and session records.
 - `../libvmod-cachetag` is the expected sibling cachetag checkout. The manifests cross-check `cachetag.version` against its `configure.ac`.
@@ -60,6 +61,18 @@ python3 tools/ci_matrix.py expand --manifest registry/vmods/cachetag.yml --tier 
 python3 tools/ci_matrix.py engine-matrix --tier ci
 python3 tools/ci_matrix.py ledger --tier ci
 python3 tools/ci_matrix.py selftest
+```
+
+`ci_matrix.py selftest` also runs the recipe generator's tests, so the CI structural-validation gate covers both. Generated VMOD recipes (host-safe, stdlib only, builds nothing):
+
+```sh
+python3 tools/vmod_recipe.py generate --manifest registry/vmods/<id>.yml \
+    --overlay recipes/vmods/overlays/<id>/overlay.yml \
+    --cohort <cohort-id> --target debian-13-amd64 \
+    --maintainer "$MAINTAINER_NAME <$MAINTAINER_EMAIL>" \
+    --debian-distribution "$DEBIAN_DISTRIBUTION" --out <workdir>
+python3 tools/vmod_recipe.py names --manifest ... --target el9-x86_64 ...
+python3 tools/vmod_recipe.py selftest
 ```
 
 The Vinyl engine packages are built once per engine input and target, published as `engine-<engine-id>-<target-id>`, and consumed by every VMOD package row after verifying the resolved identity recorded inside the artifact. See the shared-engine section of `registry/README.md` for the schema and the verification command; `scripts/ci/engine-identity.sh <deb|rpm>` is the one reader of the lane pin files that both sides of that comparison use.
