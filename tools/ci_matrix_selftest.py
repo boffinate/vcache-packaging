@@ -1306,6 +1306,7 @@ def test_injections_are_confined_to_one_vmod(repo_root: Path) -> None:
         ("source_checkout", "cachetag", "dict", dictm),
         ("debian_build", "cachetag", "dict", dictm),
         ("suppress_result", "cachetag", "dict", dictm),
+        ("manifest", "cachetag", "dict", dictm),
         ("dict_source", "dict", "cachetag", cachetag),
         ("dict_build", "dict", "cachetag", cachetag),
         ("recipe_generation", "dict", "cachetag", cachetag),
@@ -1344,6 +1345,104 @@ def test_injections_are_confined_to_one_vmod(repo_root: Path) -> None:
         "isolation: inject=debian_build marks only cachetag's Debian rows",
         marked and all(t["family"] == "deb" for t in marked),
         str([(t["target"], t["inject_build"]) for t in injected["targets"]["include"]]),
+    )
+
+
+def test_injection_scope_is_the_single_source_of_truth() -> None:
+    """Every manifest-corrupting job asks the tool which file to corrupt.
+
+    Four jobs rebuild the expected ledger from their own fresh checkout -- the
+    plan job, the VMOD summary job, the caller's collector and its engine
+    discovery. If they corrupt different files they build different ledgers and
+    the run reports rows nobody asked for, so they must all read the scope from
+    here rather than each hardcoding a comparison.
+    """
+    check(
+        "scope: the manifest injection is scoped to cachetag, not global",
+        ci_matrix.injection_vmod("manifest") == "cachetag",
+        ci_matrix.injection_vmod("manifest"),
+    )
+    check(
+        "scope: a dict injection names dict",
+        ci_matrix.injection_vmod("dict_source") == "dict"
+        and ci_matrix.injection_vmod("recipe_generation") == "dict",
+    )
+    check(
+        "scope: engine injections and none name no VMOD",
+        ci_matrix.injection_vmod("none") == ""
+        and ci_matrix.injection_vmod("engine_build") == ""
+        and ci_matrix.injection_vmod("suppress_engine_artifact") == "",
+    )
+    # Every injection either names a VMOD or is one of the three that
+    # deliberately do not. A new case that forgot to declare a target would
+    # otherwise silently act on every VMOD, which is the bug R-B fixed.
+    undeclared = [
+        i
+        for i in ci_matrix.INJECTIONS
+        if i not in ("none", "engine_build", "suppress_engine_artifact")
+        and not ci_matrix.INJECTION_TARGET_VMOD.get(i)
+    ]
+    check(
+        "scope: no injection acts on every VMOD by omission",
+        not undeclared,
+        str(undeclared),
+    )
+
+
+def test_scoped_manifest_injection_leaves_the_other_vmod_intact(repo_root: Path) -> None:
+    """R-B's case: corrupting cachetag's manifest must not touch dict's rows.
+
+    This is the Phase 3 isolation demonstration the plan asks for, and it was
+    unprovable while the injection corrupted every manifest: with no surviving
+    VMOD there is nothing to observe surviving.
+    """
+    catalog = ci_matrix.catalog_dir(repo_root)
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "registry" / "vmods").mkdir(parents=True)
+        for path in sorted(catalog.glob("*.yml")):
+            (root / "registry" / "vmods" / path.name).write_text(
+                path.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+        # Exactly the corruption the workflow applies, to exactly the file the
+        # tool names.
+        victim = ci_matrix.injection_vmod("manifest")
+        (root / "registry" / "vmods" / f"{victim}.yml").write_text(
+            f"schema: vmod-ci/v1\nid: {victim}\n", encoding="utf-8"
+        )
+        ledger = ci_matrix.ledger("ci", root)
+        rows = {r["row_key"]: r for r in ledger["rows"] if r["selected"]}
+
+    check(
+        "R-B: the corrupted VMOD collapses to one invocation row",
+        [k for k in rows if k.startswith("vmod/cachetag") or "/cachetag/" in k]
+        == ["vmod/cachetag"],
+        str(sorted(k for k in rows if "cachetag" in k)),
+    )
+    check(
+        "R-B: that row is marked as a manifest that did not validate",
+        rows["vmod/cachetag"]["manifest_valid"] is False,
+        str(rows["vmod/cachetag"]),
+    )
+    check(
+        "R-B: every dict row survives intact",
+        sorted(k for k in rows if "dict" in k)
+        == [
+            "source/dict/release",
+            "target/dict/release/vinyl-release/debian-13-amd64",
+            "target/dict/release/vinyl-release/el9-x86_64",
+            "vmod/dict",
+        ],
+        str(sorted(k for k in rows if "dict" in k)),
+    )
+    check(
+        "R-B: only the engine rows dict still asks for are expected",
+        sorted(k for k in rows if k.startswith("engine/"))
+        == [
+            "engine/vinyl-release/debian-13-amd64",
+            "engine/vinyl-release/el9-x86_64",
+        ],
+        str(sorted(k for k in rows if k.startswith("engine/"))),
     )
 
 
@@ -1866,6 +1965,8 @@ def main(repo_root: Path = None) -> int:
     test_recipe_strategy_is_recorded(root)
     test_dict_expands_to_release_lanes_only(root)
     test_injections_are_confined_to_one_vmod(root)
+    test_injection_scope_is_the_single_source_of_truth()
+    test_scoped_manifest_injection_leaves_the_other_vmod_intact(root)
     test_recipe_generation_status_is_in_the_vocabulary()
     test_source_facts_are_emitted_for_a_lane_script(root)
     test_ledger_covers_both_vmods(root)

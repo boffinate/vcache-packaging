@@ -3,7 +3,7 @@
 # Source stage for a generated-recipe VMOD whose upstream publishes a release
 # archive. Produces exactly one verified tarball and nothing else.
 #
-#   source.sh --manifest PATH --id ID --channel CHANNEL --out DIR
+#   source.sh --manifest PATH --id ID --channel CHANNEL --out DIR [--ref REF]
 #
 # Four checks, in this order, because each one makes the next meaningful:
 #
@@ -28,6 +28,17 @@
 # same place, which is what SCOPE.md's source policy actually requires and what
 # would catch a re-tagged or moved release even when the old archive is still
 # served.
+#
+# --ref OVERRIDES the ref the manifest records, and exists for exactly one
+# reason: tools/ci_matrix.py's `expand` injects a source failure by rewriting
+# the row's ref, and the workflow passes that row value here. Without the
+# override this script would read the ref back out of the manifest and the
+# injection would be inert -- which is what it was until 2026-07-28, making the
+# two-VMOD source-isolation case unprovable. The cachetag path has always taken
+# its ref from the matrix row for the same reason. An override changes nothing
+# else: the recorded commit, digest and version are still the manifest's, so an
+# overridden ref that does not resolve to the recorded commit fails check 3,
+# which is precisely the injected failure.
 
 set -eu
 
@@ -39,6 +50,7 @@ manifest=
 vmod_id=
 channel=release
 out=
+ref_override=
 
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -46,6 +58,7 @@ while [ $# -gt 0 ]; do
 	--id) vmod_id=${2:?}; shift 2 ;;
 	--channel) channel=${2:?}; shift 2 ;;
 	--out) out=${2:?}; shift 2 ;;
+	--ref) ref_override=${2:?}; shift 2 ;;
 	*) die "unknown argument $1" ;;
 	esac
 done
@@ -65,6 +78,11 @@ eval "$(python3 "$repo/tools/ci_matrix.py" source-facts \
 
 : "${VMOD_SOURCE_REF:?}" "${VMOD_SOURCE_COMMIT:?}" "${VMOD_SOURCE_VERSION:?}"
 : "${VMOD_SOURCE_ARCHIVE_URL:?}" "${VMOD_SOURCE_ARCHIVE_SHA256:?}" "${VMOD_CLONE_URL:?}"
+
+if [ -n "$ref_override" ] && [ "$ref_override" != "$VMOD_SOURCE_REF" ]; then
+	note "ref overridden on the command line: $VMOD_SOURCE_REF -> $ref_override"
+	VMOD_SOURCE_REF=$ref_override
+fi
 
 mkdir -p "$out"
 archive_name=$(basename -- "$VMOD_SOURCE_ARCHIVE_URL")

@@ -188,7 +188,15 @@ INJECTION_TARGET_VMOD = {
     "debian_build": "cachetag",
     "el9_build": "cachetag",
     "suppress_result": "cachetag",
-    "manifest": None,  # every manifest is corrupted; see ci.yml
+    # Scoped to cachetag since 2026-07-28. It was global -- every manifest
+    # corrupted -- which made the plan's own claim untestable: valid_manifests()
+    # promises that one broken manifest costs its own invocation and the engine
+    # rows nothing else consumes, and nothing else. Corrupting both manifests
+    # cannot demonstrate that, because there is no surviving VMOD to observe.
+    # Scoping it makes the two-VMOD case the Phase 3 isolation demonstration it
+    # was supposed to be: cachetag's ledger collapses to one
+    # failed_manifest_validation row while dict's four rows run to completion.
+    "manifest": "cachetag",
     "recipe_generation": "dict",
     "dict_source": "dict",
     "dict_build": "dict",
@@ -783,6 +791,20 @@ def injection_applies(inject: str, vmod: str) -> bool:
         return False
     target = INJECTION_TARGET_VMOD.get(inject)
     return target is None or target == vmod
+
+
+def injection_vmod(inject: str) -> str:
+    """The VMOD an injection acts on, or "" when it acts on none of them.
+
+    Exposed so a workflow can ask rather than hardcode a comparison. Every
+    place that corrupts a manifest -- the plan job, this VMOD's summary job and
+    the caller's collector and engine-discovery jobs -- has to apply the same
+    corruption to the same file, or they rebuild different expected ledgers and
+    the run reports rows nobody asked for.
+    """
+    if inject in ("none", "engine_build", "suppress_engine_artifact"):
+        return ""
+    return INJECTION_TARGET_VMOD.get(inject) or ""
 
 
 def expand(data: dict, tier: str, inject: str = "none") -> dict:
@@ -1653,6 +1675,18 @@ def cmd_source_facts(args) -> int:
     return 0
 
 
+def cmd_injection_scope(args) -> int:
+    """Print the VMOD id an injection acts on, or nothing.
+
+    Every job that corrupts a manifest asks this rather than hardcoding a
+    comparison, so the tool, the reusable workflow and the caller's collector
+    cannot disagree about which file to corrupt -- and a disagreement there
+    would have each of them rebuild a different expected ledger.
+    """
+    print(injection_vmod(args.inject))
+    return 0
+
+
 def cmd_engine_matrix(args) -> int:
     matrix = engine_matrix(args.tier, args.repo_root, inject=args.inject)
     if args.format == "github":
@@ -1887,6 +1921,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_sf.add_argument("--channel", default="release")
     p_sf.add_argument("--format", choices=["json", "shell"], default="shell")
     p_sf.set_defaults(func=cmd_source_facts)
+
+    p_scope = sub.add_parser(
+        "injection-scope", help="which VMOD an injection acts on (empty for none)"
+    )
+    p_scope.add_argument("--inject", choices=INJECTIONS, default="none")
+    p_scope.set_defaults(func=cmd_injection_scope)
 
     p_eng = sub.add_parser(
         "engine-matrix", help="the shared engine package rows the selected lanes need"
