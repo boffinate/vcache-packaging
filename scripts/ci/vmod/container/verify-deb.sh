@@ -152,10 +152,20 @@ ls -1 /lane/tests/*.vtc >/tmp/vtc-ledger
 count=$(wc -l </tmp/vtc-ledger | tr -d ' ')
 [ "$count" -gt 0 ] || die "no ported VTCs were staged"
 echo "ledger: $count VTCs"
+# debug=+vclrel ("Rapid VCL release", include/tbl/debug_bits.h, present in both
+# 9.0.1 and trunk) makes workers release their cached VCL reference after every
+# task, so vcl->busy is zero at stop and every VTC teardown's CLI stop
+# completes promptly. Needed because 9.0.1 lacks 7de492b0e8 ("Shut down pools
+# when stopping"): pools are not shut down on stop, so idle workers hold their
+# VCL refs through a 60s cond-wait, and with -t 60 that is a timeout rather
+# than a slow teardown. Ported from
+# recipes/debian-13/container/stage-vtc-suite.sh:90-98; remove when the release
+# track reaches a Vinyl containing 7de492b0e8.
 status=0
 # shellcheck disable=SC2046
 vinyltest -v -k -j1 -t 60 \
 	-p vmod_path="$VINYL_VMODDIR" \
+	-p debug=+vclrel \
 	-Ddictdir=/tmp/fixtures \
 	$(cat /tmp/vtc-ledger) 2>&1 | tee /tmp/vtc.log || status=$?
 passed=$(grep -c 'TEST .* passed' /tmp/vtc.log || true)

@@ -32,7 +32,12 @@ die() {
 : "${VINYL_VMODDIR:?}" "${VINYL_STRICT_ABI:?}" "${VINYL_VRT:?}" "${COHORT_ID:?}"
 : "${VMOD_MAN_PAGE:?}" "${VMOD_SOURCE_SHA256:?}"
 
+# epel-release first: rpmlint is in EPEL on EL9, not in AlmaLinux itself --
+# the same trap `mock` set in build-rpm.sh, and the same fix
+# recipes/el9/vtc-suite/vtc-suite.sh:30 already applies before installing.
+dnf -y -q install epel-release >/dev/null
 dnf -y -q install rpm-build rpmlint binutils python3 findutils >/dev/null
+rpm -q rpmlint
 
 rpm=$(find /lane/out -maxdepth 1 \
 	-name "$VMOD_RPM_NAME-$VMOD_UPSTREAM_VERSION-$VMOD_RPM_RELEASE.*.rpm" \
@@ -147,10 +152,20 @@ find /lane/tests -maxdepth 1 -name '*.vtc' | sort >/tmp/vtc-ledger
 count=$(wc -l </tmp/vtc-ledger | tr -d ' ')
 [ "$count" -gt 0 ] || die "no ported VTCs were staged"
 echo "ledger: $count VTCs"
+# debug=+vclrel ("Rapid VCL release", include/tbl/debug_bits.h, present in both
+# 9.0.1 and trunk) makes workers release their cached VCL reference after every
+# task, so vcl->busy is zero at stop and every VTC teardown's CLI stop
+# completes promptly. Needed because 9.0.1 lacks 7de492b0e8 ("Shut down pools
+# when stopping"): pools are not shut down on stop, so idle workers hold their
+# VCL refs through a 60s cond-wait, and with -t 60 that is a timeout rather
+# than a slow teardown. Ported from
+# recipes/debian-13/container/stage-vtc-suite.sh:90-98; remove when the release
+# track reaches a Vinyl containing 7de492b0e8.
 status=0
 # shellcheck disable=SC2046
 vinyltest -v -k -j1 -t 60 \
 	-p vmod_path="$VINYL_VMODDIR" \
+	-p debug=+vclrel \
 	-Ddictdir=/tmp/fixtures \
 	$(cat /tmp/vtc-ledger) 2>&1 | tee /tmp/vtc.log || status=$?
 passed=$(grep -c 'TEST .* passed' /tmp/vtc.log || true)
