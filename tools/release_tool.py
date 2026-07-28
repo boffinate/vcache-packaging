@@ -161,6 +161,33 @@ def cmd_metadata(args) -> int:
     return 0
 
 
+def cmd_release_notes(args) -> int:
+    # Upstream release-note references, straight from the validated cohort
+    # manifest. Two renderings of the same field so generated release content
+    # cannot diverge from the machine-readable record: `json` for
+    # release-manifest.json, `body` for the release-body text (one
+    # "<title>: <url>" line per reference). An absent field renders as an
+    # empty array / no output -- deliberately not an error, because a trunk
+    # snapshot has no upstream release statement.
+    root = Path(args.repo_root).resolve()
+    path = _cohort_path(root, args.cohort)
+    data = manifest.load_cohort(path)
+    errors = manifest.validate_cohort(
+        data, str(path), manifest.configure_ac_version(_cachetag_src(args, root), repo_root=root)
+    )
+    if errors:
+        for error in errors:
+            print(f"ERROR    {error}", file=sys.stderr)
+        return 1
+    notes = data["vinyl"].get("release_notes", [])
+    if args.format == "json":
+        print(json.dumps(notes, indent=2, sort_keys=True))
+    else:
+        for entry in notes:
+            print(f"{entry['title']}: {entry['url']}")
+    return 0
+
+
 def cmd_selftest(args) -> int:
     import selftest
 
@@ -213,6 +240,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="print metadata for a template manifest (never valid for a real release)",
     )
     p_meta.set_defaults(func=cmd_metadata)
+
+    p_notes = sub.add_parser(
+        "release-notes",
+        help="print a cohort's upstream release-note references (empty when absent)",
+    )
+    p_notes.add_argument("--cohort", required=True, help="cohort id or path to a cohort manifest")
+    p_notes.add_argument("--format", choices=["json", "body"], default="json")
+    p_notes.set_defaults(func=cmd_release_notes)
 
     p_self = sub.add_parser("selftest", help="run the release tooling tests")
     p_self.set_defaults(func=cmd_selftest)

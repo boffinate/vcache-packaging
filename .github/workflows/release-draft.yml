@@ -358,20 +358,20 @@ jobs:
             "$GITHUB_WORKSPACE/upload"
         working-directory: vcache-packaging
 
+      # The body comes from the release-body.md that release-manifest.sh
+      # generated from the registry, never from text written here: the
+      # published pre-release is this draft flipped, with zero writing, and
+      # upstream content appears only as links to upstream's own statements.
       - name: create the internal draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          cohort=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cohort"])' \
-            "$GITHUB_WORKSPACE/upload/release-manifest.json")
+          test -s "$GITHUB_WORKSPACE/assets/release-body.md"
           tag="draft-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA:0:12}"
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --draft \
             --title "Draft: $tag" \
-            --notes "Internal draft assembled by release-draft.yml, run $GITHUB_RUN_ID, \
-          cohort $cohort, cachetag ref $CACHETAG_REF. \
-          NOT a public pre-release. A human/orchestrator publishes the real \
-          pre-release from a validated draft, per the step-10 gate decision." \
+            --notes-file "$GITHUB_WORKSPACE/assets/release-body.md" \
             "$GITHUB_WORKSPACE"/upload/*
