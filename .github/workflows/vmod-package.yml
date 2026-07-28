@@ -114,12 +114,25 @@ jobs:
       # this step, the identical one in the summary job below, and the one in
       # ci.yml's collector.
       - name: inject a malformed manifest
-        if: inputs.inject == 'manifest' && inputs.vmod_id == 'cachetag'
+        if: inputs.inject == 'manifest'
         shell: bash
         run: |
           set -eu
+          # Which VMOD the injection acts on comes from the tool, never from a
+          # comparison written here. Four jobs rebuild the expected ledger from
+          # their own fresh checkout -- this one, this VMOD's summary, and
+          # ci.yml's discover-engines and collect -- and if they disagreed
+          # about which file to corrupt they would build different ledgers and
+          # the run would report rows nobody asked for.
+          victim=$(python3 tools/ci_matrix.py injection-scope --inject manifest)
+          [ -n "$victim" ] || { echo "E: the manifest injection names no VMOD" >&2; exit 1; }
+          [ "$victim" = "${{ inputs.vmod_id }}" ] || {
+            echo "manifest injection targets $victim; leaving ${{ inputs.vmod_id }} intact"
+            exit 0
+          }
           printf 'schema: vmod-ci/v1\nid: %s\n' "${{ inputs.vmod_id }}" \
             > "${{ inputs.manifest }}"
+          cat "${{ inputs.manifest }}"
         working-directory: vcache-packaging
 
       - name: validate this VMOD's manifest
@@ -1042,7 +1055,8 @@ jobs:
             --manifest "${{ inputs.manifest }}" \
             --overlay "recipes/vmods/overlays/${{ inputs.vmod_id }}/overlay.yml" \
             --cohort "${{ steps.engine_verify.outputs.cohort }}" \
-            --target "${{ matrix.target }}"
+            --target "${{ matrix.target }}" \
+            --engine-identity "$GITHUB_WORKSPACE/engine-identity.env"
         working-directory: vcache-packaging
 
       # Payload, ABI, hardening, lint, installed-package smoke and the ported
@@ -1065,7 +1079,8 @@ jobs:
             --manifest "${{ inputs.manifest }}" \
             --overlay "recipes/vmods/overlays/${{ inputs.vmod_id }}/overlay.yml" \
             --cohort "${{ steps.engine_verify.outputs.cohort }}" \
-            --target "${{ matrix.target }}"
+            --target "${{ matrix.target }}" \
+            --engine-identity "$GITHUB_WORKSPACE/engine-identity.env"
         working-directory: vcache-packaging
 
       - name: checksums
@@ -1133,11 +1148,28 @@ jobs:
           elif [ "${{ steps.build.outcome }}" = "failure" ]; then
             set_status failed_package_build "the native package build failed"
           elif [ "${{ steps.verify.outcome }}" = "failure" ]; then
-            # One step covers payload, ABI, hardening, lint, smoke and
-            # behaviour, so the detail names the log to read rather than
-            # guessing which family failed.
-            set_status failed_install_or_smoke \
-              "installed-package verification failed; see the verify step log"
+            # One container invocation covers payload, ABI, hardening, lint,
+            # smoke and behaviour, so the script leaves a stage marker and this
+            # classifies from it. Collapsing all six into one status would have
+            # left four statuses in the vocabulary that no producer could ever
+            # emit, which is a latent lie about what the collector can report.
+            # Matched on the stage's words, not its number: the two verify
+            # scripts number their stages differently because the RPM side has
+            # one check the Debian side does not.
+            stage=$(cat "$GITHUB_WORKSPACE/lane/verify-stage" 2>/dev/null || echo unknown)
+            case "$stage" in
+            *lintian* | *rpmlint*)
+              set_status failed_lint "package lint failed ($stage)" ;;
+            *behaviour* | *behavior*)
+              set_status failed_behavior "the installed-package VTC suite failed ($stage)" ;;
+            *smoke*)
+              set_status failed_install_or_smoke "the installed-package smoke failed ($stage)" ;;
+            *ABI* | *payload* | *hardening* | *soname*)
+              set_status failed_abi_or_hardening "$stage" ;;
+            *)
+              set_status failed_install_or_smoke \
+                "installed-package verification failed at: $stage" ;;
+            esac
           elif [ "${{ steps.sums.outcome }}" != "success" ]; then
             set_status failed_infrastructure "the row did not reach its checksums"
           elif [ "${{ steps.upload.outcome }}" = "failure" ]; then
@@ -1198,12 +1230,25 @@ jobs:
       # Without it an injected run would synthesize blocked lane rows for a
       # manifest that never parsed.
       - name: inject a malformed manifest
-        if: inputs.inject == 'manifest' && inputs.vmod_id == 'cachetag'
+        if: inputs.inject == 'manifest'
         shell: bash
         run: |
           set -eu
+          # Which VMOD the injection acts on comes from the tool, never from a
+          # comparison written here. Four jobs rebuild the expected ledger from
+          # their own fresh checkout -- this one, this VMOD's summary, and
+          # ci.yml's discover-engines and collect -- and if they disagreed
+          # about which file to corrupt they would build different ledgers and
+          # the run would report rows nobody asked for.
+          victim=$(python3 tools/ci_matrix.py injection-scope --inject manifest)
+          [ -n "$victim" ] || { echo "E: the manifest injection names no VMOD" >&2; exit 1; }
+          [ "$victim" = "${{ inputs.vmod_id }}" ] || {
+            echo "manifest injection targets $victim; leaving ${{ inputs.vmod_id }} intact"
+            exit 0
+          }
           printf 'schema: vmod-ci/v1\nid: %s\n' "${{ inputs.vmod_id }}" \
             > "${{ inputs.manifest }}"
+          cat "${{ inputs.manifest }}"
         working-directory: vcache-packaging
 
       - name: download this VMOD's result records
