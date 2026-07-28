@@ -1,0 +1,64 @@
+# Reviewed rpmlint waivers for the EL9 lane's gating pass.
+#
+# This is the in-tree port of the "Waived, with reasons" table first recorded
+# in docs/20260724_2240_note_step-7-8-el9-lane.md. Format: rpmlint 1.11 (EL9
+# AppStream) reads this as a Python configuration file -- the old pre-2.x
+# format, not TOML -- and each addFilter() argument is a regular expression
+# matched against the formatted output line
+#   <package>.<arch>: <severity>: <check> <details>
+# Style follows recipes/debian-13/vinyl/debian/vinyl-cache.lintian-overrides:
+# every filter carries its reason, and a filter without a reason is a bug.
+#
+# stage_lint runs rpmlint twice: an unfiltered informational pass whose full
+# log keeps every waived finding visible, then a gating pass with this file
+# in which any surviving finding fails the lane. Add to this file only after
+# reviewing the finding; the gate exists so a new finding is a decision, not
+# a log line.
+
+from Config import addFilter
+
+# rpmlint 1.11 predates SPDX identifiers and wants legacy strings ("BSD",
+# "MPLv2.0"). SPDX is correct for modern packaging and matches the projects'
+# actual licences (vinyl-cache: BSD-2-Clause; libvmod-cachetag: MPL-2.0 AND
+# BSD-2-Clause). Not changing correct metadata to satisfy a 2017 tool.
+addFilter(r' W: invalid-license (BSD-2-Clause|MPL-2\.0)')
+
+# Stale check. On EL9, ldconfig runs from a glibc file trigger, which is why
+# %ldconfig_scriptlets expands to nothing. Adding the scriptlets back for
+# libvinylapi.so.3 would be cargo cult.
+addFilter(r' E: postin-without-ldconfig')
+addFilter(r' E: postun-without-ldconfig')
+
+# Deliberate. Cache state and access logs are not world-readable; 0755 would
+# be the finding worth reporting.
+addFilter(r' E: non-standard-dir-perm /var/(lib|log)/vinyl-cache 0?750')
+
+# VMODs in the vinyl-cache vmods directory are plugins dlopen()ed by vinyld,
+# which supplies the symbols they resolve; libvmod_purge.so has no DT_NEEDED
+# entries at all. The check does not model plugins.
+addFilter(r' E: shared-lib-without-dependency-information /usr/lib64/vinyl-cache/vmods/')
+
+# Neither has an upstream manual page. vtest is the bundled VTC driver;
+# vinylreload is the reload helper carried in the packaging material. Worth
+# writing eventually, not worth blocking on.
+addFilter(r' W: no-manual-page-for-binary (vtest|vinylreload)')
+
+# Preamble tags aligned with spaces, shell bodies indented with tabs.
+# Ubiquitous in real spec files.
+addFilter(r' W: mixed-use-of-spaces-and-tabs')
+
+# Both are executable scripts shipped as Source files; 755 is the point.
+addFilter(r' W: strange-permission (find-provides|vinylreload) 0?755')
+
+# The Vinyl Source0 is a local archive name with no URL (Vinyl publishes no
+# tarball for the trunk snapshot), and the cachetag Source0 URL predated the
+# published GitHub release. Revisit at the cachetag 1.0.1 re-pin: the
+# informational pass shows whether the cachetag half still fires now that
+# the release URL is live.
+addFilter(r' W: invalid-url Source0')
+
+# Dictionary, not defects.
+addFilter(r' W: spelling-error .*\b(systemd|vinylapi|pc|autoconf)\b')
+
+# vinyl-cache-devel is a headers-and-pkgconfig package. Common and harmless.
+addFilter(r'vinyl-cache-devel\.\S+: W: no-documentation')

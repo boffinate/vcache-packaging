@@ -347,12 +347,29 @@ stage_report() {
 # ---------------------------------------------------------------- stage: lint
 
 stage_lint() {
-	say "rpmlint"
+	say "rpmlint (informational, unfiltered)"
 	rpmlint --version
-	set +e
-	rpmlint /out/packages/*.rpm 2>&1 | tee "$logdir/rpmlint.log"
-	set -e
+	# Full unfiltered output, status discarded deliberately: this pass
+	# exists so every waived finding stays visible in the log, and so a
+	# finding that disappears (invalid-url once the release URL is live,
+	# say) is noticed there rather than silently absorbed by a filter
+	# that no longer matches anything.
+	rpmlint /out/packages/*.rpm 2>&1 | tee "$logdir/rpmlint.log" || true
 	tail -n 3 "$logdir/rpmlint.log"
+
+	say "rpmlint gate (reviewed waivers: /recipes/rpmlint-waivers.rpmlintrc)"
+	# Gating pass; the exit status propagates. Every reviewed waiver is
+	# filtered out with a written reason in the waiver file; anything that
+	# survives fails the lane. rpmlint itself exits non-zero only for
+	# error-level findings, so the summary assertion below extends the
+	# gate to warnings as well: after the reviewed filters, the expected
+	# remainder is exactly nothing.
+	rpmlint -f /recipes/rpmlint-waivers.rpmlintrc /out/packages/*.rpm 2>&1 \
+		| tee "$logdir/rpmlint-gate.log"
+	if ! grep -Eq '; 0 errors, 0 warnings' "$logdir/rpmlint-gate.log"; then
+		echo "E: rpmlint findings not covered by the reviewed waiver file (see rpmlint-gate.log)" >&2
+		exit 1
+	fi
 }
 
 # ------------------------------------------------------------------- dispatch
