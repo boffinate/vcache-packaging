@@ -816,13 +816,24 @@ def test_metadata() -> None:
         meta["artifacts"]["source_package_filenames"] == ["libvmod-cachetag-1.0.0-2.el9.src.rpm"],
         str(meta["artifacts"]["source_package_filenames"]),
     )
+    # RPM names its capabilities differently from Debian's virtual packages:
+    # recipes/el9/find-provides injects vinyld(abi), vinyld(vrt) and
+    # vinyld(cohort-<id>), all arch-qualified, and cachetag's audited spec
+    # depends on exactly those. Assert the RPM spelling, not the Debian one.
     check(
-        "metadata: rpm requires the exact strict abi",
-        "vinyld-abi-a90954814766d933a75d4c808c449cb9bc0ae3d3" in meta["abi"]["rpm_requires"],
+        "metadata: rpm requires the exact strict abi, arch-qualified",
+        "vinyld(abi)%{?_isa} = a90954814766d933a75d4c808c449cb9bc0ae3d3"
+        in meta["abi"]["rpm_requires"],
+        str(meta["abi"]["rpm_requires"]),
     )
     check(
         "metadata: rpm requires the cohort-qualified provide as well",
-        f"vinyld(cohort-{VALID_COHORT_ID})" in meta["abi"]["rpm_requires"],
+        f"vinyld(cohort-{VALID_COHORT_ID})%{{?_isa}}" in meta["abi"]["rpm_requires"],
+        str(meta["abi"]["rpm_requires"]),
+    )
+    check(
+        "metadata: rpm requires do not use the Debian virtual package names",
+        not any(r.startswith("vinyld-") for r in meta["abi"]["rpm_requires"]),
         str(meta["abi"]["rpm_requires"]),
     )
     shell = metadata_mod.as_shell(meta)
@@ -834,7 +845,7 @@ def test_metadata() -> None:
     check(
         "metadata: shell rendering keeps list entries separate and unmangled",
         "CACHETAG_ABI_RPM_REQUIRES_COUNT='3'" in shell
-        and "CACHETAG_ABI_RPM_REQUIRES_1='vinyld-vrt = 23.0'" in shell,
+        and "CACHETAG_ABI_RPM_REQUIRES_1='vinyld(vrt)%{?_isa} = 23.0'" in shell,
         shell,
     )
     check(

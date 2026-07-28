@@ -13,7 +13,7 @@ import re
 
 from manifest import PACKAGE_STEM
 
-__all__ = ["package_versions", "target_metadata", "as_shell"]
+__all__ = ["package_versions", "target_metadata", "abi_expressions", "as_shell"]
 
 # Native archive/package extension per package format.
 _EXTENSION = {
@@ -93,14 +93,45 @@ def _source_filenames(fmt: str, version: str, revision: int, versions: dict) -> 
     return []
 
 
+def abi_expressions(
+    *, vrt: str, strict_abi: str, exact_package: str = None, cohort_id: str = None
+) -> dict:
+    """The native ABI dependency expressions for one engine row.
+
+    Public because generated VMOD recipes need exactly these strings and must
+    not carry a second implementation of the policy. ``tools/vmod_recipe.py``
+    calls this; if the rules change, both cachetag's metadata and every
+    generated recipe change together, which is the only way a generated recipe
+    can be prevented from silently weakening them.
+    """
+    return _abi_strings(vrt, strict_abi, exact_package, cohort_id)
+
+
 def _abi_strings(
     vrt: str, strict_abi: str, exact_package: str = None, cohort_id: str = None
 ) -> dict:
     abi_provide = f"vinyld-abi-{strict_abi}"
     vrt_provide = f"vinyld-vrt = {vrt}"
     deb_depends = [abi_provide, f"vinyld-vrt (= {vrt})"]
-    rpm_requires = [abi_provide, f"vinyld-vrt = {vrt}"]
     arch_depends = [abi_provide]
+
+    # RPM does not use the Debian virtual-package names. recipes/el9/find-provides
+    # injects arch-qualified capability provides on the Vinyl runtime package --
+    #     vinyld(abi)%{?_isa} = <hash>
+    #     vinyld(vrt)%{?_isa} = <major.minor>
+    #     vinyld(cohort-<id>)%{?_isa}
+    # -- and cachetag's audited spec depends on exactly those. Until 2026-07-28
+    # this function emitted the Debian names on the RPM side too. Nothing
+    # consumed the value, so nothing broke; the EL9 lane substitutes the tokens
+    # into the spec directly. That stopped being harmless when generated VMOD
+    # recipes started rendering Requires from here, because a dependency on
+    # `vinyld-abi-<hash>` is unsatisfiable on a target where the provide is
+    # named `vinyld(abi)`. Fixed in the one authoritative place rather than
+    # worked around in the generator.
+    rpm_requires = [
+        f"vinyld(abi)%{{?_isa}} = {strict_abi}",
+        f"vinyld(vrt)%{{?_isa}} = {vrt}",
+    ]
 
     # The cohort-qualified provide. The ABI token is a hash of the upstream
     # source revision, so a repackaged, patched or vendor-respun runtime built
@@ -123,12 +154,14 @@ def _abi_strings(
         cohort_provide = f"vinyld-cohort-{cohort_id}"
         rpm_cohort_provide = f"vinyld(cohort-{cohort_id})"
         deb_depends.append(cohort_provide)
-        rpm_requires.append(rpm_cohort_provide)
+        rpm_requires.append(rpm_cohort_provide + "%{?_isa}")
         arch_depends.append(cohort_provide)
 
     if exact_package:
         deb_depends.append(exact_package)
-        rpm_requires.append(exact_package.replace(" (= ", " = ").rstrip(")"))
+        # "vinyl-cache (= 9.0.0-3)" -> "vinyl-cache%{?_isa} = 9.0.0-3"
+        name, _, version = exact_package.partition(" (= ")
+        rpm_requires.append("{}%{{?_isa}} = {}".format(name, version.rstrip(")")))
     return {
         "abi_provide": abi_provide,
         "vrt_provide": vrt_provide,
