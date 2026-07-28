@@ -1,0 +1,17 @@
+# Generated release content, and the upstream-ownership boundary for release notes
+
+Date: 2026-07-28
+
+## The decision
+
+Maintainer decision, in two refining steps taken today. First: there will be no human-written release notes — everything in a published pre-release must be generated, so the step-10 gate's human action (flipping a validated draft to a public pre-release) requires zero writing. Second, refining the first: this project must not author security or content claims about upstream in its own voice. An earlier sketch of this change had the registry carrying curated per-advisory summaries (a `security_fixes` list with our own one-line descriptions); it was rejected before implementation because it put upstream's story in our mouth. If upstream publishes release notes for the pinned release, we include links to them — it is upstream's job to state what is in their release, and ours to record where they state it.
+
+## What was added
+
+The cohort schema gains `vinyl.release_notes`: an optional list of `{title, url}` references to upstream's own release statements for the pinned version, https-only, schema-validated, selftest-covered (valid entry, non-https url, missing subfield, unknown subfield, present-but-empty all exercised; 103/103). It is deliberately not a digest input — the cohort identity describes source bytes, not documentation about them — and `validate --require-releasable` is unaffected. The release cohort `vinyl-9.0.1-ac4f719c16f4` records upstream's 9.0.1 release-notes page and the 9.0 changes rendering, both curl-verified live before recording. The trunk cohort carries no `release_notes`, with a comment saying why: a git snapshot has no upstream release statement, and the pinned commit is what speaks for its content. Absent field, no section — the honest state, not an error.
+
+The generation seam is `scripts/ci/release-manifest.sh`, which already assembles everything else the release says about itself. A new `release_tool.py release-notes` subcommand renders the validated field as JSON (embedded as `upstream_release_notes` in `release-manifest.json`) and as body lines (`<title>: <url>`), so the two renderings cannot diverge. The script now writes the complete release body to `assets/release-body.md` — gate boilerplate, the "Upstream release notes" link section when references exist, checksum/manifest pointers, and the evidence-gaps section when an incomplete-evidence draft was explicitly allowed — and `release-draft.yml` creates the draft with `--notes-file` on that generated body instead of inline workflow text.
+
+## What this supersedes
+
+The two-track note's cutover checklist (`docs/20260726_1235_note_two-track-release-and-trunk.md`) expected release notes "stating explicitly: contains VSV00019 (HTTP/2 pseudo-header comparison), fixed upstream in 9.0.1". That expectation is superseded, not silently dropped: the ownership boundary decided today means the registry records pointers to upstream statements rather than claims about them, and upstream's own 9.0.1 release notes — linked from every generated release body for the release cohort — are where the VSV00019 story lives. The historical note stands unedited as the decision record it is; this note is the supersession. The first fully green release-draft (run 30360552578, draft `draft-20260728T130227Z-aaa14876510c`) predates this change and carries the old inline body; the next dispatch will produce the generated body end to end.
