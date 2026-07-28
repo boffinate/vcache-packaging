@@ -2,7 +2,7 @@
 
 Date: 2026-07-28
 
-Status: **Partially implemented.** The catalog, schema, ledger, classification, injection model and the host-safe half of the dict lane are done and verified. The workflow YAML, the EL9 Mock lane and the per-VMOD evidence schema are **not done** — see "What is not done" before reading anything else as complete.
+Status: **Mostly implemented.** The catalog, manifest schema, per-VMOD evidence schema, ledger, classification, injection model and the complete dict lane (Debian and EL9, source through behaviour) are done and verified. The **workflow YAML is not done** — see "What is not done" before reading anything else as complete.
 
 Branch: `step6-second-vmod`
 
@@ -12,6 +12,29 @@ Related:
 - [VMOD matrix failure isolation](20260728_0833_plan_vmod-matrix-failure-isolation.md), Phase 3
 - [vmod-packager patterns and recipe generation](20260728_0908_plan_vmod-packager-patterns-and-recipe-generation.md), Phase 5
 - [Step 5 selection](20260728_2127_note_step-5-second-vmod-selection.md), ruling 5
+
+## The three rulings, and what they changed
+
+| Q | Ruling | What it produced |
+| --- | --- | --- |
+| Q1 evidence schema | Restructure with a schema bump; no legacy blocks, no agreement check; migrate cachetag's data in | `cachetag-target/v2`, below |
+| Q2 duplicate pbuilder drivers | Stay separate this wave | Recorded below; merge is refactor-after-proof work |
+| Q3 dict's stricter lint | Stays | Recorded below alongside `dh_missing` |
+
+### Q2, recorded: the deliberate duplication
+
+`scripts/ci/vmod/container/build-deb.sh` and `scripts/ci/debian13/container-pbuilder.sh` now duplicate the pbuilder configuration, the apt-resolver setting, the `D05update` hook and the local-repository publication; `build-rpm.sh` and `container-mock.sh` duplicate the Mock configuration and the `createrepo_c` step. Both duplications are commented as deliberate at the point of duplication.
+
+They stay because this wave's equivalence contract is that cachetag's package bytes do not move, and merging would mean editing the exact code paths that produce them. Keeping the lanes apart turns that from a reasoned argument about scopes and branches into an empty diff. The merge is right eventually and belongs in a change whose only purpose is the merge, so the resulting package-byte diff has one cause and one thing to attribute it to.
+
+### Q3, recorded: the gate asymmetries
+
+Two places where dict is held to a *stricter* standard than cachetag:
+
+- **lint.** dict's lanes run `lintian --fail-on error,warning` and `rpmlint` with the exit status propagated; cachetag runs lintian under a hard gate but with its reviewed override files, and rpmlint under a waiver file.
+- **`dh_missing`.** Neither family runs `dh_missing --fail-missing` (the Wave A1 decision), but dict additionally carries a payload allowlist in `verify-deb.sh` that rejects anything installed outside the declared object, manual page and documentation.
+
+The recipe-generation plan's "gates identical in strength regardless of recipe strategy" exists to stop a generated-recipe VMOD sneaking through *weaker* gates. Stricter is compliant with that intent, not a violation of it. Raising cachetag to match is future hardening: it should land for both families in one change, so any package-byte movement has a single cause. Recorded here so the difference is a decision with a date rather than something nobody noticed.
 
 ## What is done
 
@@ -67,7 +90,66 @@ The expansion carries per-row `inject_build`, `inject_recipe` and `suppress_resu
 
 `recipe_generation` corrupts the recipe **after** rendering, on purpose. The generator already refuses every token it can refuse, and `tools/vmod_recipe_selftest.py` covers that; this case proves the *lane* refuses a recipe that a build would otherwise consume literally, which is a different property.
 
-### 6. The host-safe half of the dict lane
+### 6. Per-VMOD evidence is first-class: `cachetag-target/v2`
+
+The blocking design question from Wave A1, now decided and implemented.
+
+**The shape.** Target and buildroot facts stay at the top level — `target`, `vinyl_packages`, `buildroot` (image ref, image digest, compiler) and `install` — because every VMOD built for this cohort and target is built in the same container with the same compiler against the same engine packages and installs into the same directory. Recording any of those twice would create two copies that can disagree with no meaning attached to the disagreement. Everything per-VMOD — package names, package revision, upstream version, configure line, flags, `SOURCE_DATE_EPOCH`, hardening check, resolved build dependencies, artifacts, test results — moves into a `vmods:` map keyed by catalog id.
+
+**No legacy shape, no agreement check.** cachetag's data was migrated into `vmods.cachetag` verbatim and the v1 blocks were deleted from the schema. The migration script rewrote the files textually rather than round-tripping them through a serialiser, so every comment survived — those comments are the evidence trail this registry exists to keep, and a serialiser would have dropped all of them silently.
+
+**What the validator now enforces**, which is the whole point:
+
+- every VMOD whose catalog lanes build a package for this cohort's engine and this target **has an entry** — otherwise "the release is complete" could be true with a required VMOD's results simply absent;
+- **no entry exists** for a VMOD no lane builds here — that is either stale evidence or a lane somebody forgot to declare;
+- `--require-releasable` holds **every** entry to the same policy, in a loop that does not know which VMOD is which and therefore cannot hold one to a weaker standard.
+
+That is the Step 6 exit gate — "both package families meet the same evidence policy as cachetag" — expressed as a mechanical check.
+
+**`pending` is a first-class state.** dict's entries record `evidence: pending` with a reason in words. Placeholders inside a pending entry are exempt from the placeholder policy, because a build that has not happened has no configure line to record; that exemption is safe precisely because `--require-releasable` rejects `pending` **by name**.
+
+**Consequence, deliberate and worth stating loudly: `validate --require-releasable` is RED until Wave B.** The release cohort now carries a required VMOD whose evidence does not exist, so it is not releasable, and `release-draft.yml`'s hard gate will say so. That is the gate working. `validate` (schema mode) is green.
+
+**Cohort manifests gained `engine`.** `registry/README.md` had listed an explicit track field under "deliberately not here yet" with the condition that it earns its validation rules "when a policy decision has to read it mechanically". This is that decision: the evidence map must contain exactly the VMODs whose lanes name this cohort's engine input. Deriving it from `vinyl.version` does not work — the trunk cohorts record a bare `9.0.0`, not a `~git` snapshot version — and inferring it from the shape of `source_url` would be a guess where a statement is available.
+
+**`package.upstream_version` is per-VMOD.** cachetag builds 1.0.1 into this cohort and dict builds 1.7 into the same one. v1 could read the cohort's `cachetag.version` because cachetag was the only VMOD; with two, that field is one VMOD's version and nothing else. The validator cross-checks cachetag's recorded value against it so the two cannot drift.
+
+#### Byte-neutrality evidence
+
+`release_tool.py metadata` was captured for all six cohort/target pairs plus distro-native, in both `json` and `shell` formats, from the pre-migration branch tip (`8bf584f`) and again after. **Every existing value is byte-identical.** The complete diff, across all 13 files, is one added key:
+
+```diff
+   }
++  },
++  "vmod": "cachetag"
+```
+
+```diff
+ CACHETAG_PACKAGE_FORMAT='deb'
++CACHETAG_VMOD='cachetag'
+```
+
+It is additive and names which entry was read. Every field `scripts/ci/release-manifest.sh` consumes — `CACHETAG_VERSION`, `CACHETAG_SOURCE_ARCHIVE`, `CACHETAG_ARTIFACTS_NATIVE_FILENAME`, `CACHETAG_ARTIFACTS_RELEASE_ASSET_FILENAME`, `CACHETAG_ABI_*` — is unchanged. A self-test asserts the invariant per cohort and target so it cannot silently regress.
+
+### 7. The dict lane is complete on both targets
+
+`scripts/ci/vmod/`, a lane of its own. See the byte-neutrality argument below for why it is separate.
+
+| Stage | Script | What it does |
+| --- | --- | --- |
+| source | `source.sh` | download, assert sha256, `git ls-remote` tag-peel, `AC_INIT` cross-check |
+| generate | `generate.sh` | render the recipe, refuse surviving tokens, require the generation record, lay out the source tree, stage the verify scripts and VTCs |
+| build (deb) | `container/build-deb.sh` | pbuilder in the pinned `debian:trixie`, engine `.debs` as a local repository |
+| build (rpm) | `container/build-rpm.sh` | Mock in the pinned `almalinux:9`, engine RPMs through `createrepo_c` |
+| verify (deb) | `container/verify-deb.sh` | payload allowlist, ABI/cohort `Depends`, hardening, lintian, runtime-pair smoke, VTC suite |
+| verify (rpm) | `container/verify-rpm.sh` | the same in RPM's vocabulary, plus an assertion that the plugin advertises no soname provide |
+| driver | `run.sh` | one host entry point for all four containerised stages |
+
+The verify stages mount **only** the lane directory — no repository checkout — because a container that has never seen the build tree is the whole point. That is why the generate stage stages the verification scripts and the ported VTCs into the lane.
+
+EL9's Mock configuration sets `%source_date_epoch_from_changelog 0` and `%clamp_mtime_to_source_date_epoch 1`, because on EL9 an exported `SOURCE_DATE_EPOCH` does not otherwise reach the build — the same lesson `recipes/el9/container/build.sh` already records.
+
+### 8. The host-safe half of the dict lane
 
 `scripts/ci/vmod/`, a lane of its own rather than a second scope threaded through `recipes/debian-13/` and `recipes/el9/`.
 
@@ -97,32 +179,41 @@ Stated plainly, because a partial wave reported as complete is worse than a part
 
 | Deliverable | State |
 | --- | --- |
-| 2. `vmod-package.yml` two-strategy generality, generic renames | **Not started.** No workflow file was edited. |
-| 3. EL9 Mock lane for dict (`build-rpm.sh`, `verify-rpm.sh`) | **Not written.** The Debian pair is the template for them. |
-| 3. Host drivers `build-deb.sh` / `verify-deb.sh` (the `docker run` wrappers) | **Not written.** The container halves exist; the host halves are thin and follow `scripts/ci/debian13/debian-lane.sh`. |
-| 5. Per-VMOD evidence schema in `registry/targets/` | **Not started.** See the open question below — the design is not obvious and it deserves a decision rather than a guess. |
-| 6. Workflow injection wiring | Tool side done and tested; workflow side not wired. |
-| Verification: containerized actionlint | Not run — no workflow changed, so there was nothing to lint. |
+| 3. Workflow wiring in `vmod-package.yml` and `ci.yml` | **Not started.** No workflow file has been edited; `git diff main -- .github/` is empty. |
 
-Nothing above is blocked; it is unfinished. The pieces that are done are the ones every later piece depends on, which is why they were done first.
+Everything else in the coordinator's list is done. The workflow is the last piece and it is the one that turns all of the above into a run: two VMOD invocations from discovery, strategy dispatch between the cachetag path (unchanged commands and pins) and the dict path (`source.sh` → `generate.sh` → `run.sh build-* / verify-*`), the generation record uploaded as evidence, `failed_recipe_generation` classified end to end, and the injection inputs threaded through the `INJECTION_TARGET_VMOD` flags the expansion already emits.
+
+It was left rather than half-written: emitting several hundred lines of workflow YAML that could not be finished and verified in this session would have left broken CI on the branch, which is worse than a clean boundary. Everything it needs already exists and is tested — the expansion emits `source_host`, `clone_url`, `recipe`, `archive_url` and the per-row injection booleans; the classification vocabulary has `failed_recipe_generation`; and every lane script it would call is shellcheck-clean with a dry-run-verified generate stage.
 
 ## Verification run
 
 | Command | Result |
 | --- | --- |
 | `release_tool.py validate` | OK, 10 manifests |
-| `release_tool.py validate --require-releasable` | OK, 10 manifests |
-| `release_tool.py selftest` | 112/112 |
-| `ci_matrix.py selftest` | **179/179** (was 151; 28 added) then 125/125 for the generator |
-| `vmod_recipe.py selftest` | 125/125 |
+| `release_tool.py validate --require-releasable` | **RED, deliberately** — dict's evidence is `pending` on both release targets. See the evidence-schema section. |
+| `release_tool.py --no-cachetag-cross-check validate` | OK |
+| `release_tool.py selftest` | **138/138** (was 112; 26 added) |
+| `ci_matrix.py selftest` | **179/179** (was 151; 28 added), then 125/125 for the generator |
+| `vmod_recipe.py selftest` | **125/125** |
 | `ci_matrix.py check-catalog` | OK, 2 VMODs |
-| `ci_matrix.py ledger --tier ci` | 14 selected rows, asserted exactly by a self-test |
-| shellcheck, `koalaman/shellcheck:stable` container, all new scripts | clean |
-| `generate.sh` dry run against the real 1.7 archive, both targets | renders, refuses tokens, lays out the tree |
-| `generate.sh --inject-token` | refused, exit non-zero — the lane catches a corrupt recipe the generator never saw |
+| `ci_matrix.py ledger --tier ci` | **14 selected rows**, asserted exactly by a self-test; dict adds **no** engine row |
+| containerized `actionlint` (`rhysd/actionlint`), all 5 workflow files | clean, exit 0 |
+| containerized `shellcheck` (`koalaman/shellcheck:stable`), all 9 new scripts | clean, exit 0 |
+| `generate.sh` dry run, both targets | renders, refuses tokens, lays out the tree, stages scripts and VTCs |
+| `generate.sh --inject-token` | refused, non-zero |
+| `metadata` byte-neutrality, 13 files, pre- vs post-migration | one added key, everything else identical |
 | `git diff main -- .github/` | empty |
+| `git diff main -- recipes/debian-13/ recipes/el9/ scripts/ci/debian13/ scripts/ci/el9/` | empty |
 
-The 28 new `ci_matrix` tests cover: both halves of the host/address exclusivity, the recorded recipe strategy, `archive_url` being required for a generated recipe, dict expanding to `vinyl-release` only, **per-VMOD injection isolation in both directions for all six targeted cases**, `failed_recipe_generation` being a non-OK status that a record can carry, `source-facts` output for both a git and a GitHub entry, and the exact 14-row ledger.
+## What Wave B must prove
+
+1. **Baseline both-VMOD run.** All 14 ledger rows green on the `ci` tier: four engine rows, cachetag's six, dict's four.
+2. **Two-way isolation.** `inject=debian_build` and `inject=source_checkout` fail cachetag rows while all four dict rows complete; `inject=dict_build` and `inject=dict_source` fail dict rows while all six cachetag rows complete. The tool-level property is already asserted by self-tests; Wave B proves it in a real graph.
+3. **`recipe_generation`.** `inject=recipe_generation` classifies exactly one dict row as `failed_recipe_generation`, and no other row.
+4. **Equivalence for cachetag against `main`.** Debian package digests byte-identical excluding `.buildinfo` and `.changes`; EL9 packages pass the normalized semantic comparison from the Step 3 contract. This wave changed no file cachetag builds from, so any difference is a finding about the workflow.
+5. **dict evidence populated.** The two `vmods.dict` entries move from `pending` to `recorded` with real configure lines, flags, epoch, resolved build dependencies, artifact digests and test results — after which `validate --require-releasable` goes green again, which is the gate closing.
+6. **Behaviour suites green on installed packages, both VMODs, both targets.** For dict specifically: `dict_cs.vtc` and `dict_ci.vtc` passing against the packaged `.so` resolved through `-p vmod_path`, with `num.dict` extracted from the digest-verified release archive, and upstream's expected values unmodified.
+7. **Payload and lint gates fire.** The dict payload allowlist and the strict lintian/rpmlint expectations are new and have never run; a first run that passes them is itself evidence, and a first run that fails them is a finding about the templates or the overlay, never a reason to relax the gate.
 
 ## Open questions for the audit
 
