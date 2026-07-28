@@ -31,10 +31,28 @@
 # after --init) is written from Mock's documented behaviour, not from a
 # verified run, and should be the first thing checked in a real CI dry run.
 
+#
+# MOCK_SCOPE (Phase 2 of the failure-isolation plan) selects which package this
+# run builds: `all` (default, the local whole-cohort form), `engine` for
+# vinyl-cache alone, or `vmod` for libvmod-cachetag alone against Vinyl RPMs
+# already in /out/packages.
+#
+# The split cannot move a package byte. Every mock invocation below is reached
+# with identical arguments in `all` and in the scope that owns it; the derived
+# per-package configs, the two epoch macros and the SOURCE_DATE_EPOCH exports
+# are unchanged; and the cachetag build resolves vinyl-cache-devel from a
+# createrepo_c repository assembled by the same command from the same RPM files,
+# whether this run produced them or downloaded them. In particular the cachetag
+# --rebuild does not inherit anything from the vinyl build even in `all` scope:
+# as the --addrepo comment below records, every mock --rebuild begins with a
+# chroot init that restores the root cache and discards whatever the preceding
+# builds and --install left behind.
+
 set -euo pipefail
 
 . /recipes/cohort.env
 
+scope=${MOCK_SCOPE:-all}
 mock_cfg=alma+epel-9-x86_64
 topdir=/out/rpmbuild
 logdir=/out/logs
@@ -48,7 +66,14 @@ vinyl_evr="$VINYL_VERSION-$VINYL_RELEASE.el9"
 say() { printf '\n===== %s =====\n' "$*"; }
 die() { printf 'E: %s\n' "$*" >&2; exit 1; }
 
-mkdir -p "$specdir" "$resultdir/vinyl" "$resultdir/cachetag" /out/packages "$logdir"
+case $scope in
+all | engine | vmod) say "mock scope: $scope" ;;
+*) die "unknown MOCK_SCOPE '$scope' (all|engine|vmod)" ;;
+esac
+
+# $srcdir is normally created by container/build.sh's `source` stage, which the
+# vmod scope does not run; mkdir -p is a no-op in the scopes that do.
+mkdir -p "$specdir" "$srcdir" "$resultdir/vinyl" "$resultdir/cachetag" /out/packages "$logdir"
 
 ###############################################################################
 # rpmbuild log capture -- unconditional, via EXIT trap
@@ -147,6 +172,7 @@ EOF
 vinyl_mock_cfg=$(mock_epoch_cfg vinyl "$VINYL_SOURCE_DATE_EPOCH")
 cachetag_mock_cfg=$(mock_epoch_cfg cachetag "$CACHETAG_SOURCE_DATE_EPOCH")
 
+if [ "$scope" != vmod ]; then
 ###############################################################################
 say "vinyl-cache: generate the spec (duplicates container/build.sh stage_vinyl's substitution)"
 ###############################################################################
@@ -172,6 +198,7 @@ install -m 0644 /recipes/systemd/vinyl-cache.sysusers "$srcdir/"
 
 [ -f "$srcdir/$vinyl_srcname.tar.gz" ] ||
 	die "$srcdir/$vinyl_srcname.tar.gz missing; did mock-build.sh run 'deps source' first?"
+fi
 
 ###############################################################################
 say "Mock: initialize the alma+epel-9-x86_64 root"
@@ -179,11 +206,7 @@ say "Mock: initialize the alma+epel-9-x86_64 root"
 
 mock_as -r "$mock_cfg" --init
 
-###############################################################################
-say "Mock: vinyl-cache buildsrpm + rebuild"
-###############################################################################
-
-# The derived config puts the vinyl epoch into the chroot environment (see
+# The derived configs put each package's epoch into the chroot environment (see
 # mock_epoch_cfg above); the two epoch macros then make it reach the RPM
 # header bytes: EL9's rpm 4.16 ships %use_source_date_epoch_as_buildtime
 # defaulting to 0, so without them BUILDTIME comes from the wall clock and
@@ -192,8 +215,16 @@ say "Mock: vinyl-cache buildsrpm + rebuild"
 # fixture whose reproducibility check first proved the export alone changes
 # nothing. _buildhost is deliberately not pinned: whole-RPM reproducibility
 # is not this lane's contract.
+#
+# Both builds use the same two macros, so this is defined once, outside the
+# scope branches, and passed unchanged to every mock invocation below.
 epoch_defines=(--define "use_source_date_epoch_as_buildtime 1"
 	--define "clamp_mtime_to_source_date_epoch 1")
+
+if [ "$scope" != vmod ]; then
+###############################################################################
+say "Mock: vinyl-cache buildsrpm + rebuild"
+###############################################################################
 
 # The export covers anything running outside the chroot; the chroot itself
 # gets the value from the derived config.
@@ -211,9 +242,33 @@ mock_as -r "$vinyl_mock_cfg" --no-clean "${epoch_defines[@]}" \
 
 find "$resultdir/vinyl" -name 'vinyl-cache*.rpm' -exec cp -p {} /out/packages/ \;
 cp -p "$vinyl_srpm" /out/packages/
+fi
+
+if [ "$scope" = engine ]; then
+	# The rpmbuild build.log and root.log copies happen in the copy_mock_logs
+	# EXIT trap registered at the top of this script, on success and failure
+	# alike.
+	say "container-mock.sh complete (scope: engine)"
+	ls -la /out/packages
+	exit 0
+fi
+
+#
+# Where the Vinyl RPMs the cachetag build resolves against come from. In `all`
+# scope they are the ones this run just built; in `vmod` scope they were
+# downloaded from the verified engine artifact into /out/packages. Both
+# directories hold exactly the same files -- the `all` path copies them into
+# /out/packages immediately above -- so the createrepo_c repository below has
+# identical content either way.
+#
+if [ "$scope" = vmod ]; then
+	vinyl_rpm_dir=/out/packages
+else
+	vinyl_rpm_dir=$resultdir/vinyl
+fi
 
 ###############################################################################
-say "publish the just-built Vinyl packages as a local repository"
+say "publish the cohort Vinyl packages as a local repository"
 ###############################################################################
 #
 # libvmod-cachetag BuildRequires vinyl-cache-devel = <exact evr>, which is on
@@ -230,8 +285,10 @@ say "publish the just-built Vinyl packages as a local repository"
 dnf -y install createrepo_c
 rm -rf "$localrepo"
 mkdir -p "$localrepo"
-find "$resultdir/vinyl" -name 'vinyl-cache*.rpm' ! -name '*.src.rpm' \
+find "$vinyl_rpm_dir" -name 'vinyl-cache*.rpm' ! -name '*.src.rpm' \
 	-exec cp -p {} "$localrepo/" \;
+[ -n "$(ls -A "$localrepo")" ] ||
+	die "no vinyl-cache RPMs in $vinyl_rpm_dir; the engine artifact was not delivered"
 createrepo_c "$localrepo"
 chown -R "$build_uid:$build_gid" "$localrepo"
 ls -1 "$localrepo"

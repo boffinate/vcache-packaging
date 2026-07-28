@@ -13,9 +13,24 @@
 #
 # Does not need to run as root; only reads the produced .deb files.
 #
+# Usage: assert-packages.sh [all|engine|vmod]   (default: all)
+#
+# `engine` asserts only the Vinyl half and `vmod` only the cachetag half, for
+# CI's split engine and VMOD package jobs (Phase 2 of
+# docs/20260728_0833_plan_vmod-matrix-failure-isolation.md). This script reads
+# packages and asserts; it produces nothing, so the scope cannot move a package
+# byte. The VMOD job still runs the default `all` scope, because by then both
+# halves are present in dist/debian-13 and its evidence should not shrink.
+#
 # DRAFT, unexecuted -- see ../../../DESIGN.md sections 2 and 4.
 
 set -euo pipefail
+
+scope=${1:-all}
+case $scope in
+all | engine | vmod) : ;;
+*) printf 'usage: %s [all|engine|vmod]\n' "$0" >&2; exit 2 ;;
+esac
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$here/pinned.sh"
@@ -52,6 +67,7 @@ inspect_hardening() {
 	[ "$_fail" -eq 0 ] || die "hardening inspection failed for $_label"
 }
 
+if [ "$scope" != vmod ]; then
 ###############################################################################
 note "vinyl-cache runtime: ABI Provides (mirrors stage-vinyl.sh assertions)"
 ###############################################################################
@@ -97,6 +113,12 @@ note "vinyl-cache runtime: hardening inspection (production profile)"
 mkdir -p /tmp/hx-vinyl
 dpkg-deb -x "$runtime_deb" /tmp/hx-vinyl
 inspect_hardening /tmp/hx-vinyl/usr/sbin/vinyld vinyld
+fi
+
+if [ "$scope" = engine ]; then
+	printf '\nOK: all engine ABI and hardening assertions passed against the pbuilder-produced packages\n'
+	exit 0
+fi
 
 ###############################################################################
 note "libvmod-cachetag: ABI Depends and content (mirrors stage-cachetag.sh assertions)"

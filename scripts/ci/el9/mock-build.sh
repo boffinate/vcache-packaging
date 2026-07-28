@@ -6,19 +6,28 @@
 # build) and its `report`/`lint` stages (post-build inspection of already-
 # built RPMs) completely unchanged. See DESIGN.md section 5.
 #
-# Usage: mock-build.sh VINYL_GIT_DIR CACHETAG_GIT_DIR EL9_IMAGE
+# Usage: mock-build.sh VINYL_GIT_DIR CACHETAG_GIT_DIR EL9_IMAGE [all|engine|vmod]
 #
 # Runs as the ordinary build user. `docker run --privileged` is what gives
 # Mock the chroot/bind-mount isolation it needs, and that needs docker-group
 # membership, not root: running the script itself under `sudo` would leave
 # dist/el9/ owned by root, and the later non-privileged steps
 # (recipes/el9/build.sh --smoke-only, artifact upload) write into it.
+#
+# The scope argument is Phase 2 of
+# docs/20260728_0833_plan_vmod-matrix-failure-isolation.md: `engine` builds only
+# the Vinyl RPMs, `vmod` builds only libvmod-cachetag against Vinyl RPMs already
+# present in dist/el9/packages. The unused source directory is replaced with an
+# empty stub in each narrowed scope, the same way tarball-mode release runs have
+# always stubbed out /vinyl-src, so a job needs only the source it actually
+# reads. Default `all` is the local, whole-cohort form and is unchanged.
 
 set -eu
 
 vinyl_src=${1:?VINYL_GIT_DIR required}
 cachetag_src=${2:?CACHETAG_GIT_DIR required}
 image=${3:?EL9_IMAGE required}
+scope=${4:-all}
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo=$(CDPATH= cd -- "$here/../../.." && pwd)
@@ -27,6 +36,11 @@ out=$repo/dist/el9
 
 note() { printf '\n===== %s =====\n' "$*"; }
 die() { printf 'E: %s\n' "$*" >&2; exit 1; }
+
+case $scope in
+all | engine | vmod) : ;;
+*) die "unknown scope '$scope' (all|engine|vmod)" ;;
+esac
 
 sha256() {
 	if command -v sha256sum >/dev/null 2>&1; then
@@ -45,7 +59,13 @@ sha256() {
 
 mkdir -p "$out/logs" "$out/packages"
 
-if [ "${VINYL_SOURCE_KIND:-git}" = tarball ]; then
+if [ "$scope" = vmod ]; then
+	# Nothing in this scope reads a Vinyl source at all: the engine arrives as
+	# built RPMs. Not even the tarball fetch below runs, because the source
+	# stage that consumes it does not run either.
+	vinyl_src=$out/vinyl-src-unused
+	mkdir -p "$vinyl_src"
+elif [ "${VINYL_SOURCE_KIND:-git}" = tarball ]; then
 	# Release track (drafted 2026-07-26, unexecuted until the first
 	# release-track run). Mirrors the fetch in recipes/el9/build.sh -- the
 	# procedure is duplicated deliberately, the pinned values are not: both
@@ -69,18 +89,31 @@ else
 	[ -d "$vinyl_src" ] || die "VINYL_GIT_DIR $vinyl_src does not exist"
 fi
 
-note "deps + source (unchanged: recipes/el9/container/build.sh)"
-docker run --rm \
-	-v "$recipes:/recipes:ro" \
-	-v "$vinyl_src:/vinyl-src:ro" \
-	-v "$cachetag_src:/cachetag:ro" \
-	-v "$out:/out" \
-	-e "VINYL_TRACK=$VINYL_TRACK" \
-	-w /out \
-	"$image" \
-	bash /recipes/container/build.sh deps source
+if [ "$scope" = engine ]; then
+	# Same treatment in the other direction: an engine job has no VMOD source
+	# and must not need one. The mount stays so the container layout is
+	# identical across scopes.
+	cachetag_src=$out/cachetag-src-unused
+	mkdir -p "$cachetag_src"
+fi
 
-note "Mock: vinyl-cache, then libvmod-cachetag (privileged: Mock needs chroot/bind-mount isolation)"
+# `source` is the Vinyl source stage; there is no cachetag equivalent, because
+# the cachetag build consumes its release archive directly. So this whole run is
+# engine work and is skipped when only the VMOD is being built.
+if [ "$scope" != vmod ]; then
+	note "deps + source (unchanged: recipes/el9/container/build.sh)"
+	docker run --rm \
+		-v "$recipes:/recipes:ro" \
+		-v "$vinyl_src:/vinyl-src:ro" \
+		-v "$cachetag_src:/cachetag:ro" \
+		-v "$out:/out" \
+		-e "VINYL_TRACK=$VINYL_TRACK" \
+		-w /out \
+		"$image" \
+		bash /recipes/container/build.sh deps source
+fi
+
+note "Mock ($scope): privileged, because Mock needs chroot/bind-mount isolation"
 docker run --privileged --rm \
 	-v "$recipes:/recipes:ro" \
 	-v "$here:/ci:ro" \
@@ -88,9 +121,10 @@ docker run --privileged --rm \
 	-v "$cachetag_src:/cachetag:ro" \
 	-v "$out:/out" \
 	-e "VINYL_TRACK=$VINYL_TRACK" \
+	-e "MOCK_SCOPE=$scope" \
 	-w /out \
 	"$image" \
 	bash /ci/container-mock.sh
 
-note "EL9 Mock lane done"
+note "EL9 Mock lane done (scope: $scope)"
 ls -la "$out/packages"

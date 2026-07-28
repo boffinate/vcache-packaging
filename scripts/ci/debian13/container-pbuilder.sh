@@ -9,6 +9,22 @@
 #   /out    dist/debian-13, writable; /out/work holds the assembled source
 #           trees and /out/work/chroot the mmdebstrap base tarball
 #
+# PBUILDER_SCOPE selects which package this run builds:
+#   all      Vinyl, then cachetag against it -- the local, whole-cohort form
+#   engine   Vinyl only, for CI's shared engine package job
+#   vmod     cachetag only, against Vinyl .debs that are already in /out
+#
+# The split is what Phase 2 of
+# docs/20260728_0833_plan_vmod-matrix-failure-isolation.md asks for: the engine
+# is built once per engine input and target, and a VMOD row consumes the
+# resulting packages instead of rebuilding them. It is package-neutral by
+# construction. `build_one` is one function called with the same arguments in
+# every scope; the local repository the cachetag build resolves
+# vinyl-cache-dev from is assembled by the same `cp` from the same /out
+# directory whether this run just built those .debs or downloaded them; and the
+# buildroot is the same pinned mmdebstrap tarball, destroyed and recreated per
+# package in all three scopes anyway.
+#
 # WHY PBUILDER AND NOT SBUILD
 #
 # The plan asks for "sbuild or pbuilder for clean builds". sbuild was tried
@@ -42,9 +58,15 @@ work=$out/work
 base_tar=$work/chroot/$DEBIAN_DISTRIBUTION-amd64.tar
 base_tgz=/base.tgz
 localrepo=/localrepo
+scope=${PBUILDER_SCOPE:-all}
 
 note() { printf '\n===== %s =====\n' "$*"; }
 die() { printf 'E: %s\n' "$*" >&2; exit 1; }
+
+case $scope in
+all | engine | vmod) note "pbuilder scope: $scope" ;;
+*) die "unknown PBUILDER_SCOPE '$scope' (all|engine|vmod)" ;;
+esac
 
 [ -f "$base_tar" ] || die "no base tarball at $base_tar; run make-chroot.sh first"
 
@@ -144,41 +166,58 @@ build_one() {
 }
 
 ###############################################################################
-build_one vinyl-cache \
-	"$work/build/vinyl-cache-$VINYL_UPSTREAM_VERSION" \
-	"$work/build/vinyl-cache_$VINYL_PACKAGE_VERSION.dsc" \
-	"$VINYL_SOURCE_DATE_EPOCH"
+if [ "$scope" != vmod ]; then
+	build_one vinyl-cache \
+		"$work/build/vinyl-cache-$VINYL_UPSTREAM_VERSION" \
+		"$work/build/vinyl-cache_$VINYL_PACKAGE_VERSION.dsc" \
+		"$VINYL_SOURCE_DATE_EPOCH"
+fi
 ###############################################################################
 
+#
+# In `vmod` scope this is not an assertion about what this run built but about
+# what it was handed: the engine .debs must already be in /out, put there by
+# the engine artifact this row downloaded and verified. Failing here rather
+# than inside pbuilder keeps "the engine artifact was not delivered" separate
+# from "the cachetag build failed".
+#
 vinyl_deb=$(ls "$out"/vinyl-cache_"${VINYL_PACKAGE_VERSION}"_*.deb 2>/dev/null || true)
 vinyl_dev_deb=$(ls "$out"/vinyl-cache-dev_"${VINYL_PACKAGE_VERSION}"_*.deb 2>/dev/null || true)
-[ -n "$vinyl_deb" ] || die "vinyl-cache_${VINYL_PACKAGE_VERSION}_*.deb not produced"
-[ -n "$vinyl_dev_deb" ] || die "vinyl-cache-dev_${VINYL_PACKAGE_VERSION}_*.deb not produced"
+[ -n "$vinyl_deb" ] || die "vinyl-cache_${VINYL_PACKAGE_VERSION}_*.deb not present in $out"
+[ -n "$vinyl_dev_deb" ] || die "vinyl-cache-dev_${VINYL_PACKAGE_VERSION}_*.deb not present in $out"
 
-###############################################################################
-note "publishing the just-built Vinyl packages as a local repository"
-###############################################################################
-#
-# libvmod-cachetag Build-Depends on vinyl-cache-dev (= exact version), which
-# is on no mirror. This is the same shape as the EL9 lane's createrepo_c fix:
-# publish what this run just built as a repository the buildroot can resolve
-# from, rather than trying to keep an installed package alive across a chroot
-# that is deliberately destroyed between builds.
-#
-rm -rf "$localrepo"
-mkdir -p "$localrepo"
-cp -v "$out"/vinyl-cache*_"${VINYL_PACKAGE_VERSION}"_*.deb "$localrepo/"
-( cd "$localrepo" && dpkg-scanpackages -m . /dev/null > Packages && gzip -9c Packages > Packages.gz )
-ls -1 "$localrepo"
+if [ "$scope" != engine ]; then
+	###########################################################################
+	note "publishing the Vinyl packages as a local repository"
+	###########################################################################
+	#
+	# libvmod-cachetag Build-Depends on vinyl-cache-dev (= exact version),
+	# which is on no mirror. This is the same shape as the EL9 lane's
+	# createrepo_c fix: publish the cohort's engine packages as a repository
+	# the buildroot can resolve from, rather than trying to keep an installed
+	# package alive across a chroot that is deliberately destroyed between
+	# builds.
+	#
+	# The `cp` glob is unchanged, and so is the set of files it matches: in
+	# `all` scope those .debs were produced by the build above, in `vmod`
+	# scope they were downloaded from the engine artifact into the same
+	# directory. pbuilder cannot tell the difference, which is the point.
+	#
+	rm -rf "$localrepo"
+	mkdir -p "$localrepo"
+	cp -v "$out"/vinyl-cache*_"${VINYL_PACKAGE_VERSION}"_*.deb "$localrepo/"
+	( cd "$localrepo" && dpkg-scanpackages -m . /dev/null > Packages && gzip -9c Packages > Packages.gz )
+	ls -1 "$localrepo"
 
-###############################################################################
-build_one libvmod-cachetag \
-	"$work/build/libvmod-cachetag-$CACHETAG_VERSION" \
-	"$work/build/libvmod-cachetag_$CACHETAG_DEBIAN_VERSION.dsc" \
-	"$CACHETAG_SOURCE_DATE_EPOCH" \
-	--bindmounts "$localrepo" \
-	--othermirror "deb [trusted=yes] file://$localrepo ./"
-###############################################################################
+	###########################################################################
+	build_one libvmod-cachetag \
+		"$work/build/libvmod-cachetag-$CACHETAG_VERSION" \
+		"$work/build/libvmod-cachetag_$CACHETAG_DEBIAN_VERSION.dsc" \
+		"$CACHETAG_SOURCE_DATE_EPOCH" \
+		--bindmounts "$localrepo" \
+		--othermirror "deb [trusted=yes] file://$localrepo ./"
+	###########################################################################
+fi
 
-note "Debian 13 lane complete"
+note "Debian 13 lane complete (scope: $scope)"
 ls -la "$out"

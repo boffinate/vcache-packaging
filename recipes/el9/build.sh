@@ -63,11 +63,25 @@ sha256() {
 
 mkdir -p "$out"
 
-# The Vinyl checkout is a git-mode input only. In tarball mode (release track)
-# nothing reads /vinyl-src, so mount an empty stub instead of requiring the
-# sibling checkout to exist -- CI's release lanes deliberately skip it.
+# The Vinyl checkout is a git-mode input only, and only to the container build
+# stages. In tarball mode (release track) nothing reads /vinyl-src, so mount an
+# empty stub instead of requiring the sibling checkout to exist -- CI's release
+# lanes deliberately skip it.
+#
+# The guard is conditional on there being stages to run at all. --smoke-only and
+# --vtc-suite-only mount only /recipes and /out, so requiring a Vinyl checkout
+# for them was always spurious; since Phase 2 of the failure-isolation plan it
+# is also wrong, because a VMOD package row consumes built engine RPMs and has
+# no Vinyl source to point at.
 if [ "${VINYL_SOURCE_KIND:-git}" = git ]; then
-	[ -d "$vinyl_src" ] || { printf 'missing checkout: %s\n' "$vinyl_src" >&2; exit 2; }
+	if [ ! -d "$vinyl_src" ]; then
+		if [ -n "$stages" ]; then
+			printf 'missing checkout: %s\n' "$vinyl_src" >&2
+			exit 2
+		fi
+		vinyl_src=$out/vinyl-src-unused
+		mkdir -p "$vinyl_src"
+	fi
 else
 	vinyl_src=$out/vinyl-src-unused
 	mkdir -p "$vinyl_src"

@@ -3,6 +3,16 @@
 # Assemble the canonical pinned Vinyl source archive and both Debian orig
 # tarballs. Runs in the buildroot image so that the tar implementation, and
 # therefore the digest, does not depend on the developer's laptop.
+#
+# ASSEMBLE_SCOPE selects which half runs:
+#   all      both, the default and the local whole-cohort behaviour
+#   engine   the Vinyl half only, for CI's shared engine package job
+#   vmod     the cachetag half only, for a VMOD package job whose engine
+#            arrives as built packages rather than as source
+#
+# The scope only skips work; it never changes a command. Every tar, gzip and
+# generated header below is reached with identical arguments in `all` and in
+# the half that owns it, which is what makes the split package-neutral.
 set -euo pipefail
 export LC_ALL=C
 
@@ -10,7 +20,14 @@ commit=$VINYL_GIT_COMMIT
 uv=$VINYL_UPSTREAM_VERSION
 epoch=$VINYL_SOURCE_DATE_EPOCH
 source_kind=${VINYL_SOURCE_KIND:-git}
+scope=${ASSEMBLE_SCOPE:-all}
 
+case $scope in
+all | engine | vmod) : ;;
+*) echo "E: unknown ASSEMBLE_SCOPE '$scope' (all|engine|vmod)" >&2; exit 1 ;;
+esac
+
+if [ "$scope" != vmod ]; then
 case $source_kind in
 tarball)
 	# Drafted 2026-07-26, unexecuted until the first release-track run.
@@ -116,20 +133,26 @@ EOF
 	exit 1
 	;;
 esac
+fi
 
-echo "===== unpacking both source trees for dpkg-buildpackage ====="
-rm -rf "/work/build/vinyl-cache-$uv"
-tar -C /work/build -xf "/work/build/vinyl-cache_$uv.orig.tar.gz"
-cp -R /work/vinyl-debian "/work/build/vinyl-cache-$uv/debian"
-chmod 0755 "/work/build/vinyl-cache-$uv/debian/rules" \
-	"/work/build/vinyl-cache-$uv/debian/vinylreload" \
-	"/work/build/vinyl-cache-$uv/debian/vinyl-cache.postinst" \
-	"/work/build/vinyl-cache-$uv/debian/vinyl-cache.postrm"
+if [ "$scope" != vmod ]; then
+	echo "===== unpacking the Vinyl source tree for dpkg-buildpackage ====="
+	rm -rf "/work/build/vinyl-cache-$uv"
+	tar -C /work/build -xf "/work/build/vinyl-cache_$uv.orig.tar.gz"
+	cp -R /work/vinyl-debian "/work/build/vinyl-cache-$uv/debian"
+	chmod 0755 "/work/build/vinyl-cache-$uv/debian/rules" \
+		"/work/build/vinyl-cache-$uv/debian/vinylreload" \
+		"/work/build/vinyl-cache-$uv/debian/vinyl-cache.postinst" \
+		"/work/build/vinyl-cache-$uv/debian/vinyl-cache.postrm"
+fi
 
-rm -rf "/work/build/libvmod-cachetag-$CACHETAG_VERSION"
-tar -C /work/build -xf "/work/build/libvmod-cachetag_$CACHETAG_VERSION.orig.tar.gz"
-cp -R /work/cachetag-debian "/work/build/libvmod-cachetag-$CACHETAG_VERSION/debian"
-chmod 0755 "/work/build/libvmod-cachetag-$CACHETAG_VERSION/debian/rules"
+if [ "$scope" != engine ]; then
+	echo "===== unpacking the cachetag source tree for dpkg-buildpackage ====="
+	rm -rf "/work/build/libvmod-cachetag-$CACHETAG_VERSION"
+	tar -C /work/build -xf "/work/build/libvmod-cachetag_$CACHETAG_VERSION.orig.tar.gz"
+	cp -R /work/cachetag-debian "/work/build/libvmod-cachetag-$CACHETAG_VERSION/debian"
+	chmod 0755 "/work/build/libvmod-cachetag-$CACHETAG_VERSION/debian/rules"
+fi
 
 ls -la /work/build
-echo "===== assemble-source complete ====="
+echo "===== assemble-source complete (scope: $scope) ====="

@@ -19,6 +19,18 @@
 #   smoke      the plan's 11-step installed-package scenario, fresh container
 #   vtc-suite  the full cachetag VTC suite against the INSTALLED runtime pair
 #
+# Two narrowed forms of `source` exist for CI's split engine and VMOD jobs
+# (Phase 2 of docs/20260728_0833_plan_vmod-matrix-failure-isolation.md):
+#
+#   source-engine   the Vinyl half only: no cachetag checkout is read, so an
+#                   engine job needs no VMOD source at all
+#   source-vmod     the cachetag half only: no Vinyl source is read, because
+#                   the engine arrives as built packages
+#
+# They run the same code as `source` with one half switched off; the commands
+# that produce bytes are identical in all three, which is what makes the split
+# package-neutral. `source` remains the local, whole-cohort form.
+#
 # Artifacts land in dist/debian-13/, logs in dist/debian-13/logs/.
 
 set -eu
@@ -81,6 +93,14 @@ run_in_container() {
 # stage: source
 ###############################################################################
 
+# _source_scope selects which half of the cohort's source is assembled:
+#   all      both, the local and pre-Phase-2 behaviour
+#   engine   Vinyl only
+#   vmod     cachetag only
+# Nothing else in this function branches on it, so every command that produces
+# a byte is reached identically in `all` and in the half that owns it.
+_source_scope=all
+
 stage_source() {
 	note "assembling pinned source archives"
 	# Files under work/ were created by root inside a container, so clear them
@@ -89,6 +109,62 @@ stage_source() {
 	rm -rf "$work_dir"
 	mkdir -p "$work_dir/pin" "$work_dir/build"
 
+	[ "$_source_scope" = vmod ] || _source_vinyl_input
+	[ "$_source_scope" = engine ] || _source_cachetag_input
+
+	# Resolve the target architecture from the buildroot itself.
+	docker run --rm "$IMAGE" bash -c \
+		'export DEBIAN_FRONTEND=noninteractive
+		 apt-get update -qq >/dev/null 2>&1
+		 apt-get install -y --no-install-recommends dpkg-dev >/dev/null 2>&1
+		 dpkg-architecture -qDEB_HOST_ARCH
+		 dpkg-architecture -qDEB_HOST_MULTIARCH' \
+		> "$work_dir/arch.txt"
+	DEB_HOST_ARCH=$(sed -n 1p "$work_dir/arch.txt")
+	DEB_HOST_MULTIARCH=$(sed -n 2p "$work_dir/arch.txt")
+	VINYL_VMODDIR=/usr/lib/$DEB_HOST_MULTIARCH/vinyl-cache/vmods
+	printf 'target architecture: %s (multiarch %s)\nexpected vmoddir: %s\n' \
+		"$DEB_HOST_ARCH" "$DEB_HOST_MULTIARCH" "$VINYL_VMODDIR"
+	printf '%s\n%s\n%s\n' "$DEB_HOST_ARCH" "$DEB_HOST_MULTIARCH" "$VINYL_VMODDIR" \
+		> "$work_dir/target.txt"
+
+	[ "$_source_scope" = vmod ] || substitute_vinyl_recipe
+	[ "$_source_scope" = engine ] || substitute_cachetag_recipe
+
+	docker run --rm \
+		-v "$recipe_dir/container:/stage:ro" \
+		-v "$work_dir:/work" \
+		-e "VINYL_GIT_COMMIT=$VINYL_GIT_COMMIT" \
+		-e "VINYL_UPSTREAM_VERSION=$VINYL_UPSTREAM_VERSION" \
+		-e "VINYL_SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH" \
+		-e "VINYL_ABI_STRING=$VINYL_ABI_STRING" \
+		-e "VINYL_SOURCE_KIND=$VINYL_SOURCE_KIND" \
+		-e "VINYL_SOURCE_SHA256=$VINYL_SOURCE_SHA256" \
+		-e "CACHETAG_VERSION=$CACHETAG_VERSION" \
+		-e "ASSEMBLE_SCOPE=$_source_scope" \
+		"$IMAGE" bash /stage/assemble-source.sh > "$log_dir/source.log" 2>&1 || {
+			tail -n 60 "$log_dir/source.log" >&2
+			die "source assembly failed (see $log_dir/source.log)"
+		}
+	tail -n 20 "$log_dir/source.log"
+
+	if [ "$_source_scope" != vmod ] && [ "$VINYL_SOURCE_KIND" = git ]; then
+		_got=$(sha256 "$work_dir/vinyl-source-$VINYL_GIT_COMMIT.tar")
+		printf 'canonical Vinyl source archive sha256: %s\n' "$_got"
+		[ "$_got" = "$VINYL_SOURCE_SHA256" ] ||
+			die "canonical Vinyl source digest $_got != pinned $VINYL_SOURCE_SHA256"
+		printf 'OK: matches the digest recorded by the cachetag release script\n'
+	fi
+	# Tarball mode (drafted 2026-07-26, unexecuted until the first
+	# release-track run): there is no assembled superproject tar to assert
+	# against here -- assemble-source.sh re-verifies the tarball digest
+	# itself, in-container, as defence in depth.
+}
+
+stage_source_engine() { _source_scope=engine; stage_source; }
+stage_source_vmod()   { _source_scope=vmod;   stage_source; }
+
+_source_vinyl_input() {
 	case $VINYL_SOURCE_KIND in
 	tarball)
 		# Drafted 2026-07-26, unexecuted until the first release-track run.
@@ -141,7 +217,9 @@ stage_source() {
 		;;
 	*) die "unknown VINYL_SOURCE_KIND '$VINYL_SOURCE_KIND' (git|tarball)" ;;
 	esac
+}
 
+_source_cachetag_input() {
 	# The cachetag orig tarball is the canonical release archive verbatim.
 	[ -f "$CACHETAG_TARBALL" ] || die "canonical cachetag archive not found: $CACHETAG_TARBALL"
 	_got=$(sha256 "$CACHETAG_TARBALL")
@@ -150,70 +228,26 @@ stage_source() {
 	printf 'OK: canonical cachetag archive digest matches the pinned value\n'
 	cp "$CACHETAG_TARBALL" \
 		"$work_dir/build/libvmod-cachetag_$CACHETAG_VERSION.orig.tar.gz"
-
-	# Resolve the target architecture from the buildroot itself.
-	docker run --rm "$IMAGE" bash -c \
-		'export DEBIAN_FRONTEND=noninteractive
-		 apt-get update -qq >/dev/null 2>&1
-		 apt-get install -y --no-install-recommends dpkg-dev >/dev/null 2>&1
-		 dpkg-architecture -qDEB_HOST_ARCH
-		 dpkg-architecture -qDEB_HOST_MULTIARCH' \
-		> "$work_dir/arch.txt"
-	DEB_HOST_ARCH=$(sed -n 1p "$work_dir/arch.txt")
-	DEB_HOST_MULTIARCH=$(sed -n 2p "$work_dir/arch.txt")
-	VINYL_VMODDIR=/usr/lib/$DEB_HOST_MULTIARCH/vinyl-cache/vmods
-	printf 'target architecture: %s (multiarch %s)\nexpected vmoddir: %s\n' \
-		"$DEB_HOST_ARCH" "$DEB_HOST_MULTIARCH" "$VINYL_VMODDIR"
-	printf '%s\n%s\n%s\n' "$DEB_HOST_ARCH" "$DEB_HOST_MULTIARCH" "$VINYL_VMODDIR" \
-		> "$work_dir/target.txt"
-
-	substitute_recipes
-
-	docker run --rm \
-		-v "$recipe_dir/container:/stage:ro" \
-		-v "$work_dir:/work" \
-		-e "VINYL_GIT_COMMIT=$VINYL_GIT_COMMIT" \
-		-e "VINYL_UPSTREAM_VERSION=$VINYL_UPSTREAM_VERSION" \
-		-e "VINYL_SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH" \
-		-e "VINYL_ABI_STRING=$VINYL_ABI_STRING" \
-		-e "VINYL_SOURCE_KIND=$VINYL_SOURCE_KIND" \
-		-e "VINYL_SOURCE_SHA256=$VINYL_SOURCE_SHA256" \
-		-e "CACHETAG_VERSION=$CACHETAG_VERSION" \
-		"$IMAGE" bash /stage/assemble-source.sh > "$log_dir/source.log" 2>&1 || {
-			tail -n 60 "$log_dir/source.log" >&2
-			die "source assembly failed (see $log_dir/source.log)"
-		}
-	tail -n 20 "$log_dir/source.log"
-
-	if [ "$VINYL_SOURCE_KIND" = git ]; then
-		_got=$(sha256 "$work_dir/vinyl-source-$VINYL_GIT_COMMIT.tar")
-		printf 'canonical Vinyl source archive sha256: %s\n' "$_got"
-		[ "$_got" = "$VINYL_SOURCE_SHA256" ] ||
-			die "canonical Vinyl source digest $_got != pinned $VINYL_SOURCE_SHA256"
-		printf 'OK: matches the digest recorded by the cachetag release script\n'
-	fi
-	# Tarball mode (drafted 2026-07-26, unexecuted until the first
-	# release-track run): there is no assembled superproject tar to assert
-	# against here -- assemble-source.sh re-verifies the tarball digest
-	# itself, in-container, as defence in depth.
 }
 
 # Token substitution. Both recipe trees are templates; an unsubstituted token
 # must never reach dpkg-buildpackage.
 substitute_recipes() {
-	DEB_HOST_ARCH=$(sed -n 1p "$work_dir/target.txt")
-	DEB_HOST_MULTIARCH=$(sed -n 2p "$work_dir/target.txt")
+	substitute_vinyl_recipe
+	substitute_cachetag_recipe
+}
+
+# Neither half reads the other's inputs: the Vinyl tree is substituted entirely
+# from pins.env and target.txt, and the cachetag tree from pins.env, target.txt
+# and the cachetag checkout's own template. That is what lets an engine job run
+# with no VMOD source present and a VMOD job with no Vinyl source present, with
+# the substituted bytes identical to the combined run either way.
+substitute_vinyl_recipe() {
 	VINYL_VMODDIR=$(sed -n 3p "$work_dir/target.txt")
 
 	_vinyl_date=$(TZ=UTC0 perl -e \
 		'use POSIX; print strftime("%a, %d %b %Y %H:%M:%S +0000", gmtime($ARGV[0]))' \
 		"$VINYL_SOURCE_DATE_EPOCH")
-	_cachetag_date=$(TZ=UTC0 perl -e \
-		'use POSIX; print strftime("%a, %d %b %Y %H:%M:%S +0000", gmtime($ARGV[0]))' \
-		"$CACHETAG_SOURCE_DATE_EPOCH")
-	_rpm_date=$(TZ=UTC0 perl -e \
-		'use POSIX; print strftime("%a %b %d %Y", gmtime($ARGV[0]))' \
-		"$CACHETAG_SOURCE_DATE_EPOCH")
 
 	note "substituting Vinyl recipe tokens"
 	rm -rf "$work_dir/vinyl-debian"
@@ -228,6 +262,23 @@ substitute_recipes() {
 		"VINYL_STRICT_ABI=$VINYL_STRICT_ABI" \
 		"MAINTAINER_NAME=$MAINTAINER_NAME" \
 		"MAINTAINER_EMAIL=$MAINTAINER_EMAIL"
+
+	if grep -rl '@[A-Z0-9_]\{2,\}@' "$work_dir/vinyl-debian" >/dev/null 2>&1; then
+		grep -rn '@[A-Z0-9_]\{2,\}@' "$work_dir/vinyl-debian" >&2
+		die "an unsubstituted token survived into the Vinyl build tree"
+	fi
+	printf 'OK: no unsubstituted tokens in the Vinyl build tree\n'
+}
+
+substitute_cachetag_recipe() {
+	VINYL_VMODDIR=$(sed -n 3p "$work_dir/target.txt")
+
+	_cachetag_date=$(TZ=UTC0 perl -e \
+		'use POSIX; print strftime("%a, %d %b %Y %H:%M:%S +0000", gmtime($ARGV[0]))' \
+		"$CACHETAG_SOURCE_DATE_EPOCH")
+	_rpm_date=$(TZ=UTC0 perl -e \
+		'use POSIX; print strftime("%a %b %d %Y", gmtime($ARGV[0]))' \
+		"$CACHETAG_SOURCE_DATE_EPOCH")
 
 	note "substituting cachetag recipe tokens"
 	rm -rf "$work_dir/cachetag-debian"
@@ -250,11 +301,7 @@ substitute_recipes() {
 
 	sh "$CACHETAG_SRC/packaging/check-tokens.sh" --substituted "$work_dir/cachetag-debian" ||
 		die "an unsubstituted token survived into the cachetag build tree"
-	if grep -rl '@[A-Z0-9_]\{2,\}@' "$work_dir/vinyl-debian" >/dev/null 2>&1; then
-		grep -rn '@[A-Z0-9_]\{2,\}@' "$work_dir/vinyl-debian" >&2
-		die "an unsubstituted token survived into the Vinyl build tree"
-	fi
-	printf 'OK: no unsubstituted tokens in either build tree\n'
+	printf 'OK: no unsubstituted tokens in the cachetag build tree\n'
 }
 
 _subst() {
@@ -314,6 +361,8 @@ for s in $stages; do
 	case $s in
 	all)      stage_source; stage_vinyl; stage_cachetag; stage_lint; stage_smoke; stage_vtc_suite; stage_sums ;;
 	source)   stage_source ;;
+	source-engine) stage_source_engine ;;
+	source-vmod)   stage_source_vmod ;;
 	vinyl)    stage_vinyl ;;
 	cachetag) stage_cachetag ;;
 	lint)     stage_lint ;;
