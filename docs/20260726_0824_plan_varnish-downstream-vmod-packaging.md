@@ -10,7 +10,7 @@ Support floor (decided 2026-07-26): nothing before Vinyl Cache 9.0 / Varnish Cac
 
 When this lane opens: **Step 8 of the [outstanding-packaging-work roadmap](20260728_0916_roadmap_outstanding-packaging-work.md) at the earliest, and only by an explicit `SCOPE.md` decision then.** Step 5's second-VMOD selection is a Vinyl-lane selection and does not imply a second engine; see [`SCOPE.md`](../SCOPE.md) §"The package set" and [the Step 5 selection note](20260728_2127_note_step-5-second-vmod-selection.md). Everything below describes a lane that has not been authorized yet. What Step 5 did authorize is the factual content of this refresh: the engine package source, the ABI dependency model, and the record that the first downstream lane is Vinyl, not Varnish.
 
-Related: [binary packaging and distribution plan](../../libvmod-cachetag/docs/20260724_1526_plan_binary-packaging-and-distribution.md) (the Vinyl cohort plan), `registry/README.md`, `registry/distro-native/`.
+Related: [binary packaging and distribution plan](../../libvmod-cachetag/docs/20260724_1526_plan_binary-packaging-and-distribution.md) (the Vinyl cohort plan), [vmod-packager patterns and recipe generation](20260728_0908_plan_vmod-packager-patterns-and-recipe-generation.md) (the recipe model a Varnish lane would render through, and the source of the non-duplication rule below), [VMOD matrix failure isolation](20260728_0833_plan_vmod-matrix-failure-isolation.md), `registry/README.md`, `registry/distro-native/`.
 
 ## Superseded assumptions (verified 2026-07-28)
 

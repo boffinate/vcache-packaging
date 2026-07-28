@@ -220,6 +220,8 @@ Cachetag remains on its audited upstream-owned recipe initially. Do not rewrite 
 
 ## Role of vmod-packager
 
+Inspected at commit `252e0b0871eb9f7d6848ad92811288c821ca8cff` (`add resolute(ubuntu26.04)`), verified 2026-07-28. Its `LICENSE` is **BSD-2-Clause**, "Copyright (c) 2021, Shohei Tanaka". Nothing from it is vendored into this repository; the reuse recorded so far is conceptual — the adapter-plus-escape-hatch shape and its catalogue of per-VMOD build peculiarities — and carries no copyrightable expression, so no attribution notice is required today. Should that change, the notice and the imported commit go in the file that carries the code, not only here.
+
 Use `vmod-packager` in three bounded roles:
 
 1. **Reference implementation:** study the adapter lifecycle, distro dispatch, VMOD peculiarities, and Varnish-oriented defaults at a recorded commit.

@@ -4,6 +4,12 @@ Date: 2026-07-28
 
 Status: Proposed
 
+Related:
+
+- [vmod-packager patterns and recipe generation](20260728_0908_plan_vmod-packager-patterns-and-recipe-generation.md) — the other half of the same work. This plan decides how a VMOD's rows fail independently; that one decides how a VMOD without upstream packaging gets a recipe at all. The [roadmap](20260728_0916_roadmap_outstanding-packaging-work.md) is explicit that they are not two projects: they converge at the second-VMOD vertical slice in Step 6, where this plan's Phase 3 and that plan's Phases 1 and 2 land together.
+- [Roadmap: outstanding packaging work](20260728_0916_roadmap_outstanding-packaging-work.md), Steps 3, 4 and 6.
+- [`SCOPE.md`](../SCOPE.md)
+
 ## Decision
 
 Treat one VMOD as the primary CI failure boundary.
