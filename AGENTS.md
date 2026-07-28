@@ -34,7 +34,7 @@ Use the structure `YYYYMMDD_HHMM_[type]_[description].md`, where `[type]` is `no
 
 ## Tracks
 
-The packaging maintains two Vinyl pin tracks, selected with the `VINYL_TRACK` environment variable (`release` | `trunk`) and defined inside each lane's pin file (`recipes/debian-13/pins.env`, `recipes/el9/cohort.env`). `release` builds from the upstream release tarball and is what users install; `trunk` builds a pinned trunk snapshot and, via the scheduled trunk-HEAD workflow, is the early-warning lane for Vinyl core changes. Policy and cutover state: `docs/20260726_1235_note_two-track-release-and-trunk.md`.
+The packaging maintains two Vinyl pin tracks, selected with the `VINYL_TRACK` environment variable (`release` | `trunk`) and defined inside each lane's pin file (`recipes/debian-13/pins.env`, `recipes/el9/cohort.env`). `release` builds from the upstream release tarball and is what users install; `trunk` builds a pinned trunk snapshot and, via the scheduled trunk-HEAD workflow, is the early-warning lane for Vinyl core changes. Since the 2026-07-28 cutover the default is `release`; the trunk legs in ci.yml's matrix and the scheduled nightly select `trunk` explicitly. Policy: `docs/20260726_1235_note_two-track-release-and-trunk.md`.
 
 ## Common commands
 

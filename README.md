@@ -40,7 +40,7 @@ The tooling is pure Python 3 standard library. It never builds or tests anything
 ```sh
 python3 tools/release_tool.py validate
 python3 tools/release_tool.py validate --require-releasable
-python3 tools/release_tool.py cohort-id --cohort vinyl-9.0.0-000000000000
+python3 tools/release_tool.py cohort-id --cohort vinyl-9.0.1-ac4f719c16f4
 python3 tools/release_tool.py metadata --cohort <id> --target debian-13-amd64
 python3 tools/release_tool.py selftest
 ```
@@ -60,11 +60,11 @@ Both tracks build in the same CI lanes. See [`docs/20260726_1235_note_two-track-
 
 ## Status
 
-Early, and now with one experimental pre-release behind it.
+Early, but for the first time the registry describes a releasable cohort.
 
-The first real cohort, `vinyl-9.0.0-4b7e68292979` (trunk track), was minted on 2026-07-26 and both lanes — Debian 13 amd64 and EL9 x86_64 — build it in CI clean rooms. The release track is pinned to upstream 9.0.1 with the derived cohort id `vinyl-9.0.1-ac4f719c16f4`; its registry manifest is minted at the first release-track build. `vinyl-9.0.0-000000000000` and the distro-native manifest remain as schema exemplars. The vendored `upstream/pkg-vinyl-cache` recipes are audit input, not a release-ready base.
+The release cohort `vinyl-9.0.1-ac4f719c16f4` — cachetag 1.0.1 against upstream Vinyl Cache 9.0.1 — was minted on 2026-07-28 with all six evidence classes recorded per target: clean-room builds, lint under hard gates, installed-package smoke, the full 52-VTC behaviour suite driven by the packaged `vinyltest` against the installed VMOD, upgrade-transaction matrices against the 9.0.1 baseline, and hardening inspection. `validate --require-releasable` passes, and the first fully green release-draft has been assembled from it. The default `VINYL_TRACK` is now `release`: what a plain build produces is what users install. The trunk cohort `vinyl-9.0.0-4b7e68292979` carries the same evidence on the pinned snapshot and remains the early-warning track, selected explicitly by the CI matrix and the scheduled nightly. `vinyl-9.0.0-000000000000` and the distro-native manifest remain as schema exemplars. The vendored `upstream/pkg-vinyl-cache` recipes are audit input, not a release-ready base.
 
-What that pre-release is not: signed, repository-published, or supported. There is no security SLA, no advisory feed, and no repository metadata — the packages are direct downloads from a GitHub Release. Two required verifications are recorded as *not done* in the registry and repeated in the release notes: the behaviour suite has not been run against the production-hardened package build, and the Debian upgrade-transaction matrix has not yet run in CI. See [`docs/20260726_0827_note_step-10-cohort-mint-and-pre-release.md`](docs/20260726_0827_note_step-10-cohort-mint-and-pre-release.md).
+What this is still not: signed, repository-published, or supported. There is no security SLA, no advisory feed, and no repository metadata — the packages are direct downloads from a GitHub Release, and publication beyond that is a maintainer decision the draft deliberately gates. See [`docs/20260726_0827_note_step-10-cohort-mint-and-pre-release.md`](docs/20260726_0827_note_step-10-cohort-mint-and-pre-release.md) for the original gate decision.
 
 ## Support statement
 
