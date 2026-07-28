@@ -1,0 +1,57 @@
+# RELEASE COHORT - candidate
+#
+# Minted 2026-07-28 from the release pin blocks the two lane drivers already
+# carry: recipes/debian-13/pins.env and recipes/el9/cohort.env, VINYL_TRACK
+# release. The id was derived on 2026-07-26 when the release track was
+# drafted, before this manifest existed; minting waited for the first
+# validated release-track build, which is ci.yml run 30352844760. The
+# identity is derived, not chosen: see the canonical input blob in
+# registry/README.md and reproduce it with
+#
+#   python3 tools/release_tool.py cohort-id --cohort vinyl-9.0.1-ac4f719c16f4
+#
+# status: candidate -- real pinned inputs, evidence recorded per target as the
+# CI lanes produce it. It becomes `released` when the pre-release is published
+# and every target records the digests of the artifacts actually published.
+schema: cachetag-cohort/v1
+status: candidate
+cohort: vinyl-9.0.1-ac4f719c16f4
+cachetag:
+  version: 1.0.1
+  # Identical to the trunk cohort's cachetag block: one cachetag release is
+  # built against both Vinyl inputs. The named v1.0.1 release tag is the
+  # build input; its peeled commit and the deterministic archive digest are
+  # recorded as evidence and verified by CI.
+  source_sha256: "9aba3effcb20cfc70b77a4729990e3cd2ae1712ad242f4e4c45a664e1949eac2"
+  git_commit: "a3897aaccf1d6996c00ee14b2c6e1ddac91ac982"
+vinyl:
+  version: 9.0.1
+  # Unlike the trunk cohort, this source_url serves the archive itself:
+  # upstream's own release tarball, digest-pinned, downloaded and verified by
+  # the lane drivers. No Vinyl git checkout is read on this track.
+  source_url: https://vinyl-cache.org/downloads/vinyl-cache-9.0.1.tgz
+  source_sha256: "2e8ec67cd213ea6864c763939d64912025557342fad2a5ffda6c7c5b59bdeb17"
+  git_commit: "423648c4cb6b225b3268ffc337354ea938f5efee"
+  vrt: "23.0"
+  # Vinyl bakes VMOD_ABI_Version as "<PACKAGE_STRING> <commit>", so the strict
+  # ABI token is this commit id by construction; the lanes assert the baked
+  # string in the tarball against this pin before building.
+  strict_abi: "423648c4cb6b225b3268ffc337354ea938f5efee"
+  patches: []
+build_profile:
+  name: production
+  # Revision 1: same single production profile definition as the trunk
+  # cohort records.
+  revision: 1
+required_vmods:
+  - cachetag
+storage_support:
+  - default
+targets:
+  - debian-13-amd64
+  - el9-x86_64
+support:
+  channel: pre-release
+  release_owner: Boffinate
+  fellow: excluded
+  buddy: source-harness-only
