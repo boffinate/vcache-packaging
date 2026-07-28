@@ -33,8 +33,14 @@ DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 # jemalloc up by auto-detection on one and not the other.
 WITHOUT_JEMALLOC_ARCH_LIST := arm64 hppa m68k
 
+# --localstatedir=/var, not /var/lib: Vinyl's configure.ac defaults
+# VINYL_STATE_DIR to ${localstatedir}/lib/vinyl-cache, so the /var/lib value
+# inherited from the older packaging layout (a latent varnish-ism, already
+# documented as a trap in recipes/el9/vinyl-cache.spec.in) compiled
+# /var/lib/lib/vinyl-cache into every build to date, while vinyl-cache.dirs,
+# vinyl-cache.tmpfiles and postinst all provision /var/lib/vinyl-cache.
 CONFIGURE_FLAGS = \
-	--localstatedir=/var/lib \
+	--localstatedir=/var \
 	--libdir=/usr/lib/$(DEB_HOST_MULTIARCH) \
 	--with-unwind
 
@@ -98,8 +104,17 @@ override_dh_auto_configure:
 # is the installed-package smoke test's job.
 override_dh_auto_test:
 
+# The 9.0.1 release tarball predates upstream commit 4196617a18 ("Fix DESTDIR
+# builds"): its Makefile.am install-data-local rule mkdirs ${VINYL_STATE_DIR}
+# with no $(DESTDIR), so an unprivileged DESTDIR install dies trying to create
+# the real /var path. Overriding the make variable with a *relative* path
+# defuses that: on the DESTDIR-fixed trunk the rule creates
+# $(DESTDIR)/var/lib/vinyl-cache exactly as before, and on the 9.0.1 tarball
+# the directory lands harmlessly inside the build tree. The packaged directory
+# comes from vinyl-cache.dirs either way. Remove the override when the release
+# track moves to 9.0.2, which contains the fix as 7c7336ab80.
 override_dh_auto_install:
-	dh_auto_install
+	dh_auto_install -- VINYL_STATE_DIR=var/lib/vinyl-cache
 	# The systemd unit and the documentation both refer to a default VCL;
 	# ship the upstream example as a conffile.
 	install -d debian/tmp/etc/vinyl-cache
