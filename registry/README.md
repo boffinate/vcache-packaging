@@ -276,6 +276,44 @@ The lane list is explicit on purpose. Do not multiply source channels by engines
 
 The discovery id comes from the file name and never from the contents, so a malformed manifest costs one failed VMOD invocation instead of hiding the rest of the catalog. Each invocation re-validates that the declared `id` matches the discovery id it was started for.
 
+## Shared engine package rows and their artifacts
+
+The Vinyl engine packages are not a manifest of their own. Their rows are **derived** from the `package` lanes above: one row per `(engine, target)` pair that at least one selected lane consumes, so two VMODs naming the same engine and target share one build and one artifact. `python3 tools/ci_matrix.py engine-matrix --tier ci` prints exactly those rows.
+
+The engine input ids (`vinyl-release`, `vinyl-trunk-pinned`, `vinyl-trunk-head`) and the package targets (`debian-13-amd64`, `el9-x86_64`) are tables in [`tools/ci_matrix.py`](../tools/ci_matrix.py) rather than registry manifests. What those tables record is workflow shape — a runner label, a job timeout, a package family, and the `VINYL_TRACK` value a lane pin file dispatches on. None of it is a compatibility claim or recorded evidence, and `registry/targets/` already means something else entirely: the per-cohort compatibility evidence for a built cachetag package. The resolved build inputs of an engine row live in the lane pin files (`recipes/debian-13/pins.env`, `recipes/el9/cohort.env`) and reach a consumer through the artifact metadata below.
+
+Each engine row produces one artifact named `engine-<engine-id>-<target-id>`, for example `engine-vinyl-trunk-pinned-debian-13-amd64`. The name is derived from the logical row key alone, so a consumer computes it without knowing anything the engine job resolved at run time and without reading an aggregate matrix job's outputs. The artifact contains:
+
+```text
+engine-metadata.json     the schema below
+engine-identity.env      scripts/ci/engine-identity.sh output, verbatim
+packages/                the Vinyl runtime, development and debug packages
+```
+
+`engine-metadata.json` uses `engine-artifact/v1`:
+
+| Field | Notes |
+| --- | --- |
+| `schema` | fixed, `engine-artifact/v1` |
+| `engine`, `target`, `family`, `vinyl_track` | the row this artifact was built for |
+| `artifact`, `row_key` | the artifact address and logical row key, recomputed and compared by the consumer |
+| `identity` | every `key=value` line `scripts/ci/engine-identity.sh <deb\|rpm>` printed: cohort id, track, source kind, Vinyl commit, strict ABI, ABI string, upstream and package version, source digest and URL, `SOURCE_DATE_EPOCH`, build image, buildroot snapshot, maintainer |
+| `packages[]` | `name`, `bytes`, `sha256` for every engine package file |
+| `packages_sha256` | one digest over the sorted name/digest pairs: the content identity of the whole set |
+
+A consuming VMOD package row **must** verify this before it builds anything:
+
+```sh
+scripts/ci/engine-identity.sh deb > engine-identity.env
+python3 tools/ci_matrix.py verify-engine-metadata \
+  --metadata engine-artifact/engine-metadata.json \
+  --engine vinyl-release --target debian-13-amd64 \
+  --identity engine-identity.env \
+  --packages engine-artifact/packages
+```
+
+The check is not advisory. A VMOD source archive can be re-verified independently — the row checks the tag out again and asserts the peeled commit — but a VMOD row does not build the engine and has no second way to know what it downloaded, so this comparison is the only check there is. It rejects an artifact built for another engine or target, an identity that disagrees with the consumer's own pin file on any key in either direction, a package file whose bytes moved, a recorded package that was not delivered, and an engine package that was delivered but never recorded. Both sides run the same `engine-identity.sh`, so the key list cannot drift between producer and consumer; a handful of load-bearing keys must be present and non-empty so the comparison can never pass vacuously.
+
 ## Package revision rules
 
 Manifests store one canonical `package.revision`, an integer starting at **1**. The tooling maps it onto each ecosystem's convention:
@@ -353,6 +391,15 @@ python3 tools/ci_matrix.py validate-vmod --manifest registry/vmods/cachetag.yml 
 python3 tools/ci_matrix.py expand --manifest registry/vmods/cachetag.yml --tier ci
 python3 tools/ci_matrix.py ledger --tier ci
 
+# the shared engine rows those lanes need, and one engine artifact's metadata
+python3 tools/ci_matrix.py engine-matrix --tier ci
+python3 tools/ci_matrix.py engine-metadata --engine vinyl-release \
+    --target debian-13-amd64 --identity engine-identity.env \
+    --packages engine-artifact/packages --out engine-artifact/engine-metadata.json
+python3 tools/ci_matrix.py verify-engine-metadata --engine vinyl-release \
+    --target debian-13-amd64 --identity engine-identity.env \
+    --packages engine-artifact/packages --metadata engine-artifact/engine-metadata.json
+
 # reconcile a run's result records against that ledger
 python3 tools/ci_matrix.py reconcile --tier ci --results ./results
 python3 tools/ci_matrix.py selftest
@@ -387,7 +434,7 @@ Module map:
 | `manifest.py` | schema, cohort-identity digest, validation; the executable copy of this document |
 | `metadata.py` | native package version, filename, and ABI string generation |
 | `release_tool.py` | command line entry point |
-| `ci_matrix.py` | VMOD catalog, lane expansion, expected-row ledger, result reconciliation |
+| `ci_matrix.py` | VMOD catalog, lane expansion, shared engine rows and artifact metadata, expected-row ledger, result reconciliation |
 | `ci_matrix_selftest.py` | its tests, including the multi-VMOD isolation fixture |
 | `selftest.py` | tests, including the hand-computed digest vectors |
 

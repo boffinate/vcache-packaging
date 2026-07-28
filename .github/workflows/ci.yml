@@ -6,12 +6,16 @@ name: CI
 # release-draft.yml) -- per the plan's "Tiered CI workflow" section and "keep
 # release credentials out of pull-request workflows".
 #
-# Restructured 2026-07-28 for Phase 1 of
+# Restructured 2026-07-28 for Phases 1 and 2 of
 # docs/20260728_0833_plan_vmod-matrix-failure-isolation.md. The shape is now:
 #
-#   structural validation ---> VMOD discovery ---> VMOD invocation matrix
-#                                                        |
-#                                              collector, if: !cancelled()
+#   structural validation --+-> VMOD discovery -------------+
+#                           |                               |
+#                           +-> engine discovery            |
+#                                    |                      |
+#                            engine matrix ----------------+--> VMOD invocation matrix
+#                            (fail-fast: false)                       |
+#                                                        collector, if: !cancelled()
 #
 # What changed is the failure domain, not the packages. The single shared
 # cachetag-source-archive job that could block the entire package matrix is
@@ -20,6 +24,16 @@ name: CI
 # ledger so a row that never started is reported as missing evidence rather
 # than vanishing from the summary. The Debian and EL9 build commands and pins
 # moved into .github/workflows/vmod-package.yml unchanged.
+#
+# Phase 2 added the engine half. The Vinyl runtime, development and debug
+# packages are built once per engine input and target here, uploaded as
+# `engine-<engine-id>-<target-id>` with their resolved identity inside them, and
+# every VMOD package row downloads, verifies and installs that artifact instead
+# of rebuilding the engine inside itself. The VMOD matrix depends on the
+# aggregate engine matrix only under `!cancelled()`, so a failed engine row
+# never skips a VMOD invocation: each row decides from its own requested
+# artifact whether it can proceed, and reports `blocked_by_engine_artifact` with
+# the engine row identity when it cannot.
 #
 # Both Vinyl engine channels are still built: `vinyl-trunk-pinned` catches
 # problems introduced by Vinyl core changes early, and `vinyl-release` builds
@@ -42,7 +56,11 @@ on:
           pull request or a push always runs with `none`, and nothing below
           reads this input on those events. No build script is modified by any
           of these -- the injection points are the manifest copy, the expanded
-          source pins, one step before a package build, and one result upload.
+          source pins, one step before a package build, and two artifact
+          uploads. The two engine cases act on
+          vinyl-trunk-pinned/debian-13-amd64, which is
+          tools/ci_matrix.py's INJECT_ENGINE_ROW; its three sibling engine rows
+          and their three consumer rows must complete.
         required: false
         default: none
         type: choice
@@ -54,6 +72,8 @@ on:
           - debian_build # a failing Debian row -> failed_package_build
           - el9_build # a failing EL9 row -> failed_package_build
           - suppress_result # one row uploads no record -> missing_result_record
+          - engine_build # one engine row fails -> blocked_by_engine_artifact
+          - suppress_engine_artifact # one engine row publishes nothing -> ditto
 
 # Least privilege by default; no job in this workflow needs to write
 # anything. release-draft.yml is the only workflow that elevates permissions,
@@ -113,9 +133,265 @@ jobs:
           set -o pipefail
           python3 tools/ci_matrix.py list-vmods --format github | tee -a "$GITHUB_OUTPUT"
 
+  discover-engines:
+    name: select the shared engine rows
+    needs: structural-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # This job does parse the VMOD manifests, because the engine rows are
+      # derived from the package lanes that consume them. It is still not a
+      # global gate: ci_matrix.py drops a manifest that does not parse, so a
+      # malformed entry costs its own invocation row and nothing else. The
+      # engine rows another VMOD asked for are unaffected.
+      - name: derive the engine rows from the selected package lanes
+        id: discover
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          python3 tools/ci_matrix.py engine-matrix \
+            --tier ci \
+            --inject "${{ (github.event_name == 'workflow_dispatch' && inputs.inject) || 'none' }}" \
+            --format github | tee -a "$GITHUB_OUTPUT"
+
+  engine:
+    name: engine ${{ matrix.engine }} (${{ matrix.target }})
+    needs: [structural-validation, discover-engines]
+    if: ${{ !cancelled() && needs.discover-engines.result == 'success' && needs.discover-engines.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      # One engine row failing must not cancel the other three, and must not
+      # cancel the VMOD rows that consume the three that worked.
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-engines.outputs.matrix) }}
+    env:
+      VINYL_TRACK: ${{ matrix.vinyl_track }}
+      # The pinned trunk snapshot, only read when the row's track is `trunk`;
+      # the release track builds from the digest-pinned upstream tarball that
+      # recipes/*/pins.env names and never reads a Vinyl checkout.
+      VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
+      VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
+      # Index digest resolved 2026-07-25; must match EL9_IMAGE in
+      # recipes/el9/cohort.env, which is authoritative.
+      EL9_IMAGE: almalinux:9@sha256:d2515c769e7b73f95c4fde38c0a505336ff38f14990c0b7253b77060a049a743
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+
+      # No VMOD checkout anywhere in this job. That independence is the whole
+      # point of the split: a shared engine package must not be able to fail
+      # because one VMOD's repository is unreachable.
+      - name: checkout ../vinyl-cache (pinned commit, not a GitHub remote)
+        id: vinyl
+        if: matrix.vinyl_track == 'trunk'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
+
+      # Injection case 6. Placed before the build and after everything that
+      # could legitimately fail, so the classification is unambiguous. Inert
+      # unless a human dispatched this workflow with an engine injection, and
+      # marked on exactly one row by ci_matrix.py rather than by a workflow
+      # expression that could drift from it.
+      - name: injected engine-build failure
+        id: inject
+        if: matrix.inject_build == 'true' && steps.vinyl.outcome != 'failure'
+        continue-on-error: true
+        run: exit 1
+
+      # ---- Debian 13 amd64 (pbuilder), engine scope. ----
+      - name: assemble the pinned Vinyl source tree (build.sh source-engine)
+        id: deb_source
+        if: matrix.family == 'deb' && steps.vinyl.outcome != 'failure' && steps.inject.outcome != 'failure'
+        continue-on-error: true
+        run: recipes/debian-13/build.sh source-engine
+        working-directory: vcache-packaging
+
+      - name: build the pinned buildroot with mmdebstrap
+        id: deb_chroot
+        if: matrix.family == 'deb' && steps.deb_source.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/make-chroot.sh
+        working-directory: vcache-packaging
+
+      - name: build the Vinyl packages in the pinned debian:trixie container (pbuilder)
+        id: deb_build
+        if: matrix.family == 'deb' && steps.deb_chroot.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/debian-lane.sh engine
+        working-directory: vcache-packaging
+
+      - name: engine ABI and hardening assertions
+        id: deb_abi
+        if: matrix.family == 'deb' && steps.deb_build.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/assert-packages.sh engine
+        working-directory: vcache-packaging
+
+      # ---- EL9 x86_64 (Mock), engine scope. ----
+      - name: Mock build (vinyl-cache only)
+        id: el9_build
+        if: matrix.family == 'rpm' && steps.vinyl.outcome != 'failure' && steps.inject.outcome != 'failure'
+        continue-on-error: true
+        run: |
+          bash scripts/ci/el9/mock-build.sh \
+            "$GITHUB_WORKSPACE/vinyl-cache" \
+            "" \
+            "$EL9_IMAGE" \
+            engine
+        working-directory: vcache-packaging
+
+      # ---- Describe the artifact, then publish it. ----
+      #
+      # The metadata is what a consumer verifies before it builds anything, so
+      # it is produced from the packages that actually exist rather than from
+      # the pins alone: ci_matrix.py hashes every file it is given and records
+      # a roll-up over the set. `engine-identity.sh` supplies the resolved
+      # version, commit, ABI and build-input identity, read out of this row's
+      # own pin file for this row's track.
+      - name: stage and describe the engine artifact
+        id: describe
+        if: steps.deb_abi.outcome == 'success' || steps.el9_build.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          staging="$GITHUB_WORKSPACE/engine-artifact"
+          mkdir -p "$staging/packages"
+          case "${{ matrix.family }}" in
+          deb)
+            # Explicit suffixes, not `vinyl-cache*`: dist/debian-13 also holds
+            # the cached upstream vinyl-cache-<version>.tgz on the release
+            # track, which is a build input rather than a produced package.
+            for pattern in .deb .ddeb .dsc .changes .buildinfo .tar.gz .tar.xz; do
+              find dist/debian-13 -maxdepth 1 -type f \
+                -name "vinyl-cache*$pattern" -exec cp -p {} "$staging/packages/" \;
+            done
+            ;;
+          rpm)
+            find dist/el9/packages -maxdepth 1 -type f \
+              -name 'vinyl-cache*.rpm' -exec cp -p {} "$staging/packages/" \;
+            ;;
+          esac
+          ls -la "$staging/packages"
+          scripts/ci/engine-identity.sh "${{ matrix.family }}" \
+            > "$staging/engine-identity.env"
+          cat "$staging/engine-identity.env"
+          python3 tools/ci_matrix.py engine-metadata \
+            --engine "${{ matrix.engine }}" \
+            --target "${{ matrix.target }}" \
+            --identity "$staging/engine-identity.env" \
+            --packages "$staging/packages" \
+            --out "$staging/engine-metadata.json"
+        working-directory: vcache-packaging
+
+      # Injection case 6b: the engine row builds and describes its artifact but
+      # never publishes it. Its own row stays green; only the consumers that
+      # name it must go red, which is the purest form of the property.
+      - name: upload the engine artifact
+        id: upload
+        if: >-
+          steps.describe.outcome == 'success'
+          && matrix.suppress_artifact != 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.engine_artifact }}
+          path: engine-artifact
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: classify and record the engine result
+        id: record
+        if: always()
+        shell: bash
+        run: |
+          set -eu
+          status=passed
+          detail=""
+          set_status() { status=$1; detail=$2; }
+          if [ "${{ steps.vinyl.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "the pinned Vinyl source was unavailable"
+          elif [ "${{ steps.inject.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "injected engine-build failure"
+          elif [ "${{ steps.deb_source.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "build.sh source-engine failed"
+          elif [ "${{ steps.deb_chroot.outcome }}" = "failure" ]; then
+            set_status failed_infrastructure "the mmdebstrap buildroot could not be built"
+          elif [ "${{ steps.deb_build.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_build.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "the Vinyl package build failed"
+          elif [ "${{ steps.deb_abi.outcome }}" = "failure" ]; then
+            set_status failed_abi_or_hardening "assert-packages.sh engine failed"
+          elif [ "${{ steps.describe.outcome }}" != "success" ]; then
+            set_status failed_infrastructure \
+              "the engine artifact could not be staged or described"
+          elif [ "${{ matrix.suppress_artifact }}" = "true" ]; then
+            : # deliberately published nothing; this row is still green
+          elif [ "${{ steps.upload.outcome }}" != "success" ]; then
+            set_status failed_infrastructure "the engine artifact upload failed"
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          python3 tools/ci_matrix.py record \
+            --out "$GITHUB_WORKSPACE/results/engine.json" \
+            --kind engine \
+            --vmod "" \
+            --engine "${{ matrix.engine }}" \
+            --target "${{ matrix.target }}" \
+            --status "$status" \
+            --stage engine \
+            --detail "$detail" \
+            --artifact "${{ matrix.engine_artifact }}"
+        working-directory: vcache-packaging
+
+      # The record and the logs together, unconditionally. The record is the
+      # guaranteed evidence and always exists, so `error` still means what it
+      # says while the log globs are free to match nothing on a row that failed
+      # before it produced any. Build logs deliberately do NOT travel inside the
+      # engine artifact: that artifact is a dependency, and a consumer should
+      # download packages and metadata, not another row's logs.
+      - name: upload the engine result record and logs
+        id: upload_result
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.result_artifact }}
+          path: |
+            results/engine.json
+            engine-artifact/engine-metadata.json
+            engine-artifact/engine-identity.env
+            vcache-packaging/dist/debian-13/logs/**
+            vcache-packaging/dist/el9/logs/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: fail when this engine row failed
+        if: steps.record.outputs.status != 'passed' || steps.upload_result.outcome == 'failure'
+        run: exit 1
+
   vmods:
     name: VMOD
-    needs: [structural-validation, discover-vmods]
+    needs: [structural-validation, discover-vmods, engine]
+    # Deliberately NOT ordinary `needs` semantics on the engine matrix: a failed
+    # engine row must not skip the VMOD invocations. Every invocation starts and
+    # each of its rows decides from its own requested artifact whether it can
+    # proceed. Waiting for all engine rows before starting is accepted for now;
+    # the plan says to optimize start latency only if measurements justify it.
     if: ${{ !cancelled() && needs.discover-vmods.result == 'success' }}
     strategy:
       fail-fast: false
@@ -132,7 +408,7 @@ jobs:
 
   collect:
     name: reconcile every expected row
-    needs: [structural-validation, discover-vmods, vmods]
+    needs: [structural-validation, discover-vmods, discover-engines, engine, vmods]
     # Runs after ordinary failures and respects an intentional cancellation.
     # This is the job that makes a partial run legible: it reports successes
     # even when the run is red, and it fails the run when a required row failed
@@ -187,6 +463,8 @@ jobs:
             echo "| --- | --- |"
             echo "| structural-validation | ${{ needs.structural-validation.result }} |"
             echo "| discover-vmods | ${{ needs.discover-vmods.result }} |"
+            echo "| discover-engines | ${{ needs.discover-engines.result }} |"
+            echo "| engine (aggregate) | ${{ needs.engine.result }} |"
             echo "| vmods (aggregate) | ${{ needs.vmods.result }} |"
             echo
           } >> "$GITHUB_STEP_SUMMARY"

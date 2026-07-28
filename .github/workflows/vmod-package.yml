@@ -1,7 +1,7 @@
 name: VMOD package
 
 # One complete, self-contained invocation for ONE VMOD: its manifest, its
-# source, and its package targets. Phase 1 of
+# source, and its package targets. Phases 1 and 2 of
 # docs/20260728_0833_plan_vmod-matrix-failure-isolation.md.
 #
 # The containment is the point. The caller's VMOD matrix runs this whole
@@ -9,11 +9,18 @@ name: VMOD package
 # skip another VMOD's package jobs -- which is exactly what one shared
 # cachetag-source-archive job did before. For the same reason this file uses
 # ordinary jobs and never calls a further reusable workflow: the caller has
-# already consumed the one nesting level a matrix invocation gets.
+# already consumed the one nesting level a matrix invocation gets. That
+# constraint is also why the shared engine packages arrive as an artifact
+# downloaded by stable name rather than as another reusable-workflow call: the
+# caller's engine matrix and this workflow's jobs are part of the same workflow
+# run, so `actions/download-artifact` by name is the mechanism available here.
 #
-# The build commands and pins below are moved UNCHANGED from ci.yml. Phase 1
-# proves failure isolation without changing package content: any diff in what
-# these steps run is a bug in this migration, not an improvement.
+# Phase 1 moved the build commands and pins here UNCHANGED from ci.yml. Phase 2
+# removed the engine half of each package row: the row now downloads
+# `engine-<engine-id>-<target-id>`, verifies the resolved identity recorded
+# inside it against its own pin file, installs those native packages, and builds
+# only the VMOD. Any other diff in what these steps run is a bug in the
+# migration, not an improvement.
 
 on:
   workflow_call:
@@ -40,7 +47,11 @@ on:
       inject:
         description: >-
           deliberate failure injection for the plan's verification cases. Always
-          `none` unless a human dispatched the caller with something else.
+          `none` unless a human dispatched the caller with something else. The
+          two engine cases (`engine_build`, `suppress_engine_artifact`) act
+          entirely in the caller's engine matrix; this workflow sees them only
+          as an engine artifact that is not there, which is exactly what it
+          would see from a real engine failure.
         required: false
         type: string
         default: none
@@ -49,11 +60,12 @@ permissions:
   contents: read
 
 env:
-  # Engine pins, moved unchanged from ci.yml. They stay workflow-level in Phase
-  # 1 because the engine is still built inside each VMOD package row; Phase 2
-  # of the plan moves engine production out into its own artifacts and these
-  # pins go with it. The cachetag source pins that used to sit beside them are
-  # gone from here on purpose: they now live in the VMOD manifest.
+  # The pinned trunk snapshot, still needed by the SOURCE job: deriving the
+  # cachetag release archive builds the VMOD against a Vinyl prefix, so that job
+  # checks Vinyl out. No package row reads these any more -- since Phase 2 a
+  # package row consumes built engine packages -- and the engine rows in ci.yml
+  # carry their own copy. The cachetag source pins that used to sit beside them
+  # are gone from here on purpose: they live in the VMOD manifest.
   VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
   VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
   # Index digest resolved 2026-07-25 (`docker buildx imagetools inspect
@@ -406,38 +418,90 @@ jobs:
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "${{ matrix.ref }}" "${{ matrix.expected_commit }}"
 
-      # The release engine builds from the digest-pinned upstream tarball
-      # (downloaded by build.sh and verified against the pinned sha256) and
-      # never reads a Vinyl git checkout, so this step is trunk-only.
-      - name: checkout ../vinyl-cache (pinned commit)
-        id: vinyl
-        if: matrix.vinyl_track == 'trunk' && steps.verify.outcome == 'success'
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -eu
-          . vcache-packaging/scripts/ci/lib/common.sh
-          ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
-            "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
-
-      # Allowed to fail so the row can reach its result record: a source
-      # artifact that does not exist is a blocked row with a named cause, not
-      # an unclassified download error.
+      # No Vinyl checkout in a package row any more. The engine is not built
+      # here; it arrives as native packages built once by ci.yml's engine
+      # matrix, which is the whole of Phase 2.
+      #
+      # Allowed to fail so the row can reach its result record: an artifact that
+      # does not exist is a blocked row with a named cause, not an unclassified
+      # download error. The two prerequisites are fetched independently rather
+      # than in a chain, so a missing engine artifact cannot hide a broken VMOD
+      # source and the classification below can put them in a fixed order.
       - name: download the pinned VMOD source archive
         id: download
-        if: steps.verify.outcome == 'success' && steps.vinyl.outcome != 'failure'
+        if: steps.verify.outcome == 'success'
         continue-on-error: true
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: ${{ matrix.source_artifact }}
           path: libvmod-cachetag/release/dist
 
-      # ---- Debian 13 amd64 (pbuilder). Commands unchanged from ci.yml. ----
-      - name: assemble the pinned source trees (unchanged, build.sh source)
-        id: deb_source
-        if: matrix.family == 'deb' && steps.download.outcome == 'success'
+      - name: download the shared engine artifact
+        id: engine_download
+        if: steps.verify.outcome == 'success'
         continue-on-error: true
-        run: recipes/debian-13/build.sh source
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ matrix.engine_artifact }}
+          path: engine-artifact
+
+      # The plan's rule that a consumer verifies a dependency artifact's
+      # resolved-identity metadata against its own row before use. This row has
+      # no second, independent way to know what it downloaded -- unlike the VMOD
+      # source archive, whose identity it re-establishes by checking the tag out
+      # again above -- so this check is load-bearing, not advisory. It compares
+      # the engine and target the artifact was built for, the resolved version,
+      # commit, ABI and build-input identity read out of this checkout's own pin
+      # file for this row's track, and the digest of every package file
+      # delivered.
+      - name: verify the engine artifact against this row
+        id: engine_verify
+        if: steps.engine_download.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          scripts/ci/engine-identity.sh "${{ matrix.family }}" \
+            > "$GITHUB_WORKSPACE/engine-identity.env"
+          cat "$GITHUB_WORKSPACE/engine-identity.env"
+          python3 tools/ci_matrix.py verify-engine-metadata \
+            --metadata "$GITHUB_WORKSPACE/engine-artifact/engine-metadata.json" \
+            --engine "${{ matrix.engine }}" \
+            --target "${{ matrix.target }}" \
+            --identity "$GITHUB_WORKSPACE/engine-identity.env" \
+            --packages "$GITHUB_WORKSPACE/engine-artifact/packages"
+        working-directory: vcache-packaging
+
+      # Put the verified engine packages where the lane expects the cohort's
+      # packages to be. Everything downstream -- the local repository the VMOD
+      # build resolves its exact-version engine dependency from, the ABI
+      # assertions, lint, the installed-package smoke and VTC suite, and the
+      # checksum list -- then runs against exactly the files it ran against
+      # before the split, and cannot tell that this row did not build them.
+      - name: install the engine packages into the lane
+        id: engine_install
+        if: steps.engine_verify.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          case "${{ matrix.family }}" in
+          deb) dest=dist/debian-13 ;;
+          rpm) dest=dist/el9/packages ;;
+          *) echo "unknown family" >&2; exit 1 ;;
+          esac
+          mkdir -p "$dest"
+          cp -p "$GITHUB_WORKSPACE"/engine-artifact/packages/* "$dest/"
+          ls -la "$dest"
+        working-directory: vcache-packaging
+
+      # ---- Debian 13 amd64 (pbuilder). VMOD scope; commands otherwise
+      #      unchanged from the pre-split lane. ----
+      - name: assemble the pinned VMOD source tree (build.sh source-vmod)
+        id: deb_source
+        if: matrix.family == 'deb' && steps.download.outcome == 'success' && steps.engine_install.outcome == 'success'
+        continue-on-error: true
+        run: recipes/debian-13/build.sh source-vmod
         working-directory: vcache-packaging
 
       - name: build the pinned buildroot with mmdebstrap
@@ -453,11 +517,11 @@ jobs:
         continue-on-error: true
         run: exit 1
 
-      - name: build both packages in the pinned debian:trixie container (pbuilder)
+      - name: build the VMOD package in the pinned debian:trixie container (pbuilder)
         id: deb_build
         if: matrix.family == 'deb' && steps.deb_chroot.outcome == 'success' && steps.deb_inject.outcome != 'failure'
         continue-on-error: true
-        run: bash scripts/ci/debian13/debian-lane.sh
+        run: bash scripts/ci/debian13/debian-lane.sh vmod
         working-directory: vcache-packaging
 
       - name: ABI and hardening assertions (mirrors stage-vinyl.sh / stage-cachetag.sh)
@@ -498,19 +562,20 @@ jobs:
       # ---- EL9 x86_64 (Mock). Commands unchanged from ci.yml. ----
       - name: injected EL9 package-build failure
         id: el9_inject
-        if: matrix.family == 'rpm' && inputs.inject == 'el9_build' && steps.download.outcome == 'success'
+        if: matrix.family == 'rpm' && inputs.inject == 'el9_build' && steps.engine_install.outcome == 'success'
         continue-on-error: true
         run: exit 1
 
-      - name: Mock build (vinyl-cache, then libvmod-cachetag)
+      - name: Mock build (libvmod-cachetag against the installed engine packages)
         id: el9_build
-        if: matrix.family == 'rpm' && steps.download.outcome == 'success' && steps.el9_inject.outcome != 'failure'
+        if: matrix.family == 'rpm' && steps.download.outcome == 'success' && steps.engine_install.outcome == 'success' && steps.el9_inject.outcome != 'failure'
         continue-on-error: true
         run: |
           bash scripts/ci/el9/mock-build.sh \
-            "$GITHUB_WORKSPACE/vinyl-cache" \
+            "" \
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
-            "$EL9_IMAGE"
+            "$EL9_IMAGE" \
+            vmod
         working-directory: vcache-packaging
 
       # `deps` first because this is a fresh container: stage_lint calls
@@ -603,13 +668,23 @@ jobs:
             || [ "${{ steps.verify.outcome }}" = "failure" ]; then
             set_status failed_source_checkout \
               "${{ matrix.ref }} did not check out at ${{ matrix.expected_commit }}"
-          elif [ "${{ steps.vinyl.outcome }}" = "failure" ]; then
-            set_status failed_engine_build "the pinned Vinyl input was unavailable"
           elif [ "${{ steps.download.outcome }}" != "success" ]; then
             set_status blocked_by_vmod_source \
               "source artifact ${{ matrix.source_artifact }} was not available"
+          # The row's own VMOD source failure wins where both apply, matching
+          # the collector's precedence: that cause is specific to this row,
+          # while a broken engine is reported in full on its own engine row.
+          elif [ "${{ steps.engine_download.outcome }}" != "success" ]; then
+            set_status blocked_by_engine_artifact \
+              "${{ matrix.engine_row_key }} published no ${{ matrix.engine_artifact }}"
+          elif [ "${{ steps.engine_verify.outcome }}" != "success" ]; then
+            set_status blocked_by_engine_artifact \
+              "${{ matrix.engine_artifact }} does not describe ${{ matrix.engine_row_key }}"
+          elif [ "${{ steps.engine_install.outcome }}" != "success" ]; then
+            set_status failed_infrastructure \
+              "the verified engine packages could not be placed in the lane"
           elif [ "${{ steps.deb_source.outcome }}" = "failure" ]; then
-            set_status failed_package_build "build.sh source failed"
+            set_status failed_package_build "build.sh source-vmod failed"
           elif [ "${{ steps.deb_chroot.outcome }}" = "failure" ]; then
             set_status failed_infrastructure "the mmdebstrap buildroot could not be built"
           elif [ "${{ steps.deb_inject.outcome }}" = "failure" ] \
@@ -715,6 +790,18 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           pattern: result-${{ inputs.vmod_id }}-*
+          path: results
+
+      # The shared engine rows too, so a blocked row in this VMOD's summary can
+      # name the engine row that blocked it rather than reporting it as missing
+      # evidence. summarize-vmod never synthesizes an engine record and never
+      # writes one into this VMOD's merged result: the engine rows belong to the
+      # whole run and the caller's collector owns their verdict.
+      - name: download the shared engine result records
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: result-engine-*
           path: results
 
       - name: reconcile this VMOD's expected rows and synthesize the missing ones

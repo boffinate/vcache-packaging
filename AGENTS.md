@@ -55,9 +55,12 @@ VMOD catalog, CI matrix expansion and result reconciliation (host-safe, stdlib o
 python3 tools/ci_matrix.py check-catalog
 python3 tools/ci_matrix.py validate-vmod --manifest registry/vmods/cachetag.yml --id cachetag
 python3 tools/ci_matrix.py expand --manifest registry/vmods/cachetag.yml --tier ci
+python3 tools/ci_matrix.py engine-matrix --tier ci
 python3 tools/ci_matrix.py ledger --tier ci
 python3 tools/ci_matrix.py selftest
 ```
+
+The Vinyl engine packages are built once per engine input and target, published as `engine-<engine-id>-<target-id>`, and consumed by every VMOD package row after verifying the resolved identity recorded inside the artifact. See the shared-engine section of `registry/README.md` for the schema and the verification command; `scripts/ci/engine-identity.sh <deb|rpm>` is the one reader of the lane pin files that both sides of that comparison use.
 
 ## If unsure
 

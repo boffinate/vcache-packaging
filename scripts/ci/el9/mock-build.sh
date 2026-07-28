@@ -24,8 +24,11 @@
 
 set -eu
 
-vinyl_src=${1:?VINYL_GIT_DIR required}
-cachetag_src=${2:?CACHETAG_GIT_DIR required}
+# Each source directory is required only by the scope that reads it, so an
+# engine job can pass an empty second argument and a VMOD job an empty first
+# one rather than inventing a path for a checkout it deliberately does not have.
+vinyl_src=${1-}
+cachetag_src=${2-}
 image=${3:?EL9_IMAGE required}
 scope=${4:-all}
 
@@ -41,6 +44,9 @@ case $scope in
 all | engine | vmod) : ;;
 *) die "unknown scope '$scope' (all|engine|vmod)" ;;
 esac
+
+[ "$scope" = vmod ] || [ -n "$vinyl_src" ] || die "VINYL_GIT_DIR required for scope $scope"
+[ "$scope" = engine ] || [ -n "$cachetag_src" ] || die "CACHETAG_GIT_DIR required for scope $scope"
 
 sha256() {
 	if command -v sha256sum >/dev/null 2>&1; then
