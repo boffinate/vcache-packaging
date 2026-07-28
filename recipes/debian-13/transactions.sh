@@ -27,16 +27,17 @@
 
 set -eu
 
-BASE_ABI=25761f8505817ac50df994270bfe75b60073e33e
-BASE_VERSION=9.0.0~git20260520.25761f8505-1
-CACHETAG_VERSION=1.0.1-1
+# Read from the single definition of the lane's pinned inputs -- pins.env
+# selects the baseline on VINYL_TRACK and derives the synthetic candidate
+# versions from it. Until 2026-07-28 this script mirrored the trunk values by
+# hand, which silently pinned the whole matrix to the trunk baseline and made
+# a release-track run impossible. IMAGE also comes from pins.env (same
+# env-overridable IMAGE_REF/IMAGE_DIGEST defaults this file used to restate).
+. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/pins.env"
 
-MISMATCH_VERSION=9.0.0~git20260614.ffffffffffff-1
-SAMEABI_VERSION=9.0.0~git20260615.eeeeeeeeeeee-1
-
-IMAGE_REF=${IMAGE_REF:-debian:trixie}
-IMAGE_DIGEST=${IMAGE_DIGEST:-sha256:fac46bff2e02f51425b6e33b0e1169f55dfb053d83511ca28aa50c09fd5ed7a4}
-IMAGE="$IMAGE_REF@$IMAGE_DIGEST"
+BASE_ABI=$VINYL_STRICT_ABI
+BASE_VERSION=$VINYL_PACKAGE_VERSION
+CACHETAG_VERSION=$CACHETAG_DEBIAN_VERSION
 
 # Scenario containers start from a derived image rather than from the pinned
 # base directly. It is the pinned base, fully dist-upgraded once, with the

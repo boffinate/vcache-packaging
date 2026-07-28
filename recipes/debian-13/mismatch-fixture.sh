@@ -80,21 +80,20 @@ BASE_COHORT=$COHORT_ID
 # package, a fixture cannot be mistaken for a real build on an installed
 # system.
 #
-# Version ordering matters and is asserted below:
-#     baseline  9.0.0~git20260520.25761f8505-1
-#   < mismatch  9.0.0~git20260614.ffffffffffff-1
-#   < sameabi   9.0.0~git20260615.eeeeeeeeeeee-1
+# Version ordering matters and is asserted below. The candidate versions come
+# from pins.env's derivation, which keys them off the active track's baseline
+# (a later snapshot of the same version on trunk, a pre-release snapshot of
+# the next patch release on the release track), so on either track:
+#     baseline < mismatch < sameabi
 #
 # Because sameabi sorts above mismatch, the two variants are never placed in
 # the same apt repository: transactions.sh publishes exactly one candidate per
 # scenario.
 ###############################################################################
 
-MISMATCH_VERSION=9.0.0~git20260614.ffffffffffff-1
 MISMATCH_ABI=ffffffffffffffffffffffffffffffffffffffff
 MISMATCH_COHORT=mismatch-fixture-ffffffffffff
 
-SAMEABI_VERSION=9.0.0~git20260615.eeeeeeeeeeee-1
 SAMEABI_ABI=$BASE_ABI
 # Deliberately NOT the baseline cohort. The whole point of this variant is a
 # package that copies the baked-in ABI string while coming from somewhere else:
@@ -148,7 +147,7 @@ mkdir -p "$log_dir" "$mismatch_dir"
 note "verifying the baseline cohort debs against dist/debian-13/SHA256SUMS"
 for _pkg in vinyl-cache vinyl-cache-dev libvmod-cachetag; do
 	case $_pkg in
-	libvmod-cachetag) _v=1.0.1-1 ;;
+	libvmod-cachetag) _v=$CACHETAG_DEBIAN_VERSION ;;
 	*)                _v=$BASE_VERSION ;;
 	esac
 	_deb=${_pkg}_${_v}_${DEB_HOST_ARCH}.deb

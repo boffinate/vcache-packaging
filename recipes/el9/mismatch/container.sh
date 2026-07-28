@@ -90,17 +90,29 @@ install -m 0644 /recipes/systemd/vinyl-cache.sysusers "$topdir/SOURCES/"
 # ABI token, semantically impossible, so a resolver that matches it is matching
 # on the string and nothing else.
 
+# The fixture version is derived from the active track's baseline so it sorts
+# above it on either track: a snapshot baseline (X.Y.Z~gitDATE.HASH, trunk)
+# gets a later snapshot of the SAME upstream version; a release baseline
+# (plain X.Y.Z) gets a pre-release snapshot of the NEXT patch release, which
+# rpmvercmp puts above X.Y.Z (2 > 1 in the third segment, decided before the
+# tilde matters) and below a real X.Y.(Z+1). The sort-above assertion below
+# stays the oracle either way.
+case $VINYL_VERSION in
+*'~git'*) fixture_base=${VINYL_VERSION%%'~git'*} ;;
+*)        fixture_base=${VINYL_VERSION%.*}.$((${VINYL_VERSION##*.} + 1)) ;;
+esac
+
 variant_setup() {
 	case $1 in
 	mismatch)
-		fixture_version=9.0.0~git20260724.ffffffffffff
+		fixture_version=${fixture_base}~git20260724.ffffffffffff
 		fixture_release=1.mismatchfixture.el9
 		fixture_abi=ffffffffffffffffffffffffffffffffffffffff
 		fixture_cohort=mismatch-fixture-ffffffffffff
 		variant_note='Simulates an incompatible Vinyl security upgrade: higher version-release, different VMOD ABI. A strict-ABI VMOD built against the baseline cannot resolve against it.'
 		;;
 	sameabi)
-		fixture_version=9.0.0~git20260724.eeeeeeeeeeee
+		fixture_version=${fixture_base}~git20260724.eeeeeeeeeeee
 		fixture_release=1.sameabifixture.el9
 		fixture_abi=$VINYL_STRICT_ABI
 		fixture_cohort=sameabi-fixture-eeeeeeeeeeee
