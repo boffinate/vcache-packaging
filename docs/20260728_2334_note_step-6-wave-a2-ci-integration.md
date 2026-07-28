@@ -2,7 +2,7 @@
 
 Date: 2026-07-28
 
-Status: **Mostly implemented.** The catalog, manifest schema, per-VMOD evidence schema, ledger, classification, injection model and the complete dict lane (Debian and EL9, source through behaviour) are done and verified. The **workflow YAML is not done** — see "What is not done" before reading anything else as complete.
+Status: **Implemented.** The workflow wiring landed in Wave A3; see [the A3 note](20260728_2352_note_step-6-wave-a3-workflow-wiring.md) for the four defects it found and the per-strategy job structure. Everything in this note is current except the "manifest is deliberately global" ruling, which A3 superseded — corrected in place below.
 
 Branch: `step6-second-vmod`
 
@@ -83,10 +83,20 @@ Before the second VMOD every injection implicitly hit every VMOD, because there 
 | `dict_source` | dict | cachetag's six rows complete while dict's source fails |
 | `dict_build` | dict | cachetag's rows complete while dict's Debian row fails |
 | `recipe_generation` | dict | an unresolved token in the *rendered* recipe fails one dict row and nothing else |
-| `manifest` | every VMOD | deliberately global; that case is about the ledger, not about isolation |
+| ~~`manifest`~~ | ~~every VMOD~~ | **Superseded 2026-07-28 by ruling R-B; see below** |
 | `engine_build`, `suppress_engine_artifact` | neither | they act in the caller's engine matrix |
 
 The expansion carries per-row `inject_build`, `inject_recipe` and `suppress_result` booleans, so the workflow reads one flag instead of comparing ids and families in a YAML expression that could drift from the table.
+
+#### Superseded: "`manifest` is deliberately global" (corrected 2026-07-28, later the same day)
+
+**What this note said:** the `manifest` injection acts on every VMOD, deliberately, "because that case is about the ledger and not about isolation between VMODs."
+
+**Why it was believed:** with one VMOD the distinction did not exist, and the case was written to prove that a manifest which does not parse produces one classified row rather than a set of invented lane rows. Corrupting every manifest tested that.
+
+**What Wave A3 found, and ruling R-B:** the reasoning does not survive a second VMOD. `valid_manifests()` claims that a broken manifest costs its own invocation *and the engine rows nothing else consumes, and nothing more* — and that claim is untestable while every manifest is corrupted, because there is no surviving VMOD to observe surviving. The scoped two-VMOD case **is** the Phase 3 isolation demonstration this case was supposed to be.
+
+`INJECTION_TARGET_VMOD["manifest"]` is now `"cachetag"`. Four jobs rebuild the expected ledger from their own fresh checkout — the reusable workflow's `plan` and `summary`, and `ci.yml`'s `discover-engines` and `collect` — and all four now read the scope from `ci_matrix.py injection-scope` rather than each hardcoding a comparison, because corrupting different files would build different ledgers and the run would report rows nobody asked for. A self-test builds the scoped ledger and asserts the result: cachetag collapses to one invalid invocation row, all four dict rows survive, and only the two engine rows dict still asks for remain expected.
 
 `recipe_generation` corrupts the recipe **after** rendering, on purpose. The generator already refuses every token it can refuse, and `tools/vmod_recipe_selftest.py` covers that; this case proves the *lane* refuses a recipe that a build would otherwise consume literally, which is a different property.
 
@@ -175,15 +185,7 @@ Every request URL and every expected value is upstream's, character for characte
 
 ## What is not done
 
-Stated plainly, because a partial wave reported as complete is worse than a partial wave.
-
-| Deliverable | State |
-| --- | --- |
-| 3. Workflow wiring in `vmod-package.yml` and `ci.yml` | **Not started.** No workflow file has been edited; `git diff main -- .github/` is empty. |
-
-Everything else in the coordinator's list is done. The workflow is the last piece and it is the one that turns all of the above into a run: two VMOD invocations from discovery, strategy dispatch between the cachetag path (unchanged commands and pins) and the dict path (`source.sh` → `generate.sh` → `run.sh build-* / verify-*`), the generation record uploaded as evidence, `failed_recipe_generation` classified end to end, and the injection inputs threaded through the `INJECTION_TARGET_VMOD` flags the expansion already emits.
-
-It was left rather than half-written: emitting several hundred lines of workflow YAML that could not be finished and verified in this session would have left broken CI on the branch, which is worse than a clean boundary. Everything it needs already exists and is tested — the expansion emits `source_host`, `clone_url`, `recipe`, `archive_url` and the per-row injection booleans; the classification vocabulary has `failed_recipe_generation`; and every lane script it would call is shellcheck-clean with a dry-run-verified generate stage.
+Nothing from the Wave A2 brief. The workflow wiring, the one item outstanding when this note was first written, landed in Wave A3.
 
 ## Verification run
 
