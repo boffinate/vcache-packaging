@@ -105,6 +105,7 @@ Values containing `#`, `{`, `}`, `[`, `]`, `&`, `*`, `!`, `|`, `>`, `%`, `@`, a 
 | `vinyl.vrt` | immutable input | public VRT ABI, for example `23.0` |
 | `vinyl.strict_abi` | immutable input | 40 hex characters, baked into the Vinyl build |
 | `vinyl.patches` | **digest input** | ordered list of `{name, sha256}`; `[]` when unpatched |
+| `vinyl.release_notes` | optional reference | pointers to **upstream's own** release statements for the pinned version, as `{title, url}` (`https://` URLs only); rendered verbatim as links into generated release content. References, never claims: upstream states what its release contains, this registry records where. Absent (the honest state for a trunk snapshot, which has no upstream release statement) means no section is rendered. Not a digest input |
 | `build_profile.name` | **digest input** | `production` for any releasable cohort |
 | `build_profile.revision` | **digest input** | integer starting at 1 |
 | `required_vmods` | policy | every VMOD the cohort must contain; currently `cachetag` alone |

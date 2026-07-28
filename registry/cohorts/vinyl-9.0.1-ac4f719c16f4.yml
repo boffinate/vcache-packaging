@@ -38,6 +38,15 @@ vinyl:
   # string in the tarball against this pin before building.
   strict_abi: "423648c4cb6b225b3268ffc337354ea938f5efee"
   patches: []
+  # Upstream's own statements about this release, recorded as references and
+  # rendered verbatim as links into generated release content -- never
+  # restated in this project's voice. Both URLs verified live (HTTP 200) on
+  # 2026-07-28. Not a digest input.
+  release_notes:
+    - title: Vinyl Cache 9.0.1 release notes
+      url: https://vinyl-cache.org/releases/rel9.0.1.html
+    - title: Changes in Vinyl Cache 9.0
+      url: https://vinyl-cache.org/docs/9.0/whats-new/changes-9.0.html
 build_profile:
   name: production
   # Revision 1: same single production profile definition as the trunk

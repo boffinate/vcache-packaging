@@ -38,6 +38,9 @@ vinyl:
   # ABI token is this commit id by construction.
   strict_abi: "25761f8505817ac50df994270bfe75b60073e33e"
   patches: []
+  # No release_notes: a trunk snapshot has no upstream release statement, and
+  # this registry records upstream references, never claims of its own. The
+  # pinned commit above is what speaks for the snapshot's content.
 build_profile:
   name: production
   # Revision 1: the production build profile has had exactly one definition

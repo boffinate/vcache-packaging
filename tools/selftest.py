@@ -392,6 +392,56 @@ def test_schema_failures() -> None:
     )
 
 
+def test_release_notes() -> None:
+    # vinyl.release_notes is optional upstream-reference data: pointers to
+    # upstream's own release statements, never restatements. Every other test
+    # in this file validates VALID_COHORT without the field, which is the
+    # absent-is-fine half of the contract; these cover the present half.
+    notes_block = (
+        "  release_notes:\n"
+        "    - title: Vinyl Cache 9.0.0 release notes\n"
+        "      url: https://vinyl-cache.org/releases/rel9.0.0.html\n"
+    )
+    with_notes = VALID_COHORT.replace("  patches:\n", notes_block + "  patches:\n")
+    checked, errors = _validate_synthetic(with_notes, VALID_TARGET)
+    check(
+        "release-notes: a valid upstream reference passes, and the identity is unchanged",
+        errors == [],
+        "; ".join(errors),
+    )
+    plain_http = with_notes.replace("https://vinyl-cache.org", "http://vinyl-cache.org")
+    checked, errors = _validate_synthetic(plain_http, VALID_TARGET)
+    check(
+        "release-notes: a non-https url fails the shape check",
+        any("release_notes[0].url" in e for e in errors),
+        "; ".join(errors),
+    )
+    missing_url = with_notes.replace("      url: https://vinyl-cache.org/releases/rel9.0.0.html\n", "")
+    checked, errors = _validate_synthetic(missing_url, VALID_TARGET)
+    check(
+        "release-notes: a reference without a url fails",
+        any("release_notes[0].url: missing required field" in e for e in errors),
+        "; ".join(errors),
+    )
+    unknown_sub = with_notes.replace(
+        "      url: https://vinyl-cache.org/releases/rel9.0.0.html\n",
+        "      url: https://vinyl-cache.org/releases/rel9.0.0.html\n      severity: high\n",
+    )
+    checked, errors = _validate_synthetic(unknown_sub, VALID_TARGET)
+    check(
+        "release-notes: an unknown subfield fails",
+        any("release_notes[0].severity: unknown field" in e for e in errors),
+        "; ".join(errors),
+    )
+    empty = VALID_COHORT.replace("  patches:\n", "  release_notes: []\n  patches:\n")
+    checked, errors = _validate_synthetic(empty, VALID_TARGET)
+    check(
+        "release-notes: present-but-empty fails (omit the field instead)",
+        any("release_notes: needs at least 1" in e for e in errors),
+        "; ".join(errors),
+    )
+
+
 def test_vmoddir() -> None:
     checked, errors = _validate_synthetic(VALID_COHORT, VALID_TARGET)
     check("vmoddir: a resolved absolute vmoddir passes", errors == [], "; ".join(errors))
@@ -792,6 +842,7 @@ def main(repo_root: Path = None, cachetag_src=None) -> int:
     test_version_mismatch_fails()
     test_bad_cohort_id_fails()
     test_schema_failures()
+    test_release_notes()
     test_metadata()
     test_vmoddir()
     test_cachetag_src()

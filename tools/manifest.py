@@ -90,6 +90,10 @@ NAME_RE = r"^[a-z][a-z0-9+._-]*$"
 BUILDROOT_NAME_RE = r"^[A-Za-z0-9][A-Za-z0-9+._-]*$"
 FILENAME_RE = r"^[A-Za-z0-9][A-Za-z0-9._+-]*$"
 FREE_TEXT_RE = r"^[^\s].*$"
+# Upstream reference URLs: https only, no spaces, no fragments of shell
+# metacharacters. These are rendered verbatim into generated release content,
+# so the shape is deliberately strict.
+URL_RE = r"^https://[A-Za-z0-9][A-Za-z0-9./_%~#+-]*$"
 IMAGE_DIGEST_RE = r"^sha256:[0-9a-f]{64}$"
 # An absolute, fully resolved directory: no relative path, no trailing slash,
 # no empty segment, and no unexpanded ${libdir}-style pkg-config variable.
@@ -155,6 +159,21 @@ COHORT_SPEC = _map(
                 "patches": _list(
                     _map({"name": _s(FILENAME_RE), "sha256": _s(SHA256_RE)}),
                     min_len=0,
+                ),
+                # Pointers to UPSTREAM's own release statements for the pinned
+                # version -- release notes, changelog renderings -- recorded as
+                # {title, url} and rendered verbatim into generated release
+                # content as links. Deliberately references, never claims: it
+                # is upstream's job to state what is in their release, and this
+                # registry records where they state it, not restatements in our
+                # voice. Optional, because a trunk snapshot has no upstream
+                # release statement; absent means no section is rendered. Not a
+                # digest input: the cohort identity describes source bytes, not
+                # documentation about them.
+                "release_notes": _list(
+                    _map({"title": _s(FREE_TEXT_RE), "url": _s(URL_RE)}),
+                    min_len=1,
+                    optional=True,
                 ),
             }
         ),
@@ -298,7 +317,8 @@ def _check(node: dict, value, path: str, errors: list) -> None:
         for key, sub in node["fields"].items():
             sub_path = f"{path}.{key}" if path else key
             if key not in value:
-                errors.append(f"{sub_path}: missing required field")
+                if not sub.get("optional"):
+                    errors.append(f"{sub_path}: missing required field")
                 continue
             _check(sub, value[key], sub_path, errors)
         for key in value:
