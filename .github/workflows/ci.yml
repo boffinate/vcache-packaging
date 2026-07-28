@@ -66,12 +66,22 @@ on:
         type: choice
         options:
           - none
+          # Cachetag-scoped. Every one of these must leave dict's four rows
+          # green, which is half of the Phase 3 isolation demonstration.
           - manifest # a malformed VMOD manifest -> failed_manifest_validation
           - source_checkout # a ref that cannot resolve -> failed_source_checkout
           - source_digest # a wrong archive digest -> failed_source_digest
           - debian_build # a failing Debian row -> failed_package_build
           - el9_build # a failing EL9 row -> failed_package_build
           - suppress_result # one row uploads no record -> missing_result_record
+          # Dict-scoped, and the other half: each must leave cachetag's six
+          # rows green. recipe_generation has no cachetag analogue -- it writes
+          # an unresolved token into an already-rendered recipe, proving the
+          # lane refuses one the generator never saw.
+          - dict_source # a ref that cannot resolve -> failed_source_checkout
+          - dict_build # a failing Debian row -> failed_package_build
+          - recipe_generation # a corrupt generated recipe -> failed_recipe_generation
+          # Neither VMOD: these act entirely in the engine matrix below.
           - engine_build # one engine row fails -> blocked_by_engine_artifact
           - suppress_engine_artifact # one engine row publishes nothing -> ditto
 
@@ -156,15 +166,22 @@ jobs:
       # valid lane, emits count=0, the engine job's `!= '0'` guard skips it,
       # and the summary collapses to the single failed_manifest_validation row
       # the case exists to demonstrate.
+      # Scoped to the VMOD the injection names, which since 2026-07-28 is one
+      # VMOD and not all of them. The scope comes from ci_matrix.py rather than
+      # from a comparison written here, because four jobs rebuild the expected
+      # ledger from their own fresh checkout and they must all corrupt the same
+      # file: corrupting different ones would build different ledgers and the
+      # run would report rows nobody asked for.
       - name: inject a malformed manifest
         if: github.event_name == 'workflow_dispatch' && inputs.inject == 'manifest'
         shell: bash
         run: |
           set -eu
-          for manifest in registry/vmods/*.yml; do
-            printf 'schema: vmod-ci/v1\nid: %s\n' "$(basename "$manifest" .yml)" \
-              > "$manifest"
-          done
+          victim=$(python3 tools/ci_matrix.py injection-scope --inject manifest)
+          [ -n "$victim" ] || { echo "E: the manifest injection names no VMOD" >&2; exit 1; }
+          printf 'schema: vmod-ci/v1\nid: %s\n' "$victim" \
+            > "registry/vmods/$victim.yml"
+          cat "registry/vmods/$victim.yml"
 
       # This job does parse the VMOD manifests, because the engine rows are
       # derived from the package lanes that consume them. It is still not a
@@ -463,15 +480,22 @@ jobs:
       # otherwise the injected run would reconcile against the full, valid lane
       # list and report exactly the invented lane rows the plan's case 2
       # forbids. Same corruption, same file, as vmod-package.yml applies.
+      # Scoped to the VMOD the injection names, which since 2026-07-28 is one
+      # VMOD and not all of them. The scope comes from ci_matrix.py rather than
+      # from a comparison written here, because four jobs rebuild the expected
+      # ledger from their own fresh checkout and they must all corrupt the same
+      # file: corrupting different ones would build different ledgers and the
+      # run would report rows nobody asked for.
       - name: inject a malformed manifest
         if: github.event_name == 'workflow_dispatch' && inputs.inject == 'manifest'
         shell: bash
         run: |
           set -eu
-          for manifest in registry/vmods/*.yml; do
-            printf 'schema: vmod-ci/v1\nid: %s\n' "$(basename "$manifest" .yml)" \
-              > "$manifest"
-          done
+          victim=$(python3 tools/ci_matrix.py injection-scope --inject manifest)
+          [ -n "$victim" ] || { echo "E: the manifest injection names no VMOD" >&2; exit 1; }
+          printf 'schema: vmod-ci/v1\nid: %s\n' "$victim" \
+            > "registry/vmods/$victim.yml"
+          cat "registry/vmods/$victim.yml"
 
       - name: note the upstream job outcomes
         shell: bash

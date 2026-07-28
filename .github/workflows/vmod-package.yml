@@ -90,6 +90,13 @@ jobs:
       # silently doing nothing. The harness job lands with Phase 4.
       harness_count: ${{ steps.expand.outputs.harness_count }}
       repository: ${{ steps.expand.outputs.repository }}
+      # Which native recipe this VMOD is packaged from, and how CI reaches its
+      # source. `expand --format github` has printed all four since the second
+      # VMOD landed; this block only forwards them, so adding them changes
+      # nothing about what the job runs.
+      recipe: ${{ steps.expand.outputs.recipe }}
+      source_host: ${{ steps.expand.outputs.source_host }}
+      clone_url: ${{ steps.expand.outputs.clone_url }}
     steps:
       - name: checkout vcache-packaging
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -107,7 +114,7 @@ jobs:
       # this step, the identical one in the summary job below, and the one in
       # ci.yml's collector.
       - name: inject a malformed manifest
-        if: inputs.inject == 'manifest'
+        if: inputs.inject == 'manifest' && inputs.vmod_id == 'cachetag'
         shell: bash
         run: |
           set -eu
@@ -182,10 +189,24 @@ jobs:
         if: steps.validate.outcome == 'failure' || steps.expand.outcome != 'success'
         run: exit 1
 
+  # ---- The upstream-owned recipe strategy: cachetag. ----
+  #
+  # Two jobs, gated on `recipe == 'upstream'`, and otherwise untouched: their
+  # commands, pins and step order are exactly what they were before the second
+  # VMOD existed. The strategy is selected from the manifest, never discovered.
+  #
+  # Per-strategy JOBS rather than per-step gating inside one job, deliberately.
+  # Gating steps would leave every skipped step with outcome `skipped`, and the
+  # classification chains below check for `failure` and for `!= 'success'` --
+  # so a generated-recipe row running through the upstream job would classify
+  # itself failed_infrastructure and its final `fail when` expression would
+  # fire unconditionally. The cost is the engine download/verify/install block
+  # appearing in both target jobs; that is the same bounded duplication the
+  # separate lane scripts already accept, for the same reason.
   source:
     name: ${{ inputs.vmod_id }} source (${{ matrix.channel }})
     needs: plan
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.source_count != '0' }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.source_count != '0' && needs.plan.outputs.recipe == 'upstream' }}
     runs-on: ubuntu-latest
     # Measured 2026-07-25 across six green runs: 6m09s-8m02s, the spread
     # being runner-to-runner variance on identical input. 20 minutes is a
@@ -383,7 +404,7 @@ jobs:
     # failed source job and decide from its own requested artifact whether it
     # can proceed, so a blocked row is reported as blocked rather than silently
     # skipped. An intentional cancellation still stops it.
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.target_count != '0' }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.target_count != '0' && needs.plan.outputs.recipe == 'upstream' }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
@@ -513,7 +534,7 @@ jobs:
 
       - name: injected Debian package-build failure
         id: deb_inject
-        if: matrix.family == 'deb' && inputs.inject == 'debian_build' && steps.deb_chroot.outcome == 'success'
+        if: matrix.family == 'deb' && matrix.inject_build == 'true' && steps.deb_chroot.outcome == 'success'
         continue-on-error: true
         run: exit 1
 
@@ -562,7 +583,7 @@ jobs:
       # ---- EL9 x86_64 (Mock). Commands unchanged from ci.yml. ----
       - name: injected EL9 package-build failure
         id: el9_inject
-        if: matrix.family == 'rpm' && inputs.inject == 'el9_build' && steps.engine_install.outcome == 'success'
+        if: matrix.family == 'rpm' && matrix.inject_build == 'true' && steps.engine_install.outcome == 'success'
         continue-on-error: true
         run: exit 1
 
@@ -740,9 +761,409 @@ jobs:
       # thing independently, as missing_result_record.
       - name: upload the target result record
         id: upload_result
+        if: always() && matrix.suppress_result != 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.result_artifact }}
+          path: results/${{ matrix.target }}-${{ matrix.engine }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: fail when this row failed
+        if: steps.record.outputs.status != 'passed' || steps.upload_result.outcome == 'failure'
+        run: exit 1
+
+  # ---- The generated-recipe strategy: every VMOD whose upstream ships no
+  #      packaging, which is the normal case. ----
+  #
+  # Same row keys, same artifact names, same classification vocabulary as the
+  # upstream pair above: the collector reconciles both strategies against one
+  # ledger and cannot tell which produced a row. What differs is only how the
+  # source is obtained and how the recipe comes to exist.
+
+  source-generated:
+    name: ${{ inputs.vmod_id }} source (${{ matrix.channel }})
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.source_count != '0' && needs.plan.outputs.recipe == 'generated' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.sources) }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+
+      # No VMOD checkout at all, and no actions/checkout for a non-GitHub host.
+      # Where upstream publishes the release archive, a clone buys nothing: the
+      # digest pins the bytes and `git ls-remote` answers the only question a
+      # clone would have answered, which is whether the recorded tag still
+      # names the recorded commit. That is why Step 5's "non-GitHub upstreams
+      # need a new checkout mechanism" turned out to need a shell step instead.
+      #
+      # --ref comes from the matrix row, exactly as the cachetag path takes its
+      # ref from the row, so a ref the expansion rewrote for an injected source
+      # failure actually reaches the check that fails on it.
+      - name: fetch and verify the pinned source archive
+        id: archive
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          sh scripts/ci/vmod/source.sh \
+            --manifest "${{ inputs.manifest }}" \
+            --id "${{ inputs.vmod_id }}" \
+            --channel "${{ matrix.channel }}" \
+            --ref "${{ matrix.ref }}" \
+            --out "$GITHUB_WORKSPACE/vmod-source" 2>&1 |
+            tee "$GITHUB_WORKSPACE/source-archive.log"
+        working-directory: vcache-packaging
+
+      - name: upload the pinned source archive
+        id: upload
+        if: steps.archive.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.source_artifact }}
+          path: vmod-source/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+      # The log is read to tell three different failures apart. They are three
+      # different findings and send a reader to three different places: a moved
+      # tag, bytes that are not the recorded bytes, and an archive that is not
+      # the version the manifest says it is.
+      - name: classify and record the source result
+        if: always()
+        shell: bash
+        run: |
+          set -eu
+          status=passed
+          detail=""
+          set_status() { status=$1; detail=$2; }
+          log="$GITHUB_WORKSPACE/source-archive.log"
+          if [ "${{ steps.archive.outcome }}" = "failure" ]; then
+            if grep -q "does not match the pinned" "$log" 2>/dev/null; then
+              set_status failed_source_digest \
+                "archive digest does not match ${{ matrix.archive_sha256 }}"
+            elif grep -q "not the recorded commit" "$log" 2>/dev/null \
+              || grep -q "does not exist at" "$log" 2>/dev/null; then
+              set_status failed_source_checkout \
+                "${{ matrix.ref }} did not resolve to ${{ matrix.expected_commit }}"
+            elif grep -q "but the manifest records" "$log" 2>/dev/null; then
+              set_status failed_manifest_validation \
+                "the archive's own version disagrees with the manifest"
+            else
+              set_status failed_source_archive "the source stage failed"
+            fi
+          elif [ "${{ steps.archive.outcome }}" != "success" ]; then
+            set_status failed_infrastructure "the source stage did not run"
+          elif [ "${{ steps.upload.outcome }}" != "success" ]; then
+            set_status failed_infrastructure "the source artifact upload failed"
+          fi
+          python3 tools/ci_matrix.py record \
+            --out "$GITHUB_WORKSPACE/results/source-${{ matrix.channel }}.json" \
+            --kind source \
+            --vmod "${{ inputs.vmod_id }}" \
+            --channel "${{ matrix.channel }}" \
+            --status "$status" \
+            --stage source \
+            --detail "$detail" \
+            --artifact "${{ matrix.source_artifact }}" \
+            --ref "${{ matrix.ref }}" \
+            --commit "${{ matrix.expected_commit }}" \
+            --version "${{ matrix.version }}" \
+            --digest "${{ matrix.archive_sha256 }}"
+        working-directory: vcache-packaging
+
+      - name: upload the source result record and logs
+        id: upload_result
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.result_artifact }}
+          path: |
+            results/source-${{ matrix.channel }}.json
+            source-archive.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: fail when the source stage failed
         if: >-
-          always() && !(inputs.inject == 'suppress_result'
-          && matrix.family == 'deb' && matrix.engine == 'vinyl-release')
+          steps.archive.outcome != 'success' || steps.upload.outcome != 'success'
+          || steps.upload_result.outcome == 'failure'
+        run: exit 1
+
+  target-generated:
+    name: ${{ inputs.vmod_id }} ${{ matrix.target }} (${{ matrix.engine }})
+    needs: [plan, source-generated]
+    # Deliberately NOT ordinary `needs` semantics, for the same reason as the
+    # upstream target job: this row must start after a failed source job and
+    # decide from its own requested artifact whether it can proceed, so a
+    # blocked row is reported as blocked rather than silently skipped.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.target_count != '0' && needs.plan.outputs.recipe == 'generated' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.targets) }}
+    env:
+      VINYL_TRACK: ${{ matrix.vinyl_track }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+
+      - name: download the pinned VMOD source archive
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ matrix.source_artifact }}
+          path: lane/src
+
+      - name: download the shared engine artifact
+        id: engine_download
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ matrix.engine_artifact }}
+          path: engine-artifact
+
+      # Identical to the upstream target job's check, and load-bearing for the
+      # same reason: this row has no second, independent way to know what it
+      # downloaded. The cohort id is read back out of the same identity file
+      # rather than pinned here, so the row and the artifact cannot disagree
+      # about which cohort they belong to.
+      - name: verify the engine artifact against this row
+        id: engine_verify
+        if: steps.engine_download.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          scripts/ci/engine-identity.sh "${{ matrix.family }}" \
+            > "$GITHUB_WORKSPACE/engine-identity.env"
+          cat "$GITHUB_WORKSPACE/engine-identity.env"
+          python3 tools/ci_matrix.py verify-engine-metadata \
+            --metadata "$GITHUB_WORKSPACE/engine-artifact/engine-metadata.json" \
+            --engine "${{ matrix.engine }}" \
+            --target "${{ matrix.target }}" \
+            --identity "$GITHUB_WORKSPACE/engine-identity.env" \
+            --packages "$GITHUB_WORKSPACE/engine-artifact/packages"
+          # sed, not `.`: engine-identity.sh emits values containing spaces
+          # (the maintainer line, for one), so sourcing it would be a shell
+          # injection surface and a quoting bug waiting to happen.
+          cohort=$(sed -n 's/^cohort_id=//p' "$GITHUB_WORKSPACE/engine-identity.env")
+          [ -n "$cohort" ] || { echo "E: no cohort_id in engine-identity.env" >&2; exit 1; }
+          echo "cohort=$cohort" >> "$GITHUB_OUTPUT"
+        working-directory: vcache-packaging
+
+      - name: place the verified engine packages in the lane
+        id: engine_install
+        if: steps.engine_verify.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p "$GITHUB_WORKSPACE/lane/engine" "$GITHUB_WORKSPACE/lane/out"
+          cp -p "$GITHUB_WORKSPACE"/engine-artifact/packages/* "$GITHUB_WORKSPACE/lane/engine/"
+          ls -la "$GITHUB_WORKSPACE/lane/engine"
+
+      # The Debian buildroot. make-chroot.sh is INVOKED, never modified: it is
+      # part of the cachetag lane and this wave does not touch a byte of it. It
+      # writes into dist/debian-13/work/chroot, so the tarball is copied to
+      # where the generated lane's container expects it.
+      - name: build the pinned buildroot with mmdebstrap
+        id: chroot
+        if: matrix.family == 'deb' && steps.engine_install.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          bash scripts/ci/debian13/make-chroot.sh
+          mkdir -p "$GITHUB_WORKSPACE/lane/chroot"
+          cp -p dist/debian-13/work/chroot/*.tar "$GITHUB_WORKSPACE/lane/chroot/"
+          ls -la "$GITHUB_WORKSPACE/lane/chroot"
+        working-directory: vcache-packaging
+
+      # Render the recipe. --inject-token is the plan's verification case 4 and
+      # corrupts the recipe AFTER rendering, on purpose: the generator already
+      # refuses every token it can refuse, and its own tests cover that. This
+      # proves the LANE refuses a recipe that a build would consume literally.
+      - name: generate the native recipe
+        id: generate
+        if: >-
+          steps.engine_install.outcome == 'success'
+          && (matrix.family != 'deb' || steps.chroot.outcome == 'success')
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          inject=""
+          if [ "${{ matrix.inject_recipe }}" = "true" ]; then
+            inject="--inject-token"
+          fi
+          # shellcheck disable=SC2086 # inject is empty or exactly one flag
+          sh scripts/ci/vmod/generate.sh \
+            --manifest "${{ inputs.manifest }}" \
+            --overlay "recipes/vmods/overlays/${{ inputs.vmod_id }}/overlay.yml" \
+            --id "${{ inputs.vmod_id }}" \
+            --cohort "${{ steps.engine_verify.outputs.cohort }}" \
+            --target "${{ matrix.target }}" \
+            --channel "${{ matrix.channel }}" \
+            --archive "$(find "$GITHUB_WORKSPACE/lane/src" -name '*.tar.gz' | sort | head -1)" \
+            --out "$GITHUB_WORKSPACE/lane" \
+            $inject
+        working-directory: vcache-packaging
+
+      - name: build the package in the pinned buildroot
+        id: build
+        if: steps.generate.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          case "${{ matrix.family }}" in
+          deb) stage=build-deb ;;
+          rpm) stage=build-rpm ;;
+          *) echo "E: unknown family" >&2; exit 1 ;;
+          esac
+          sh scripts/ci/vmod/run.sh "$stage" \
+            --lane "$GITHUB_WORKSPACE/lane" \
+            --id "${{ inputs.vmod_id }}" \
+            --manifest "${{ inputs.manifest }}" \
+            --overlay "recipes/vmods/overlays/${{ inputs.vmod_id }}/overlay.yml" \
+            --cohort "${{ steps.engine_verify.outputs.cohort }}" \
+            --target "${{ matrix.target }}"
+        working-directory: vcache-packaging
+
+      # Payload, ABI, hardening, lint, installed-package smoke and the ported
+      # behaviour suite, all in a container that has never seen the build tree.
+      - name: verify the installed package
+        id: verify
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          case "${{ matrix.family }}" in
+          deb) stage=verify-deb ;;
+          rpm) stage=verify-rpm ;;
+          *) echo "E: unknown family" >&2; exit 1 ;;
+          esac
+          sh scripts/ci/vmod/run.sh "$stage" \
+            --lane "$GITHUB_WORKSPACE/lane" \
+            --id "${{ inputs.vmod_id }}" \
+            --manifest "${{ inputs.manifest }}" \
+            --overlay "recipes/vmods/overlays/${{ inputs.vmod_id }}/overlay.yml" \
+            --cohort "${{ steps.engine_verify.outputs.cohort }}" \
+            --target "${{ matrix.target }}"
+        working-directory: vcache-packaging
+
+      - name: checksums
+        id: sums
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          cd "$GITHUB_WORKSPACE/lane/out"
+          find . -maxdepth 1 -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.dsc' \
+            -o -name '*.tar.*' -o -name '*.changes' -o -name '*.buildinfo' \) \
+            -printf '%P\n' | sort | xargs -r sha256sum > SHA256SUMS
+          cat SHA256SUMS
+
+      # The generation record is evidence, not a build artefact: it carries the
+      # digest of every input including the generator's own source, of every
+      # rendered file, and the expected package names. A row that produced a
+      # package but no record cannot be traced back to what generated it.
+      - name: upload the package artifacts and the generation record
+        id: upload
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.packages_artifact }}
+          path: |
+            lane/out/*
+            lane/recipe/**
+            lane/names.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: classify and record the target result
+        id: record
+        if: always()
+        shell: bash
+        run: |
+          set -eu
+          status=passed
+          detail=""
+          set_status() { status=$1; detail=$2; }
+          if [ "${{ steps.download.outcome }}" != "success" ]; then
+            set_status blocked_by_vmod_source \
+              "source artifact ${{ matrix.source_artifact }} was not available"
+          elif [ "${{ steps.engine_download.outcome }}" != "success" ]; then
+            set_status blocked_by_engine_artifact \
+              "${{ matrix.engine_row_key }} published no ${{ matrix.engine_artifact }}"
+          elif [ "${{ steps.engine_verify.outcome }}" != "success" ]; then
+            set_status blocked_by_engine_artifact \
+              "${{ matrix.engine_artifact }} does not describe ${{ matrix.engine_row_key }}"
+          elif [ "${{ steps.engine_install.outcome }}" != "success" ]; then
+            set_status failed_infrastructure \
+              "the verified engine packages could not be placed in the lane"
+          elif [ "${{ steps.chroot.outcome }}" = "failure" ]; then
+            set_status failed_infrastructure "the mmdebstrap buildroot could not be built"
+          # Before failed_package_build, and a separate status on purpose:
+          # nothing was compiled, the inputs are wrong, and the fix is in the
+          # manifest, the overlay, the adapter or the generator rather than in
+          # the source. Calling it a build failure would send a reader to the
+          # wrong place entirely.
+          elif [ "${{ steps.generate.outcome }}" != "success" ]; then
+            set_status failed_recipe_generation \
+              "the native recipe could not be generated, or an unresolved token survived into it"
+          elif [ "${{ steps.build.outcome }}" = "failure" ]; then
+            set_status failed_package_build "the native package build failed"
+          elif [ "${{ steps.verify.outcome }}" = "failure" ]; then
+            # One step covers payload, ABI, hardening, lint, smoke and
+            # behaviour, so the detail names the log to read rather than
+            # guessing which family failed.
+            set_status failed_install_or_smoke \
+              "installed-package verification failed; see the verify step log"
+          elif [ "${{ steps.sums.outcome }}" != "success" ]; then
+            set_status failed_infrastructure "the row did not reach its checksums"
+          elif [ "${{ steps.upload.outcome }}" = "failure" ]; then
+            set_status failed_infrastructure \
+              "the package artifact upload failed after a successful build"
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          python3 tools/ci_matrix.py record \
+            --out "$GITHUB_WORKSPACE/results/${{ matrix.target }}-${{ matrix.engine }}.json" \
+            --kind package-target \
+            --vmod "${{ inputs.vmod_id }}" \
+            --channel "${{ matrix.channel }}" \
+            --engine "${{ matrix.engine }}" \
+            --target "${{ matrix.target }}" \
+            --status "$status" \
+            --stage "${{ matrix.family }}" \
+            --detail "$detail" \
+            --artifact "${{ matrix.packages_artifact }}" \
+            --ref "${{ matrix.ref }}" \
+            --commit "${{ matrix.expected_commit }}" \
+            --version "${{ matrix.version }}"
+        working-directory: vcache-packaging
+
+      - name: upload the target result record
+        id: upload_result
+        if: always() && matrix.suppress_result != 'true'
         continue-on-error: true
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
@@ -757,7 +1178,7 @@ jobs:
 
   summary:
     name: ${{ inputs.vmod_id }} summary
-    needs: [plan, source, target]
+    needs: [plan, source, target, source-generated, target-generated]
     # Runs after ordinary failures, respects an intentional cancellation, and
     # never fails on a row failure: the row already failed and the caller's
     # collector owns the verdict. This job's job is to make sure every expected
@@ -777,7 +1198,7 @@ jobs:
       # Without it an injected run would synthesize blocked lane rows for a
       # manifest that never parsed.
       - name: inject a malformed manifest
-        if: inputs.inject == 'manifest'
+        if: inputs.inject == 'manifest' && inputs.vmod_id == 'cachetag'
         shell: bash
         run: |
           set -eu
