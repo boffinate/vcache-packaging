@@ -18,6 +18,20 @@ name: Release draft assembly
 on:
   workflow_dispatch:
     inputs:
+      track:
+        description: >-
+          Vinyl pin track to assemble. release (default) drafts the
+          release cohort built from the digest-pinned upstream tarball --
+          what users install, this workflow's purpose after the two-track
+          cutover; trunk drafts the pinned-snapshot cohort. The default can
+          be release without surprising anything because this workflow is
+          dispatch-only.
+        required: false
+        default: release
+        type: choice
+        options:
+          - release
+          - trunk
       allow_incomplete_evidence:
         description: >-
           Assemble a draft even when the registry does not describe a
@@ -32,6 +46,11 @@ permissions:
   contents: read
 
 env:
+  # Selects the pin block every build.sh invocation and release-manifest.sh's
+  # pins.env/cohort.env sourcing resolve -- including the assembly job, whose
+  # cohort identity must come from the same track the lanes built. The
+  # fallback covers API dispatches that omit the input.
+  VINYL_TRACK: ${{ inputs.track || 'release' }}
   VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
   VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
   CACHETAG_SOURCE_SHA256: 9aba3effcb20cfc70b77a4729990e3cd2ae1712ad242f4e4c45a664e1949eac2
@@ -164,7 +183,14 @@ jobs:
           ci_verify_cachetag_release_checkout \
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
+      # The release track builds from the digest-pinned upstream tarball
+      # (downloaded by build.sh and verified against the pinned sha256) and
+      # never reads a Vinyl git checkout, so this step is trunk-only --
+      # mirroring ci.yml's package jobs. The source-archive job's checkout
+      # stays unconditional: the cachetag archive derivation always builds
+      # against the pinned trunk Vinyl.
       - name: checkout ../vinyl-cache (pinned commit)
+        if: env.VINYL_TRACK == 'trunk'
         run: |
           set -eu
           . vcache-packaging/scripts/ci/lib/common.sh
@@ -217,7 +243,14 @@ jobs:
           ci_verify_cachetag_release_checkout \
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
+      # The release track builds from the digest-pinned upstream tarball
+      # (downloaded by build.sh and verified against the pinned sha256) and
+      # never reads a Vinyl git checkout, so this step is trunk-only --
+      # mirroring ci.yml's package jobs. The source-archive job's checkout
+      # stays unconditional: the cachetag archive derivation always builds
+      # against the pinned trunk Vinyl.
       - name: checkout ../vinyl-cache (pinned commit)
+        if: env.VINYL_TRACK == 'trunk'
         run: |
           set -eu
           . vcache-packaging/scripts/ci/lib/common.sh
