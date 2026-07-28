@@ -805,11 +805,32 @@ tests:
   # tag purge, post-purge miss, clean SIGTERM, uninstall leaving the runtime
   # untouched. logs/smoke.log of run 30352844760: ALL STEPS PASSED.
   installed_package_smoke: pass
-  # See the Debian target manifest: the suite runs in the source harness,
-  # not against the production-hardened package build the plan asks for. No
-  # lane does that yet.
-  full_behavior_suite: pending
-  # No release-track transaction matrix has run yet; the nightly exercises
-  # the trunk cohort only. Left pending until a release-track transactions
-  # run exists for this cohort.
-  upgrade_transactions: pending
+  # ci.yml run 30357799478 (track release,
+  # https://github.com/boffinate/vcache-packaging/actions/runs/30357799478),
+  # vtc-suite/vtc-suite.sh in a fresh container: the packaged vinyltest --
+  # owned by vinyl-cache 9.0.1-1.el9 itself, vtest2 pin db5ccb4a07 -- drove
+  # the full default-storage VTC matrix against the installed
+  # libvmod-cachetag 1.0.1-1.el9, proven the only libvmod_cachetag.so on
+  # the filesystem, sha256
+  # 74bb85c40afdfddd1ec2c332af3232d88d848259a550250a307f08283292e9e1 in
+  # /usr/lib64/vinyl-cache/vmods. 52/52 passed, 0 skipped; the 25
+  # Fellow/Buddy VTCs are excluded by src/Makefile.am's TESTS, and
+  # cachetag_wal_test cannot run against installed packages -- its pass
+  # stands as source-archive evidence from the 1.0.1 release proof.
+  # pm00007=clean, no retry. Mitigations in force: -j1 serial, and
+  # -p debug=+vclrel, needed because 9.0.1 lacks 7de492b0e8 ("Shut down
+  # pools when stopping"); removable when the release track reaches a Vinyl
+  # containing it.
+  full_behavior_suite: pass
+  # nightly-transactions.yml run 30358318441 (release track): the mismatch
+  # and same-ABI fixtures rebuilt from this cohort's own RPMs with the
+  # track-derived candidate versions (9.0.2~git20260724.ffffffffffff /
+  # .eeeeeeeeeeee, releases 1.mismatchfixture.el9 / 1.sameabifixture.el9),
+  # then the dnf scenario matrix in fresh containers against the 9.0.1-1.el9
+  # baseline -- 19 rows in mismatch/logs/summary.tsv, one sanity control
+  # plus 18 dnf scenarios. Same outcome shape as the trunk cohort's matrix:
+  # plain dnf upgrade refuses the whole transaction under best=True, every
+  # destructive path carries --allowerasing with a package named alongside
+  # it, versionlock blocks the erasing install, and history undo restores
+  # the cohort.
+  upgrade_transactions: pass

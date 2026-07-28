@@ -800,10 +800,22 @@ tests:
   # tag purge, post-purge miss, clean SIGTERM, uninstall leaving the runtime
   # untouched. logs/smoke.log of run 30352844760: ALL STEPS PASSED.
   installed_package_smoke: pass
-  # See the Debian target manifest: the suite runs in the source harness,
-  # not against the production-hardened package build the plan asks for. No
-  # lane does that yet.
-  full_behavior_suite: pending
+  # ci.yml run 30357799478 (track trunk,
+  # https://github.com/boffinate/vcache-packaging/actions/runs/30357799478),
+  # vtc-suite/vtc-suite.sh in a fresh container: the packaged vinyltest --
+  # owned by vinyl-cache 9.0.0~git20260520.25761f8505-1.el9 itself, vtest2
+  # pin db5ccb4a07 -- drove the full default-storage VTC matrix against the
+  # installed libvmod-cachetag 1.0.1-1.el9, proven the only
+  # libvmod_cachetag.so on the filesystem, sha256
+  # c332fb7fc03fd7d687e43c98ac26c8e692971a4e6cb9641a61cb9b0a0aa6de63 in
+  # /usr/lib64/vinyl-cache/vmods. 52/52 passed, 0 skipped; the 25
+  # Fellow/Buddy VTCs are excluded by src/Makefile.am's TESTS, and
+  # cachetag_wal_test cannot run against installed packages -- its pass
+  # stands as source-archive evidence from the 1.0.1 release proof.
+  # pm00007=clean, no retry. Mitigations in force: -j1 serial, and
+  # -p debug=+vclrel, no-op-equivalent on this trunk pin (which contains
+  # 7de492b0e8) and removable once the release track has it too.
+  full_behavior_suite: pass
   # nightly-transactions.yml run 30350769683 (trunk track): the mismatch and
   # same-ABI fixtures rebuilt from this cohort's own RPMs, then the dnf
   # scenario matrix in fresh containers -- 19 rows in

@@ -445,14 +445,32 @@ tests:
   # tag purge and the post-purge MISS, clean SIGTERM, then uninstall.
   # logs/smoke.log of run 30352844760: 19 passed, 0 failed.
   installed_package_smoke: pass
-  # NOT the packaged build. The 53-test suite runs in the source harness
-  # against the harness-built VMOD, not the one the package installs. The
-  # plan asks for the suite "against the production-hardened package build",
-  # and no lane does that yet: it needs vinyltest driven against the
-  # installed vmoddir, which is a harness that does not exist. Left pending
-  # rather than claimed.
-  full_behavior_suite: pending
-  # No release-track transaction matrix has run yet; the nightly exercises
-  # the trunk cohort only. Left pending until a release-track transactions
-  # run exists for this cohort.
-  upgrade_transactions: pending
+  # ci.yml run 30357799478 (track release,
+  # https://github.com/boffinate/vcache-packaging/actions/runs/30357799478),
+  # stage-vtc-suite.sh in a fresh container: the packaged vinyltest -- owned
+  # by vinyl-cache 9.0.1-1 itself, vtest2 pin db5ccb4a07 -- drove the full
+  # default-storage VTC matrix against the installed libvmod-cachetag
+  # 1.0.1-1, proven the only libvmod_cachetag.so on the filesystem, sha256
+  # 934a1e9058ecf62d05e9441437859976a433023d0d1374e5f078d88a2a37e141 in
+  # /usr/lib/x86_64-linux-gnu/vinyl-cache/vmods. 52/52 passed, 0 skipped;
+  # the 25 Fellow/Buddy VTCs are excluded by src/Makefile.am's TESTS, and
+  # cachetag_wal_test cannot run against installed packages -- its pass
+  # stands as source-archive evidence from the 1.0.1 release proof.
+  # pm00007=clean, no retry. Mitigations in force: -j1 serial, and
+  # -p debug=+vclrel, needed because 9.0.1 lacks 7de492b0e8 ("Shut down
+  # pools when stopping"); removable when the release track reaches a Vinyl
+  # containing it.
+  full_behavior_suite: pass
+  # nightly-transactions.yml run 30358318441 (release track): the synthetic
+  # mismatch and same-ABI fixtures rebuilt from this cohort's own packages
+  # with the track-derived candidate versions
+  # (9.0.2~git20260614.ffffffffffff-1 / 9.0.2~git20260615.eeeeeeeeeeee-1),
+  # then the 16 apt scenarios s01-s16 in fresh containers against the
+  # 9.0.1-1 baseline (logs/transactions/SUMMARY.tsv). Same outcome shape as
+  # the trunk cohort's matrix: apt upgrade holds Vinyl back, full-upgrade
+  # and a direct versioned install remove the VMOD, apt-mark hold refuses
+  # even that (s15, exit 100), a pin blocks upgrades (s08) but not a direct
+  # versioned install (s16, REMOVED-VMOD -- the step-9-documented pin
+  # weakness), and the same-ABI candidate is held back rather than
+  # upgraded (s12).
+  upgrade_transactions: pass
