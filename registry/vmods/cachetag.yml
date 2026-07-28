@@ -13,9 +13,21 @@
 # and the actual source disagree, which is the thing the checks exist to catch.
 schema: vmod-ci/v1
 id: cachetag
+# GitHub-hosted, so actions/checkout can fetch it by owner/name. The
+# source_host field arrived with the second VMOD, which is not on GitHub; see
+# registry/README.md. Nothing about this lane changed when it was added.
+source_host: github
 repository: boffinate/libvmod-cachetag
 required: true
 adapter: cachetag
+# cachetag keeps its own audited debian/ and rpm/ trees, controlled with the
+# package release. It is deliberately NOT rewritten through the generic
+# generator: it is the policy reference those templates are measured against,
+# and regenerating it merely to exercise the abstraction would remove the
+# oracle. Recorded rather than inferred, so a future upstream packaging
+# directory in another VMOD's repository can never silently displace a
+# recorded strategy.
+recipe: upstream
 
 # The two source channels that were previously hidden inside CACHETAG_REF.
 # `release` is the packaged, publishable source; `trunk` is a moving branch

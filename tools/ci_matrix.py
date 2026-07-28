@@ -126,6 +126,14 @@ STATUSES = [
     "failed_engine_build",
     "blocked_by_engine_artifact",
     "failed_package_build",
+    # Generated-recipe VMODs only. A rendering failure is not a build failure:
+    # nothing was compiled, the inputs are wrong, and the fix is in the
+    # manifest, the overlay, the adapter or the generator rather than in the
+    # source. Classifying it as failed_package_build would send whoever reads
+    # the summary to the wrong place. The plan also requires a missing
+    # generated recipe or generation record to be an explicit classified
+    # failure rather than a silently empty row.
+    "failed_recipe_generation",
     "failed_abi_or_hardening",
     "failed_lint",
     "failed_install_or_smoke",
@@ -157,7 +165,34 @@ INJECTIONS = [
     # block only the VMOD rows that name that exact engine and target.
     "engine_build",
     "suppress_engine_artifact",
+    # Phase 3, the generated-recipe VMOD. `recipe_generation` corrupts the
+    # rendered recipe with an unresolved token, which is the plan's
+    # verification case 4 and the only injection that has no cachetag analogue.
+    "recipe_generation",
+    "dict_source",
+    "dict_build",
 ]
+
+# Which VMOD each injection acts on. Before the second VMOD every injection
+# implicitly acted on every VMOD, because there was only one; with two, an
+# injection that hit both would prove nothing about isolation. Naming the
+# target here rather than in a workflow expression keeps the tool, the
+# workflow and the tests unable to disagree about which row is injected.
+#
+# The pairing is deliberate: cachetag and dict have a source failure, a
+# package-build failure and a suppressed result each, so every case can be run
+# from either side and the other VMOD's rows must complete regardless.
+INJECTION_TARGET_VMOD = {
+    "source_checkout": "cachetag",
+    "source_digest": "cachetag",
+    "debian_build": "cachetag",
+    "el9_build": "cachetag",
+    "suppress_result": "cachetag",
+    "manifest": None,  # every manifest is corrupted; see ci.yml
+    "recipe_generation": "dict",
+    "dict_source": "dict",
+    "dict_build": "dict",
+}
 
 # The engine row both Phase 2 injections act on. It is a constant so the
 # workflow condition, the documentation and the tests all name the same row;
@@ -177,7 +212,35 @@ ID_RE = r"^[a-z][a-z0-9-]*$"
 # forbidden word, and the alternative is a silent collision in the one place the
 # whole reconciliation depends on being unambiguous.
 RESERVED_VMOD_IDS = ["engine", "vmod"]
+
+# Where a VMOD's source lives, and therefore how CI reaches it.
+#
+#   github  actions/checkout can fetch it; `repository` is an owner/name pair.
+#   git     any other Git host; `clone_url` is an https:// URL and the lane
+#           uses git directly.
+#
+# Until 2026-07-28 `repository` was the only field and its pattern happened to
+# accept a `host/name` string as well as `owner/name`, so a non-GitHub upstream
+# was representable only by accident and only by writing something into a field
+# that means something else. Step 5's ruling 5 called that out: every viable
+# second-VMOD candidate except one is off GitHub, so the distinction has to be
+# in the schema rather than in a coincidence. REPOSITORY_RE is now what it
+# always claimed to be -- a GitHub owner/name -- and a non-GitHub upstream says
+# so and gives a clone URL.
+SOURCE_HOSTS = ["github", "git"]
 REPOSITORY_RE = r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$"
+CLONE_URL_RE = r"^https://[A-Za-z0-9][A-Za-z0-9._-]*(?::[0-9]+)?/[A-Za-z0-9._/~-]+$"
+ARCHIVE_URL_RE = r"^https://[^\s]+$"
+
+# Which native recipe a VMOD is packaged from. Selected here, from trusted
+# local data, and never discovered: the recipe-generation plan is explicit that
+# newly found upstream packaging must not silently displace the recorded
+# strategy, because that would change package contents and recipe provenance
+# without a manifest decision.
+#
+#   upstream   the VMOD's own audited debian/ and rpm/ trees, substituted
+#   generated  rendered by tools/vmod_recipe.py from the reviewed overlay
+RECIPE_STRATEGIES = ["upstream", "generated"]
 REF_RE = r"^[A-Za-z0-9][A-Za-z0-9._/-]*$"
 COMMIT_RE = r"^[0-9a-f]{40}$"
 SHA256_RE = r"^[0-9a-f]{64}$"
@@ -228,6 +291,11 @@ _SOURCE_FIELDS = {
     "ref": _s(REF_RE),
     "expected_commit": _s(COMMIT_RE, optional=True),
     "version": _s(VERSION_RE, optional=True),
+    # Where the pinned archive is published, when upstream publishes one. Absent
+    # means the lane derives the archive from the ref itself. It sits beside the
+    # digest deliberately: URL and digest are one statement about one set of
+    # bytes and splitting them across two files would let them drift.
+    "archive_url": _s(ARCHIVE_URL_RE, optional=True),
     "archive_sha256": _s(SHA256_RE, optional=True),
     "publishable": _enum(["true", "false"]),
 }
@@ -236,9 +304,12 @@ VMOD_SPEC = _map(
     {
         "schema": _enum([SCHEMA]),
         "id": _s(ID_RE),
-        "repository": _s(REPOSITORY_RE),
+        "source_host": _enum(SOURCE_HOSTS),
+        "repository": _s(REPOSITORY_RE, optional=True),
+        "clone_url": _s(CLONE_URL_RE, optional=True),
         "required": _enum(["true", "false"]),
         "adapter": _enum(ADAPTERS),
+        "recipe": _enum(RECIPE_STRATEGIES),
         "sources": _map(
             {
                 "release": _map(dict(_SOURCE_FIELDS), optional=True),
@@ -287,6 +358,28 @@ def validate_vmod_manifest(data: dict, path: str, discovery_id: str = None) -> l
             "invocation was started for"
         )
 
+    # Exactly one upstream address, and it must be the one the declared host
+    # can actually be reached at. A GitHub entry carrying a clone URL, or a
+    # non-GitHub entry carrying an owner/name, is the ambiguity this pair of
+    # fields exists to remove.
+    host = data["source_host"]
+    if host == "github":
+        if not data.get("repository"):
+            problems.append("source_host: github requires repository as <owner>/<name>")
+        if data.get("clone_url"):
+            problems.append(
+                "clone_url: not used with source_host: github; the workflow checks a "
+                "GitHub repository out by owner/name"
+            )
+    else:
+        if not data.get("clone_url"):
+            problems.append(f"source_host: {host} requires clone_url")
+        if data.get("repository"):
+            problems.append(
+                f"repository: an <owner>/<name> pair is meaningful only on GitHub; "
+                f"source_host is {host}, so give clone_url instead"
+            )
+
     sources = data["sources"]
     if not sources:
         problems.append("sources: at least one source channel is required")
@@ -296,6 +389,16 @@ def validate_vmod_manifest(data: dict, path: str, discovery_id: str = None) -> l
             problems.append(
                 f"sources.{channel}: publishable requires expected_commit, version and "
                 "archive_sha256; a moving ref can never be published"
+            )
+        # A generated recipe is rendered from an archive the lane fetches by
+        # URL and verifies by digest; there is no VMOD repository packaging to
+        # fall back on and no derivation step in that lane. Requiring the URL
+        # here means the failure is "the manifest does not say where the source
+        # is" at validation time rather than an empty download much later.
+        if data["recipe"] == "generated" and pinned and not source.get("archive_url"):
+            problems.append(
+                f"sources.{channel}: recipe: generated needs archive_url; the lane "
+                "fetches the published archive and verifies it against archive_sha256"
             )
 
     seen_rows: dict = {}
@@ -597,6 +700,7 @@ def vmod_rows(data: dict, tier: str, manifest_path: str) -> list:
                 ref=source["ref"],
                 expected_commit=source.get("expected_commit", ""),
                 version=source.get("version", ""),
+                archive_url=source.get("archive_url", ""),
                 archive_sha256=source.get("archive_sha256", ""),
                 publishable=source["publishable"] == "true",
                 source_artifact=source_artifact(vmod, channel),
@@ -666,10 +770,28 @@ def ledger(tier: str, repo_root=None) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def injection_applies(inject: str, vmod: str) -> bool:
+    """Does this injection act on this VMOD's rows?
+
+    With one VMOD the question did not arise. With two it is the whole point:
+    an injection that hit every VMOD would demonstrate a broken run rather than
+    a contained one. `manifest` is the exception -- ci.yml corrupts every
+    manifest for it, deliberately, because that case is about the ledger and
+    not about isolation between VMODs.
+    """
+    if inject in ("none", "engine_build", "suppress_engine_artifact"):
+        return False
+    target = INJECTION_TARGET_VMOD.get(inject)
+    return target is None or target == vmod
+
+
 def expand(data: dict, tier: str, inject: str = "none") -> dict:
     """Matrices for one VMOD's reusable-workflow invocation."""
     vmod = data["id"]
     rows = vmod_rows(data, tier, "")
+    # An injection aimed at the other VMOD must leave every row here untouched,
+    # which is exactly the property the two-VMOD isolation cases demonstrate.
+    active = injection_applies(inject, vmod)
     sources = []
     for row in rows:
         if row["kind"] != "source" or not row["selected"]:
@@ -679,16 +801,19 @@ def expand(data: dict, tier: str, inject: str = "none") -> dict:
             "ref": row["ref"],
             "expected_commit": row["expected_commit"],
             "version": row["version"],
+            "archive_url": row["archive_url"],
             "archive_sha256": row["archive_sha256"],
             "row_key": row["row_key"],
             "source_artifact": row["source_artifact"],
             "result_artifact": row["result_artifact"],
         }
-        if inject == "source_checkout":
-            # A ref that cannot exist: proves a checkout failure is confined to
-            # this VMOD's rows. No build script is touched.
+        if active and inject in ("source_checkout", "dict_source"):
+            # A ref that cannot exist: proves a source failure is confined to
+            # this VMOD's rows. No build script is touched. `dict_source` is the
+            # same case from the other side, so a run can show either VMOD's
+            # source failing while the other completes.
             entry["ref"] = "vmod-ci-injected-missing-ref"
-        if inject == "source_digest":
+        if active and inject == "source_digest":
             entry["archive_sha256"] = "0" * 63 + "1"
         sources.append(entry)
 
@@ -713,6 +838,26 @@ def expand(data: dict, tier: str, inject: str = "none") -> dict:
                 "engine_artifact": row["engine_artifact"],
                 "engine_row_key": row["engine_row_key"],
                 "result_artifact": row["result_artifact"],
+                # Per-row injection flags rather than a workflow expression
+                # comparing ids and families. The workflow reads one boolean and
+                # cannot drift from the table above about which row is injected.
+                "inject_build": "true"
+                if active
+                and (
+                    (inject == "debian_build" and row["family"] == "deb")
+                    or (inject == "el9_build" and row["family"] == "rpm")
+                    or (inject == "dict_build" and row["family"] == "deb")
+                )
+                else "false",
+                "inject_recipe": "true"
+                if active and inject == "recipe_generation" and row["family"] == "deb"
+                else "false",
+                "suppress_result": "true"
+                if active
+                and inject == "suppress_result"
+                and row["family"] == "deb"
+                and row["engine"] == "vinyl-release"
+                else "false",
             }
         )
 
@@ -730,8 +875,11 @@ def expand(data: dict, tier: str, inject: str = "none") -> dict:
     return {
         "vmod": vmod,
         "required": data["required"] == "true",
-        "repository": data["repository"],
+        "source_host": data["source_host"],
+        "repository": data.get("repository", ""),
+        "clone_url": data.get("clone_url", ""),
         "adapter": data["adapter"],
+        "recipe": data["recipe"],
         "sources": {"include": sources},
         "targets": {"include": targets},
         "harnesses": {"include": harnesses},
@@ -1451,9 +1599,57 @@ def cmd_expand(args) -> int:
         for key in ("source_count", "target_count", "harness_count"):
             print(f"{key}={result[key]}")
         print(f"required={'true' if result['required'] else 'false'}")
+        print(f"source_host={result['source_host']}")
         print(f"repository={result['repository']}")
+        print(f"clone_url={result['clone_url']}")
+        print(f"recipe={result['recipe']}")
     else:
         print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def source_facts(data: dict, channel: str) -> dict:
+    """The recorded source identity of one channel, flattened for a shell.
+
+    A lane script needs these five values and must not parse the manifest with
+    sed to get them: a second parser is a second thing that can disagree with
+    the validator. Emitted through the tool that owns the schema instead.
+    """
+    source = data["sources"].get(channel)
+    if source is None:
+        raise CatalogError(f"sources.{channel}: not declared in {data['id']}")
+    return {
+        "VMOD_ID": data["id"],
+        "VMOD_SOURCE_CHANNEL": channel,
+        "VMOD_SOURCE_HOST": data["source_host"],
+        "VMOD_CLONE_URL": data.get("clone_url")
+        or "https://github.com/{}.git".format(data.get("repository", "")),
+        "VMOD_RECIPE": data["recipe"],
+        "VMOD_ADAPTER": data["adapter"],
+        "VMOD_SOURCE_REF": source["ref"],
+        "VMOD_SOURCE_COMMIT": source.get("expected_commit", ""),
+        "VMOD_SOURCE_VERSION": source.get("version", ""),
+        "VMOD_SOURCE_ARCHIVE_URL": source.get("archive_url", ""),
+        "VMOD_SOURCE_ARCHIVE_SHA256": source.get("archive_sha256", ""),
+        "VMOD_SOURCE_PUBLISHABLE": source["publishable"],
+    }
+
+
+def cmd_source_facts(args) -> int:
+    path = Path(args.manifest)
+    data = load_vmod_manifest(path)
+    errors = validate_vmod_manifest(data, str(path), discovery_id=args.id)
+    if errors:
+        for error in errors:
+            print(f"ERROR    {error}", file=sys.stderr)
+        return 1
+    facts = source_facts(data, args.channel)
+    if args.format == "shell":
+        for key, value in facts.items():
+            escaped = str(value).replace("'", "'\\''")
+            print(f"{key}='{escaped}'")
+    else:
+        print(json.dumps(facts, indent=2, sort_keys=True))
     return 0
 
 
@@ -1682,6 +1878,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_exp.add_argument("--inject", choices=INJECTIONS, default="none")
     p_exp.add_argument("--format", choices=["json", "github"], default="json")
     p_exp.set_defaults(func=cmd_expand)
+
+    p_sf = sub.add_parser(
+        "source-facts", help="one channel's recorded source identity, for a lane script"
+    )
+    p_sf.add_argument("--manifest", required=True)
+    p_sf.add_argument("--id")
+    p_sf.add_argument("--channel", default="release")
+    p_sf.add_argument("--format", choices=["json", "shell"], default="shell")
+    p_sf.set_defaults(func=cmd_source_facts)
 
     p_eng = sub.add_parser(
         "engine-matrix", help="the shared engine package rows the selected lanes need"

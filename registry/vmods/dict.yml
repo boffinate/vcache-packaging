@@ -1,0 +1,69 @@
+# vmod-dict: the second VMOD the maintainer has placed in scope (SCOPE.md).
+#
+# A catalog entry, not repository discovery. The file name stem is the
+# discovery id; ci.yml derives it without parsing this file, so a syntax error
+# here fails exactly one matrix copy instead of hiding every other VMOD.
+#
+# This is the first entry that is not on GitHub and the first whose packaging
+# recipes this repository generates. Both are declared below rather than
+# inferred: `source_host: git` says how CI reaches the source, and
+# `recipe: generated` says which recipe is built, so newly discovered upstream
+# packaging can never silently displace a recorded strategy.
+#
+# NEVER edit a pin here to make an assertion pass. A mismatch means the
+# recorded source identity and the actual source disagree, which is the thing
+# the checks exist to catch.
+#
+# Facts verified against the upstream tree at v1.7 on 2026-07-28 and recorded
+# in docs/20260728_2216_note_step-6-wave-a1-recipe-generator.md. The reviewed
+# packaging data is recipes/vmods/overlays/dict/overlay.yml.
+schema: vmod-ci/v1
+id: dict
+
+# git.gnu.org.ua, so there is no owner/name pair and actions/checkout is not
+# how this source is reached. The package lane does not clone it at all: the
+# release archive is published, so the lane downloads it, verifies the pinned
+# digest, and uses `git ls-remote` against this URL to confirm the recorded tag
+# still peels to the recorded commit. That is cheaper than a full clone, needs
+# no host-specific action, and checks the same thing.
+source_host: git
+clone_url: https://git.gnu.org.ua/vmod-dict.git
+
+required: true
+adapter: autotools
+recipe: generated
+
+sources:
+  release:
+    ref: v1.7
+    # The v1.7 PGP-signed annotated tag peels to this commit; AC_INIT and NEWS
+    # both say 1.7, and it is the commit the compatibility survey swept.
+    expected_commit: 784584d272894a39cf995377618aad551a196424
+    version: "1.7"
+    # Upstream's published release tarball: a complete `make dist` archive,
+    # 414559 bytes, published 2026-03-25 alongside a detached PGP signature
+    # whose good verification against Sergey Poznyakoff's published key
+    # (4BE4E62655488EB92ABB468F79FFD94BFCE230B1) is recorded in the Wave A1
+    # note. CI verifies the digest, which is a statement about these exact
+    # bytes; the signature check was a one-time provenance confirmation.
+    archive_url: https://download.gnu.org.ua/release/vmod-dict/vmod-dict-1.7.tar.gz
+    archive_sha256: eb2a86a780ba9628106dbe858d17ec4589ad6dcb70c6ad53decb5d32824e098c
+    publishable: true
+
+# vinyl-release only, and no trunk source channel at all. vinyl-trunk-pinned is
+# excluded because Vinyl trunk's AC_INIT still says `trunk`, so vinylapi.pc
+# carries `Version: trunk`, and acvmod.m4 splits that modversion on "." and
+# does configure-time arithmetic on the major component. See
+# docs/20260728_2127_note_step-5-second-vmod-selection.md, ruling 4. Adding the
+# lane back is a manifest edit once Vinyl trunk emits a numeric snapshot
+# version -- it is not a caution, it is a defect with a known cause.
+lanes:
+  - kind: package
+    source: release
+    engine: vinyl-release
+    tiers:
+      - ci
+      - release
+    targets:
+      - debian-13-amd64
+      - el9-x86_64

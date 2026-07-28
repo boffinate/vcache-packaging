@@ -33,9 +33,11 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 GOOD_MANIFEST = """schema: vmod-ci/v1
 id: {id}
+source_host: github
 repository: example-org/libvmod-{id}
 required: {required}
 adapter: cachetag
+recipe: upstream
 sources:
   release:
     ref: v1.0.1
@@ -73,9 +75,11 @@ lanes:
 
 BROKEN_MANIFEST = """schema: vmod-ci/v1
 id: broken
+source_host: github
 repository: example-org/libvmod-broken
 required: true
 adapter: cachetag
+recipe: upstream
 sources:
   release:
     ref: v9.9.9
@@ -1194,14 +1198,245 @@ def test_synthesize_missing() -> None:
         )
 
 
+# --- the second VMOD: schema, isolation, classification -------------------
+
+
+def _load(repo_root: Path, vmod: str) -> dict:
+    return ci_matrix.load_vmod_manifest(repo_root / "registry" / "vmods" / f"{vmod}.yml")
+
+
+def test_non_github_upstream_is_representable(repo_root: Path) -> None:
+    """Step 5's ruling 5: a non-GitHub upstream must be sayable, not implied."""
+    dict_data = _load(repo_root, "dict")
+    check(
+        "schema: dict declares a git host and a clone URL",
+        dict_data["source_host"] == "git"
+        and dict_data["clone_url"] == "https://git.gnu.org.ua/vmod-dict.git"
+        and "repository" not in dict_data,
+        str({k: dict_data.get(k) for k in ("source_host", "clone_url", "repository")}),
+    )
+    cachetag = _load(repo_root, "cachetag")
+    check(
+        "schema: cachetag still declares a GitHub owner/name",
+        cachetag["source_host"] == "github"
+        and cachetag["repository"] == "boffinate/libvmod-cachetag"
+        and "clone_url" not in cachetag,
+        str({k: cachetag.get(k) for k in ("source_host", "clone_url", "repository")}),
+    )
+
+    # Both halves of the exclusivity rule, because either one alone would let
+    # an entry carry an address its declared host cannot be reached at.
+    bad = dict(dict_data)
+    bad["repository"] = "someone/vmod-dict"
+    errors = ci_matrix.validate_vmod_manifest(bad, "x/dict.yml", "dict")
+    check(
+        "schema: a git-hosted entry may not carry an owner/name",
+        any("meaningful only on GitHub" in e for e in errors),
+        str(errors),
+    )
+    bad = dict(cachetag)
+    bad["clone_url"] = "https://github.com/boffinate/libvmod-cachetag.git"
+    errors = ci_matrix.validate_vmod_manifest(bad, "x/cachetag.yml", "cachetag")
+    check(
+        "schema: a GitHub entry may not carry a clone URL",
+        any("not used with source_host: github" in e for e in errors),
+        str(errors),
+    )
+    bad = dict(dict_data)
+    del bad["clone_url"]
+    errors = ci_matrix.validate_vmod_manifest(bad, "x/dict.yml", "dict")
+    check(
+        "schema: a git-hosted entry needs a clone URL",
+        any("requires clone_url" in e for e in errors),
+        str(errors),
+    )
+
+
+def test_recipe_strategy_is_recorded(repo_root: Path) -> None:
+    """The plan forbids discovering a strategy; it must be in the manifest."""
+    check(
+        "schema: cachetag records the upstream-owned recipe strategy",
+        _load(repo_root, "cachetag")["recipe"] == "upstream",
+    )
+    check(
+        "schema: dict records the generated recipe strategy",
+        _load(repo_root, "dict")["recipe"] == "generated",
+    )
+    data = _load(repo_root, "dict")
+    bad = json.loads(json.dumps(data))
+    del bad["sources"]["release"]["archive_url"]
+    errors = ci_matrix.validate_vmod_manifest(bad, "x/dict.yml", "dict")
+    check(
+        "schema: a generated recipe needs a published archive URL",
+        any("needs archive_url" in e for e in errors),
+        str(errors),
+    )
+
+
+def test_dict_expands_to_release_lanes_only(repo_root: Path) -> None:
+    result = ci_matrix.expand(_load(repo_root, "dict"), "ci")
+    engines = sorted({t["engine"] for t in result["targets"]["include"]})
+    check(
+        "dict: vinyl-release only, both targets",
+        engines == ["vinyl-release"] and result["target_count"] == 2,
+        str(result["targets"]["include"]),
+    )
+    check(
+        "dict: one source channel, no trunk lane",
+        result["source_count"] == 1 and result["harness_count"] == 0,
+    )
+    check(
+        "dict: the source row carries the published archive URL",
+        result["sources"]["include"][0]["archive_url"].endswith("vmod-dict-1.7.tar.gz"),
+        str(result["sources"]["include"][0]),
+    )
+
+
+def test_injections_are_confined_to_one_vmod(repo_root: Path) -> None:
+    """The two-VMOD isolation property, at the level the tool controls.
+
+    An injection aimed at cachetag must leave every dict row unmarked and
+    unmodified, and vice versa. If this were not true the failure-injection
+    cases would demonstrate a broken run rather than a contained one.
+    """
+    cachetag = _load(repo_root, "cachetag")
+    dictm = _load(repo_root, "dict")
+
+    for inject, victim, bystander, bystander_data in (
+        ("source_checkout", "cachetag", "dict", dictm),
+        ("debian_build", "cachetag", "dict", dictm),
+        ("suppress_result", "cachetag", "dict", dictm),
+        ("dict_source", "dict", "cachetag", cachetag),
+        ("dict_build", "dict", "cachetag", cachetag),
+        ("recipe_generation", "dict", "cachetag", cachetag),
+    ):
+        clean = ci_matrix.expand(bystander_data, "ci")
+        injected = ci_matrix.expand(bystander_data, "ci", inject=inject)
+        check(
+            f"isolation: inject={inject} leaves every {bystander} row untouched",
+            clean == injected,
+            f"{bystander} expansion changed under an injection aimed at {victim}",
+        )
+
+    # And the victim really is marked, or the test above would pass vacuously.
+    injected = ci_matrix.expand(cachetag, "ci", inject="source_checkout")
+    check(
+        "isolation: inject=source_checkout does mark cachetag's source row",
+        injected["sources"]["include"][0]["ref"] == "vmod-ci-injected-missing-ref",
+        str(injected["sources"]["include"][0]),
+    )
+    injected = ci_matrix.expand(dictm, "ci", inject="dict_source")
+    check(
+        "isolation: inject=dict_source does mark dict's source row",
+        injected["sources"]["include"][0]["ref"] == "vmod-ci-injected-missing-ref",
+        str(injected["sources"]["include"][0]),
+    )
+    injected = ci_matrix.expand(dictm, "ci", inject="recipe_generation")
+    marked = [t for t in injected["targets"]["include"] if t["inject_recipe"] == "true"]
+    check(
+        "isolation: inject=recipe_generation marks exactly one dict target row",
+        len(marked) == 1 and marked[0]["family"] == "deb",
+        str([(t["target"], t["inject_recipe"]) for t in injected["targets"]["include"]]),
+    )
+    injected = ci_matrix.expand(cachetag, "ci", inject="debian_build")
+    marked = [t for t in injected["targets"]["include"] if t["inject_build"] == "true"]
+    check(
+        "isolation: inject=debian_build marks only cachetag's Debian rows",
+        marked and all(t["family"] == "deb" for t in marked),
+        str([(t["target"], t["inject_build"]) for t in injected["targets"]["include"]]),
+    )
+
+
+def test_recipe_generation_status_is_in_the_vocabulary() -> None:
+    check(
+        "classification: failed_recipe_generation exists",
+        "failed_recipe_generation" in ci_matrix.STATUSES,
+    )
+    check(
+        "classification: it is a failure, not an OK status",
+        "failed_recipe_generation" not in ci_matrix.OK_STATUSES,
+    )
+    record = ci_matrix.make_record(
+        kind="package-target",
+        vmod="dict",
+        channel="release",
+        engine="vinyl-release",
+        target="debian-13-amd64",
+        status="failed_recipe_generation",
+        stage="generate",
+        detail="an unresolved token survived into the generated recipe",
+    )
+    check(
+        "classification: a record carrying it is well formed and keyed to its row",
+        record["row_key"] == "target/dict/release/vinyl-release/debian-13-amd64"
+        and record["status"] == "failed_recipe_generation",
+        str(record),
+    )
+
+
+def test_source_facts_are_emitted_for_a_lane_script(repo_root: Path) -> None:
+    facts = ci_matrix.source_facts(_load(repo_root, "dict"), "release")
+    check(
+        "source-facts: dict's recorded identity, ready for a shell",
+        facts["VMOD_SOURCE_REF"] == "v1.7"
+        and facts["VMOD_SOURCE_COMMIT"] == "784584d272894a39cf995377618aad551a196424"
+        and facts["VMOD_SOURCE_VERSION"] == "1.7"
+        and facts["VMOD_CLONE_URL"] == "https://git.gnu.org.ua/vmod-dict.git"
+        and facts["VMOD_RECIPE"] == "generated",
+        str(facts),
+    )
+    facts = ci_matrix.source_facts(_load(repo_root, "cachetag"), "release")
+    check(
+        "source-facts: a GitHub entry gets a derived clone URL",
+        facts["VMOD_CLONE_URL"] == "https://github.com/boffinate/libvmod-cachetag.git",
+        str(facts),
+    )
+
+
+def test_ledger_covers_both_vmods(repo_root: Path) -> None:
+    ledger = ci_matrix.ledger("ci", repo_root)
+    keys = sorted(r["row_key"] for r in ledger["rows"] if r["selected"])
+    expected = sorted(
+        [
+            "engine/vinyl-release/debian-13-amd64",
+            "engine/vinyl-release/el9-x86_64",
+            "engine/vinyl-trunk-pinned/debian-13-amd64",
+            "engine/vinyl-trunk-pinned/el9-x86_64",
+            "vmod/cachetag",
+            "source/cachetag/release",
+            "target/cachetag/release/vinyl-release/debian-13-amd64",
+            "target/cachetag/release/vinyl-release/el9-x86_64",
+            "target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64",
+            "target/cachetag/release/vinyl-trunk-pinned/el9-x86_64",
+            "vmod/dict",
+            "source/dict/release",
+            "target/dict/release/vinyl-release/debian-13-amd64",
+            "target/dict/release/vinyl-release/el9-x86_64",
+        ]
+    )
+    check("ledger: the ci tier expects exactly these 14 rows", keys == expected, str(keys))
+    check(
+        "ledger: dict adds no engine row, because it shares vinyl-release",
+        sum(1 for r in ledger["rows"] if r["kind"] == "engine" and r["selected"]) == 4,
+    )
+
+
 # --- the checked-in manifest ----------------------------------------------
 
 
 def test_repo_catalog(repo_root: Path) -> None:
     entries = ci_matrix.discover(repo_root)
+    # The selected set, in discovery (file name) order. Asserted exactly rather
+    # than by membership: adding a VMOD doubles the per-cohort evidence
+    # obligation, so it is a SCOPE.md decision and this test is one of the
+    # places that must be updated deliberately when one is made.
     check(
-        "repo: cachetag is the only catalog entry",
-        entries == [{"id": "cachetag", "manifest": "registry/vmods/cachetag.yml"}],
+        "repo: the catalog holds exactly the selected VMODs",
+        entries
+        == [
+            {"id": "cachetag", "manifest": "registry/vmods/cachetag.yml"},
+            {"id": "dict", "manifest": "registry/vmods/dict.yml"},
+        ],
         str(entries),
     )
     path = repo_root / "registry" / "vmods" / "cachetag.yml"
@@ -1627,6 +1862,13 @@ def main(repo_root: Path = None) -> int:
     test_multi_vmod_isolation()
     test_record_precedence_and_validation()
     test_synthesize_missing()
+    test_non_github_upstream_is_representable(root)
+    test_recipe_strategy_is_recorded(root)
+    test_dict_expands_to_release_lanes_only(root)
+    test_injections_are_confined_to_one_vmod(root)
+    test_recipe_generation_status_is_in_the_vocabulary()
+    test_source_facts_are_emitted_for_a_lane_script(root)
+    test_ledger_covers_both_vmods(root)
     test_repo_catalog(root)
     test_pin_parsing()
     test_pins_do_not_drift_from_the_manifest(root)
