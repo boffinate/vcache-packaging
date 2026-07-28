@@ -204,7 +204,17 @@ sleep 1
 curl -sS -D- http://127.0.0.1:8080/ | head -3 || true
 
 mkdir -p /var/lib/vinyl-cache/smoke
+# debug=+vclrel ("Rapid VCL release", include/tbl/debug_bits.h, present in
+# both 9.0.1 and trunk) makes workers release their cached VCL reference
+# after every task, so vcl->busy is zero at stop and SIGTERM completes within
+# the wait window below. Needed because 9.0.1 lacks 7de492b0e8 ("Shut down
+# pools when stopping"): pools are not shut down on stop, so idle workers
+# hold their VCL refs through a 60s cond-wait and an orderly stop takes up
+# to a minute. No-op-equivalent on the trunk pin, which contains the fix.
+# Remove when the release track reaches a Vinyl containing 7de492b0e8
+# (9.0.2 if backported).
 vinyld -a 127.0.0.1:6081 -f /tmp/smoke.vcl -n /var/lib/vinyl-cache/smoke \
+	-p debug=+vclrel \
 	-P /run/vinyld-smoke.pid -s default,128m > /tmp/vinyld.out 2>&1
 sleep 3
 if [ -s /run/vinyld-smoke.pid ] && kill -0 "$(cat /run/vinyld-smoke.pid)" 2>/dev/null; then
