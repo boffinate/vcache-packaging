@@ -123,6 +123,30 @@ printf 'mock runs as %s (uid %s, groups: %s)\n' \
 	mockbuild "$build_uid" "$(runuser -u mockbuild -- id -nG)"
 mock_as --version
 
+#
+# SOURCE_DATE_EPOCH must be present inside the chroot environment. The host
+# export does not cross into mock's chroot, and when the variable is absent
+# EL9's redhat-rpm-config derives it from the topmost %changelog entry
+# truncated to midnight UTC -- exactly what the 1.0.0-1 evidence recorded
+# (1779235200) despite the export. config_opts['environment'] is mock's
+# documented mechanism, so each package gets a derived config that includes
+# the stock one and forwards its own epoch. The root name is pinned to the
+# stock config's, so every invocation keeps sharing the one --no-clean root
+# regardless of which config file it names.
+#
+mock_epoch_cfg() { # NAME EPOCH; prints the generated config path
+	_cfg=$topdir/mock-$1.cfg
+	cat > "$_cfg" <<EOF
+include('/etc/mock/$mock_cfg.cfg')
+config_opts['root'] = '$mock_cfg'
+config_opts['environment']['SOURCE_DATE_EPOCH'] = '$2'
+EOF
+	chmod 0644 "$_cfg"
+	printf '%s' "$_cfg"
+}
+vinyl_mock_cfg=$(mock_epoch_cfg vinyl "$VINYL_SOURCE_DATE_EPOCH")
+cachetag_mock_cfg=$(mock_epoch_cfg cachetag "$CACHETAG_SOURCE_DATE_EPOCH")
+
 ###############################################################################
 say "vinyl-cache: generate the spec (duplicates container/build.sh stage_vinyl's substitution)"
 ###############################################################################
@@ -159,24 +183,28 @@ mock_as -r "$mock_cfg" --init
 say "Mock: vinyl-cache buildsrpm + rebuild"
 ###############################################################################
 
-# The two epoch macros make SOURCE_DATE_EPOCH actually reach the RPM header
-# bytes: EL9's rpm 4.16 ships %use_source_date_epoch_as_buildtime defaulting
-# to 0, so without them BUILDTIME comes from the wall clock and payload
-# mtimes are unclamped. Same treatment as recipes/el9/container/build.sh's
-# rpmb() and, before that, the mismatch fixture whose reproducibility check
-# first proved the export alone changes nothing. _buildhost is deliberately
-# not pinned: whole-RPM reproducibility is not this lane's contract.
+# The derived config puts the vinyl epoch into the chroot environment (see
+# mock_epoch_cfg above); the two epoch macros then make it reach the RPM
+# header bytes: EL9's rpm 4.16 ships %use_source_date_epoch_as_buildtime
+# defaulting to 0, so without them BUILDTIME comes from the wall clock and
+# payload mtimes are unclamped. Same treatment as
+# recipes/el9/container/build.sh's rpmb() and, before that, the mismatch
+# fixture whose reproducibility check first proved the export alone changes
+# nothing. _buildhost is deliberately not pinned: whole-RPM reproducibility
+# is not this lane's contract.
 epoch_defines=(--define "use_source_date_epoch_as_buildtime 1"
 	--define "clamp_mtime_to_source_date_epoch 1")
 
+# The export covers anything running outside the chroot; the chroot itself
+# gets the value from the derived config.
 export SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH
-mock_as -r "$mock_cfg" --no-clean "${epoch_defines[@]}" \
+mock_as -r "$vinyl_mock_cfg" --no-clean "${epoch_defines[@]}" \
 	--resultdir="$resultdir/vinyl" \
 	--buildsrpm --spec "$specdir/vinyl-cache.spec" --sources "$srcdir" \
 	2>&1 | tee "$logdir/mock-vinyl-srpm.log"
 
 vinyl_srpm=$(ls "$resultdir/vinyl"/vinyl-cache-"$vinyl_evr".src.rpm)
-mock_as -r "$mock_cfg" --no-clean "${epoch_defines[@]}" \
+mock_as -r "$vinyl_mock_cfg" --no-clean "${epoch_defines[@]}" \
 	--resultdir="$resultdir/vinyl" \
 	--rebuild "$vinyl_srpm" \
 	2>&1 | tee "$logdir/mock-vinyl-build.log"
@@ -270,16 +298,17 @@ echo "$CACHETAG_SHA256  $srcdir/$CACHETAG_TARBALL" | sha256sum -c -
 say "Mock: libvmod-cachetag buildsrpm + rebuild, against the installed vinyl-cache-devel"
 ###############################################################################
 
-# The cachetag epoch, not the Vinyl epoch exported for the builds above.
+# The cachetag epoch, not the Vinyl epoch used for the builds above; the
+# cachetag derived config forwards it into the chroot.
 export SOURCE_DATE_EPOCH=$CACHETAG_SOURCE_DATE_EPOCH
-mock_as -r "$mock_cfg" --no-clean "${epoch_defines[@]}" \
+mock_as -r "$cachetag_mock_cfg" --no-clean "${epoch_defines[@]}" \
 	--addrepo="file://$localrepo" \
 	--resultdir="$resultdir/cachetag" \
 	--buildsrpm --spec "$specdir/libvmod-cachetag.spec" --sources "$srcdir" \
 	2>&1 | tee "$logdir/mock-cachetag-srpm.log"
 
 cachetag_srpm=$(ls "$resultdir/cachetag"/libvmod-cachetag-"$CACHETAG_VERSION-$CACHETAG_RELEASE.el9".src.rpm)
-mock_as -r "$mock_cfg" --no-clean "${epoch_defines[@]}" \
+mock_as -r "$cachetag_mock_cfg" --no-clean "${epoch_defines[@]}" \
 	--addrepo="file://$localrepo" \
 	--resultdir="$resultdir/cachetag" \
 	--rebuild "$cachetag_srpm" \
