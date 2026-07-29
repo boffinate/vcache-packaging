@@ -205,10 +205,35 @@ INJECTION_TARGET_VMOD = {
 # The engine row both Phase 2 injections act on. It is a constant so the
 # workflow condition, the documentation and the tests all name the same row;
 # the workflow has to spell it out literally because YAML cannot call this
-# module. `vinyl-trunk-pinned` on Debian is chosen because its three sibling
-# engine rows and their three consumer rows then have to complete, which is the
-# isolation property the case exists to demonstrate.
-INJECT_ENGINE_ROW = ("vinyl-trunk-pinned", "debian-13-amd64")
+# module.
+#
+# `vinyl-release` on Debian, moved there 2026-07-29 from `vinyl-trunk-pinned`.
+# The original choice predates the second VMOD and was made when every consumer
+# row belonged to cachetag, so any engine row had exactly one consumer and the
+# only property on show was that the three siblings survived.
+#
+# With two VMODs the rows are no longer interchangeable. Read off the ledger:
+#
+#   engine/vinyl-trunk-pinned/debian-13-amd64  ->  1 consumer, cachetag's
+#   engine/vinyl-release/debian-13-amd64       ->  2 consumers, ONE PER VMOD:
+#                                                    target/cachetag/release/vinyl-release/debian-13-amd64
+#                                                    target/dict/release/vinyl-release/debian-13-amd64
+#
+# dict declares no `vinyl-trunk-pinned` lane -- Vinyl trunk emits no numeric
+# version, so Step 5 excluded it -- which is why the trunk row has one consumer
+# and always will while dict is the second VMOD.
+#
+# Injecting the release row is therefore the only version of this case that
+# demonstrates what the matrix plan asks for: one root cause blocking consumers
+# in *different* VMODs, reported as that shared cause rather than as unrelated
+# cancelled jobs. It is also the only live exercise of the generated-recipe
+# lane's `blocked_by_engine_artifact` path, which the upstream-recipe lane has
+# had since Phase 2 and `target-generated` has never once taken.
+#
+# The isolation property the original choice was after is unchanged and is now
+# stronger, because the surviving set spans both VMODs too: three sibling engine
+# rows, cachetag's four other rows and dict's EL9 row must all complete.
+INJECT_ENGINE_ROW = ("vinyl-release", "debian-13-amd64")
 
 ID_RE = r"^[a-z][a-z0-9-]*$"
 

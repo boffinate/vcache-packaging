@@ -774,6 +774,66 @@ def test_engine_matrix() -> None:
             )
 
 
+
+def test_injected_engine_row_has_consumers_in_both_vmods() -> None:
+    """The injected engine row must be one that more than one VMOD consumes.
+
+    Read against the REAL catalog, not a fixture, because the property is about
+    which lanes the selected VMODs actually declare.
+
+    Before the second VMOD every engine row had exactly one consumer, so the
+    choice of row could not matter and nothing asserted anything about it. It
+    matters now. `engine/vinyl-trunk-pinned/debian-13-amd64` still has exactly
+    one consumer -- dict declares no trunk lane, because Vinyl trunk emits no
+    numeric version -- so injecting there can only show one row blocking, which
+    is weaker than what the per-VMOD injections already demonstrate.
+
+    The matrix plan wants the summary to report a SHARED root cause rather than
+    unrelated cancelled jobs, and that needs an injected row whose consumers sit
+    in different VMODs. This asserts exactly that, so the constant cannot be
+    moved back to a single-consumer row without a test saying why not.
+    """
+    engine, target = ci_matrix.INJECT_ENGINE_ROW
+    row_key = ci_matrix.engine_row_key(engine, target)
+    rows = ci_matrix.ledger("ci")["rows"]
+    consumers: dict = {}
+    for row in rows:
+        if row.get("kind") == "package-target" and row.get("engine_row_key") == row_key:
+            consumers.setdefault(row["vmod"], []).append(row["row_key"])
+    check(
+        f"inject-engine-row: {row_key} has more than one consumer row",
+        sum(len(v) for v in consumers.values()) > 1,
+        str(consumers),
+    )
+    check(
+        f"inject-engine-row: {row_key} is consumed by more than one VMOD",
+        len(consumers) > 1,
+        str(consumers),
+    )
+    check(
+        "inject-engine-row: the engine row itself is selected for the ci tier",
+        any(
+            r["row_key"] == row_key and r.get("selected", True)
+            for r in rows
+            if r.get("kind") == "engine"
+        ),
+        row_key,
+    )
+    # The surviving set is the other half of the case, and it must not be empty:
+    # rows that name a DIFFERENT engine row have to complete while this one is
+    # blocked, or the run demonstrates breakage rather than containment.
+    survivors = [
+        r["row_key"]
+        for r in rows
+        if r.get("kind") == "package-target" and r.get("engine_row_key") != row_key
+    ]
+    check(
+        "inject-engine-row: package rows on other engine rows survive to be observed",
+        len(survivors) >= 3,
+        str(survivors),
+    )
+
+
 def test_reconcile_blocked_by_engine_artifact() -> None:
     """The plan's verification case 6, in the collector.
 
@@ -2042,6 +2102,7 @@ def main(repo_root: Path = None) -> int:
     test_reconcile_classifies_failures()
     test_reconcile_blocked_by_vmod_source()
     test_engine_matrix()
+    test_injected_engine_row_has_consumers_in_both_vmods()
     test_reconcile_blocked_by_engine_artifact()
     test_engine_row_that_never_reported_blocks_its_consumers()
     test_vmod_source_failure_wins_over_an_engine_failure()

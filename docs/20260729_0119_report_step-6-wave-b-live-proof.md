@@ -437,7 +437,20 @@ The baseline is the gate for everything below; it went green in run 30413513970 
 
 Expected results were stated before each dispatch, from the ledger rather than from memory. One expectation is worth stating up front because it is not what the brief anticipated:
 
-**`INJECT_ENGINE_ROW` is `("vinyl-trunk-pinned", "debian-13-amd64")`**, and the expansion shows exactly one consumer of it — `target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64`. dict's two target rows both name `engine/vinyl-release/…`. So `inject=engine_build` and `inject=suppress_engine_artifact` block **one** row, cachetag's, and **`target-generated`'s engine-blocked path is not exercised by them**. Proving that path live would need `INJECT_ENGINE_ROW` moved to a `vinyl-release` row, which changes what the existing cachetag-side cases demonstrate; it is recorded as a gap rather than papered over.
+**`INJECT_ENGINE_ROW` moved, ruling R-2.** The pre-dispatch check found the constant pointing at `("vinyl-trunk-pinned", "debian-13-amd64")`, which the ledger shows has exactly **one** consumer — `target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64` — because dict declares no trunk lane. Items 10a and 10b would have demonstrated nothing the per-VMOD injections do not already cover.
+
+Read off the ledger:
+
+| Engine row | Consumers |
+| --- | --- |
+| `engine/vinyl-trunk-pinned/debian-13-amd64` | 1: cachetag's trunk-pinned Debian row |
+| **`engine/vinyl-release/debian-13-amd64`** | **2, one per VMOD**: `target/cachetag/release/vinyl-release/debian-13-amd64` and `target/dict/release/vinyl-release/debian-13-amd64` |
+
+The constant is now `("vinyl-release", "debian-13-amd64")`. That makes items 10a/10b the shared-root-cause demonstration the matrix plan asks for — one cause blocking rows in two *different* VMODs, reported as that cause rather than as unrelated cancelled jobs — and the first live exercise of `target-generated`'s `blocked_by_engine_artifact` path, which the generated-recipe lane has never taken.
+
+The isolation half of the case is unchanged and is now stronger, because the surviving set also spans both VMODs: three sibling engine rows, cachetag's four other rows, and dict's EL9 row.
+
+A self-test now asserts the property against the **real** catalog rather than a fixture — the injected row has more than one consumer, those consumers sit in more than one VMOD, the row is selected for the `ci` tier, and at least three package rows on other engine rows survive to be observed. Nothing asserted any of that before, which is why a one-consumer row could sit in the constant unnoticed once a second VMOD arrived.
 
 ### Item 2 — `inject=dict_source`, [30414399323](https://github.com/boffinate/vcache-packaging/actions/runs/30414399323)
 
@@ -449,8 +462,25 @@ The dict side is decisive and matches the expectation exactly:
 | `target/dict/release/vinyl-release/debian-13-amd64` | `blocked_by_vmod_source` | **`blocked_by_vmod_source`** |
 | `target/dict/release/vinyl-release/el9-x86_64` | `blocked_by_vmod_source` | **`blocked_by_vmod_source`** |
 | `source/cachetag/release` | PASS | **PASS** |
-| cachetag's 4 target rows | PASS | ran to completion; see the run |
+| cachetag's 4 target rows | PASS | **PASS** |
 | 4 engine rows | PASS | **PASS** |
+
+Collector, from the run's reconciled ledger:
+
+```json
+"counts": { "expected": 14, "failed": 3, "missing": 0,
+            "not_selected": 1, "passed": 11, "required_failed": 3 }
+```
+
+Three failures, no missing rows, and the two blocked rows name the artifact that was not there:
+
+```text
+source/dict/release                                   failed_source_checkout
+    vmod-ci-injected-missing-ref did not resolve to 784584d272894a39cf9953…
+target/dict/release/vinyl-release/debian-13-amd64     blocked_by_vmod_source
+target/dict/release/vinyl-release/el9-x86_64          blocked_by_vmod_source
+    source artifact vmod-source-dict-release was not available
+```
 
 This is D1's fix proven live. The Wave A3 note recorded that `expand()` injects a dict source failure by rewriting the row's `ref`, that `source.sh` used to read the ref back out of the manifest instead, and that `inject=dict_source` would therefore have produced a **green** run. It produces a classified red source row and two correctly blocked consumers, while cachetag's source and every engine row carry on — the two-way isolation property, from dict's side, in a real graph rather than in a fixture.
 
@@ -468,7 +498,7 @@ The full expected result for each, stated from the ledger so the next run can be
 | 8a | `source_checkout` | cachetag source red; its 4 targets `blocked_by_vmod_source`; dict PASS |
 | 8b | `source_digest` | same shape, different source status |
 | 9 | `suppress_result` | one cachetag row green with no result artifact; collector synthesizes `missing_result_record`; run red; dict PASS |
-| 10a | `engine_build` | `engine/vinyl-trunk-pinned/debian-13-amd64` red; **exactly one** consumer, `target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64`, `blocked_by_engine_artifact`; everything else PASS |
+| 10a | `engine_build` | `engine/vinyl-release/debian-13-amd64` red; **both** its consumers — cachetag's and dict's Debian rows — `blocked_by_engine_artifact` naming that engine row; the other 3 engine rows and the other 4 package rows PASS |
 | 10b | `suppress_engine_artifact` | same blocked set, from a *green* producer that published nothing |
 
 Dispatch discipline, learned the hard way in run 5: **one run at a time**. Two runs sharing the runner pool pushed a cachetag EL9 row past its 35-minute budget and GitHub cancelled it. There is no `concurrency:` group to serialise them.

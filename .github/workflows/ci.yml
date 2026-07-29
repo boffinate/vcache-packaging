@@ -57,10 +57,11 @@ on:
           reads this input on those events. No build script is modified by any
           of these -- the injection points are the manifest copy, the expanded
           source pins, one step before a package build, and two artifact
-          uploads. The two engine cases act on
-          vinyl-trunk-pinned/debian-13-amd64, which is
-          tools/ci_matrix.py's INJECT_ENGINE_ROW; its three sibling engine rows
-          and their three consumer rows must complete.
+          uploads. The two engine cases act on vinyl-release/debian-13-amd64,
+          which is tools/ci_matrix.py's INJECT_ENGINE_ROW; it is the one engine
+          row BOTH VMODs consume, so the case shows one root cause blocking
+          rows in two different VMODs. Its three sibling engine rows and the
+          four package rows naming them must complete.
         required: false
         default: none
         type: choice
