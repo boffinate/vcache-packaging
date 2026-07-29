@@ -579,4 +579,18 @@ The full expected result for each, stated from the ledger so the next run can be
 | 10a | `engine_build` | `engine/vinyl-release/debian-13-amd64` red; **both** its consumers — cachetag's and dict's Debian rows — `blocked_by_engine_artifact` naming that engine row; the other 3 engine rows and the other 4 package rows PASS |
 | 10b | `suppress_engine_artifact` | same blocked set, from a *green* producer that published nothing |
 
+Every one of those expectations was read back out of `ci_matrix.py expand` before dispatching, so the adjudication is against the tool rather than against memory:
+
+```text
+dict_build        inject_build on target/dict/release/vinyl-release/debian-13-amd64
+debian_build      inject_build on cachetag's two debian-13-amd64 rows
+el9_build         inject_build on cachetag's two el9-x86_64 rows
+source_checkout   source/cachetag/release ref -> vmod-ci-injected-missing-ref
+source_digest     source/cachetag/release archive_sha256 -> 0000...
+suppress_result   suppress_result on target/cachetag/release/vinyl-release/debian-13-amd64 only
+engine_build      inject_build on engine/vinyl-release/debian-13-amd64 (R-2)
+suppress_engine_artifact
+                  suppress_artifact on the same engine row
+```
+
 Dispatch discipline, learned the hard way in run 5: **one run at a time**. Two runs sharing the runner pool pushed a cachetag EL9 row past its 35-minute budget and GitHub cancelled it. There is no `concurrency:` group to serialise them.
