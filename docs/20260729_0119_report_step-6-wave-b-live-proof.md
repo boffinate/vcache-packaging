@@ -211,3 +211,54 @@ Upstream's `tests/cs.at` and `tests/ci.at` drive Varnish, so the ported VTCs say
 **Fix: `varnish v1` becomes `vinyl v1`, and the port's header now documents three bindings instead of two.** It belongs with the other two — `import dict from "…"` → `import dict;`, and `${vmod_topsrc}` → `${dictdir}` — because it binds the test to the driver under test rather than changing what is asserted. Every request URL and every expected value is still upstream's, character for character; the oracle is untouched.
 
 This is the first time the suite has ever run. A behaviour suite that was written, reviewed and staged but never executed reached CI with a binding that could not work on this engine, which is exactly the failure Wave B exists to find and exactly why load-only verification was ruled insufficient at Step 5.
+
+### Run 5 — `inject=none`, [30412067149](https://github.com/boffinate/vcache-packaging/actions/runs/30412067149), conclusion `failure`
+
+**13 of 14, and dict's EL9 row is green end to end for the first time.**
+
+| Row group | Result |
+| --- | --- |
+| 4 engine rows | PASS |
+| cachetag: invocation, source, 4 targets | **all PASS** |
+| dict: invocation, `source-generated` | PASS |
+| dict: `target-generated` **el9-x86_64** | **PASS** — build, payload, soname, hardening, rpmlint, install smoke and both VTCs |
+| dict: `target-generated` debian-13-amd64 | **FAIL**, `failed_install_or_smoke` at stage 6 |
+
+**B7a, B7b, B7c and B8 all confirmed fixed.** The EL9 row went through every gate the lane has: `2/2 passed, 0 skipped` on `dict_cs.vtc` and `dict_ci.vtc`, against the packaged `.so` resolved through `-p vmod_path`, with `num.dict` extracted from the digest-verified release archive and every expected value upstream's. **vmod-dict has a verified binary package on EL9.**
+
+The Debian row got past lint — so B7a and B7b are fixed there too — and then failed one stage later.
+
+#### B9 — the uniqueness check counted the tree the hardening stage extracted
+
+```text
+FAIL: libvmod_dict.so is not uniquely at $VINYL_VMODDIR
+(found: /usr/lib/x86_64-linux-gnu/vinyl-cache/vmods/libvmod_dict.so
+        /tmp/x/usr/lib/x86_64-linux-gnu/vinyl-cache/vmods/libvmod_dict.so)
+```
+
+The second copy is `dpkg-deb -x "$deb" /tmp/x`, extracted two stages earlier in the same container so the hardening checks could read the ELF. The check was right that there were two files and wrong about what the second one was.
+
+`verify-rpm.sh` has pruned `/tmp/x` and `/repo` since it was written. `verify-deb.sh` never inherited the list. **Third instance of the same class after B3 and B6** — a lesson one backend's verify script had and the other did not — and the reason it took until run 5 to appear is that the Debian row had never before reached stage 6.
+
+**Fix, and the sweep that goes with it.** The Debian `find` takes the RPM half's prune list, *and* both scripts now delete `/tmp/x` when the hardening stage finishes, so the uniqueness check does not depend on a prune list staying in step with an extraction path. Then the two scripts were diffed check by check, as the allowlists were after B6:
+
+| Check family | verify-deb.sh | verify-rpm.sh | Verdict |
+| --- | --- | --- | --- |
+| package selection by exact name | `dpkg-deb` glob excluding dbgsym by name | `find` excluding debuginfo/debugsource/src | symmetric |
+| generated ABI + cohort dependencies | `Depends` | arch-qualified `Requires` | symmetric |
+| payload allowlist | swept after B6 | swept after B6 | symmetric |
+| no libtool archive or static library | yes | yes | symmetric |
+| no soname provide | — | stage 4 | **deliberate**: dpkg generates no provides for a plugin outside the linker path |
+| hardening: flag from the build log | yes | yes | symmetric since B5 |
+| hardening: relro / bind-now / pic | yes | yes | symmetric |
+| lint, hard-gated with no `\|\| true` | `lintian --fail-on error,warning` | `rpmlint`, status propagated | symmetric in strength |
+| runtime-pair-only install | `-dev` absence asserted | `-devel` absence asserted | symmetric |
+| single installed object, right directory | prune list | prune list | **symmetric as of B9** |
+| packaged test driver | `command -v vinyltest` | same | symmetric |
+| behaviour suite | same invocation, same flags | same | symmetric |
+
+What is left is package-manager vocabulary and one extra RPM stage that has no Debian meaning. The class is closed on the same basis as the allowlists: both files were read side by side, and every remaining difference is recorded with a reason.
+
+#### Also landed with B9: the EL9 buildroot package set
+
+Not a defect — a gap found while preparing the evidence flip. The registry's per-VMOD `build.build_dependencies` needs the buildroot the package was built in. Debian's falls out for free: dpkg writes `Installed-Build-Depends` into the `.buildinfo`, which the row already uploads. Mock resolves its buildroot itself and writes no such list, and `root.log` records only the packages each transaction *added* — 33 for this build, against the 351 cachetag's EL9 entry records. So `build-rpm.sh` now asks the chroot directly after the build, the same thing `recipes/el9/container/build.sh:76-77` does on its own lane, and writes `logs/buildroot-packages.tsv` into the artifact. Non-fatal by construction: a row that produced a good package must not fail on a bookkeeping step.
