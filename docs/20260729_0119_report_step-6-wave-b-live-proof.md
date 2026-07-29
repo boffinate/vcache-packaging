@@ -2,7 +2,7 @@
 
 Date: 2026-07-29
 
-Status: In progress
+Status: Complete
 
 Branch: `step6-second-vmod`
 
@@ -913,31 +913,36 @@ Three of them — B3, B6 and B9 — are the same class: a lesson one backend's s
 
 | Item | Run | Verdict |
 | --- | --- | --- |
-| 1 baseline | [30413513970](https://github.com/boffinate/vcache-packaging/actions/runs/30413513970) | **PASS** — 14/14, `success` |
+| 1 baseline `none` | [30413513970](https://github.com/boffinate/vcache-packaging/actions/runs/30413513970) | **PASS** — 14/14, `success` |
 | 2 `dict_source` | [30414399323](https://github.com/boffinate/vcache-packaging/actions/runs/30414399323) | **PASS** — exact |
 | 3 `recipe_generation` | [30415386761](https://github.com/boffinate/vcache-packaging/actions/runs/30415386761) | **PASS** — exact |
-| 4 `manifest` | [30420921127](https://github.com/boffinate/vcache-packaging/actions/runs/30420921127) (5th attempt) | **PASS** — exact; four earlier attempts lost EL9 rows to a flaky EPEL mirror |
-| 5 `dict_build` | [30425966069](https://github.com/boffinate/vcache-packaging/actions/runs/30425966069) (3rd attempt) | **PASS** — exact; attempt 1 found **B11**, attempt 2 lost an EL9 row to the mirror |
+| 4 `manifest` | [30420921127](https://github.com/boffinate/vcache-packaging/actions/runs/30420921127) | **PASS** — exact, 5th attempt |
+| 5 `dict_build` | [30425966069](https://github.com/boffinate/vcache-packaging/actions/runs/30425966069) | **PASS** — exact, 3rd attempt; attempt 1 found B11 |
 | 6 `debian_build` | [30427292013](https://github.com/boffinate/vcache-packaging/actions/runs/30427292013) | **PASS** — exact |
 | 7 `el9_build` | [30429219759](https://github.com/boffinate/vcache-packaging/actions/runs/30429219759) | **PASS** — exact |
 | 8a `source_checkout` | [30430481913](https://github.com/boffinate/vcache-packaging/actions/runs/30430481913) | **PASS** — exact |
 | 8b `source_digest` | [30431584255](https://github.com/boffinate/vcache-packaging/actions/runs/30431584255) | **PASS** — exact |
 | 9 `suppress_result` | [30432639448](https://github.com/boffinate/vcache-packaging/actions/runs/30432639448) | **PASS** — exact, `missing=1` |
-| 10a `engine_build` | [30434296849](https://github.com/boffinate/vcache-packaging/actions/runs/30434296849) | **PASS** — exact; both VMODs blocked by one cause |
-| 10b `suppress_engine_artifact` | [30435730520](https://github.com/boffinate/vcache-packaging/actions/runs/30435730520) | **PASS** — exact; producer green, consumers blocked |
-| 11 equivalence | run 30413513970 vs `main` 30397392846 | **PASS** — 10 `.deb` byte-identical, 18 RPMs equivalent |
-| 12 case 8 | one-off containers | **PASS** — both targets refuse, both name the dependency |
-| 13 evidence flip | run 30413513970 + the upgrade matrix | **PASS** — `--require-releasable` exits 0 |
-
-Item 4's expectation is *partly* adjudicated and the part that matters most is settled: on all three attempts that got past the structural gate, the ledger shrank to **7 rows**, cachetag collapsed to exactly one `failed_manifest_validation`, the two `vinyl-trunk-pinned` engine rows were **absent rather than reported missing** (`missing=0` every time), and dict's invocation, source and Debian rows passed. Only the EL9 half is unproven, and it is unproven for a reason that has nothing to do with the injection.
+| 10a `engine_build` | [30434296849](https://github.com/boffinate/vcache-packaging/actions/runs/30434296849) | **PASS** — exact, both VMODs blocked by one cause |
+| 10b `suppress_engine_artifact` | [30435730520](https://github.com/boffinate/vcache-packaging/actions/runs/30435730520) | **PASS** — exact, producer green |
+| 11 equivalence | 30413513970 vs `main` 30397392846 | **PASS** — 10 `.deb` byte-identical, 18 RPMs equivalent |
+| 12 case 8 | one-off containers | **PASS** — both targets refuse and name the dependency |
+| 13 evidence flip | 30413513970 + the upgrade matrix | **PASS** — `--require-releasable` exits 0 |
 
 ## Step 6 exit gate
 
 | Clause | Verdict |
 | --- | --- |
-| A second real VMOD is packaged without requiring upstream Debian or RPM files | **MET.** Run 30413513970, 14/14 green: `vmod-dict` 1.7 built from recipes generated here on both selected targets, upstream ships no packaging, none was vendored or forked |
-| Generated recipes are deterministic and validated | **MET.** 146 generator self-tests; regeneration byte-identical; unresolved tokens refused by the generator and again by the lane, the latter proven live in item 3 |
-| A failure in either VMOD does not hide the other VMOD's results | **PARTIALLY MET.** dict→cachetag proven twice (items 2 and 3, both exact). cachetag→dict proven on the Debian half in item 4's three attempts. The remaining seven cases are blocked on EPEL |
-| Both package families meet the same evidence policy as cachetag | **MET.** Both `vmods.dict` entries are `recorded` against the same schema and the same `--require-releasable` policy as cachetag's, which exits 0 with no errors |
+| A second real VMOD is packaged without requiring upstream Debian or RPM files | **MET.** Run 30413513970, 14/14 green. `vmod-dict` 1.7 built on both selected targets from recipes generated in this repository out of the manifest, the reviewed overlay and the autotools adapter. Upstream ships no `debian/` and no `rpm/`; nothing was vendored, forked or hand-patched. The packages install from a local repository against the runtime pair alone and pass upstream's own behaviour expectations |
+| Generated recipes are deterministic and validated | **MET.** 146 generator self-tests; regenerating the same inputs produces byte-identical recipe trees and generation records; an unresolved token is refused by the generator *and* independently by the lane, the latter proven live in item 3 |
+| A failure in either VMOD does not hide the other VMOD's results | **MET.** Ten injection cases, all exact. dict→cachetag: items 2, 3, 5. cachetag→dict: items 4, 6, 7, 8a, 8b, 9. Shared dependency: items 10a and 10b, where one engine row blocks one consumer in each VMOD and both name it. `missing=0` in every case except item 9, where `missing=1` is the case |
+| Both package families meet the same evidence policy as cachetag | **MET.** Both `vmods.dict` entries are `recorded` under `cachetag-target/v2`, populated from run 30413513970's artifacts, and held to the same `--require-releasable` policy in a loop that does not know which VMOD is which. It exits 0 with no errors |
 
-Three of four clauses are met. The fourth is met in one direction and blocked in the other by an upstream outage rather than by anything in this repository, which is the one thing a Step 6 exit gate should not be signed off around.
+**All four clauses are met. Recommendation: the Step 6 exit gate is closed.**
+
+Two qualifications, neither of which reopens a clause.
+
+The **`upgrade_transactions`** evidence comes from a one-off container matrix rather than from a workflow. It is real — 15 assertions per target against two genuinely different package revisions, both built by the lane's own scripts — but nothing in CI reproduces it today. Wiring dict into `nightly-transactions.yml` is Step 8, and until then that row of dict's evidence is the only one a re-run would not regenerate by itself.
+
+The **EPEL mirror condition** cost six run attempts across items 4 and 5 and is unrelated to anything here. It is worth carrying into Step 8 as a known operational hazard: every EL9 row depends on EPEL for `libunwind`, and when a mirror in the rotation goes dark the symptom is a row that dies at its timeout, which looks like a lane defect and is not.
+
