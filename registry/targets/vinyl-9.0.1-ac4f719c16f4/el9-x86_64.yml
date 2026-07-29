@@ -873,10 +873,13 @@ vmods:
   # absent. An absent entry would let "the release is complete" be true with a
   # required VMOD's results simply missing; the entry was created explicitly
   # pending, which cannot, because --require-releasable rejects pending by
-  # name. Recorded from run 30413513970 on 2026-07-29.
+  # name. First recorded from run 30413513970 at package revision 1; Step 7
+  # Wave 1 took dict to revision 2 and reset the entry to pending, and
+  # everything below is re-recorded from the Wave 2 evidence run 30491861084
+  # (branch step7-redis-exception, commit 09d7f07, fully green, reconcile
+  # green) on 2026-07-29.
   dict:
-    evidence: pending
-    pending_reason: "dict moved to package revision 2 on 2026-07-29 (Step 7 Wave 1): the capitalised Summary and the reviewed rpmlint waivers both change the package bytes, so the revision-1 evidence below no longer describes anything that exists. Wave 2 re-records it from the live run."
+    evidence: recorded
     package:
       upstream_version: 1.7
       revision: "2"
@@ -884,30 +887,525 @@ vmods:
       binary_name: vmod-dict
     build:
       profile: production
-      recipe_sha256: PLACEHOLDER
-      configure_options: PLACEHOLDER
-      cflags: PLACEHOLDER
-      ldflags: PLACEHOLDER
-      source_date_epoch: PLACEHOLDER
-      hardening_check: pending
-      build_dependencies: []
-    artifacts: []
+      # The digest of the generated recipe this row rendered and built from:
+      # recipe/generation-record.json `recipe_sha256` in the
+      # packages-dict-release-vinyl-release-el9-x86_64 artifact of run
+      # 30491861084. It pins the reviewed template, adapter and overlay
+      # bytes behind the shipped package.
+      recipe_sha256: a655fa5cee88ad78d45b416c15a496992adfdf33e6a06c3db4bc028185b6dd66
+      # All three read out of Mock's build.log, kept by the lane as
+      # logs/mock-build.log (run 30491861084): the %configure expansion as
+      # rpmbuild ran it, and the flag variables redhat-rpm-config set for it.
+      configure_options: "./configure --build=x86_64-redhat-linux-gnu --host=x86_64-redhat-linux-gnu --program-prefix= --disable-dependency-tracking --prefix=/usr --exec-prefix=/usr --bindir=/usr/bin --sbindir=/usr/sbin --sysconfdir=/etc --datadir=/usr/share --includedir=/usr/include --libdir=/usr/lib64 --libexecdir=/usr/libexec --localstatedir=/var --sharedstatedir=/var/lib --mandir=/usr/share/man --infodir=/usr/share/info --disable-static"
+      cflags: "-O2 -flto=auto -ffat-lto-objects -fexceptions -g -grecord-gcc-switches -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -fstack-protector-strong -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -march=x86-64-v2 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection"
+      ldflags: "-Wl,-z,relro -Wl,--as-needed -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1"
+      # Committer date of the upstream release commit, forwarded per-package
+      # by the lane's derived configuration. Confirmed recorded: the Mock
+      # chroot environment in logs/mock-build.log of run 30491861084 carries
+      # SOURCE_DATE_EPOCH=1774429462, agreeing with the generation record's
+      # source.source_date_epoch.
+      source_date_epoch: "1774429462"
+      # scripts/ci/lib/package-checks.sh pc_verify_build in run 30491861084's
+      # fresh verify container: -fstack-protector-strong and
+      # -D_FORTIFY_SOURCE=2 asserted on all 2 compile lines of
+      # logs/mock-build.log, then GNU_RELRO, BIND_NOW and ELF type DYN
+      # asserted on the packaged libvmod_dict.so, with
+      # __syslog_chk as the fortify corroboration. Job log:
+      # "HARDENING INSPECTION: PASS (libvmod_dict.so)".
+      hardening_check: pass
+      # logs/buildroot-packages.tsv of run 30491861084, verbatim (214
+      # entries): the resolved package set of the lane's build container. Mock
+      # resolves from AlmaLinux's and EPEL's live mirrors, which publish no
+      # snapshot service, so this lane records exact resolved versions instead
+      # of pinning -- the same option the cachetag entry above takes. The Mock
+      # chroot's own resolved set is additionally in logs/mock-root.log.
+      build_dependencies:
+        - name: R-srpm-macros
+          version: "1.3.7-2.el9.noarch"
+        - name: almalinux-gpg-keys
+          version: "9.8-1.el9.x86_64"
+        - name: almalinux-release
+          version: "9.8-1.el9.x86_64"
+        - name: almalinux-repos
+          version: "9.8-1.el9.x86_64"
+        - name: alternatives
+          version: "1.24-2.el9.x86_64"
+        - name: ansible-srpm-macros
+          version: "1-16.el9.noarch"
+        - name: audit-libs
+          version: "3.1.5-8.el9.x86_64"
+        - name: basesystem
+          version: "11-13.el9.noarch"
+        - name: bash
+          version: "5.1.8-9.el9.x86_64"
+        - name: binutils
+          version: "2.35.2-72.el9.x86_64"
+        - name: binutils-gold
+          version: "2.35.2-72.el9.x86_64"
+        - name: bzip2
+          version: "1.0.8-11.el9.x86_64"
+        - name: bzip2-libs
+          version: "1.0.8-11.el9.x86_64"
+        - name: ca-certificates
+          version: "2025.2.80_v9.0.305-91.el9.noarch"
+        - name: coreutils
+          version: "8.32-41.el9_8.x86_64"
+        - name: coreutils-common
+          version: "8.32-41.el9_8.x86_64"
+        - name: cpio
+          version: "2.13-16.el9.x86_64"
+        - name: cracklib
+          version: "2.9.6-28.el9.x86_64"
+        - name: cracklib-dicts
+          version: "2.9.6-28.el9.x86_64"
+        - name: crypto-policies
+          version: "20260224-1.gitea0f072.el9_8.noarch"
+        - name: curl
+          version: "7.76.1-40.el9.x86_64"
+        - name: cyrus-sasl-lib
+          version: "2.1.27-22.el9.x86_64"
+        - name: debugedit
+          version: "5.0-11.el9.x86_64"
+        - name: diffutils
+          version: "3.7-12.el9.x86_64"
+        - name: dwz
+          version: "0.16-1.el9.x86_64"
+        - name: ed
+          version: "1.14.2-12.el9.x86_64"
+        - name: efi-srpm-macros
+          version: "6-4.el9.noarch"
+        - name: elfutils
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: elfutils-debuginfod-client
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: elfutils-default-yama-scope
+          version: "0.194-1.el9.alma.1.noarch"
+        - name: elfutils-libelf
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: elfutils-libs
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: epel-rpm-macros
+          version: "9-18.el9.noarch"
+        - name: file
+          version: "5.39-17.el9.x86_64"
+        - name: file-libs
+          version: "5.39-17.el9.x86_64"
+        - name: filesystem
+          version: "3.16-5.el9.x86_64"
+        - name: findutils
+          version: "4.8.0-7.el9.x86_64"
+        - name: fonts-srpm-macros
+          version: "2.0.5-7.el9.1.noarch"
+        - name: forge-srpm-macros
+          version: "0.4.0-1.el9.noarch"
+        - name: fpc-srpm-macros
+          version: "1.3-7.el9.noarch"
+        - name: gawk
+          version: "5.1.0-6.el9.x86_64"
+        - name: gdb-minimal
+          version: "16.3-3.el9.x86_64"
+        - name: gdbm-libs
+          version: "1.23-1.el9.x86_64"
+        - name: ghc-srpm-macros
+          version: "1.5.0-6.el9.noarch"
+        - name: ghc-srpm-macros-epel
+          version: "1.9.1-1.el9.noarch"
+        - name: glibc
+          version: "2.34-274.el9_8.x86_64"
+        - name: glibc-common
+          version: "2.34-274.el9_8.x86_64"
+        - name: glibc-gconv-extra
+          version: "2.34-274.el9_8.x86_64"
+        - name: glibc-minimal-langpack
+          version: "2.34-274.el9_8.x86_64"
+        - name: gmp
+          version: "6.2.0-13.el9.x86_64"
+        - name: go-srpm-macros
+          version: "3.8.1-1.el9.noarch"
+        - name: go-srpm-macros-epel
+          version: "3.8.0-1.el9.noarch"
+        - name: gpg-pubkey
+          version: "3228467c-613798eb.(none)"
+        - name: gpg-pubkey
+          version: "b86b3716-61e69f29.(none)"
+        - name: grep
+          version: "3.6-5.el9.x86_64"
+        - name: groff-base
+          version: "1.22.4-10.el9.x86_64"
+        - name: gzip
+          version: "1.12-1.el9.x86_64"
+        - name: info
+          version: "6.7-15.el9.x86_64"
+        - name: json-c
+          version: "0.14-11.el9.x86_64"
+        - name: kernel-srpm-macros
+          version: "1.0-14.el9.noarch"
+        - name: keyutils-libs
+          version: "1.6.3-1.el9.x86_64"
+        - name: krb5-libs
+          version: "1.21.1-10.el9_8.x86_64"
+        - name: libacl
+          version: "2.4.0-1.el9_8.x86_64"
+        - name: libarchive
+          version: "3.5.3-9.el9_7.x86_64"
+        - name: libattr
+          version: "2.5.1-3.el9.x86_64"
+        - name: libblkid
+          version: "2.37.4-25.el9.x86_64"
+        - name: libbrotli
+          version: "1.0.9-9.el9_7.x86_64"
+        - name: libcap
+          version: "2.48-10.el9_8.1.x86_64"
+        - name: libcap-ng
+          version: "0.8.2-7.el9.x86_64"
+        - name: libcom_err
+          version: "1.46.5-8.el9.x86_64"
+        - name: libcurl
+          version: "7.76.1-40.el9.x86_64"
+        - name: libdb
+          version: "5.3.28-57.el9_6.x86_64"
+        - name: libeconf
+          version: "0.4.1-7.el9_8.x86_64"
+        - name: libevent
+          version: "2.1.12-8.el9_4.x86_64"
+        - name: libfdisk
+          version: "2.37.4-25.el9.x86_64"
+        - name: libffi
+          version: "3.4.2-8.el9.x86_64"
+        - name: libgcc
+          version: "11.5.0-14.el9.alma.1.x86_64"
+        - name: libgcrypt
+          version: "1.10.0-11.el9.x86_64"
+        - name: libgomp
+          version: "11.5.0-14.el9.alma.1.x86_64"
+        - name: libgpg-error
+          version: "1.42-5.el9.x86_64"
+        - name: libidn2
+          version: "2.3.0-7.el9.x86_64"
+        - name: libmount
+          version: "2.37.4-25.el9.x86_64"
+        - name: libnghttp2
+          version: "1.43.0-6.el9_8.1.x86_64"
+        - name: libpkgconf
+          version: "1.7.3-10.el9.x86_64"
+        - name: libpsl
+          version: "0.21.1-5.el9.x86_64"
+        - name: libpwquality
+          version: "1.4.4-8.el9.x86_64"
+        - name: libselinux
+          version: "3.6-3.el9.x86_64"
+        - name: libsemanage
+          version: "3.6-5.el9_6.x86_64"
+        - name: libsepol
+          version: "3.6-3.el9.x86_64"
+        - name: libsigsegv
+          version: "2.13-4.el9.x86_64"
+        - name: libsmartcols
+          version: "2.37.4-25.el9.x86_64"
+        - name: libssh
+          version: "0.10.4-18.el9.x86_64"
+        - name: libssh-config
+          version: "0.10.4-18.el9.noarch"
+        - name: libstdc++
+          version: "11.5.0-14.el9.alma.1.x86_64"
+        - name: libtasn1
+          version: "4.16.0-10.el9_8.x86_64"
+        - name: libtool-ltdl
+          version: "2.4.6-46.el9.x86_64"
+        - name: libunistring
+          version: "0.9.10-15.el9.x86_64"
+        - name: libutempter
+          version: "1.2.1-6.el9.x86_64"
+        - name: libuuid
+          version: "2.37.4-25.el9.x86_64"
+        - name: libverto
+          version: "0.3.2-3.el9.x86_64"
+        - name: libxcrypt
+          version: "4.4.18-3.el9.x86_64"
+        - name: libxml2
+          version: "2.9.13-14.el9_8.2.x86_64"
+        - name: libzstd
+          version: "1.5.5-1.el9.x86_64"
+        - name: lua-libs
+          version: "5.4.4-4.el9.x86_64"
+        - name: lua-srpm-macros
+          version: "1-6.el9.noarch"
+        - name: lz4-libs
+          version: "1.9.3-5.el9.x86_64"
+        - name: mpfr
+          version: "4.1.0-10.el9.x86_64"
+        - name: ncurses
+          version: "6.2-12.20210508.el9.x86_64"
+        - name: ncurses-base
+          version: "6.2-12.20210508.el9.noarch"
+        - name: ncurses-libs
+          version: "6.2-12.20210508.el9.x86_64"
+        - name: ocaml-srpm-macros
+          version: "6-6.el9.noarch"
+        - name: openblas-srpm-macros
+          version: "2-11.el9.noarch"
+        - name: openldap
+          version: "2.6.8-4.el9.x86_64"
+        - name: openssl
+          version: "3.5.5-6.el9_8.x86_64"
+        - name: openssl-fips-provider
+          version: "3.5.5-6.el9_8.x86_64"
+        - name: openssl-libs
+          version: "3.5.5-6.el9_8.x86_64"
+        - name: p11-kit
+          version: "0.26.2-1.el9.x86_64"
+        - name: p11-kit-trust
+          version: "0.26.2-1.el9.x86_64"
+        - name: pam
+          version: "1.5.1-28.el9.x86_64"
+        - name: patch
+          version: "2.7.6-16.el9.x86_64"
+        - name: pcre
+          version: "8.44-4.el9.x86_64"
+        - name: pcre2
+          version: "10.40-6.el9.x86_64"
+        - name: pcre2-syntax
+          version: "10.40-6.el9.noarch"
+        - name: perl-AutoLoader
+          version: "5.74-481.1.el9_6.noarch"
+        - name: perl-B
+          version: "1.80-481.1.el9_6.x86_64"
+        - name: perl-Carp
+          version: "1.50-460.el9.noarch"
+        - name: perl-Class-Struct
+          version: "0.66-481.1.el9_6.noarch"
+        - name: perl-Data-Dumper
+          version: "2.174-462.el9.x86_64"
+        - name: perl-Digest
+          version: "1.19-4.el9.noarch"
+        - name: perl-Digest-MD5
+          version: "2.58-4.el9.x86_64"
+        - name: perl-Encode
+          version: "3.08-462.el9.x86_64"
+        - name: perl-Errno
+          version: "1.30-481.1.el9_6.x86_64"
+        - name: perl-Exporter
+          version: "5.74-461.el9.noarch"
+        - name: perl-Fcntl
+          version: "1.13-481.1.el9_6.x86_64"
+        - name: perl-File-Basename
+          version: "2.85-481.1.el9_6.noarch"
+        - name: perl-File-Path
+          version: "2.18-4.el9.noarch"
+        - name: perl-File-Temp
+          version: "0.231.100-4.el9.noarch"
+        - name: perl-File-stat
+          version: "1.09-481.1.el9_6.noarch"
+        - name: perl-FileHandle
+          version: "2.03-481.1.el9_6.noarch"
+        - name: perl-Getopt-Long
+          version: "2.52-4.el9.noarch"
+        - name: perl-Getopt-Std
+          version: "1.12-481.1.el9_6.noarch"
+        - name: perl-HTTP-Tiny
+          version: "0.076-462.el9.noarch"
+        - name: perl-IO
+          version: "1.43-481.1.el9_6.x86_64"
+        - name: perl-IO-Socket-IP
+          version: "0.41-5.el9.noarch"
+        - name: perl-IO-Socket-SSL
+          version: "2.073-2.el9.noarch"
+        - name: perl-IPC-Open3
+          version: "1.21-481.1.el9_6.noarch"
+        - name: perl-MIME-Base64
+          version: "3.16-4.el9.x86_64"
+        - name: perl-Mozilla-CA
+          version: "20200520-6.el9.noarch"
+        - name: perl-Net-SSLeay
+          version: "1.94-3.el9.x86_64"
+        - name: perl-POSIX
+          version: "1.94-481.1.el9_6.x86_64"
+        - name: perl-PathTools
+          version: "3.78-461.el9.x86_64"
+        - name: perl-Pod-Escapes
+          version: "1.07-460.el9.noarch"
+        - name: perl-Pod-Perldoc
+          version: "3.28.01-461.el9.noarch"
+        - name: perl-Pod-Simple
+          version: "3.42-4.el9.noarch"
+        - name: perl-Pod-Usage
+          version: "2.01-4.el9.noarch"
+        - name: perl-Scalar-List-Utils
+          version: "1.56-462.el9.x86_64"
+        - name: perl-SelectSaver
+          version: "1.02-481.1.el9_6.noarch"
+        - name: perl-Socket
+          version: "2.031-4.el9.x86_64"
+        - name: perl-Storable
+          version: "3.21-460.el9.x86_64"
+        - name: perl-Symbol
+          version: "1.08-481.1.el9_6.noarch"
+        - name: perl-Term-ANSIColor
+          version: "5.01-461.el9.noarch"
+        - name: perl-Term-Cap
+          version: "1.17-460.el9.noarch"
+        - name: perl-Text-ParseWords
+          version: "3.30-460.el9.noarch"
+        - name: perl-Text-Tabs+Wrap
+          version: "2013.0523-460.el9.noarch"
+        - name: perl-Time-Local
+          version: "1.300-7.el9.noarch"
+        - name: perl-URI
+          version: "5.09-3.el9.noarch"
+        - name: perl-base
+          version: "2.27-481.1.el9_6.noarch"
+        - name: perl-constant
+          version: "1.33-461.el9.noarch"
+        - name: perl-if
+          version: "0.60.800-481.1.el9_6.noarch"
+        - name: perl-interpreter
+          version: "5.32.1-481.1.el9_6.x86_64"
+        - name: perl-libnet
+          version: "3.13-4.el9.noarch"
+        - name: perl-libs
+          version: "5.32.1-481.1.el9_6.x86_64"
+        - name: perl-mro
+          version: "1.23-481.1.el9_6.x86_64"
+        - name: perl-overload
+          version: "1.31-481.1.el9_6.noarch"
+        - name: perl-overloading
+          version: "0.02-481.1.el9_6.noarch"
+        - name: perl-parent
+          version: "0.238-460.el9.noarch"
+        - name: perl-podlators
+          version: "4.14-460.el9.noarch"
+        - name: perl-srpm-macros
+          version: "1-41.el9.noarch"
+        - name: perl-subs
+          version: "1.03-481.1.el9_6.noarch"
+        - name: perl-vars
+          version: "1.05-481.1.el9_6.noarch"
+        - name: pkgconf
+          version: "1.7.3-10.el9.x86_64"
+        - name: pkgconf-m4
+          version: "1.7.3-10.el9.noarch"
+        - name: pkgconf-pkg-config
+          version: "1.7.3-10.el9.x86_64"
+        - name: popt
+          version: "1.18-8.el9.x86_64"
+        - name: publicsuffix-list-dafsa
+          version: "20210518-3.el9.noarch"
+        - name: pyproject-srpm-macros
+          version: "1.18.5-1.el9.noarch"
+        - name: python-srpm-macros
+          version: "3.9-54.el9.noarch"
+        - name: qt5-srpm-macros
+          version: "5.15.9-1.el9.noarch"
+        - name: qt6-srpm-macros
+          version: "6.6.2-1.el9.noarch"
+        - name: readline
+          version: "8.1-4.el9.x86_64"
+        - name: redhat-rpm-config
+          version: "210-1.el9.alma.1.noarch"
+        - name: rpm
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpm-build
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpm-build-libs
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpm-libs
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpmautospec-rpm-macros
+          version: "0.8.4-1.el9.noarch"
+        - name: rust-srpm-macros
+          version: "17-4.el9.noarch"
+        - name: rust-srpm-macros-epel
+          version: "26.3-1.el9.noarch"
+        - name: sed
+          version: "4.8-10.el9.x86_64"
+        - name: setup
+          version: "2.13.7-10.el9.noarch"
+        - name: shadow-utils
+          version: "4.9-16.el9.x86_64"
+        - name: sqlite-libs
+          version: "3.34.1-10.el9_8.x86_64"
+        - name: systemd-libs
+          version: "252-67.el9_8.4.alma.1.x86_64"
+        - name: tar
+          version: "1.34-11.el9.x86_64"
+        - name: tzdata
+          version: "2026b-1.el9.noarch"
+        - name: unzip
+          version: "6.0-60.el9.x86_64"
+        - name: util-linux
+          version: "2.37.4-25.el9.x86_64"
+        - name: util-linux-core
+          version: "2.37.4-25.el9.x86_64"
+        - name: which
+          version: "2.21-30.el9_6.x86_64"
+        - name: xz
+          version: "5.2.5-8.el9_0.x86_64"
+        - name: xz-libs
+          version: "5.2.5-8.el9_0.x86_64"
+        - name: zip
+          version: "3.0-35.el9.x86_64"
+        - name: zlib
+          version: "1.2.11-40.el9.x86_64"
+        - name: zstd
+          version: "1.5.5-1.el9.x86_64"
+    # Every file in out/ of the packages artifact, with its digest from the
+    # lane's own out/SHA256SUMS (run 30491861084); one spot-checked digest was
+    # recomputed from the downloaded bytes before recording. RPM digests are
+    # per-run: headers carry build-time state SOURCE_DATE_EPOCH does not pin,
+    # so a rebuild of identical inputs yields different bytes, and a
+    # publishing run refreshes these values per the cachetag precedent above.
+    artifacts:
+      - filename: vmod-dict-1.7-2.el9.src.rpm
+        sha256: "1024e468fcc5fd4722d077bedb884519d053922d38464ca00a745e2af4a8866f"
+      - filename: vmod-dict-1.7-2.el9.x86_64.rpm
+        sha256: "9967b9298ece490b26535e3f96469aeb8d5061ec00ade222bcd8b3c58a74369e"
+      - filename: vmod-dict-debuginfo-1.7-2.el9.x86_64.rpm
+        sha256: "a031ab6bfadd789950459f4541437f4e30760362b5e955396baeb3a73ecfcc1d"
+      - filename: vmod-dict-debugsource-1.7-2.el9.x86_64.rpm
+        sha256: "d972882b0ac7857dd1cebe73942ee80fc2d4935417a6a2f250b0acca0c3505cd"
     tests:
-      package_lint: pending
-      installed_package_smoke: pending
-      full_behavior_suite: pending
-      upgrade_transactions: pending
+      # rpmlint in run 30491861084's fresh verify container (stage "6 --
+      # rpmlint, with an explicit expectation"), filtered through the reviewed
+      # waivers the overlay renders into recipe/vmod-dict.rpmlintrc:
+      # the gating pass reports "1 packages and 0 specfiles checked; 0 errors,
+      # 0 warnings" and the summary line is asserted, not just the exit
+      # status; the unfiltered informational pass shows the 5 reviewed findings
+      # (invalid-license GPL-3.0-or-later and four en_US spelling
+      # complaints) the overlay's waivers cover.
+      package_lint: pass
+      # Stage 7 of the same verify container: dnf install of vinyl-cache and
+      # vmod-dict from a local repository of the lane's own packages,
+      # vinyl-cache-devel asserted ABSENT, the packaged libvmod_dict.so
+      # proven the only copy on the filesystem, the packaged vinyltest proven
+      # the driver. Job log: "OK: runtime pair installed, single packaged .so,
+      # packaged vinyltest driver".
+      installed_package_smoke: pass
+      # Stage 8 of the same verify container: upstream's own ported VTCs
+      # against the INSTALLED package. Job log of run 30491861084:
+      # "VTC-SUITE SUMMARY: 2/2 passed, 0 skipped" (dict_ci.vtc, dict_cs.vtc).
+      full_behavior_suite: pass
+      # Not run for the generated-VMOD rows: run 30491861084's package jobs end at
+      # the verify container and its checksums, and nightly-transactions.yml
+      # exercises the engine cohort's own packages only -- wiring the
+      # generated VMODs into it is Step 8 (Wave B report, 20260729_0119).
+      # Recorded not-applicable rather than restating the revision-1 pass:
+      # that came from a one-off container matrix whose packages no longer
+      # exist, and nothing in run 30491861084 reproduces it.
+      upgrade_transactions: not-applicable
+      # dict's suite needs no fixture server: the overlay declares no
+      # behaviour packages for either family, and the lane installed none.
       fixture_packages: []
   # redis joined the selected set on 2026-07-29 (SCOPE.md) as Step 7's third
   # VMOD: the controlled exception that exercises the reviewed-source-patch
   # capability. Its lanes select vinyl-release on both targets, so this cohort
-  # and target must carry its evidence, and the entry exists explicitly pending
-  # rather than being absent. An absent entry would let "the release is
-  # complete" be true with a required VMOD's results simply missing; a pending
-  # one cannot, because --require-releasable rejects pending by name.
+  # and target must carry its evidence; the entry was created explicitly
+  # pending rather than absent, because --require-releasable rejects pending
+  # by name while an absent entry would let "the release is complete" be true
+  # with a required VMOD's results simply missing. Recorded from the Step 7
+  # Wave 2 evidence run 30491861084 (branch step7-redis-exception, commit
+  # 09d7f07, fully green, reconcile green) on 2026-07-29.
   redis:
-    evidence: pending
-    pending_reason: "redis entered scope on 2026-07-29 (Step 7 Wave 1) and its lanes have not run in CI yet; Wave 2 records the results. The source-level build and the full 20-VTC behaviour suite were proven in debian:13 and almalinux:9 containers on 2026-07-29, which is not package evidence."
+    evidence: recorded
     package:
       upstream_version: "23.1"
       revision: 1
@@ -915,17 +1413,518 @@ vmods:
       binary_name: libvmod-redis
     build:
       profile: production
-      recipe_sha256: PLACEHOLDER
-      configure_options: PLACEHOLDER
-      cflags: PLACEHOLDER
-      ldflags: PLACEHOLDER
-      source_date_epoch: PLACEHOLDER
-      hardening_check: pending
-      build_dependencies: []
-    artifacts: []
+      # The digest of the generated recipe this row rendered and built from:
+      # recipe/generation-record.json `recipe_sha256` in the
+      # packages-redis-release-vinyl-release-el9-x86_64 artifact of run
+      # 30491861084. It pins the reviewed template, adapter and overlay
+      # bytes and the reviewed source patch behind the shipped package.
+      recipe_sha256: eb3fbcf3bb8de3221d6ab8ce9b54cba56cd5f6fba28855895d973154be377dba
+      # All three read out of Mock's build.log, kept by the lane as
+      # logs/mock-build.log (run 30491861084): the %configure expansion as
+      # rpmbuild ran it, and the flag variables redhat-rpm-config set for it.
+      configure_options: "./configure --build=x86_64-redhat-linux-gnu --host=x86_64-redhat-linux-gnu --program-prefix= --disable-dependency-tracking --prefix=/usr --exec-prefix=/usr --bindir=/usr/bin --sbindir=/usr/sbin --sysconfdir=/etc --datadir=/usr/share --includedir=/usr/include --libdir=/usr/lib64 --libexecdir=/usr/libexec --localstatedir=/var --sharedstatedir=/var/lib --mandir=/usr/share/man --infodir=/usr/share/info --disable-static --enable-tls"
+      cflags: "-O2 -flto=auto -ffat-lto-objects -fexceptions -g -grecord-gcc-switches -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -fstack-protector-strong -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -march=x86-64-v2 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection"
+      ldflags: "-Wl,-z,relro -Wl,--as-needed -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1"
+      # Committer date of the upstream release commit, forwarded per-package
+      # by the lane's derived configuration. Confirmed recorded: the Mock
+      # chroot environment in logs/mock-build.log of run 30491861084 carries
+      # SOURCE_DATE_EPOCH=1774962915, agreeing with the generation record's
+      # source.source_date_epoch.
+      source_date_epoch: "1774962915"
+      # scripts/ci/lib/package-checks.sh pc_verify_build in run 30491861084's
+      # fresh verify container: -fstack-protector-strong and
+      # -D_FORTIFY_SOURCE=2 asserted on all 7 compile lines of
+      # logs/mock-build.log, then GNU_RELRO, BIND_NOW and ELF type DYN
+      # asserted on the packaged libvmod_redis.so, with
+      # __stack_chk_fail and the __*_chk family as corroboration. Job log:
+      # "HARDENING INSPECTION: PASS (libvmod_redis.so)".
+      hardening_check: pass
+      # logs/buildroot-packages.tsv of run 30491861084, verbatim (214
+      # entries): the resolved package set of the lane's build container. Mock
+      # resolves from AlmaLinux's and EPEL's live mirrors, which publish no
+      # snapshot service, so this lane records exact resolved versions instead
+      # of pinning -- the same option the cachetag entry above takes. The Mock
+      # chroot's own resolved set is additionally in logs/mock-root.log.
+      build_dependencies:
+        - name: R-srpm-macros
+          version: "1.3.7-2.el9.noarch"
+        - name: almalinux-gpg-keys
+          version: "9.8-1.el9.x86_64"
+        - name: almalinux-release
+          version: "9.8-1.el9.x86_64"
+        - name: almalinux-repos
+          version: "9.8-1.el9.x86_64"
+        - name: alternatives
+          version: "1.24-2.el9.x86_64"
+        - name: ansible-srpm-macros
+          version: "1-16.el9.noarch"
+        - name: audit-libs
+          version: "3.1.5-8.el9.x86_64"
+        - name: basesystem
+          version: "11-13.el9.noarch"
+        - name: bash
+          version: "5.1.8-9.el9.x86_64"
+        - name: binutils
+          version: "2.35.2-72.el9.x86_64"
+        - name: binutils-gold
+          version: "2.35.2-72.el9.x86_64"
+        - name: bzip2
+          version: "1.0.8-11.el9.x86_64"
+        - name: bzip2-libs
+          version: "1.0.8-11.el9.x86_64"
+        - name: ca-certificates
+          version: "2025.2.80_v9.0.305-91.el9.noarch"
+        - name: coreutils
+          version: "8.32-41.el9_8.x86_64"
+        - name: coreutils-common
+          version: "8.32-41.el9_8.x86_64"
+        - name: cpio
+          version: "2.13-16.el9.x86_64"
+        - name: cracklib
+          version: "2.9.6-28.el9.x86_64"
+        - name: cracklib-dicts
+          version: "2.9.6-28.el9.x86_64"
+        - name: crypto-policies
+          version: "20260224-1.gitea0f072.el9_8.noarch"
+        - name: curl
+          version: "7.76.1-40.el9.x86_64"
+        - name: cyrus-sasl-lib
+          version: "2.1.27-22.el9.x86_64"
+        - name: debugedit
+          version: "5.0-11.el9.x86_64"
+        - name: diffutils
+          version: "3.7-12.el9.x86_64"
+        - name: dwz
+          version: "0.16-1.el9.x86_64"
+        - name: ed
+          version: "1.14.2-12.el9.x86_64"
+        - name: efi-srpm-macros
+          version: "6-4.el9.noarch"
+        - name: elfutils
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: elfutils-debuginfod-client
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: elfutils-default-yama-scope
+          version: "0.194-1.el9.alma.1.noarch"
+        - name: elfutils-libelf
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: elfutils-libs
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: epel-rpm-macros
+          version: "9-18.el9.noarch"
+        - name: file
+          version: "5.39-17.el9.x86_64"
+        - name: file-libs
+          version: "5.39-17.el9.x86_64"
+        - name: filesystem
+          version: "3.16-5.el9.x86_64"
+        - name: findutils
+          version: "4.8.0-7.el9.x86_64"
+        - name: fonts-srpm-macros
+          version: "2.0.5-7.el9.1.noarch"
+        - name: forge-srpm-macros
+          version: "0.4.0-1.el9.noarch"
+        - name: fpc-srpm-macros
+          version: "1.3-7.el9.noarch"
+        - name: gawk
+          version: "5.1.0-6.el9.x86_64"
+        - name: gdb-minimal
+          version: "16.3-3.el9.x86_64"
+        - name: gdbm-libs
+          version: "1.23-1.el9.x86_64"
+        - name: ghc-srpm-macros
+          version: "1.5.0-6.el9.noarch"
+        - name: ghc-srpm-macros-epel
+          version: "1.9.1-1.el9.noarch"
+        - name: glibc
+          version: "2.34-274.el9_8.x86_64"
+        - name: glibc-common
+          version: "2.34-274.el9_8.x86_64"
+        - name: glibc-gconv-extra
+          version: "2.34-274.el9_8.x86_64"
+        - name: glibc-minimal-langpack
+          version: "2.34-274.el9_8.x86_64"
+        - name: gmp
+          version: "6.2.0-13.el9.x86_64"
+        - name: go-srpm-macros
+          version: "3.8.1-1.el9.noarch"
+        - name: go-srpm-macros-epel
+          version: "3.8.0-1.el9.noarch"
+        - name: gpg-pubkey
+          version: "3228467c-613798eb.(none)"
+        - name: gpg-pubkey
+          version: "b86b3716-61e69f29.(none)"
+        - name: grep
+          version: "3.6-5.el9.x86_64"
+        - name: groff-base
+          version: "1.22.4-10.el9.x86_64"
+        - name: gzip
+          version: "1.12-1.el9.x86_64"
+        - name: info
+          version: "6.7-15.el9.x86_64"
+        - name: json-c
+          version: "0.14-11.el9.x86_64"
+        - name: kernel-srpm-macros
+          version: "1.0-14.el9.noarch"
+        - name: keyutils-libs
+          version: "1.6.3-1.el9.x86_64"
+        - name: krb5-libs
+          version: "1.21.1-10.el9_8.x86_64"
+        - name: libacl
+          version: "2.4.0-1.el9_8.x86_64"
+        - name: libarchive
+          version: "3.5.3-9.el9_7.x86_64"
+        - name: libattr
+          version: "2.5.1-3.el9.x86_64"
+        - name: libblkid
+          version: "2.37.4-25.el9.x86_64"
+        - name: libbrotli
+          version: "1.0.9-9.el9_7.x86_64"
+        - name: libcap
+          version: "2.48-10.el9_8.1.x86_64"
+        - name: libcap-ng
+          version: "0.8.2-7.el9.x86_64"
+        - name: libcom_err
+          version: "1.46.5-8.el9.x86_64"
+        - name: libcurl
+          version: "7.76.1-40.el9.x86_64"
+        - name: libdb
+          version: "5.3.28-57.el9_6.x86_64"
+        - name: libeconf
+          version: "0.4.1-7.el9_8.x86_64"
+        - name: libevent
+          version: "2.1.12-8.el9_4.x86_64"
+        - name: libfdisk
+          version: "2.37.4-25.el9.x86_64"
+        - name: libffi
+          version: "3.4.2-8.el9.x86_64"
+        - name: libgcc
+          version: "11.5.0-14.el9.alma.1.x86_64"
+        - name: libgcrypt
+          version: "1.10.0-11.el9.x86_64"
+        - name: libgomp
+          version: "11.5.0-14.el9.alma.1.x86_64"
+        - name: libgpg-error
+          version: "1.42-5.el9.x86_64"
+        - name: libidn2
+          version: "2.3.0-7.el9.x86_64"
+        - name: libmount
+          version: "2.37.4-25.el9.x86_64"
+        - name: libnghttp2
+          version: "1.43.0-6.el9_8.1.x86_64"
+        - name: libpkgconf
+          version: "1.7.3-10.el9.x86_64"
+        - name: libpsl
+          version: "0.21.1-5.el9.x86_64"
+        - name: libpwquality
+          version: "1.4.4-8.el9.x86_64"
+        - name: libselinux
+          version: "3.6-3.el9.x86_64"
+        - name: libsemanage
+          version: "3.6-5.el9_6.x86_64"
+        - name: libsepol
+          version: "3.6-3.el9.x86_64"
+        - name: libsigsegv
+          version: "2.13-4.el9.x86_64"
+        - name: libsmartcols
+          version: "2.37.4-25.el9.x86_64"
+        - name: libssh
+          version: "0.10.4-18.el9.x86_64"
+        - name: libssh-config
+          version: "0.10.4-18.el9.noarch"
+        - name: libstdc++
+          version: "11.5.0-14.el9.alma.1.x86_64"
+        - name: libtasn1
+          version: "4.16.0-10.el9_8.x86_64"
+        - name: libtool-ltdl
+          version: "2.4.6-46.el9.x86_64"
+        - name: libunistring
+          version: "0.9.10-15.el9.x86_64"
+        - name: libutempter
+          version: "1.2.1-6.el9.x86_64"
+        - name: libuuid
+          version: "2.37.4-25.el9.x86_64"
+        - name: libverto
+          version: "0.3.2-3.el9.x86_64"
+        - name: libxcrypt
+          version: "4.4.18-3.el9.x86_64"
+        - name: libxml2
+          version: "2.9.13-14.el9_8.2.x86_64"
+        - name: libzstd
+          version: "1.5.5-1.el9.x86_64"
+        - name: lua-libs
+          version: "5.4.4-4.el9.x86_64"
+        - name: lua-srpm-macros
+          version: "1-6.el9.noarch"
+        - name: lz4-libs
+          version: "1.9.3-5.el9.x86_64"
+        - name: mpfr
+          version: "4.1.0-10.el9.x86_64"
+        - name: ncurses
+          version: "6.2-12.20210508.el9.x86_64"
+        - name: ncurses-base
+          version: "6.2-12.20210508.el9.noarch"
+        - name: ncurses-libs
+          version: "6.2-12.20210508.el9.x86_64"
+        - name: ocaml-srpm-macros
+          version: "6-6.el9.noarch"
+        - name: openblas-srpm-macros
+          version: "2-11.el9.noarch"
+        - name: openldap
+          version: "2.6.8-4.el9.x86_64"
+        - name: openssl
+          version: "3.5.5-6.el9_8.x86_64"
+        - name: openssl-fips-provider
+          version: "3.5.5-6.el9_8.x86_64"
+        - name: openssl-libs
+          version: "3.5.5-6.el9_8.x86_64"
+        - name: p11-kit
+          version: "0.26.2-1.el9.x86_64"
+        - name: p11-kit-trust
+          version: "0.26.2-1.el9.x86_64"
+        - name: pam
+          version: "1.5.1-28.el9.x86_64"
+        - name: patch
+          version: "2.7.6-16.el9.x86_64"
+        - name: pcre
+          version: "8.44-4.el9.x86_64"
+        - name: pcre2
+          version: "10.40-6.el9.x86_64"
+        - name: pcre2-syntax
+          version: "10.40-6.el9.noarch"
+        - name: perl-AutoLoader
+          version: "5.74-481.1.el9_6.noarch"
+        - name: perl-B
+          version: "1.80-481.1.el9_6.x86_64"
+        - name: perl-Carp
+          version: "1.50-460.el9.noarch"
+        - name: perl-Class-Struct
+          version: "0.66-481.1.el9_6.noarch"
+        - name: perl-Data-Dumper
+          version: "2.174-462.el9.x86_64"
+        - name: perl-Digest
+          version: "1.19-4.el9.noarch"
+        - name: perl-Digest-MD5
+          version: "2.58-4.el9.x86_64"
+        - name: perl-Encode
+          version: "3.08-462.el9.x86_64"
+        - name: perl-Errno
+          version: "1.30-481.1.el9_6.x86_64"
+        - name: perl-Exporter
+          version: "5.74-461.el9.noarch"
+        - name: perl-Fcntl
+          version: "1.13-481.1.el9_6.x86_64"
+        - name: perl-File-Basename
+          version: "2.85-481.1.el9_6.noarch"
+        - name: perl-File-Path
+          version: "2.18-4.el9.noarch"
+        - name: perl-File-Temp
+          version: "0.231.100-4.el9.noarch"
+        - name: perl-File-stat
+          version: "1.09-481.1.el9_6.noarch"
+        - name: perl-FileHandle
+          version: "2.03-481.1.el9_6.noarch"
+        - name: perl-Getopt-Long
+          version: "2.52-4.el9.noarch"
+        - name: perl-Getopt-Std
+          version: "1.12-481.1.el9_6.noarch"
+        - name: perl-HTTP-Tiny
+          version: "0.076-462.el9.noarch"
+        - name: perl-IO
+          version: "1.43-481.1.el9_6.x86_64"
+        - name: perl-IO-Socket-IP
+          version: "0.41-5.el9.noarch"
+        - name: perl-IO-Socket-SSL
+          version: "2.073-2.el9.noarch"
+        - name: perl-IPC-Open3
+          version: "1.21-481.1.el9_6.noarch"
+        - name: perl-MIME-Base64
+          version: "3.16-4.el9.x86_64"
+        - name: perl-Mozilla-CA
+          version: "20200520-6.el9.noarch"
+        - name: perl-Net-SSLeay
+          version: "1.94-3.el9.x86_64"
+        - name: perl-POSIX
+          version: "1.94-481.1.el9_6.x86_64"
+        - name: perl-PathTools
+          version: "3.78-461.el9.x86_64"
+        - name: perl-Pod-Escapes
+          version: "1.07-460.el9.noarch"
+        - name: perl-Pod-Perldoc
+          version: "3.28.01-461.el9.noarch"
+        - name: perl-Pod-Simple
+          version: "3.42-4.el9.noarch"
+        - name: perl-Pod-Usage
+          version: "2.01-4.el9.noarch"
+        - name: perl-Scalar-List-Utils
+          version: "1.56-462.el9.x86_64"
+        - name: perl-SelectSaver
+          version: "1.02-481.1.el9_6.noarch"
+        - name: perl-Socket
+          version: "2.031-4.el9.x86_64"
+        - name: perl-Storable
+          version: "3.21-460.el9.x86_64"
+        - name: perl-Symbol
+          version: "1.08-481.1.el9_6.noarch"
+        - name: perl-Term-ANSIColor
+          version: "5.01-461.el9.noarch"
+        - name: perl-Term-Cap
+          version: "1.17-460.el9.noarch"
+        - name: perl-Text-ParseWords
+          version: "3.30-460.el9.noarch"
+        - name: perl-Text-Tabs+Wrap
+          version: "2013.0523-460.el9.noarch"
+        - name: perl-Time-Local
+          version: "1.300-7.el9.noarch"
+        - name: perl-URI
+          version: "5.09-3.el9.noarch"
+        - name: perl-base
+          version: "2.27-481.1.el9_6.noarch"
+        - name: perl-constant
+          version: "1.33-461.el9.noarch"
+        - name: perl-if
+          version: "0.60.800-481.1.el9_6.noarch"
+        - name: perl-interpreter
+          version: "5.32.1-481.1.el9_6.x86_64"
+        - name: perl-libnet
+          version: "3.13-4.el9.noarch"
+        - name: perl-libs
+          version: "5.32.1-481.1.el9_6.x86_64"
+        - name: perl-mro
+          version: "1.23-481.1.el9_6.x86_64"
+        - name: perl-overload
+          version: "1.31-481.1.el9_6.noarch"
+        - name: perl-overloading
+          version: "0.02-481.1.el9_6.noarch"
+        - name: perl-parent
+          version: "0.238-460.el9.noarch"
+        - name: perl-podlators
+          version: "4.14-460.el9.noarch"
+        - name: perl-srpm-macros
+          version: "1-41.el9.noarch"
+        - name: perl-subs
+          version: "1.03-481.1.el9_6.noarch"
+        - name: perl-vars
+          version: "1.05-481.1.el9_6.noarch"
+        - name: pkgconf
+          version: "1.7.3-10.el9.x86_64"
+        - name: pkgconf-m4
+          version: "1.7.3-10.el9.noarch"
+        - name: pkgconf-pkg-config
+          version: "1.7.3-10.el9.x86_64"
+        - name: popt
+          version: "1.18-8.el9.x86_64"
+        - name: publicsuffix-list-dafsa
+          version: "20210518-3.el9.noarch"
+        - name: pyproject-srpm-macros
+          version: "1.18.5-1.el9.noarch"
+        - name: python-srpm-macros
+          version: "3.9-54.el9.noarch"
+        - name: qt5-srpm-macros
+          version: "5.15.9-1.el9.noarch"
+        - name: qt6-srpm-macros
+          version: "6.6.2-1.el9.noarch"
+        - name: readline
+          version: "8.1-4.el9.x86_64"
+        - name: redhat-rpm-config
+          version: "210-1.el9.alma.1.noarch"
+        - name: rpm
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpm-build
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpm-build-libs
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpm-libs
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpmautospec-rpm-macros
+          version: "0.8.4-1.el9.noarch"
+        - name: rust-srpm-macros
+          version: "17-4.el9.noarch"
+        - name: rust-srpm-macros-epel
+          version: "26.3-1.el9.noarch"
+        - name: sed
+          version: "4.8-10.el9.x86_64"
+        - name: setup
+          version: "2.13.7-10.el9.noarch"
+        - name: shadow-utils
+          version: "4.9-16.el9.x86_64"
+        - name: sqlite-libs
+          version: "3.34.1-10.el9_8.x86_64"
+        - name: systemd-libs
+          version: "252-67.el9_8.4.alma.1.x86_64"
+        - name: tar
+          version: "1.34-11.el9.x86_64"
+        - name: tzdata
+          version: "2026b-1.el9.noarch"
+        - name: unzip
+          version: "6.0-60.el9.x86_64"
+        - name: util-linux
+          version: "2.37.4-25.el9.x86_64"
+        - name: util-linux-core
+          version: "2.37.4-25.el9.x86_64"
+        - name: which
+          version: "2.21-30.el9_6.x86_64"
+        - name: xz
+          version: "5.2.5-8.el9_0.x86_64"
+        - name: xz-libs
+          version: "5.2.5-8.el9_0.x86_64"
+        - name: zip
+          version: "3.0-35.el9.x86_64"
+        - name: zlib
+          version: "1.2.11-40.el9.x86_64"
+        - name: zstd
+          version: "1.5.5-1.el9.x86_64"
+    # Every file in out/ of the packages artifact, with its digest from the
+    # lane's own out/SHA256SUMS (run 30491861084); one spot-checked digest was
+    # recomputed from the downloaded bytes before recording. RPM digests are
+    # per-run: headers carry build-time state SOURCE_DATE_EPOCH does not pin,
+    # so a rebuild of identical inputs yields different bytes, and a
+    # publishing run refreshes these values per the cachetag precedent above.
+    artifacts:
+      - filename: libvmod-redis-23.1-1.el9.src.rpm
+        sha256: "3efddab696de2ae98676d9c8440627d95dd9163cdae182225c3e6cb08a541f8f"
+      - filename: libvmod-redis-23.1-1.el9.x86_64.rpm
+        sha256: "b681f59e6fe55ea0ce51baa9ec4b3a1b630c052fc5d7f4d2edb10b74b1f9222c"
+      - filename: libvmod-redis-debuginfo-23.1-1.el9.x86_64.rpm
+        sha256: "c58b1b56a465296a85cd79486b4045e37823f2a31a221ad557b9ee9a31ac947b"
+      - filename: libvmod-redis-debugsource-23.1-1.el9.x86_64.rpm
+        sha256: "8b1c91aca3325976b94c04c790f08f2d124ed1a70ef33df09ae8001d585a779d"
     tests:
-      package_lint: pending
-      installed_package_smoke: pending
-      full_behavior_suite: pending
-      upgrade_transactions: pending
-      fixture_packages: []
+      # rpmlint in run 30491861084's fresh verify container (stage "6 --
+      # rpmlint, with an explicit expectation"), filtered through the reviewed
+      # waivers the overlay renders into recipe/libvmod-redis.rpmlintrc:
+      # the gating pass reports "1 packages and 0 specfiles checked; 0 errors,
+      # 0 warnings" and the summary line is asserted, not just the exit
+      # status; the unfiltered informational pass shows exactly the 3 reviewed
+      # findings -- invalid-license once per SPDX token (BSD-2-Clause,
+      # BSD-3-Clause, LicenseRef-Public-Domain) -- so Wave 1's measurement
+      # rule resolves KEEP: the filter fired and earns its place.
+      package_lint: pass
+      # Stage 7 of the same verify container: dnf install of vinyl-cache and
+      # libvmod-redis from a local repository of the lane's own packages,
+      # vinyl-cache-devel asserted ABSENT, the packaged libvmod_redis.so
+      # proven the only copy on the filesystem, the packaged vinyltest proven
+      # the driver. Job log: "OK: runtime pair installed, single packaged .so,
+      # packaged vinyltest driver".
+      installed_package_smoke: pass
+      # Stage 8 of the same verify container: upstream's own ported VTCs
+      # against the INSTALLED package, run against real Redis servers from
+      # the distribution package recorded in fixture_packages below. Job log
+      # of run 30491861084: "VTC-SUITE SUMMARY: 20/20 passed, 0 skipped".
+      full_behavior_suite: pass
+      # Not run for the generated-VMOD rows: run 30491861084's package jobs end at
+      # the verify container and its checksums, and nightly-transactions.yml
+      # exercises the engine cohort's own packages only -- wiring the
+      # generated VMODs into it is Step 8 (Wave B report, 20260729_0119).
+      # No upgrade-transaction matrix has ever run for redis, so there is
+      # nothing older to restate either.
+      upgrade_transactions: not-applicable
+      # logs/fixture-packages.tsv of run 30491861084: the distribution's own
+      # Redis, installed by the verify container because the overlay declares
+      # it -- upstream's runner.sh launches real servers from this package
+      # (masters, replicas, sentinels, and the nine-node cluster). EL9 ships
+      # Redis 6.2.x while Debian 13 ships 8.0.x, which is why the suite
+      # verdict above is a per-target statement and this record exists.
+      fixture_packages:
+        - name: redis
+          version: "6.2.22-1.el9_8.x86_64"
