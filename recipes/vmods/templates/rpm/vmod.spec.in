@@ -35,8 +35,8 @@ Summary:        @SUMMARY@
 
 License:        @LICENSE_EXPRESSION@
 URL:            @HOMEPAGE@
-Source0:        @SOURCE_URL@
-
+Source0:        @RPM_SOURCE0@
+@RPM_PATCHES@
 @RPM_BUILD_REQUIRES@
 
 @RPM_REQUIRES@
@@ -49,7 +49,7 @@ Built against Vinyl Cache @VINYL_PACKAGE_VERSION@, VRT @VINYL_VRT@, strict ABI
 @VINYL_STRICT_ABI@.
 
 %prep
-%autosetup -n @SOURCE_DIRECTORY@
+%autosetup -n @SOURCE_DIRECTORY@@RPM_AUTOSETUP_ARGS@
 
 %build
 # Refuse to build unless the installed development package puts VMODs where the

@@ -115,6 +115,8 @@ DIGITS_RE = r"^[0-9]+$"
 REVISION_RE = r"^[1-9][0-9]*$"
 SPDX_RE = r"^[A-Za-z0-9 ()+.-]+$"
 SO_RE = r"^lib[a-z0-9_]+\.so$"
+PATCH_NAME_RE = r"^[0-9]{4}-[a-z0-9][a-z0-9-]*\.patch$"
+SHA256_RE = r"^[0-9a-f]{64}$"
 
 ADAPTER_SPEC = _map(
     {
@@ -159,7 +161,13 @@ OVERLAY_SPEC = _map(
                 "archive": _map(
                     {
                         "method": _enum(ARCHIVE_METHODS),
-                        "url": _s(URL_RE),
+                        # Present for `upstream-release` and absent for
+                        # `derived-git-tag`, enforced against the manifest in
+                        # build_model. A derived archive has no publication URL
+                        # at all: it is produced from the tag by
+                        # scripts/ci/vmod-source-archive.sh, and writing some
+                        # nearby URL here would name bytes nobody built.
+                        "url": _s(URL_RE, optional=True),
                         "bytes": _s(DIGITS_RE),
                         "stem": _s(PKG_NAME_RE),
                         "source_date_epoch": _s(DIGITS_RE),
@@ -223,6 +231,20 @@ OVERLAY_SPEC = _map(
             }
         ),
         "lintian_overrides": _map({"source": _list(_s(FREE_TEXT_RE)), "binary": _list(_s(FREE_TEXT_RE))}),
+        # Reviewed source patches, applied in the order written, one entry per
+        # file under overlays/<id>/patches/. The digest is not decoration: the
+        # generator refuses to render if a declared file is missing or if its
+        # bytes have moved, so a patch cannot be swapped for another one
+        # without the change showing up here and in the generation record.
+        #
+        # This is the bounded form of a shim (Step 7 Wave 1, ruling R2): per
+        # VMOD, reviewed, digested and visible in the manifest. A blanket
+        # substitution pass or a shared shim layer remains forbidden -- if N
+        # VMODs need the same change, that is an adapter decision, not N copies
+        # of a patch.
+        "patches": _list(
+            _map({"file": _s(PATCH_NAME_RE), "sha256": _s(SHA256_RE)}), optional=True
+        ),
     }
 )
 
@@ -290,6 +312,7 @@ def build_model(
     channel: str = "release",
     debian_distribution: str = None,
     require_maintainer: bool = True,
+    overlay_dir=None,
 ) -> dict:
     """The one normalized VMOD build description both backends render from.
 
@@ -332,6 +355,36 @@ def build_model(
             f"sources.{channel}: publishable is {source['publishable']!r}; a native recipe "
             "is only generated for a channel that may become a package"
         )
+
+    # The archive method and the manifest's archive URL are one statement made
+    # in two files, and they must not be able to disagree. `upstream-release`
+    # means the lane downloads a published archive, so the manifest names it and
+    # the overlay repeats it verbatim; `derived-git-tag` means there is nothing
+    # to download, so neither file may name one. Getting this wrong used to be
+    # invisible until a lane either downloaded nothing or derived an archive
+    # whose digest was never pinned.
+    method = overlay["source"]["archive"]["method"]
+    overlay_url = overlay["source"]["archive"].get("url")
+    manifest_url = source.get("archive_url")
+    if method == "upstream-release":
+        if not overlay_url or not manifest_url:
+            raise GeneratorError(
+                "source.archive.method is upstream-release, so both the manifest's "
+                "archive_url and the overlay's source.archive.url must name the published "
+                "archive"
+            )
+        if overlay_url != manifest_url:
+            raise GeneratorError(
+                f"the overlay's archive url {overlay_url!r} is not the manifest's "
+                f"{manifest_url!r}; one set of bytes cannot have two addresses"
+            )
+    else:
+        if overlay_url or manifest_url:
+            raise GeneratorError(
+                f"source.archive.method is {method}, which derives the archive from the "
+                "tag, but an archive url is recorded; a derived archive has no publication "
+                "URL and naming one would describe bytes nobody built"
+            )
 
     maintainer_name, maintainer_email = _split_maintainer(maintainer, require_maintainer)
 
@@ -429,6 +482,8 @@ def build_model(
     if not any(line.strip() for line in package["description"]):
         raise GeneratorError("package.description is empty; a package description is required")
 
+    patches = _load_patches(overlay.get("patches") or [], overlay_dir)
+
     return {
         "schema": MODEL_SCHEMA,
         "vmod": {
@@ -446,7 +501,7 @@ def build_model(
             "version": version,
             "archive_sha256": source["archive_sha256"],
             "archive_name": archive_name,
-            "archive_url": overlay["source"]["archive"]["url"],
+            "archive_url": overlay_url or "",
             "archive_method": overlay["source"]["archive"]["method"],
             "archive_bytes": overlay["source"]["archive"]["bytes"],
             "directory": f"{stem}-{version}",
@@ -512,8 +567,64 @@ def build_model(
             "source": list(overlay["lintian_overrides"]["source"]),
             "binary": list(overlay["lintian_overrides"]["binary"]),
         },
+        "patches": patches,
         "artifacts": names,
     }
+
+
+def _load_patches(declared: list, overlay_dir) -> list:
+    """Read, verify and order the reviewed patches. Fails closed on both sides.
+
+    Returns ``[{'file', 'sha256', 'text'}]`` in the declared order, which is the
+    order they are applied in. Two refusals, and neither is recoverable by
+    editing anything downstream:
+
+      * a declared patch file that is not there -- a recipe whose series names a
+        file the source package will not contain is a build that fails much
+        later, in a buildroot, with a confusing message;
+      * a declared patch whose bytes no longer hash to the recorded digest --
+        the patch was changed without the change being reviewed. Updating the
+        digest is the deliberate act that makes it reviewed again, and it moves
+        the generation record, which is the point.
+    """
+    if not declared:
+        return []
+    if overlay_dir is None:
+        raise GeneratorError(
+            "the overlay declares patches but no overlay directory was given; the "
+            "patch files cannot be located"
+        )
+    patches_dir = Path(overlay_dir) / "patches"
+    out = []
+    seen = set()
+    for entry in declared:
+        name = entry["file"]
+        if name in seen:
+            raise GeneratorError(f"patch {name!r} is declared twice")
+        seen.add(name)
+        path = patches_dir / name
+        if not path.is_file():
+            raise GeneratorError(
+                f"declared patch {name!r} is missing at {path}. A patch is reviewed "
+                "content: it is committed beside the overlay, never fetched or generated."
+            )
+        raw = path.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        if digest != entry["sha256"]:
+            raise GeneratorError(
+                f"patch {name!r} hashes to {digest}, not the recorded {entry['sha256']}. "
+                "Do NOT update the digest to make this pass unless the new content is what "
+                "was reviewed: the digest is what stops a reviewed patch being replaced by "
+                "an unreviewed one."
+            )
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise GeneratorError(
+                f"patch {name!r} is not UTF-8; a reviewed patch must be readable text"
+            ) from None
+        out.append({"file": name, "sha256": digest, "text": text})
+    return out
 
 
 def _split_maintainer(maintainer: str, required: bool = True):
@@ -827,7 +938,42 @@ def _rpm_bootstrap_block(model: dict) -> str:
     return (
         "\n# The recorded source archive carries no generated build system, so regenerate\n"
         "# it. The autotools this needs are declared as BuildRequires above.\n"
+        "#\n"
+        + _BOOTSTRAP_ACLOCAL_NOTE
+        + "export VINYLAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir vinylapi)\n"
+        "export ACLOCAL_PATH=$VINYLAPI_DATAROOTDIR/aclocal${ACLOCAL_PATH:+:$ACLOCAL_PATH}\n"
         "autoreconf -fi\n"
+    )
+
+
+# Why a bootstrap needs the engine's aclocal directory in the environment, in
+# both backends' words. It is a property of the autotools adapter -- every VMOD
+# built against an installed engine finds vinyl.m4 the same way -- so it is
+# rendered once here rather than written into two templates.
+_BOOTSTRAP_ACLOCAL_NOTE = (
+    "# vinyl.m4 lives in the ENGINE's aclocal directory, and the conventional way\n"
+    "# to reach it is `ACLOCAL_AMFLAGS = -I m4 -I ${VINYLAPI_DATAROOTDIR}/aclocal`\n"
+    "# in Makefile.am. That expands correctly when aclocal is run from a\n"
+    "# configured tree, and expands to the empty string under autoreconf on a\n"
+    "# pristine one -- aclocal is then asked for `-I /aclocal` and dies. Exporting\n"
+    "# the variable makes the documented form work in both places; ACLOCAL_PATH\n"
+    "# covers a VMOD that does not use the -I form at all.\n"
+)
+
+
+def _deb_bootstrap_block(model: dict) -> str:
+    """The same two exports for debhelper's dh_autoreconf. Empty when unused.
+
+    Empty renders as the blank line that was already there, so a VMOD with
+    `bootstrap: none` gets byte-identical debian/rules.
+    """
+    if model["build"]["bootstrap"] == "none":
+        return ""
+    return (
+        "\n"
+        + _BOOTSTRAP_ACLOCAL_NOTE
+        + "export VINYLAPI_DATAROOTDIR := $(shell pkg-config --variable=datarootdir vinylapi)\n"
+        "export ACLOCAL_PATH := $(VINYLAPI_DATAROOTDIR)/aclocal\n"
     )
 
 
@@ -844,6 +990,33 @@ def _rpm_files(model: dict) -> str:
     for page in model["payload"]["man_pages"]:
         lines.append("%{_mandir}/" + page + "*")
     return "\n".join(lines)
+
+
+def _rpm_patches(model: dict) -> str:
+    """`Patch0:` .. `PatchN:` lines, or nothing at all.
+
+    The empty case renders as an empty line, which is where the blank line
+    between Source0 and BuildRequires already was -- so a patchless VMOD's spec
+    is byte-identical to the one this capability did not exist for.
+    """
+    patches = model["patches"]
+    if not patches:
+        return ""
+    # The explanation is rendered rather than written into the template, so the
+    # spec of a VMOD with no patches is byte-identical to the one this
+    # capability did not exist for -- comment lines included.
+    lines = [
+        "# Reviewed source patches, declared in the VMOD overlay and digested into the",
+        "# generation record. %%autosetup below applies them in this order. They are",
+        "# committed beside the overlay: never fetched, never generated, and never",
+        "# edited here -- this spec is generated content.",
+    ]
+    # 16 columns, the alignment every other tag in the spec template uses.
+    lines += [
+        "Patch{}:".format(index).ljust(16) + entry["file"]
+        for index, entry in enumerate(patches)
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def _continued_args(args: list) -> str:
@@ -891,7 +1064,18 @@ def token_values(model: dict, licenses_dir: Path) -> dict:
         "LICENSE_STANZAS": _license_stanzas(model, licenses_dir),
         "COPYRIGHT_FILES_STANZAS": _copyright_stanzas(model),
         "PACKAGING_COPYRIGHT": model["copyright"]["packaging"],
-        "SOURCE_URL": model["source"]["archive_url"],
+        # Where a human can obtain the upstream source. For a published archive
+        # that is the archive; for a derived one it is the repository the tag
+        # lives in, because the archive itself is not published anywhere.
+        "SOURCE_URL": model["source"]["archive_url"] or model["source"]["clone_url"],
+        # RPM's Source0, which names a file in the SRPM rather than a place.
+        # A URL is the conventional spelling when one exists; a bare filename is
+        # the correct and honest one when the archive is derived.
+        "RPM_SOURCE0": model["source"]["archive_url"] or model["source"]["archive_name"],
+        "RPM_PATCHES": _rpm_patches(model),
+        # %autosetup applies every declared Patch when told what strip level to
+        # use, and applies none when not told anything.
+        "RPM_AUTOSETUP_ARGS": " -p1" if model["patches"] else "",
         "SOURCE_ARCHIVE": model["source"]["archive_name"],
         "SOURCE_SHA256": model["source"]["archive_sha256"],
         "SOURCE_REF": model["source"]["ref"],
@@ -912,6 +1096,7 @@ def token_values(model: dict, licenses_dir: Path) -> dict:
         "VMOD_OBJECT": model["payload"]["vmod_object"],
         "CONFIGURE_ARGS_CONTINUED": _continued_args(model["build"]["configure_args"]),
         "DH_ARGS": "" if model["build"]["bootstrap"] != "none" else " --without autoreconf",
+        "DEB_BOOTSTRAP_BLOCK": _deb_bootstrap_block(model),
         "DEB_AUTO_BUILD_BLOCK": _deb_auto_build_block(model),
         "DEB_AUTO_TEST_BLOCK": _deb_auto_test_block(model),
         "RPM_CHECK_BLOCK": _rpm_check_block(model),
@@ -938,6 +1123,12 @@ def render(model: dict, templates_dir, licenses_dir) -> dict:
         return path.read_text(encoding="utf-8")
 
     out: dict = {}
+    # Patch bytes pass through untouched. _normalise strips trailing whitespace
+    # per line, and a context line in a unified diff may legitimately end in
+    # one; normalising a patch would silently produce a patch that no longer
+    # applies. They are still hashed into recipe_sha256 exactly like every other
+    # rendered file, so changing a patch changes the recipe digest.
+    raw: set = set()
     if fmt == "deb":
         binary = model["package"]["debian_binary_name"]
         out["debian/control"] = substitute(read("debian/control.in"), values, "debian/control")
@@ -961,11 +1152,28 @@ def render(model: dict, templates_dir, licenses_dir) -> dict:
             values,
             f"debian/{binary}.lintian-overrides",
         )
+        # 3.0 (quilt) applies debian/patches/series in order, before the build,
+        # with no help from debian/rules. The series file is generated from the
+        # same declared order the RPM PatchN numbering uses, so the two families
+        # cannot apply the same patches in different orders.
+        for entry in model["patches"]:
+            out[f"debian/patches/{entry['file']}"] = entry["text"]
+            raw.add(f"debian/patches/{entry['file']}")
+        if model["patches"]:
+            out["debian/patches/series"] = "".join(
+                f"{entry['file']}\n" for entry in model["patches"]
+            )
     else:
         name = model["package"]["rpm_name"]
         out[f"{name}.spec"] = substitute(read("rpm/vmod.spec.in"), values, f"{name}.spec")
+        # Beside the spec, which is where rpmbuild's SOURCES lookup finds them.
+        for entry in model["patches"]:
+            out[entry["file"]] = entry["text"]
+            raw.add(entry["file"])
 
-    return {key: _normalise(out[key]) for key in sorted(out)}
+    return {
+        key: (out[key] if key in raw else _normalise(out[key])) for key in sorted(out)
+    }
 
 
 def _normalise(text: str) -> str:
@@ -1026,6 +1234,12 @@ def generation_record(
         "abi": dict(model["abi"]),
         "build": dict(model["build"]),
         "payload": dict(model["payload"]),
+        # File and digest only: the content is in `outputs`, and repeating it
+        # here would give one set of bytes two records.
+        "patches": [
+            {"file": entry["file"], "sha256": entry["sha256"]}
+            for entry in model["patches"]
+        ],
         "artifacts": dict(model["artifacts"]),
         "inputs": input_digests,
         "outputs": {
@@ -1111,6 +1325,7 @@ def build(
         channel=channel,
         debian_distribution=debian_distribution,
         require_maintainer=require_maintainer,
+        overlay_dir=Path(overlay_path).parent,
     )
     paths = {
         "manifest": Path(manifest_path),
@@ -1119,6 +1334,14 @@ def build(
         "cohort": cohort_path,
         "target": target_path,
     }
+    # Every reviewed patch is an input of the generation, digested beside the
+    # templates. It is also a rendered output, and deliberately both: as an input
+    # it records what was read, as an output it records what the source package
+    # will contain, and the two digests must agree.
+    for entry in model["patches"]:
+        paths[f"patch:{entry['file']}"] = (
+            Path(overlay_path).parent / "patches" / entry["file"]
+        )
     return model, recipe_root, paths
 
 

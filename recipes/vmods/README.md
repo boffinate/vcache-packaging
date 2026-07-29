@@ -22,6 +22,8 @@ recipes/vmods/
       <vmod-id>.yml  the VMOD's registry manifest (or, before Wave A2, the
                      staged content of registry/vmods/<vmod-id>.yml)
       overlay.yml    the reviewed per-VMOD packaging data
+      patches/       reviewed source patches, if the VMOD needs any
+      tests/         the ported behaviour suite
 ```
 
 There is no `custom/` adapter directory yet. The plan reserves one, and adding it before a selected VMOD needs it would be exactly the speculative generalisation the plan tells us not to do.
@@ -78,3 +80,17 @@ The output directory contains the native recipe tree plus `generation-record.jso
 Only when a selected VMOD proves it needs one, and then only that one. The adapter's knobs today are `bootstrap`, `configure_args`, `build_time_tests` and `parallel_build`, because those are what the first two VMODs actually needed. Adding a knob is a change to a shared contract: bump `adapter.revision`, and confirm that every already-generated VMOD's recipe output is unchanged.
 
 There is no hook mechanism and no shell in any of this data, deliberately. A VMOD that genuinely needs commands runs them from a checked-in adapter script, reviewed like a recipe and named explicitly by that VMOD — never discovered in an upstream checkout.
+
+## Patching a VMOD's source
+
+Some upstreams cannot be built against Vinyl Cache unchanged. `libvmod-redis` is the first: it addresses the engine by its Varnish names throughout its build system, and `m4_ifndef([VARNISH_PREREQ])` fires before anything else runs.
+
+The overlay may therefore declare `patches:`, a list of `{file, sha256}` under `overlays/<id>/patches/`, applied in the order written. They are rendered as `debian/patches/` plus a `series` file for the 3.0 (quilt) source package, and as `PatchN:` with `%autosetup -p1` for the RPM. Both families get the same patches in the same order, from the same declaration.
+
+Three properties make this a bounded exception rather than a hole:
+
+- **Digested.** Generation fails if a declared file is missing, and fails if its bytes no longer hash to the recorded digest. Replacing a reviewed patch with an unreviewed one is not something that can happen quietly; updating the digest is the deliberate act that makes the new content reviewed.
+- **Visible.** The patch is both an input and an output of the generation record, so it moves `recipe_sha256`, which is recorded as result evidence. A patch cannot be omitted or substituted without the evidence changing.
+- **Per VMOD.** A patch belongs to one overlay and is applied to one upstream. A blanket substitution pass, a shared shim layer, or a patch directory several VMODs draw from stays forbidden — if N VMODs need the same change, that is an adapter decision made once, not N copies of a workaround.
+
+Keep them minimal and say what they do: each patch carries a DEP-3 header describing the change and why it exists downstream rather than upstream. A patch that touches program source rather than the build system is a much larger decision than this mechanism is for.

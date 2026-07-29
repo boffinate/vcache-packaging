@@ -24,7 +24,7 @@
 # with --disable-stack-protector, and a package build must never inherit that,
 # so the intent is stated rather than assumed.
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
-
+@DEB_BOOTSTRAP_BLOCK@
 # The VMOD must be installed into the directory the *installed* runtime
 # searches, which vinylapi.pc reports as ${libdir}/vinyl-cache/vmods. Take
 # libdir from the development package rather than from debhelper's multiarch

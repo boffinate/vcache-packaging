@@ -926,6 +926,7 @@ def _fixture_model() -> dict:
             "license_files": ["COPYING"],
         },
         "lintian_overrides": {"source": [], "binary": []},
+        "patches": [],
         "artifacts": {},
     }
 
@@ -1278,6 +1279,303 @@ def test_reviewed_lint_overrides_are_rendered(root: Path) -> None:
 
 
 
+# ---------------------------------------------------------------------------
+# Reviewed source patches (Step 7 Wave 1)
+# ---------------------------------------------------------------------------
+
+# The dict recipe digests as rendered by the commit BEFORE the patch capability
+# existed, measured on 2026-07-29 from `vmod_recipe.py generate` for both
+# targets against the checked-in dict inputs.
+#
+# This is the plan's Phase 3 requirement stated as a test: "confirm the first
+# generated VMOD's output unchanged". It is pinned rather than recomputed
+# because a comparison against a value the same code produces would pass no
+# matter what the code did. It moves only when dict's own inputs move -- and
+# when they do, the mover has to say so here, which is exactly the friction
+# wanted on a package whose artifact digests are recorded release evidence.
+DICT_PRE_PATCH_RECIPE_SHA256 = {
+    "debian-13-amd64": "7e7055b8a5c99e493e398d41cca6a583c911bd7eae4245592d9ef5024d1ba360",
+    "el9-x86_64": "a64f74b8764d2630e72529901e4b00feb1682c4102a0175ad1c16f761196e6dd",
+}
+
+_PATCH_TEXT = (
+    "Description: a fixture patch\n"
+    " Trailing whitespace on the next line is deliberate.   \n"
+    "--- a/configure.ac\n"
+    "+++ b/configure.ac\n"
+    "@@ -1,1 +1,1 @@\n"
+    "-AC_INIT([x],[1])   \n"
+    "+AC_INIT([y],[1])   \n"
+)
+
+
+def _patched_overlay(root: Path, text: str = _PATCH_TEXT, digest: str = None):
+    """A dict-shaped overlay in a temporary directory, with one patch declared.
+
+    Returns ``(overlay_path, patch_path)``. Copying dict's real overlay keeps
+    the test about the patch capability rather than about overlay authoring.
+    """
+    import hashlib
+    import shutil
+
+    _counter[0] += 1
+    directory = _tmpdir() / f"overlay-{_counter[0]}"
+    (directory / "patches").mkdir(parents=True)
+    overlay_path = directory / "overlay.yml"
+    shutil.copy(root / DICT_OVERLAY, overlay_path)
+    patch_path = directory / "patches" / "0001-fixture.patch"
+    patch_path.write_text(text, encoding="utf-8")
+    if digest is None:
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    overlay_path.write_text(
+        overlay_path.read_text(encoding="utf-8")
+        + f"\npatches:\n  - file: 0001-fixture.patch\n    sha256: {digest}\n",
+        encoding="utf-8",
+    )
+    return overlay_path, patch_path
+
+
+def _generate_with(root: Path, overlay_path: Path, target: str):
+    return vr.generate(
+        manifest_path=root / DICT_MANIFEST,
+        overlay_path=overlay_path,
+        cohort_id=RELEASE_COHORT,
+        target_id=target,
+        maintainer=MAINTAINER,
+        debian_distribution="trixie",
+        repo_root=root,
+    )
+
+
+def test_patchless_render_is_unchanged_by_the_patch_capability(root: Path) -> None:
+    """dict declares no patches, so its rendered recipe must not have moved.
+
+    Both targets, against digests pinned from before the capability existed.
+    The generation RECORD does move -- it carries the generator's own source
+    digest and the template digests, both of which changed -- and that is
+    correct: the record describes the code that rendered the recipe. What must
+    not move is the recipe.
+    """
+    for target, expected in sorted(DICT_PRE_PATCH_RECIPE_SHA256.items()):
+        _model_, _outputs, record = vr.generate(
+            manifest_path=root / DICT_MANIFEST,
+            overlay_path=root / DICT_OVERLAY,
+            cohort_id=RELEASE_COHORT,
+            target_id=target,
+            maintainer=MAINTAINER,
+            debian_distribution="trixie",
+            repo_root=root,
+        )
+        check(
+            f"patches: {target} renders byte-identically to the pre-capability recipe",
+            record["recipe_sha256"] == expected,
+            f"got {record['recipe_sha256']}, want {expected}",
+        )
+        check(
+            f"patches: {target} records an empty patch list",
+            record["patches"] == [],
+            str(record["patches"]),
+        )
+
+
+def test_bootstrap_exports_the_engine_aclocal_dir(root: Path) -> None:
+    """A bootstrap has to be able to find vinyl.m4, and could not.
+
+    `bootstrap: autoreconf` had no consumer until redis: dict ships a `make
+    dist` archive. Measured in a debian:13 container on 2026-07-29 against the
+    real Vinyl Cache 9.0.1: `autoreconf -fi` on a pristine tree passes
+    Makefile.am's `ACLOCAL_AMFLAGS = -I m4 -I ${VINYLAPI_DATAROOTDIR}/aclocal`
+    to a shell that has never heard of that variable, so aclocal is asked for
+    `-I /aclocal` and exits 1. Exporting it -- and ACLOCAL_PATH, for a VMOD that
+    does not use the -I form -- makes the same command succeed.
+
+    Both backends, because the two bootstrap paths are different code:
+    `autoreconf -fi` in %build and debhelper's dh_autoreconf.
+    """
+    inputs = _inputs(root)
+    overlay = _clone(inputs["overlay"])
+    overlay["build"]["bootstrap"] = "autoreconf"
+    recipe_root = root / vr.RECIPE_ROOT
+    deb = vr.render(
+        _model(root, overlay=overlay), recipe_root / "templates", recipe_root / "licenses"
+    )["debian/rules"]
+    rpm_model = _model(
+        root,
+        overlay=overlay,
+        target=manifest_mod.load_target(
+            root / "registry" / "targets" / RELEASE_COHORT / "el9-x86_64.yml"
+        ),
+    )
+    spec = vr.render(rpm_model, recipe_root / "templates", recipe_root / "licenses")[
+        "vmod-dict.spec"
+    ]
+    check(
+        "bootstrap: debian/rules exports VINYLAPI_DATAROOTDIR from pkg-config",
+        "export VINYLAPI_DATAROOTDIR := $(shell pkg-config --variable=datarootdir vinylapi)"
+        in deb
+        and "export ACLOCAL_PATH := $(VINYLAPI_DATAROOTDIR)/aclocal" in deb,
+        deb[:1200],
+    )
+    check(
+        "bootstrap: the spec exports both before autoreconf",
+        "export VINYLAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir vinylapi)" in spec
+        and "export ACLOCAL_PATH=$VINYLAPI_DATAROOTDIR/aclocal" in spec
+        and spec.index("export ACLOCAL_PATH") < spec.index("autoreconf -fi"),
+        spec[:1600],
+    )
+    # And the other direction: bootstrap: none must add nothing at all, which is
+    # what keeps dict's rendered rules byte-identical.
+    plain = vr.render(
+        _model(root), recipe_root / "templates", recipe_root / "licenses"
+    )["debian/rules"]
+    check(
+        "bootstrap: none renders no export block",
+        "ACLOCAL_PATH" not in plain,
+        plain[:800],
+    )
+
+
+def test_patch_missing_file_is_refused(root: Path) -> None:
+    overlay_path, patch_path = _patched_overlay(root)
+    patch_path.unlink()
+    _expect_error(
+        "patches: a declared patch file that is not there is refused",
+        lambda: _generate_with(root, overlay_path, "debian-13-amd64"),
+        "is missing at",
+    )
+
+
+def test_patch_digest_moved_is_refused(root: Path) -> None:
+    overlay_path, patch_path = _patched_overlay(root)
+    patch_path.write_text(_PATCH_TEXT + "# an unreviewed extra line\n", encoding="utf-8")
+    _expect_error(
+        "patches: a patch whose bytes moved from the recorded digest is refused",
+        lambda: _generate_with(root, overlay_path, "debian-13-amd64"),
+        "hashes to",
+    )
+    wrong = _patched_overlay(root, digest="0" * 64)[0]
+    _expect_error(
+        "patches: a recorded digest that never matched is refused",
+        lambda: _generate_with(root, wrong, "el9-x86_64"),
+        "hashes to",
+    )
+
+
+def test_patch_is_rendered_digested_and_verbatim(root: Path) -> None:
+    """The patch reaches both source packages, unmodified, and is digested."""
+    overlay_path, _patch = _patched_overlay(root)
+    _m, deb_outputs, deb_record = _generate_with(root, overlay_path, "debian-13-amd64")
+    _m, rpm_outputs, rpm_record = _generate_with(root, overlay_path, "el9-x86_64")
+
+    check(
+        "patches: the Debian recipe carries debian/patches/<name>",
+        deb_outputs.get("debian/patches/0001-fixture.patch") == _PATCH_TEXT,
+        repr(deb_outputs.get("debian/patches/0001-fixture.patch")),
+    )
+    check(
+        "patches: trailing whitespace inside the patch survives rendering",
+        "deliberate.   \n" in deb_outputs["debian/patches/0001-fixture.patch"],
+        "the patch was normalised, which would stop it applying",
+    )
+    check(
+        "patches: 3.0 (quilt) gets a series file in the declared order",
+        deb_outputs.get("debian/patches/series") == "0001-fixture.patch\n",
+        repr(deb_outputs.get("debian/patches/series")),
+    )
+    check(
+        "patches: the RPM recipe carries the patch beside the spec",
+        rpm_outputs.get("0001-fixture.patch") == _PATCH_TEXT,
+        repr(rpm_outputs.get("0001-fixture.patch")),
+    )
+    spec = rpm_outputs["vmod-dict.spec"]
+    check(
+        "patches: the spec declares Patch0",
+        "Patch0:         0001-fixture.patch" in spec,
+        spec[:600],
+    )
+    check(
+        "patches: %autosetup is told to apply them",
+        "%autosetup -n vmod-dict-1.7 -p1" in spec,
+        spec[:900],
+    )
+    for record, label in ((deb_record, "deb"), (rpm_record, "rpm")):
+        check(
+            f"patches: the {label} generation record lists file and digest",
+            [entry["file"] for entry in record["patches"]] == ["0001-fixture.patch"],
+            str(record["patches"]),
+        )
+        check(
+            f"patches: the {label} record digests the patch as an input",
+            record["inputs"].get("patch:0001-fixture.patch", {}).get("sha256")
+            == record["patches"][0]["sha256"],
+            str(record["inputs"].get("patch:0001-fixture.patch")),
+        )
+
+
+def test_patch_content_changes_the_recipe_digest(root: Path) -> None:
+    """Case 10: a reviewed patch cannot be swapped for another one silently."""
+    first, _ = _patched_overlay(root)
+    second, _ = _patched_overlay(root, text=_PATCH_TEXT.replace("[y]", "[z]"))
+    digests = []
+    for overlay_path in (first, second):
+        for target in ("debian-13-amd64", "el9-x86_64"):
+            _m, _o, record = _generate_with(root, overlay_path, target)
+            digests.append(record["recipe_sha256"])
+    check(
+        "patches: changing the patch changes the Debian recipe digest",
+        digests[0] != digests[2],
+        f"{digests[0]} == {digests[2]}",
+    )
+    check(
+        "patches: changing the patch changes the RPM recipe digest",
+        digests[1] != digests[3],
+        f"{digests[1]} == {digests[3]}",
+    )
+
+
+def test_patch_declared_twice_is_refused(root: Path) -> None:
+    overlay_path, patch_path = _patched_overlay(root)
+    import hashlib
+
+    digest = hashlib.sha256(patch_path.read_bytes()).hexdigest()
+    overlay_path.write_text(
+        overlay_path.read_text(encoding="utf-8")
+        + f"  - file: 0001-fixture.patch\n    sha256: {digest}\n",
+        encoding="utf-8",
+    )
+    _expect_error(
+        "patches: the same patch declared twice is refused",
+        lambda: _generate_with(root, overlay_path, "debian-13-amd64"),
+        "declared twice",
+    )
+
+
+def test_archive_method_and_url_must_agree(root: Path) -> None:
+    """The method and the manifest's archive_url are one statement, not two."""
+    inputs = _inputs(root)
+    overlay = _clone(inputs["overlay"])
+    overlay["source"]["archive"]["method"] = "derived-git-tag"
+    _expect_error(
+        "archive: derived-git-tag with an archive url recorded is refused",
+        lambda: _model(root, overlay=overlay),
+        "has no publication URL",
+    )
+    overlay2 = _clone(inputs["overlay"])
+    overlay2["source"]["archive"]["url"] = "https://elsewhere.invalid/x.tar.gz"
+    _expect_error(
+        "archive: an overlay url that is not the manifest's is refused",
+        lambda: _model(root, overlay=overlay2),
+        "two addresses",
+    )
+    overlay3 = _clone(inputs["overlay"])
+    del overlay3["source"]["archive"]["url"]
+    _expect_error(
+        "archive: upstream-release with no url at all is refused",
+        lambda: _model(root, overlay=overlay3),
+        "must name the published archive",
+    )
+
+
 def main(repo_root: Path = None) -> int:
     root = Path(repo_root) if repo_root else vr.REPO_ROOT
     _RESULTS.clear()
@@ -1313,6 +1611,14 @@ def main(repo_root: Path = None) -> int:
     test_adapter_defaults_and_overlay_overrides(root)
     test_changelog_lines_fit(root)
     test_reviewed_lint_overrides_are_rendered(root)
+    test_patchless_render_is_unchanged_by_the_patch_capability(root)
+    test_bootstrap_exports_the_engine_aclocal_dir(root)
+    test_patch_missing_file_is_refused(root)
+    test_patch_digest_moved_is_refused(root)
+    test_patch_is_rendered_digested_and_verbatim(root)
+    test_patch_content_changes_the_recipe_digest(root)
+    test_patch_declared_twice_is_refused(root)
+    test_archive_method_and_url_must_agree(root)
 
     failed = 0
     for name, ok, detail in _RESULTS:
