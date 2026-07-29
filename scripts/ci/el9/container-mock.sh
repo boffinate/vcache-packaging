@@ -12,25 +12,30 @@
 #   mock -r alma+epel-9-x86_64 --rebuild ...src.rpm
 # as "the intended build venue" and "a CI requirement".
 #
+# Mounts (set by mock-build.sh):
+#   /recipes    recipes/el9, read-only
+#   /ci         scripts/ci, read-only -- lib/mock.sh
+#   /vinyl-src  the pinned Vinyl checkout (or an empty stub), read-only
+#   /cachetag   the libvmod-cachetag checkout (or an empty stub), read-only
+#   /out        dist/el9, writable
+#
+# The Mock clean-room -- toolchain, build user, derived configs, epoch macros,
+# local repository and log capture -- is /ci/lib/mock.sh, shared with the
+# generated-recipe lane's build-rpm.sh since Step 7 Wave 0. See that file's
+# header for every lesson it carries and what each one cost to learn.
+#
 # Reuses UNCHANGED: the SOURCES staged by container/build.sh's `source` stage
 # (mock-build.sh runs `deps source` before this script).
 #
 # Duplicates DELIBERATELY (see DESIGN.md section 2): the spec-substitution
-# and source-staging portions of container/build.sh's stage_vinyl (lines
-# ~128-153) and stage_cachetag (lines ~179-224), because those functions
-# interleave substitution with the `rpmbuild` call this script replaces and
-# cannot be called for "just the substitution half".
+# and source-staging portions of container/build.sh's stage_vinyl and
+# stage_cachetag, because those functions interleave substitution with the
+# `rpmbuild` call this script replaces and cannot be called for "just the
+# substitution half".
 #
 # Does NOT duplicate: stage_report / stage_lint, which mock-build.sh's caller
 # (ci.yml) invokes separately, unmodified, against the RPMs this script
 # copies into /out/packages/.
-#
-# DRAFT, unexecuted -- see ../../../DESIGN.md section 5. In particular, the
-# exact mock CLI sequence for "keep a root alive across --buildsrpm,
-# --rebuild and --install invocations" (the --no-clean flag on every step
-# after --init) is written from Mock's documented behaviour, not from a
-# verified run, and should be the first thing checked in a real CI dry run.
-
 #
 # MOCK_SCOPE (Phase 2 of the failure-isolation plan) selects which package this
 # run builds: `all` (default, the local whole-cohort form), `engine` for
@@ -44,13 +49,15 @@
 # createrepo_c repository assembled by the same command from the same RPM files,
 # whether this run produced them or downloaded them. In particular the cachetag
 # --rebuild does not inherit anything from the vinyl build even in `all` scope:
-# as the --addrepo comment below records, every mock --rebuild begins with a
-# chroot init that restores the root cache and discards whatever the preceding
-# builds and --install left behind.
+# as the --addrepo note in the shared driver records, every mock --rebuild
+# begins with a chroot init that restores the root cache and discards whatever
+# the preceding builds and --install left behind.
 
 set -euo pipefail
 
 . /recipes/cohort.env
+# shellcheck source=../lib/mock.sh
+. /ci/lib/mock.sh
 
 scope=${MOCK_SCOPE:-all}
 mock_cfg=alma+epel-9-x86_64
@@ -75,102 +82,33 @@ esac
 # vmod scope does not run; mkdir -p is a no-op in the scopes that do.
 mkdir -p "$specdir" "$srcdir" "$resultdir/vinyl" "$resultdir/cachetag" /out/packages "$logdir"
 
-###############################################################################
-# rpmbuild log capture -- unconditional, via EXIT trap
-###############################################################################
-#
-# Mock's own build.log is the only record of what %configure expanded to and
-# which CFLAGS/LDFLAGS redhat-rpm-config supplied. The tee'd files below are
-# Mock's stdout, which for --rebuild is a progress summary and contains none of
-# it. Without this copy the registry target manifest's build.configure_options,
-# build.cflags and build.ldflags fields -- "recorded output", per
-# registry/README.md -- have no source on this lane but a guess at what the
-# distribution's macros expand to, which is exactly the kind of hand-written
-# value this repository's rules forbid. The Debian lane needs no equivalent:
-# dh_auto_configure echoes the line and libtool echoes every compile and link
-# command into the job log.
-#
-# It is an EXIT trap, not a success-path step: this script runs under
-# set -euo pipefail, so when a mock build fails the script dies mid-flight and
-# a copy placed after the builds never runs. That made run 30344401137's EL9
-# failures invisible -- the job uploaded no build.log, and the real rpmbuild
-# error was only diagnosable because the Debian lanes hit the same wall. The
-# trap also captures root.log, which is where a buildroot dependency failure
-# lands. Logs that do not exist yet (a failure before or between builds) are
-# tolerated and warned about, not fatal.
-copy_mock_log() { # SRC DEST
-	if [ -f "$1" ]; then
-		cp -p "$1" "$2" || true
-		printf 'copied %s (%s lines)\n' "$2" "$(wc -l < "$2" | tr -d ' ')"
-	else
-		printf 'W: no %s to copy\n' "$1" >&2
-	fi
-}
-
-copy_mock_logs() {
-	for pkg in vinyl cachetag; do
-		copy_mock_log "$resultdir/$pkg/build.log" "$logdir/mock-$pkg-rpmbuild.log"
-		copy_mock_log "$resultdir/$pkg/root.log" "$logdir/mock-$pkg-root.log"
-	done
-}
-trap copy_mock_logs EXIT
+# Registered before anything can fail. The destinations are named here because
+# they are read by name downstream -- by the artifact upload, and by the
+# hardening flag assertion. The Debian lane needs no equivalent capture step:
+# dh_auto_configure echoes the configure line and libtool echoes every compile
+# and link command into the log pbuilder_build_one tees.
+mock_watch_logs "$resultdir/vinyl" "$logdir/mock-vinyl-rpmbuild.log" "$logdir/mock-vinyl-root.log"
+mock_watch_logs "$resultdir/cachetag" "$logdir/mock-cachetag-rpmbuild.log" "$logdir/mock-cachetag-root.log"
+mock_install_log_trap
 
 ###############################################################################
 say "install Mock"
 ###############################################################################
 
-dnf -y install epel-release
-dnf -y install mock mock-core-configs
+mock_install_toolchain
+
+# The BIND MOUNT, not a subdirectory: see mock_setup_build_user.
+mock_setup_build_user /out "$resultdir" "$topdir"
 
 #
-# Mock refuses to run as root -- "mock will not run from the root account
-# (needs an unprivileged uid so it can drop privs)" -- and /usr/bin/mock is a
-# symlink to usermode's consolehelper, which on a GitHub runner fails with
-# "Insufficient rights." (exit 6) rather than falling back to anything useful.
-# So every mock invocation runs as an unprivileged user in the mock group.
+# Each package gets a derived config that forwards its own epoch into the
+# chroot environment; the root name inside is pinned to the stock config's so
+# every invocation keeps sharing the one --no-clean root.
 #
-# That user is given the uid/gid that owns the bind-mounted /out, so mock can
-# write its resultdir and the RPMs land on the host owned by the account that
-# started the job rather than by root.
-#
-build_uid=$(stat -c %u /out)
-build_gid=$(stat -c %g /out)
-[ "$build_uid" -ne 0 ] || die "/out is owned by root; mock cannot run as root and would not be able to write its results"
-getent group "$build_gid" >/dev/null || groupadd -g "$build_gid" mockbuild
-useradd -o -u "$build_uid" -g "$build_gid" -m -d /home/mockbuild mockbuild
-usermod -aG mock mockbuild
-chown -R "$build_uid:$build_gid" "$resultdir" "$topdir"
-
-# mock, as that user. Used for every mock call below; a bare `mock` here is a bug.
-mock_as() { runuser -u mockbuild -- mock "$@"; }
-
-printf 'mock runs as %s (uid %s, groups: %s)\n' \
-	mockbuild "$build_uid" "$(runuser -u mockbuild -- id -nG)"
-mock_as --version
-
-#
-# SOURCE_DATE_EPOCH must be present inside the chroot environment. The host
-# export does not cross into mock's chroot, and when the variable is absent
-# EL9's redhat-rpm-config derives it from the topmost %changelog entry
-# truncated to midnight UTC -- exactly what the 1.0.0-1 evidence recorded
-# (1779235200) despite the export. config_opts['environment'] is mock's
-# documented mechanism, so each package gets a derived config that includes
-# the stock one and forwards its own epoch. The root name is pinned to the
-# stock config's, so every invocation keeps sharing the one --no-clean root
-# regardless of which config file it names.
-#
-mock_epoch_cfg() { # NAME EPOCH; prints the generated config path
-	_cfg=$topdir/mock-$1.cfg
-	cat > "$_cfg" <<EOF
-include('/etc/mock/$mock_cfg.cfg')
-config_opts['root'] = '$mock_cfg'
-config_opts['environment']['SOURCE_DATE_EPOCH'] = '$2'
-EOF
-	chmod 0644 "$_cfg"
-	printf '%s' "$_cfg"
-}
-vinyl_mock_cfg=$(mock_epoch_cfg vinyl "$VINYL_SOURCE_DATE_EPOCH")
-cachetag_mock_cfg=$(mock_epoch_cfg cachetag "$CACHETAG_SOURCE_DATE_EPOCH")
+vinyl_mock_cfg=$topdir/mock-vinyl.cfg
+cachetag_mock_cfg=$topdir/mock-cachetag.cfg
+mock_derived_config "$vinyl_mock_cfg" "$mock_cfg" "$VINYL_SOURCE_DATE_EPOCH"
+mock_derived_config "$cachetag_mock_cfg" "$mock_cfg" "$CACHETAG_SOURCE_DATE_EPOCH"
 
 if [ "$scope" != vmod ]; then
 ###############################################################################
@@ -206,21 +144,6 @@ say "Mock: initialize the alma+epel-9-x86_64 root"
 
 mock_as -r "$mock_cfg" --init
 
-# The derived configs put each package's epoch into the chroot environment (see
-# mock_epoch_cfg above); the two epoch macros then make it reach the RPM
-# header bytes: EL9's rpm 4.16 ships %use_source_date_epoch_as_buildtime
-# defaulting to 0, so without them BUILDTIME comes from the wall clock and
-# payload mtimes are unclamped. Same treatment as
-# recipes/el9/container/build.sh's rpmb() and, before that, the mismatch
-# fixture whose reproducibility check first proved the export alone changes
-# nothing. _buildhost is deliberately not pinned: whole-RPM reproducibility
-# is not this lane's contract.
-#
-# Both builds use the same two macros, so this is defined once, outside the
-# scope branches, and passed unchanged to every mock invocation below.
-epoch_defines=(--define "use_source_date_epoch_as_buildtime 1"
-	--define "clamp_mtime_to_source_date_epoch 1")
-
 if [ "$scope" != vmod ]; then
 ###############################################################################
 say "Mock: vinyl-cache buildsrpm + rebuild"
@@ -229,13 +152,14 @@ say "Mock: vinyl-cache buildsrpm + rebuild"
 # The export covers anything running outside the chroot; the chroot itself
 # gets the value from the derived config.
 export SOURCE_DATE_EPOCH=$VINYL_SOURCE_DATE_EPOCH
-mock_as -r "$vinyl_mock_cfg" --no-clean "${epoch_defines[@]}" \
+# shellcheck disable=SC2154 # mock_epoch_defines comes from lib/mock.sh
+mock_as -r "$vinyl_mock_cfg" --no-clean "${mock_epoch_defines[@]}" \
 	--resultdir="$resultdir/vinyl" \
 	--buildsrpm --spec "$specdir/vinyl-cache.spec" --sources "$srcdir" \
 	2>&1 | tee "$logdir/mock-vinyl-srpm.log"
 
 vinyl_srpm=$(ls "$resultdir/vinyl"/vinyl-cache-"$vinyl_evr".src.rpm)
-mock_as -r "$vinyl_mock_cfg" --no-clean "${epoch_defines[@]}" \
+mock_as -r "$vinyl_mock_cfg" --no-clean "${mock_epoch_defines[@]}" \
 	--resultdir="$resultdir/vinyl" \
 	--rebuild "$vinyl_srpm" \
 	2>&1 | tee "$logdir/mock-vinyl-build.log"
@@ -245,9 +169,9 @@ cp -p "$vinyl_srpm" /out/packages/
 fi
 
 if [ "$scope" = engine ]; then
-	# The rpmbuild build.log and root.log copies happen in the copy_mock_logs
-	# EXIT trap registered at the top of this script, on success and failure
-	# alike.
+	# The rpmbuild build.log and root.log copies happen in the
+	# mock_capture_logs EXIT trap registered at the top of this script, on
+	# success and failure alike.
 	say "container-mock.sh complete (scope: engine)"
 	ls -la /out/packages
 	exit 0
@@ -270,28 +194,8 @@ fi
 ###############################################################################
 say "publish the cohort Vinyl packages as a local repository"
 ###############################################################################
-#
-# libvmod-cachetag BuildRequires vinyl-cache-devel = <exact evr>, which is on
-# no mirror. The first draft satisfied that by `mock --install`-ing the built
-# packages into the same root and relying on --no-clean to keep them there for
-# the --rebuild that follows. That is not what --no-clean does: every mock
-# --rebuild starts with "chroot init", which restores the root cache and
-# discards anything --install put there, so `dnf builddep` then reported
-#   No matching package to install: 'vinyl-cache-devel = ...'
-# (measured, run 30167536066). --addrepo is the documented mechanism for
-# "build against packages I just built": mock's dnf runs outside the chroot,
-# so a file:// URL to a path in this container resolves.
-#
-dnf -y install createrepo_c
-rm -rf "$localrepo"
-mkdir -p "$localrepo"
-find "$vinyl_rpm_dir" -name 'vinyl-cache*.rpm' ! -name '*.src.rpm' \
-	-exec cp -p {} "$localrepo/" \;
-[ -n "$(ls -A "$localrepo")" ] ||
-	die "no vinyl-cache RPMs in $vinyl_rpm_dir; the engine artifact was not delivered"
-createrepo_c "$localrepo"
-chown -R "$build_uid:$build_gid" "$localrepo"
-ls -1 "$localrepo"
+
+mock_publish_localrepo "$localrepo" "$vinyl_rpm_dir" 'vinyl-cache*.rpm'
 
 ###############################################################################
 say "Mock: install vinyl-cache + vinyl-cache-devel into the SAME root"
@@ -358,14 +262,14 @@ say "Mock: libvmod-cachetag buildsrpm + rebuild, against the installed vinyl-cac
 # The cachetag epoch, not the Vinyl epoch used for the builds above; the
 # cachetag derived config forwards it into the chroot.
 export SOURCE_DATE_EPOCH=$CACHETAG_SOURCE_DATE_EPOCH
-mock_as -r "$cachetag_mock_cfg" --no-clean "${epoch_defines[@]}" \
+mock_as -r "$cachetag_mock_cfg" --no-clean "${mock_epoch_defines[@]}" \
 	--addrepo="file://$localrepo" \
 	--resultdir="$resultdir/cachetag" \
 	--buildsrpm --spec "$specdir/libvmod-cachetag.spec" --sources "$srcdir" \
 	2>&1 | tee "$logdir/mock-cachetag-srpm.log"
 
 cachetag_srpm=$(ls "$resultdir/cachetag"/libvmod-cachetag-"$CACHETAG_VERSION-$CACHETAG_RELEASE.el9".src.rpm)
-mock_as -r "$cachetag_mock_cfg" --no-clean "${epoch_defines[@]}" \
+mock_as -r "$cachetag_mock_cfg" --no-clean "${mock_epoch_defines[@]}" \
 	--addrepo="file://$localrepo" \
 	--resultdir="$resultdir/cachetag" \
 	--rebuild "$cachetag_srpm" \
@@ -374,7 +278,7 @@ mock_as -r "$cachetag_mock_cfg" --no-clean "${epoch_defines[@]}" \
 find "$resultdir/cachetag" -name 'libvmod-cachetag*.rpm' -exec cp -p {} /out/packages/ \;
 cp -p "$cachetag_srpm" /out/packages/
 
-# The rpmbuild build.log and root.log copies happen in the copy_mock_logs
+# The rpmbuild build.log and root.log copies happen in the mock_capture_logs
 # EXIT trap registered at the top of this script, on success and failure alike.
 
 say "container-mock.sh complete"

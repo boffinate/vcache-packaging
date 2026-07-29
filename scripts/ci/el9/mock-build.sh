@@ -120,9 +120,14 @@ if [ "$scope" != vmod ]; then
 fi
 
 note "Mock ($scope): privileged, because Mock needs chroot/bind-mount isolation"
+# /ci is scripts/ci, not scripts/ci/el9: since Step 7 Wave 0 container-mock.sh
+# sources the shared Mock driver and the shared package checks out of
+# scripts/ci/lib, which are the same files the generated-recipe lane uses. The
+# mount widened by one directory level; nothing else about the invocation
+# changed, and a read-only mount of a checkout cannot reach a package.
 docker run --privileged --rm \
 	-v "$recipes:/recipes:ro" \
-	-v "$here:/ci:ro" \
+	-v "$repo/scripts/ci:/ci:ro" \
 	-v "$vinyl_src:/vinyl-src:ro" \
 	-v "$cachetag_src:/cachetag:ro" \
 	-v "$out:/out" \
@@ -130,7 +135,7 @@ docker run --privileged --rm \
 	-e "MOCK_SCOPE=$scope" \
 	-w /out \
 	"$image" \
-	bash /ci/container-mock.sh
+	bash /ci/el9/container-mock.sh
 
 note "EL9 Mock lane done (scope: $scope)"
 ls -la "$out/packages"
