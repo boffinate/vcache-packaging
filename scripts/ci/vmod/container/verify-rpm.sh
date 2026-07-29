@@ -169,9 +169,12 @@ echo "OK: runtime pair installed, single packaged .so, packaged vinyltest driver
 
 note "8 -- behaviour: upstream's own expectations against the installed package"
 archive=$(find /lane/src -maxdepth 1 -name '*.tar.gz' | sort | head -1)
+# The installed fixture-package versions land in /lane/logs, which the workflow
+# uploads with the rest of the lane logs; the registry's per-VMOD
+# tests.fixture_packages is recorded from that file, never restated by hand.
 # shellcheck disable=SC2086 # the declared package list is a deliberate word list
-vtc_install_packages dnf $VMOD_TEST_PACKAGES ||
-	die "the declared behaviour fixture packages could not be installed"
+vtc_install_packages dnf /lane/logs/fixture-packages.tsv $VMOD_TEST_PACKAGES ||
+	die "the declared behaviour fixture packages could not be installed and recorded"
 vtc_stage_fixtures "$archive" "$VMOD_SOURCE_SHA256" \
 	"$VMOD_TEST_FIXTURE_ROOT" "$VMOD_TEST_FIXTURES" /tmp/fixtures ||
 	die "the declared test fixtures could not be staged"

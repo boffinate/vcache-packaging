@@ -182,26 +182,51 @@ vtc_run_suite() {
 	printf 'VTC-SUITE SUMMARY: %s/%s passed, 0 skipped\n' "$_vtc_passed" "$_vtc_count"
 }
 
-# vtc_install_packages MANAGER PACKAGES
+# vtc_install_packages MANAGER VERSIONS_FILE PACKAGES
 #
 # The fixture packages the overlay declares its behaviour suite needs -- a
 # database server the VTCs talk to, for instance. Empty for a VMOD whose suite
 # needs nothing but the engine, and then this is a no-op rather than a branch in
 # the caller.
+#
+# VERSIONS_FILE is where the run records what it actually installed: one
+# NAME<TAB>VERSION line per declared package, sorted -- the same register
+# build-rpm.sh keeps in buildroot-packages.tsv, for the same reason. The
+# registry's per-VMOD tests.fixture_packages field has no other honest source:
+# the two targets resolve materially different fixture servers, so the version
+# has to come off the installed package database of this run, not from a
+# restatement of what a distribution is expected to ship. Unlike the buildroot
+# record, a failure to record here is fatal: it happens BEFORE the suite runs,
+# so nothing already earned is lost, and a suite verdict that cannot say what
+# it ran against is exactly the silence the field exists to remove.
 vtc_install_packages() {
 	_vtc_mgr=$1
-	shift
+	_vtc_versions=$2
+	shift 2
 	[ $# -gt 0 ] || {
 		printf 'behaviour fixture packages: none declared\n'
 		return 0
 	}
 	printf 'behaviour fixture packages: %s\n' "$*"
+	mkdir -p "$(dirname "$_vtc_versions")"
 	case $_vtc_mgr in
-	apt) apt-get install -y --no-install-recommends "$@" >/dev/null ;;
-	dnf) dnf -y -q install "$@" >/dev/null ;;
+	apt)
+		apt-get install -y --no-install-recommends "$@" >/dev/null || return 1
+		dpkg-query -W -f '${Package}\t${Version}\n' "$@" >"$_vtc_versions"
+		;;
+	dnf)
+		dnf -y -q install "$@" >/dev/null || return 1
+		rpm -q --qf '%{NAME}\t%{VERSION}-%{RELEASE}.%{ARCH}\n' "$@" >"$_vtc_versions"
+		;;
 	*)
 		printf 'FAIL: unknown package manager %s\n' "$_vtc_mgr" >&2
 		return 1
 		;;
-	esac
+	esac || {
+		printf 'FAIL: could not record the installed fixture package versions\n' >&2
+		return 1
+	}
+	sort -o "$_vtc_versions" "$_vtc_versions"
+	printf 'fixture package versions, from this run (%s):\n' "$_vtc_versions"
+	sed 's/^/  | /' "$_vtc_versions"
 }
