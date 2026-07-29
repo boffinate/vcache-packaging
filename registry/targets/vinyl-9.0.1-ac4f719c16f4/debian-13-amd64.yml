@@ -501,8 +501,7 @@ vmods:
   # required VMOD's results simply missing; a pending one cannot, because
   # --require-releasable rejects it by name.
   dict:
-    evidence: pending
-    pending_reason: "Everything but the upgrade-transaction matrix is recorded from run 30413513970. That one dimension needs an engine that is simultaneously newer and ABI-incompatible, which only the mismatch fixture builds and only nightly-transactions.yml produces; wiring dict into it is Step 8. Recorded 2026-07-29"
+    evidence: recorded
     package:
       upstream_version: 1.7
       revision: "1"
@@ -889,4 +888,10 @@ vmods:
       package_lint: pass
       installed_package_smoke: pass
       full_behavior_suite: pass
-      upgrade_transactions: pending
+      # One-off container matrix, both revisions built from the same
+      # generator with package.revision 1 and 2: install, upgrade 1->2,
+      # explicit downgrade, refusal of an ABI-incompatible engine, and
+      # removal, with the three generated vinyld dependencies asserted
+      # declared AND satisfied at every step. 15/15 per target. Permanent
+      # wiring through nightly-transactions.yml is Step 8.
+      upgrade_transactions: pass

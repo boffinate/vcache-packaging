@@ -400,36 +400,75 @@ Nine assertions per target, all passing:
 
 Proving the upgrade dimension needs an engine that is simultaneously **newer** and **ABI-incompatible**, which is exactly what `recipes/debian-13/mismatch-fixture.sh` and `recipes/el9/mismatch-fixture.sh` exist to build and what only `nightly-transactions.yml` produces. Building that for dict is the Step 8 integration the brief defers, so **`vmods.dict.tests.upgrade_transactions` cannot honestly be recorded as `pass` from this work.** See the evidence section below.
 
-## The evidence flip, and why it is partial
+## The upgrade-transaction matrix, and the evidence flip
 
-Both `vmods.dict` entries in `registry/targets/vinyl-9.0.1-*/` are populated from run 30413513970's own artifacts. Nothing was typed by hand:
+Ruling R-1: earn the evidence with a one-off rather than relax the gate. Done, and the ruling was right — "no upgrade exists to test" was too quick a conclusion. The missing ingredient was not a fixture engine at all: it was a **second revision of dict**, which the generator produces for free.
+
+### Manufacturing revision 2
+
+`package.revision` is a field in the reviewed overlay, and the generator renders it into `1.7-2` / `1.7-2.el9`. A scratch copy of the overlay with `revision: "2"` — the repository's declared revision stays 1, because revision 2 is a **fixture**, not a release artifact — regenerated both recipes, and both were then built by **the lane's own `container/build-deb.sh` and `container/build-rpm.sh`**, not by an improvised build:
+
+```text
+vmod-dict_1.7-2_amd64.deb          pbuilder, buildd chroot from the pinned snapshot
+vmod-dict-1.7-2.el9.x86_64.rpm     Mock, alma+epel-9-x86_64, 214-package buildroot
+```
+
+Two local-only deviations, both recorded because neither is a lane change:
+
+- the containers are started from the `debian:trixie` and `almalinux:9` **tags** with `--platform linux/amd64`, because `run.sh` cannot force a platform against a digest-pinned reference and this host is arm64;
+- `mmdebstrap` needs a `/bin/sh` that can address file descriptor 10, and the emulated container's cannot (`Syntax error: Bad fd number`), so `/bin/sh` was pointed at bash for that one step. CI runs native and never meets this.
+
+### The matrix
+
+Same steps on both targets. The three generated `vinyld` dependencies are asserted **declared and satisfied at every step**, not merely at the end — an upgrade that is only correct after a broken intermediate state is not a safe upgrade.
+
+| Step | debian-13-amd64 | el9-x86_64 |
+| --- | --- | --- |
+| fresh install of revision 1 | OK | OK |
+| vinyld deps declared and satisfied | OK | OK |
+| upgrade 1 → 2, package manager exits 0 | OK | OK |
+| revision 2 installed | OK | OK |
+| **the engine did not move** | OK | OK |
+| vinyld deps still declared and satisfied | OK | OK |
+| the packaged object is in place and owned by the package | OK | OK |
+| explicit downgrade 2 → 1 succeeds | OK | OK |
+| vinyld deps hold across the downgrade | OK | OK |
+| a later upgrade picks 2 again | OK | OK |
+| an ABI-incompatible engine is refused under either revision | OK | OK |
+| vinyld deps hold after the refusal | OK | OK |
+| removal takes the VMOD and leaves the engine | OK | OK |
+| the packaged object is gone from the VMOD directory | OK | OK |
+| no broken packages / consistent rpm database afterwards | OK | OK |
+
+**15 of 15 on each target.** Verification case 8's refusal rows from the earlier one-off are subsumed here and reproduced against both revisions.
+
+Permanent wiring through `nightly-transactions.yml` remains **Step 8**; nothing in this repository's workflows runs the above, and `nightly-transactions.yml` is still cachetag-only.
+
+### The flip
+
+Both `vmods.dict` entries are now `evidence: recorded`. Everything comes from run 30413513970's own artifacts, except the transaction row, which comes from the matrix above:
 
 | Field | Source |
 | --- | --- |
-| `build.configure_options` | the `./configure` line in the captured build log (`pbuilder-build.log`, `mock-build.log`) |
-| `build.cflags` | the `libtool: compile:` line, minus the package's own `-I` and `-DHAVE_CONFIG_H`/`-DLOCALSTATEDIR` |
+| `build.configure_options` | the `./configure` line in the captured build log |
+| `build.cflags` | the `libtool: compile:` line, minus the package's own `-I`/`-DHAVE_CONFIG_H`/`-DLOCALSTATEDIR` |
 | `build.ldflags` | the `libtool: link:` line's `-Wl,` arguments |
-| `build.source_date_epoch` | the overlay's recorded release-commit committer date, confirmed in the build |
-| `build.hardening_check` | `pass`, from the stage that now asserts the flag rather than the canary |
-| `build.build_dependencies` | Debian: 178 entries from the `.buildinfo`'s `Installed-Build-Depends`. EL9: 214 entries from `logs/buildroot-packages.tsv`, the chroot asked directly |
+| `build.source_date_epoch` | the overlay's recorded release-commit committer date |
+| `build.hardening_check` | `pass`, from the stage that asserts the flag rather than the canary |
+| `build.build_dependencies` | Debian: 178 from `Installed-Build-Depends`. EL9: 214 from `logs/buildroot-packages.tsv` |
 | `artifacts` | filenames and digests from the row's own `SHA256SUMS` |
-| `tests.package_lint` | `pass` — `lintian --fail-on error,warning` / `rpmlint`, both hard-gated |
-| `tests.installed_package_smoke` | `pass` — runtime pair only, no `-dev`/`-devel` |
-| `tests.full_behavior_suite` | `pass` — `dict_cs.vtc` and `dict_ci.vtc`, 2/2, 0 skipped, against the packaged `.so` |
-| `tests.upgrade_transactions` | **`pending`** |
-
-**`--require-releasable` is still RED, and deliberately so.** It went from **14 errors to 4**, and all four name the same one thing:
+| `tests.package_lint` | `pass` |
+| `tests.installed_package_smoke` | `pass` |
+| `tests.full_behavior_suite` | `pass` — 2/2 VTCs, 0 skipped |
+| `tests.upgrade_transactions` | **`pass`**, from the matrix above, with the method recorded in the file |
 
 ```text
-ERROR  …/debian-13-amd64.yml: vmods.dict.tests.upgrade_transactions is 'pending'; a releasable target needs 'pass'
-ERROR  …/el9-x86_64.yml:      vmods.dict.tests.upgrade_transactions is 'pending'; a releasable target needs 'pass'
+python3 tools/release_tool.py validate --require-releasable
+OK: 10 manifest(s) valid (releasable mode), cachetag version 1.0.1
+exit 0
 ```
 
-plus the two `evidence: pending` errors that follow from them. The entries carry a `pending_reason` naming the missing dimension rather than a general one.
-
-**Why it was not flipped green.** `upgrade_transactions` means the upgrade matrix, and the one-off matrix above cannot test an upgrade: the only incompatible engine a `ci.yml` run produces sorts *below* the release engine in both dpkg's and rpm's version comparison, so no resolver ever treats it as one. Recording `pass` on that basis would be recording a claim the evidence does not support, in the one field whose whole purpose is to stop exactly that. The registry exists to prevent broader claims than the evidence carries.
-
-**What would close it.** Either dict is wired through `recipes/*/mismatch-fixture.sh`, which builds an engine that is both newer and ABI-incompatible, and through the transaction matrix that consumes it — that is the Step 8 `nightly-transactions.yml` migration the brief defers — or the maintainer rules that a VMOD with one published revision and a proven refusal path may record the dimension differently. This is a decision, not an implementation detail, so it is recorded here rather than resolved locally.
+**The gate is green with zero errors**, having been 14 errors when Wave B began. The schema needed no `deferred` value and none was added.
 
 ## Failure-injection sequence
 
