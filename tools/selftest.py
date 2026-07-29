@@ -955,8 +955,8 @@ def test_required_vmods_matches_the_catalog(repo_root: Path) -> None:
     path = repo_root / "registry" / "cohorts" / "vinyl-9.0.1-ac4f719c16f4.yml"
     cohort = manifest.load_cohort(path)
     check(
-        "required_vmods: the release cohort requires both selected VMODs",
-        sorted(cohort["required_vmods"]) == ["cachetag", "dict"],
+        "required_vmods: the release cohort requires all three selected VMODs",
+        sorted(cohort["required_vmods"]) == ["cachetag", "dict", "redis"],
         str(cohort["required_vmods"]),
     )
 
@@ -978,8 +978,10 @@ def test_required_vmods_matches_the_catalog(repo_root: Path) -> None:
         str(errors),
     )
 
-    # The trunk cohorts must NOT require dict: it declares no vinyl-trunk-pinned
-    # lane, so nothing could ever produce its evidence there.
+    # The trunk cohorts must NOT require dict or redis: neither declares a
+    # vinyl-trunk-pinned lane, so nothing could ever produce their evidence
+    # there. One root cause for both -- Vinyl trunk emits no numeric version,
+    # and both build systems do arithmetic on it.
     trunk = manifest.load_cohort(
         repo_root / "registry" / "cohorts" / "vinyl-9.0.0-4b7e68292979.yml"
     )
@@ -996,24 +998,39 @@ def test_per_vmod_evidence(repo_root: Path) -> None:
     data = manifest.load_target(path)
     check(
         "evidence: the release target carries an entry per selected VMOD",
-        sorted(data["vmods"]) == ["cachetag", "dict"],
+        sorted(data["vmods"]) == ["cachetag", "dict", "redis"],
         str(sorted(data["vmods"])),
     )
-    # What the live registry must say is that BOTH entries are recorded; the
-    # `pending` machinery is exercised below against a constructed entry.
+    # Every entry must declare an evidence state the schema knows, and every
+    # `pending` one must say why. What it must NOT do is assert which VMODs are
+    # currently pending: that was tried and it does not work.
     #
-    # This used to assert that dict's entry was pending, and the two pending
-    # checks further down reached into the live file to strip and inspect its
-    # `pending_reason`. That worked only while dict's evidence did not exist.
-    # When Wave B recorded it, one of those checks did not start failing -- it
-    # raised KeyError and took the whole self-test process down, which CI caught
-    # as a failed structural gate rather than as a named failing assertion.
-    # A test that depends on a particular VMOD being mid-flight tests nothing
-    # once the work lands, so the state under test is now built here.
+    # The first version asserted dict was pending, and two checks further down
+    # reached into the live file to inspect its `pending_reason`. When Wave B
+    # recorded dict's evidence one of those did not start failing -- it raised
+    # KeyError and took the whole self-test process down. The second version
+    # asserted every entry was recorded, and Step 7 Wave 1 broke it in the other
+    # direction: dict went to package revision 2 and redis entered scope, so two
+    # of three are legitimately pending. A test pinned to a particular VMOD's
+    # mid-flight state tests nothing once the work moves, in either direction.
+    #
+    # What is invariant is the RULE: pending needs a reason, recorded must not
+    # carry one, and --require-releasable rejects pending by name. The first two
+    # are asserted here against the live file; the third is asserted below
+    # against a constructed entry, so it stays provable whatever the live file
+    # happens to say.
     check(
-        "evidence: every entry in the release target is recorded",
-        all(v["evidence"] == "recorded" for v in data["vmods"].values()),
+        "evidence: every entry declares a known evidence state",
+        all(v["evidence"] in ("recorded", "pending") for v in data["vmods"].values()),
         str({k: v["evidence"] for k, v in data["vmods"].items()}),
+    )
+    check(
+        "evidence: every pending entry says why, and no recorded entry does",
+        all(
+            bool(v.get("pending_reason")) == (v["evidence"] == "pending")
+            for v in data["vmods"].values()
+        ),
+        str({k: (v["evidence"], v.get("pending_reason")) for k, v in data["vmods"].items()}),
     )
     check(
         "evidence: buildroot facts moved out of the per-VMOD block",
@@ -1087,15 +1104,40 @@ def test_per_vmod_evidence(repo_root: Path) -> None:
         str([e for e in errors if "cachetag" in e]),
     )
 
-    # And the live file, unmodified, must now be releasable: this is the Step 6
-    # exit gate's "both package families meet the same evidence policy" clause
-    # asserted against the real data rather than against a constructed case.
+    # And the live file, unmodified, against --require-releasable. This is the
+    # Step 6 exit gate's "every package family meets the same evidence policy"
+    # clause read off the real data, and what it must show depends on the real
+    # data -- so the assertion is on the CORRESPONDENCE rather than on a verdict.
+    #
+    # As of Step 7 Wave 1 the release cohort is deliberately NOT releasable: dict
+    # moved to package revision 2 and redis entered scope, so two of three
+    # entries are pending. That is the gate working, and pinning this test to
+    # "no errors" would mean the next VMOD to enter scope broke the self-test
+    # rather than the release.
     errors = manifest.validate_target(
         data, str(path), cohort=cohort, require_releasable=True, repo_root=repo_root
     )
+    pending = sorted(
+        vmod for vmod, entry in data["vmods"].items() if entry["evidence"] == "pending"
+    )
     check(
-        "evidence: the recorded release target is releasable as written",
-        not errors,
+        "evidence: releasability of the live release target matches its pending set",
+        (not errors) == (not pending),
+        f"pending={pending}, errors={errors}",
+    )
+    check(
+        "evidence: every pending VMOD is named in the releasability errors",
+        all(any(f"vmods.{vmod}.evidence is 'pending'" in e for e in errors) for vmod in pending),
+        f"pending={pending}, errors={errors}",
+    )
+    check(
+        "evidence: no recorded VMOD is blamed for the block",
+        not any(
+            f"vmods.{vmod}." in e
+            for e in errors
+            for vmod in data["vmods"]
+            if data["vmods"][vmod]["evidence"] == "recorded"
+        ),
         str(errors),
     )
 

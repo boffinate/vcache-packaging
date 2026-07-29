@@ -8,6 +8,11 @@ The short names are Debian's, from the [copyright-format 1.0 specification](http
 
 Where Debian ships the full licence text in `/usr/share/common-licenses`, the stanza references it after the summary, as Debian Policy §12.5 requires. Where it does not, the stanza must carry the full text.
 
+A package under more than one licence needs a stanza for **every** short name any `Files:` paragraph refers to, not only for `license.debian_short_name`. The generator renders them all, sorted, and refuses when one is missing. That distinction was invisible until `libvmod-redis`: `vmod-dict`'s two `Files:` paragraphs are both `GPL-3+`.
+
 | File | SPDX expression it serves |
 | --- | --- |
 | `GPL-3+.debian` | `GPL-3.0-or-later` |
+| `BSD-2-clause.debian` | `BSD-2-Clause` — `libvmod-redis`'s own `LICENSE` |
+| `BSD-3-clause.debian` | `BSD-3-Clause` — `libvmod-redis`'s `src/crc16.c`, which carries the endorsement clause the rest of the tree does not |
+| `public-domain.debian` | `LicenseRef-Public-Domain` — `libvmod-redis`'s `src/sha1.c`, marked "100% Public Domain" by its author. There is no licence text, so the paragraph records the disclaimer and where it is stated |

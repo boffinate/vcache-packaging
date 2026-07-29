@@ -329,3 +329,17 @@ The work is complete when:
 - Replace Varnish or Vinyl ABI policy with a single cross-engine dependency rule.
 - Vendor or fork all of `vmod-packager`.
 - Treat a convenience Docker build as a substitute for pbuilder, Mock, installed-package tests, or transaction testing.
+
+## Addition, 2026-07-29: what a reviewed source patch is allowed to be
+
+Step 7 Wave 1 built the patch capability this plan deferred (verification case 10 was relocated to Step 7 for exactly that reason), and the third VMOD forced the boundary to be drawn rather than described. It is drawn here so it binds the next VMOD as well as this one.
+
+**Allowed: a per-VMOD, reviewed, digested, manifest-visible patch.** The overlay declares `patches:` as `{file, sha256}` entries under `overlays/<id>/patches/`; the files are committed content, never fetched and never generated. Generation fails closed if a declared file is missing or if its bytes no longer hash to the recorded digest. Each patch is both an **input** of the generation record and a rendered **output**, so its bytes are inside `recipe_sha256` — and `recipe_sha256` is recorded release evidence, which means a patch cannot be omitted or silently replaced without that evidence moving.
+
+That is the bounded form of a shim, and it is bounded on four axes: one overlay, committed content, pinned bytes, and a change that moves recorded evidence.
+
+**Forbidden: blanket substitution and shared shim layers.** A pass that rewrote engine identifiers across whatever tree it was handed would have solved `libvmod-redis` with less typing, and would have been the wrong shape: nobody would review what it did to the next VMOD, and nothing would record what it had done to this one. The same objection applies to a shared patch directory that several VMODs draw from, and to any "compatibility header" injected into a build.
+
+**A capability shared by N VMODs is a deliberate adapter decision.** If a second selected VMOD needs the same change, the answer is not a second copy of the patch. It is a decision about whether the *adapter* should express it — made once, with `adapter.revision` bumped and every already-generated VMOD's recipe output confirmed unchanged, exactly as this document already requires for any adapter knob.
+
+**Keep patches minimal and say what they do.** Each carries a DEP-3 header describing the change and why it exists downstream rather than upstream. A patch that touches program source rather than the build system is a much larger decision than this mechanism is for, and it is not authorised by this addition.
