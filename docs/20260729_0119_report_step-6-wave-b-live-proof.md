@@ -746,13 +746,31 @@ The **trunk** row is the slower of the two, not the release row, and both sit ab
 
 Three consecutive losses on one of two equally-exposed rows is unremarkable at the observed per-job failure rate — one specific row losing three times running at roughly even odds is a one-in-eight coincidence, and one-in-eight things happen. **Recorded as mirror luck**, so nobody spends time hardening a row that has nothing wrong with it. The budgets are not the problem either: at 3.5 minutes normal against 35 allowed, a row that dies at its budget was not slightly slow, it was stuck.
 
+### Item 5, third attempt — [30425966069](https://github.com/boffinate/vcache-packaging/actions/runs/30425966069): **adjudicated, exact**
+
+EPEL was healthy: all four engine rows green, both EL9 rows included.
+
+```text
+counts: expected=14 passed=13 failed=1 missing=0 not_selected=1 required_failed=1
+  target/dict/release/vinyl-release/debian-13-amd64   failed_package_build
+      injected package-build failure
+```
+
+| Expected | Observed |
+| --- | --- |
+| dict's Debian row `failed_package_build` | **`failed_package_build`**, detail *"injected package-build failure"* |
+| dict's EL9 row PASS | **PASS** |
+| all six cachetag rows PASS | **PASS** |
+| four engine rows PASS | **PASS** |
+
+**B11's fix is verified live.** The detail string is the decisive part: it reads *"injected package-build failure"*, from the branch placed ahead of the real build-failure branch, so the row is attributed to the injection rather than to a genuine build fault. Two attempts earlier this same case produced a green run.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
 
 | # | `inject=` | Expected |
 | --- | --- | --- |
-| 5 | `dict_build` | dict's Debian row `failed_package_build`; dict's EL9 row and all cachetag rows PASS |
 | 6 | `debian_build` | cachetag's 2 Debian target rows red; all 4 dict rows PASS |
 | 7 | `el9_build` | cachetag's 2 EL9 target rows red; all 4 dict rows PASS |
 | 8a | `source_checkout` | cachetag source red; its 4 targets `blocked_by_vmod_source`; dict PASS |
@@ -807,8 +825,8 @@ Three of them — B3, B6 and B9 — are the same class: a lesson one backend's s
 | 2 `dict_source` | [30414399323](https://github.com/boffinate/vcache-packaging/actions/runs/30414399323) | **PASS** — exact |
 | 3 `recipe_generation` | [30415386761](https://github.com/boffinate/vcache-packaging/actions/runs/30415386761) | **PASS** — exact |
 | 4 `manifest` | [30420921127](https://github.com/boffinate/vcache-packaging/actions/runs/30420921127) (5th attempt) | **PASS** — exact; four earlier attempts lost EL9 rows to a flaky EPEL mirror |
-| 5 `dict_build` | 30422290121, 30424259052 | **BLOCKED.** Attempt 1 found **B11** — the injection was inert on the generated lane; fixed and unverified. Attempt 2 lost `engine/vinyl-release/el9-x86_64` to the mirror |
-| 6-10 | not dispatched | **BLOCKED** on the same condition |
+| 5 `dict_build` | [30425966069](https://github.com/boffinate/vcache-packaging/actions/runs/30425966069) (3rd attempt) | **PASS** — exact; attempt 1 found **B11**, attempt 2 lost an EL9 row to the mirror |
+| 6-10 | in progress | sequential |
 | 11 equivalence | run 30413513970 vs `main` 30397392846 | **PASS** — 10 `.deb` byte-identical, 18 RPMs equivalent |
 | 12 case 8 | one-off containers | **PASS** — both targets refuse, both name the dependency |
 | 13 evidence flip | run 30413513970 + the upgrade matrix | **PASS** — `--require-releasable` exits 0 |
