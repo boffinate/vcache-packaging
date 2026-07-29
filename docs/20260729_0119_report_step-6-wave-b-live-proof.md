@@ -430,3 +430,12 @@ plus the two `evidence: pending` errors that follow from them. The entries carry
 **Why it was not flipped green.** `upgrade_transactions` means the upgrade matrix, and the one-off matrix above cannot test an upgrade: the only incompatible engine a `ci.yml` run produces sorts *below* the release engine in both dpkg's and rpm's version comparison, so no resolver ever treats it as one. Recording `pass` on that basis would be recording a claim the evidence does not support, in the one field whose whole purpose is to stop exactly that. The registry exists to prevent broader claims than the evidence carries.
 
 **What would close it.** Either dict is wired through `recipes/*/mismatch-fixture.sh`, which builds an engine that is both newer and ABI-incompatible, and through the transaction matrix that consumes it — that is the Step 8 `nightly-transactions.yml` migration the brief defers — or the maintainer rules that a VMOD with one published revision and a proven refusal path may record the dimension differently. This is a decision, not an implementation detail, so it is recorded here rather than resolved locally.
+
+## Failure-injection sequence
+
+The baseline is the gate for everything below; it went green in run 30413513970 and the injections run against that same tree.
+
+Expected results were stated before each dispatch, from the ledger rather than from memory. One expectation is worth stating up front because it is not what the brief anticipated:
+
+**`INJECT_ENGINE_ROW` is `("vinyl-trunk-pinned", "debian-13-amd64")`**, and the expansion shows exactly one consumer of it — `target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64`. dict's two target rows both name `engine/vinyl-release/…`. So `inject=engine_build` and `inject=suppress_engine_artifact` block **one** row, cachetag's, and **`target-generated`'s engine-blocked path is not exercised by them**. Proving that path live would need `INJECT_ENGINE_ROW` moved to a `vinyl-release` row, which changes what the existing cachetag-side cases demonstrate; it is recorded as a gap rather than papered over.
+
