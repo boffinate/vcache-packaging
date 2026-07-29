@@ -68,6 +68,8 @@ vmods:
       binary_name: libvmod-cachetag
     build:
       profile: production
+      # cachetag is not generated; its audited recipe lives in its own repository.
+      recipe_sha256: not-applicable
       # All three read out of Mock's build.log, kept by the lane as
       # logs/mock-cachetag-rpmbuild.log (run 30352844760): the %configure
       # expansion as rpmbuild ran it, and the flag variables redhat-rpm-config

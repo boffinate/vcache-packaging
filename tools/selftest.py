@@ -118,6 +118,7 @@ vmods:
       binary_name: libvmod-cachetag
     build:
       profile: production
+      recipe_sha256: not-applicable
       configure_options: --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu
       cflags: -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIC
       ldflags: -Wl,-z,relro -Wl,-z,now
@@ -1173,6 +1174,7 @@ def test_fixture_packages_are_required_when_the_overlay_declares_them(repo_root:
     entry.pop("pending_reason", None)
     entry["build"].update(
         {
+            "recipe_sha256": "ab" * 32,
             "configure_options": "./configure",
             "cflags": "-O2",
             "ldflags": "-Wl,-z,relro",
@@ -1225,6 +1227,98 @@ def test_fixture_packages_are_required_when_the_overlay_declares_them(repo_root:
                 forged, str(path), cohort=cohort, require_releasable=True, repo_root=repo_root
             )
         ),
+    )
+
+
+def test_recipe_sha256_binds_the_package_to_the_generated_recipe(repo_root: Path) -> None:
+    """The generated recipe's digest is recorded evidence, in two shapes.
+
+    recipes/vmods/README.md has said since Step 6 that the result evidence
+    must record `recipe_sha256`; `build.recipe_sha256` is where it lands. A
+    generated VMOD records the 64-hex digest from generation-record.json, and
+    a VMOD that is not generated -- cachetag keeps its audited recipe in its
+    own repository -- records the literal `not-applicable`, so the absence of
+    a digest is a claim rather than a gap.
+
+    Asserted as the RULE, not as any VMOD's mid-flight value, for the same
+    reason the pending/recorded tests were rewritten that way: a recorded
+    entry without the field is refused, a malformed digest is refused, both
+    allowed shapes are accepted, and a pending entry stays under the
+    placeholder convention like every other build field.
+    """
+    import copy
+
+    path = repo_root / "registry" / "targets" / "vinyl-9.0.1-ac4f719c16f4" / "el9-x86_64.yml"
+    cohort = manifest.load_cohort(
+        repo_root / "registry" / "cohorts" / "vinyl-9.0.1-ac4f719c16f4.yml"
+    )
+    data = manifest.load_target(path)
+
+    # The live file: cachetag's recorded entries say `not-applicable`, and the
+    # pending entries carry PLACEHOLDER. Neither may raise an error.
+    errors = manifest.validate_target(data, str(path), cohort=cohort, repo_root=repo_root)
+    check(
+        "recipe_sha256: not-applicable on a recorded non-generated entry is accepted",
+        not any("recipe_sha256" in e for e in errors),
+        str([e for e in errors if "recipe_sha256" in e]),
+    )
+    check(
+        "recipe_sha256: the live recorded cachetag entry states a shape, not a gap",
+        data["vmods"]["cachetag"]["build"]["recipe_sha256"] == "not-applicable",
+        str(data["vmods"]["cachetag"]["build"].get("recipe_sha256")),
+    )
+
+    # A recorded entry that simply omits the field is refused by the schema.
+    missing = copy.deepcopy(data)
+    del missing["vmods"]["cachetag"]["build"]["recipe_sha256"]
+    errors = manifest.validate_target(missing, str(path), cohort=cohort, repo_root=repo_root)
+    check(
+        "recipe_sha256: a recorded entry without it is refused",
+        any("recipe_sha256: missing required field" in e for e in errors),
+        str(errors),
+    )
+
+    # A malformed digest is refused. Upper-case hex is the subtle one: it is
+    # still a digest to a human reader, and still not the canonical form the
+    # generation record emits.
+    malformed = copy.deepcopy(data)
+    malformed["vmods"]["cachetag"]["build"]["recipe_sha256"] = "AB" * 32
+    errors = manifest.validate_target(malformed, str(path), cohort=cohort, repo_root=repo_root)
+    check(
+        "recipe_sha256: a malformed digest is refused",
+        any("recipe_sha256" in e and "does not match" in e for e in errors),
+        str(errors),
+    )
+    truncated = copy.deepcopy(data)
+    truncated["vmods"]["cachetag"]["build"]["recipe_sha256"] = "ab" * 31
+    errors = manifest.validate_target(truncated, str(path), cohort=cohort, repo_root=repo_root)
+    check(
+        "recipe_sha256: a truncated digest is refused",
+        any("recipe_sha256" in e and "does not match" in e for e in errors),
+        str(errors),
+    )
+
+    # A well-formed 64-hex digest is accepted -- the schema enforces the
+    # shape; WHICH digest is right for a run is Wave 2's evidence question,
+    # answered against generation-record.json, not a schema question.
+    digest = copy.deepcopy(data)
+    digest["vmods"]["cachetag"]["build"]["recipe_sha256"] = "ab" * 32
+    errors = manifest.validate_target(digest, str(path), cohort=cohort, repo_root=repo_root)
+    check(
+        "recipe_sha256: a 64-hex lowercase digest is accepted",
+        not any("recipe_sha256" in e for e in errors),
+        str([e for e in errors if "recipe_sha256" in e]),
+    )
+
+    # A PLACEHOLDER surviving into a recorded entry is caught by the same
+    # placeholder policy that guards every other recorded build field.
+    leftover = copy.deepcopy(data)
+    leftover["vmods"]["cachetag"]["build"]["recipe_sha256"] = "PLACEHOLDER"
+    errors = manifest.validate_target(leftover, str(path), cohort=cohort, repo_root=repo_root)
+    check(
+        "recipe_sha256: a placeholder left in a recorded entry is refused",
+        any("placeholder values remain" in e and "recipe_sha256" in e for e in errors),
+        str(errors),
     )
 
 
@@ -1397,6 +1491,7 @@ def main(repo_root: Path = None, cachetag_src=None) -> int:
     test_required_vmods_matches_the_catalog(root)
     test_per_vmod_evidence(root)
     test_fixture_packages_are_required_when_the_overlay_declares_them(root)
+    test_recipe_sha256_binds_the_package_to_the_generated_recipe(root)
     test_metadata_is_byte_neutral_across_the_v2_migration(root)
     test_distro_native(root)
 

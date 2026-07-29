@@ -72,6 +72,13 @@ def is_placeholder(value: str) -> bool:
 # ---------------------------------------------------------------------------
 
 SHA256_RE = r"^(?:[0-9a-f]{64})$"
+# The generated recipe's digest, or the literal statement that no recipe is
+# generated. Expressed the way the tests verdicts express their allowed values
+# -- in the schema, not in a validator branch: a generated VMOD records the
+# 64-hex recipe_sha256 out of generation-record.json; a VMOD whose audited
+# recipe lives in its own repository and is not generated records
+# `not-applicable`, so the absence of a digest is a claim rather than a gap.
+RECIPE_SHA256_RE = r"^(?:[0-9a-f]{64}|not-applicable)$"
 COMMIT_RE = r"^(?:[0-9a-f]{40})$"
 ABI_RE = r"^(?:[0-9a-f]{40})$"
 VERSION_RE = r"^[0-9]+\.[0-9]+\.[0-9]+$"
@@ -262,6 +269,17 @@ _BUILDROOT_FIELDS = {
 # comes from its own release commit) or a build-dependency set.
 _VMOD_BUILD_FIELDS = {
     "profile": _enum(["production", "diagnostic"]),
+    # The digest of the generated recipe this build consumed:
+    # generation-record.json's recipe_sha256, which covers every input --
+    # the generator's own source, the overlay, the adapter data, any reviewed
+    # patch -- and every rendered file. recipes/vmods/README.md has required
+    # the result evidence to record it since Step 6; this is where it lands,
+    # and it is what binds the released package bytes to the branch-rendered
+    # recipe, so a substituted patch or a hand-edited recipe cannot hide.
+    # `not-applicable` for a VMOD that is not generated: cachetag keeps its
+    # audited recipe in its own repository, and there is no generated tree to
+    # digest. Pending entries carry PLACEHOLDER like every other build field.
+    "recipe_sha256": _s(RECIPE_SHA256_RE),
     "configure_options": _s(FREE_TEXT_RE),
     "cflags": _s(FREE_TEXT_RE),
     "ldflags": _s(FREE_TEXT_RE),

@@ -225,6 +225,7 @@ Keyed by the VMOD id, which is the catalog file-name stem in `registry/vmods/`.
 | `build.configure_options` | recorded output | the effective configure command line |
 | `build.cflags` / `build.ldflags` | recorded output | the effective flags, so hardening policy is auditable |
 | `build.source_date_epoch` | recorded input | from this VMOD's own release commit — never another repository's |
+| `build.recipe_sha256` | recorded input | the generated recipe's digest — `generation-record.json`'s `recipe_sha256` from [`recipes/vmods/`](../recipes/vmods/README.md), which covers every generation input and every rendered file. It binds the released package to the branch-rendered recipe, so a substituted patch or hand-edited recipe cannot hide. The literal `not-applicable` for a VMOD that is not generated: cachetag keeps its audited recipe in its own repository. Both shapes are enforced by the schema; a pending entry carries `PLACEHOLDER` like the other build fields |
 | `build.hardening_check` | evidence | `pending`, `pass`, `fail`, `not-applicable` |
 | `build.build_dependencies` | recorded output | exactly resolved buildroot packages; `[]` until recorded |
 | `artifacts` | recorded output | `{filename, sha256}` per produced artifact; a releasable VMOD needs at least one |

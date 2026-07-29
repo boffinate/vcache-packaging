@@ -58,6 +58,8 @@ vmods:
       binary_name: libvmod-cachetag
     build:
       profile: production
+      # cachetag is not generated; its audited recipe lives in its own repository.
+      recipe_sha256: not-applicable
       # dh_auto_configure's effective line for the libvmod-cachetag build.
       configure_options: "./configure --build=x86_64-linux-gnu --prefix=/usr --includedir=${prefix}/include --mandir=${prefix}/share/man --infodir=${prefix}/share/info --sysconfdir=/etc --localstatedir=/var --disable-option-checking --disable-silent-rules --libdir=${prefix}/lib/x86_64-linux-gnu --runstatedir=/run --disable-maintainer-mode --disable-dependency-tracking --libdir=/usr/lib/x86_64-linux-gnu --docdir=/usr/share/doc/libvmod-cachetag"
       # dpkg-buildflags with DEB_BUILD_MAINT_OPTIONS=hardening=+all, as they reach

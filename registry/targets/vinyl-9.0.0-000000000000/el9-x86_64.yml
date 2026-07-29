@@ -52,6 +52,8 @@ vmods:
       binary_name: libvmod-cachetag
     build:
       profile: production
+      # cachetag is not generated; its audited recipe lives in its own repository.
+      recipe_sha256: not-applicable
       configure_options: PLACEHOLDER
       cflags: PLACEHOLDER
       ldflags: PLACEHOLDER
