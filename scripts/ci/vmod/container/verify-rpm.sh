@@ -143,6 +143,9 @@ case "$dynm" in *BIND_NOW* | *NOW*) check 0 bind-now "BIND_NOW set" ;; *) check 
 case "$hdr" in *"Type:"*DYN*) check 0 pic "ELF type DYN" ;; *) check 1 pic "not DYN" ;; esac
 [ "$fail" -eq 0 ] || die "hardening inspection failed"
 echo "HARDENING INSPECTION: PASS"
+# Deleted here as well as pruned below, so the uniqueness check does not depend
+# on a prune list staying in step with an extraction path.
+rm -rf /tmp/x
 
 note "6 -- rpmlint, with an explicit expectation"
 # Not `|| true`, and stricter than the cachetag lane's waiver file. A generated

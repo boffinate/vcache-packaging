@@ -212,8 +212,30 @@ mock_as -r "$cfg" --no-clean "${epoch_defines[@]}" \
 	--resultdir="$resultdir" \
 	--rebuild "$srpm" 2>&1 | tee "$logdir/mock-rebuild.log"
 
+note "record the buildroot package set"
+# The registry's per-VMOD build.build_dependencies has no other honest source
+# on this lane. Debian's equivalent falls out of dpkg for free -- the
+# .buildinfo's Installed-Build-Depends is dpkg's own record of the chroot -- but
+# Mock resolves the buildroot itself and writes no such list, and root.log
+# records only the packages each transaction ADDED, not what the build finally
+# saw. So the chroot is asked directly, after the build, which is the same thing
+# recipes/el9/container/build.sh:76-77 does with `dnf repoquery --installed` on
+# its own lane.
+#
+# Not fatal if it fails: the packages are already built and copied below, and a
+# row that produced a good package must not be failed by a bookkeeping step.
+if mock_as -r "$cfg" --no-clean --quiet \
+	--chroot -- rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}.%{ARCH}\n' \
+	>"$logdir/buildroot-packages.tsv" 2>"$logdir/buildroot-packages.err"; then
+	sort -o "$logdir/buildroot-packages.tsv" "$logdir/buildroot-packages.tsv"
+	printf 'buildroot: %s packages\n' \
+		"$(wc -l <"$logdir/buildroot-packages.tsv" | tr -d ' ')"
+else
+	printf 'W: could not query the buildroot package set; see buildroot-packages.err\n' >&2
+fi
+
 find "$resultdir" -maxdepth 1 -name '*.rpm' -exec cp -p {} "$out/" \;
-chown -R "$build_uid:$build_gid" "$out"
+chown -R "$build_uid:$build_gid" "$out" "$logdir"
 
 note "EL9 VMOD lane complete"
 ls -la "$out"

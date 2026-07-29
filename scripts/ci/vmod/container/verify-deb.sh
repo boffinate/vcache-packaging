@@ -147,6 +147,9 @@ case "$dynm" in *BIND_NOW* | *NOW*) check 0 bind-now "BIND_NOW set" ;; *) check 
 case "$hdr" in *"Type:"*DYN*) check 0 pic "ELF type DYN" ;; *) check 1 pic "not DYN" ;; esac
 [ "$fail" -eq 0 ] || die "hardening inspection failed"
 echo "HARDENING INSPECTION: PASS"
+# The extracted tree goes away before the uniqueness check below runs, so that
+# check can stay maximally strict instead of learning to ignore a directory.
+rm -rf /tmp/x
 
 note "5 -- lintian, with an explicit expectation"
 # Not `|| true`. The generated recipe carries its own overrides for the two
@@ -167,7 +170,16 @@ apt-get update -qq
 apt-get install -y vinyl-cache "$VMOD_BINARY_NAME" || die "runtime pair install failed"
 [ "$(dpkg-query -W -f='${db:Status-Status}' vinyl-cache-dev 2>/dev/null)" != "installed" ] ||
 	die "vinyl-cache-dev is installed; the suite must prove the runtime pair suffices"
-found=$(find / \( -path /proc -o -path /sys \) -prune -o -name "$VMOD_OBJECT" -print 2>/dev/null || true)
+# The prune list is the RPM half's, which learned it first: /tmp/x is the tree
+# the hardening stage extracts (deleted above as well, so this is belt and
+# braces) and /repo is the local repository this stage just built out of the
+# lane's own packages. Wave B run 30412067149 failed this row on the extracted
+# copy -- the check was right that there were two, and wrong about what the
+# second one meant, because the Debian script never inherited the RPM script's
+# prune list. Third instance of the same class after B3 and B6, which is why
+# the two scripts were then swept side by side rather than patched again.
+found=$(find / \( -path /proc -o -path /sys -o -path /tmp/x -o -path /repo \) -prune -o \
+	-name "$VMOD_OBJECT" -print 2>/dev/null || true)
 [ "$found" = "$VINYL_VMODDIR/$VMOD_OBJECT" ] ||
 	die "$VMOD_OBJECT is not uniquely at \$VINYL_VMODDIR (found: $found)"
 dpkg -S "$VINYL_VMODDIR/$VMOD_OBJECT"
