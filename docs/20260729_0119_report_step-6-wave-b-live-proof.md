@@ -439,13 +439,27 @@ Expected results were stated before each dispatch, from the ledger rather than f
 
 **`INJECT_ENGINE_ROW` is `("vinyl-trunk-pinned", "debian-13-amd64")`**, and the expansion shows exactly one consumer of it — `target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64`. dict's two target rows both name `engine/vinyl-release/…`. So `inject=engine_build` and `inject=suppress_engine_artifact` block **one** row, cachetag's, and **`target-generated`'s engine-blocked path is not exercised by them**. Proving that path live would need `INJECT_ENGINE_ROW` moved to a `vinyl-release` row, which changes what the existing cachetag-side cases demonstrate; it is recorded as a gap rather than papered over.
 
+### Item 2 — `inject=dict_source`, [30414399323](https://github.com/boffinate/vcache-packaging/actions/runs/30414399323)
+
+The dict side is decisive and matches the expectation exactly:
+
+| Row | Expected | Observed |
+| --- | --- | --- |
+| `source/dict/release` | `failed_source_checkout` | **`failed_source_checkout`** |
+| `target/dict/release/vinyl-release/debian-13-amd64` | `blocked_by_vmod_source` | **`blocked_by_vmod_source`** |
+| `target/dict/release/vinyl-release/el9-x86_64` | `blocked_by_vmod_source` | **`blocked_by_vmod_source`** |
+| `source/cachetag/release` | PASS | **PASS** |
+| cachetag's 4 target rows | PASS | ran to completion; see the run |
+| 4 engine rows | PASS | **PASS** |
+
+This is D1's fix proven live. The Wave A3 note recorded that `expand()` injects a dict source failure by rewriting the row's `ref`, that `source.sh` used to read the ref back out of the manifest instead, and that `inject=dict_source` would therefore have produced a **green** run. It produces a classified red source row and two correctly blocked consumers, while cachetag's source and every engine row carry on — the two-way isolation property, from dict's side, in a real graph rather than in a fixture.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
 
 | # | `inject=` | Expected |
 | --- | --- | --- |
-| 2 | `dict_source` | dict source `failed_source_checkout`; dict's 2 targets `blocked_by_vmod_source`; all 6 cachetag rows and all 4 engine rows PASS |
 | 3 | `recipe_generation` | exactly one dict target row `failed_recipe_generation`; everything else PASS |
 | 4 | `manifest` | ledger shrinks to **7** rows: cachetag collapses to one `failed_manifest_validation`, all 4 dict rows PASS, and the 2 `vinyl-trunk-pinned` engine rows are **not** reported missing |
 | 5 | `dict_build` | dict's Debian row `failed_package_build`; dict's EL9 row and all cachetag rows PASS |
