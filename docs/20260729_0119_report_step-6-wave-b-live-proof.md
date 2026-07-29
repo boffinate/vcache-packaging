@@ -765,13 +765,25 @@ counts: expected=14 passed=13 failed=1 missing=0 not_selected=1 required_failed=
 
 **B11's fix is verified live.** The detail string is the decisive part: it reads *"injected package-build failure"*, from the branch placed ahead of the real build-failure branch, so the row is attributed to the injection rather than to a genuine build fault. Two attempts earlier this same case produced a green run.
 
+### Item 6 — `inject=debian_build`, [30427292013](https://github.com/boffinate/vcache-packaging/actions/runs/30427292013): **exact**
+
+```text
+counts: expected=14 passed=12 failed=2 missing=0 not_selected=1 required_failed=2
+  target/cachetag/release/vinyl-release/debian-13-amd64        failed_package_build
+  target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64   failed_package_build
+      injected package-build failure
+```
+
+Cachetag's two Debian target rows red, its two EL9 rows and its source and invocation green, **all four dict rows green**, all four engine rows green.
+
+This is the other direction of the two-way isolation property, and the half D3 broke: before that ruling, `inputs.inject == 'debian_build'` was a workflow-level comparison that fired in *every* VMOD's invocation, so this case would have failed dict's Debian row too and demonstrated a broken run rather than a contained one. The per-row `matrix.inject_build` boolean confines it to the VMOD the case names.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
 
 | # | `inject=` | Expected |
 | --- | --- | --- |
-| 6 | `debian_build` | cachetag's 2 Debian target rows red; all 4 dict rows PASS |
 | 7 | `el9_build` | cachetag's 2 EL9 target rows red; all 4 dict rows PASS |
 | 8a | `source_checkout` | cachetag source red; its 4 targets `blocked_by_vmod_source`; dict PASS |
 | 8b | `source_digest` | same shape, different source status |
@@ -826,7 +838,8 @@ Three of them — B3, B6 and B9 — are the same class: a lesson one backend's s
 | 3 `recipe_generation` | [30415386761](https://github.com/boffinate/vcache-packaging/actions/runs/30415386761) | **PASS** — exact |
 | 4 `manifest` | [30420921127](https://github.com/boffinate/vcache-packaging/actions/runs/30420921127) (5th attempt) | **PASS** — exact; four earlier attempts lost EL9 rows to a flaky EPEL mirror |
 | 5 `dict_build` | [30425966069](https://github.com/boffinate/vcache-packaging/actions/runs/30425966069) (3rd attempt) | **PASS** — exact; attempt 1 found **B11**, attempt 2 lost an EL9 row to the mirror |
-| 6-10 | in progress | sequential |
+| 6 `debian_build` | [30427292013](https://github.com/boffinate/vcache-packaging/actions/runs/30427292013) | **PASS** — exact |
+| 7-10 | in progress | sequential |
 | 11 equivalence | run 30413513970 vs `main` 30397392846 | **PASS** — 10 `.deb` byte-identical, 18 RPMs equivalent |
 | 12 case 8 | one-off containers | **PASS** — both targets refuse, both name the dependency |
 | 13 evidence flip | run 30413513970 + the upgrade matrix | **PASS** — `--require-releasable` exits 0 |
