@@ -294,6 +294,69 @@ def test_dict_rpm_render(root: Path) -> None:
     )
 
 
+def test_rpm_install_removes_upstream_installed_docdir(root: Path) -> None:
+    """%install must clear what an upstream's dist_doc_DATA just installed.
+
+    `dist_doc_DATA = LICENSE README.rst` in libvmod-redis's Makefile.am is
+    plain Autotools: `make install` places the files in $(docdir), a directory
+    named after the UPSTREAM tarname. The spec packages its own copies through
+    %doc and %license, so the make-install copies survive only as "installed
+    (but unpackaged) file(s)" -- a hard rpmbuild error, and the one that
+    stopped redis el9-x86_64 in run 30452256824 while dict and cachetag passed
+    because their upstreams install no docs. The removal is a fact about the
+    adapter's whole lifecycle, not about redis, so it is asserted on every
+    generated VMOD's spec -- and asserted ABSENT from every Debian output,
+    where the same overlap is a tolerated, already-adjudicated lintian info
+    finding that this fix must not disturb.
+    """
+    removal = "rm -rf %{buildroot}%{_docdir}"
+    for vmod_id, manifest, overlay, spec_name in (
+        ("dict", DICT_MANIFEST, DICT_OVERLAY, "vmod-dict.spec"),
+        (
+            "redis",
+            "registry/vmods/redis.yml",
+            "recipes/vmods/overlays/redis/overlay.yml",
+            "libvmod-redis.spec",
+        ),
+    ):
+        _m, outputs, _record = vr.generate(
+            manifest_path=root / manifest,
+            overlay_path=root / overlay,
+            cohort_id=RELEASE_COHORT,
+            target_id="el9-x86_64",
+            maintainer=MAINTAINER,
+            repo_root=root,
+        )
+        spec = outputs[spec_name]
+        check(
+            f"docdir: {vmod_id}'s %install removes the upstream-installed docdir",
+            removal in spec,
+            spec,
+        )
+        check(
+            f"docdir: {vmod_id} removes it after staging, before the payload check",
+            removal in spec
+            and spec.index("%make_install")
+            < spec.index(removal)
+            < spec.index("test -f %{buildroot}"),
+            spec,
+        )
+        _m, deb_outputs, _record = vr.generate(
+            manifest_path=root / manifest,
+            overlay_path=root / overlay,
+            cohort_id=RELEASE_COHORT,
+            target_id="debian-13-amd64",
+            maintainer=MAINTAINER,
+            debian_distribution="trixie",
+            repo_root=root,
+        )
+        check(
+            f"docdir: {vmod_id}'s Debian recipe is untouched by the removal",
+            all("_docdir" not in text for text in deb_outputs.values()),
+            str([name for name, text in deb_outputs.items() if "_docdir" in text]),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Contract 3: determinism
 # ---------------------------------------------------------------------------
@@ -1299,10 +1362,15 @@ def test_reviewed_lint_overrides_are_rendered(root: Path) -> None:
 #     a64f74b8764d2630e72529901e4b00feb1682c4102a0175ad1c16f761196e6dd (rpm)
 #   * moved at dict overlay revision 2 -- the capitalised Summary and the
 #     reviewed rpmlint waivers, one change with one attributable cause -- to
-#     the values below.
+#     6f637e4bc4f09968b4e1662f30773de866d2df2698f8c97889480bd29f3be1e1 (deb)
+#     a814b6245a11ec2058f7b378fd9c45d0d5b4251bec9a887debfdbc0baf141b65 (rpm)
+#   * the rpm value alone moved when %install grew the upstream-docdir
+#     removal (run 30452256824's unpackaged dist_doc_DATA files; see
+#     test_rpm_install_removes_upstream_installed_docdir) to the value below.
+#     The deb value not moving is half of that change's contract.
 DICT_PRE_PATCH_RECIPE_SHA256 = {
     "debian-13-amd64": "6f637e4bc4f09968b4e1662f30773de866d2df2698f8c97889480bd29f3be1e1",
-    "el9-x86_64": "a814b6245a11ec2058f7b378fd9c45d0d5b4251bec9a887debfdbc0baf141b65",
+    "el9-x86_64": "a655fa5cee88ad78d45b416c15a496992adfdf33e6a06c3db4bc028185b6dd66",
 }
 
 _PATCH_TEXT = (
@@ -1842,6 +1910,7 @@ def main(repo_root: Path = None) -> int:
     test_abi_expressions_are_not_duplicated(root)
     test_dict_deb_render(root)
     test_dict_rpm_render(root)
+    test_rpm_install_removes_upstream_installed_docdir(root)
     test_determinism(root)
     test_dates_come_from_the_recorded_epoch(root)
     test_dates_are_locale_independent()

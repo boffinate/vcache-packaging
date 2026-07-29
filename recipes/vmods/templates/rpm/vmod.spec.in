@@ -83,6 +83,16 @@ fi
 
 %install
 %make_install
+# An Autotools upstream that declares dist_doc_DATA has just installed its own
+# copies of its documentation into $(docdir) -- /usr/share/doc/<upstream
+# tarname>, a directory named after the UPSTREAM package, which %%files below
+# does not and should not track. The packaged documentation is the %%doc and
+# %%license set, re-created from the source tree while files are processed, so
+# whatever make install put here could only ever surface as "installed (but
+# unpackaged) file(s)", a hard rpmbuild error -- libvmod-redis's LICENSE and
+# README.rst under /usr/share/doc/vmod-redis stopped the first redis EL9 build
+# exactly that way.
+rm -rf %{buildroot}%{_docdir}
 # libtool archives and static archives are not shipped.
 find %{buildroot} -name '*.la' -delete
 find %{buildroot} -name '*.a' -delete
