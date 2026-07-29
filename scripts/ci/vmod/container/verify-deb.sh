@@ -83,16 +83,45 @@ echo "OK: no libtool archives or static libraries"
 # /usr/share/lintian/overrides/<binary>, and cachetag ships one too. Narrowness
 # is this check's entire value, so it gets the one path it is owed and not the
 # directory it sits in.
+#
+# There is deliberately no /usr/lib/debug or build-id entry here, which is the
+# asymmetry with the RPM half's /usr/lib/.build-id allowance: debhelper puts the
+# debug objects and their build-id links in a SEPARATE -dbgsym binary package,
+# and the package selected above is the main one by exact name. The RPM
+# equivalent lands in the main package. Recorded so the difference reads as a
+# fact about the two packaging systems rather than as an oversight in one of the
+# two lists.
+#
+# Every filter is guarded with `|| true`: an allowlist that happens to select
+# nothing is a passing check, not a pipeline failure, and under `pipefail` an
+# unguarded `grep -v` that filters everything out would abort the script with a
+# success-shaped payload.
 unexpected=$(printf '%s\n' "$contents" | awk '{ print $NF }' |
-	grep -v '/$' |
-	grep -vF "$VINYL_VMODDIR/$VMOD_OBJECT" |
-	grep -vFx "./usr/share/lintian/overrides/$VMOD_BINARY_NAME" |
+	{ grep -v '/$' || true; } |
+	{ grep -vF "$VINYL_VMODDIR/$VMOD_OBJECT" || true; } |
+	{ grep -vFx "./usr/share/lintian/overrides/$VMOD_BINARY_NAME" || true; } |
 	{ grep -vE '^\./usr/share/(man|doc)/' || true; })
 [ -z "$unexpected" ] || die "unexpected files in the payload:
 $unexpected"
 echo "OK: payload contains only the declared VMOD object, manual and documentation"
 
 note "4 -- hardening inspection"
+# Two kinds of evidence, and the split is deliberate.
+#
+# relro, BIND_NOW and PIC are properties of the LINKED OBJECT. The linker either
+# produced them or it did not, whatever the source looks like, so they are
+# asserted against the binary.
+#
+# The stack protector is not observable that way, and Wave B run 30409242057
+# proved it by failing this row on a package whose compile lines carry
+# -fstack-protector-strong: the flag instruments only functions with something
+# worth a canary, and vmod_dict.c has none. So the FLAG is asserted, from the
+# build log the build stage captured, and the canary symbol is demoted to
+# corroboration whose absence is never a failure. See check-build-flags.sh.
+sh /lane/scripts/check-build-flags.sh /lane/logs/pbuilder-build.log \
+	-fstack-protector-strong ||
+	die "the build did not apply the distribution hardening flags; see above"
+
 mkdir -p /tmp/x && dpkg-deb -x "$deb" /tmp/x
 so=/tmp/x$VINYL_VMODDIR/$VMOD_OBJECT
 fail=0
@@ -106,7 +135,13 @@ dyn=$(readelf -W --dyn-syms --syms "$so" 2>/dev/null || true)
 seg=$(readelf -W -l "$so" 2>/dev/null || true)
 dynm=$(readelf -W -d "$so" 2>/dev/null || true)
 hdr=$(readelf -W -h "$so" 2>/dev/null || true)
-case "$dyn" in *__stack_chk_fail*) check 0 stack-protector "__stack_chk_fail referenced" ;; *) check 1 stack-protector absent ;; esac
+case "$dyn" in
+*__stack_chk_fail*)
+	printf 'PASS  %-18s %s\n' stack-protector "__stack_chk_fail referenced (corroborating)" ;;
+*)
+	printf 'NOTE  %-18s %s\n' stack-protector \
+		"no canary symbol: no function in this source needs one. Not a failure -- the flag is asserted from the build log above." ;;
+esac
 case "$seg" in *GNU_RELRO*) check 0 relro-segment "GNU_RELRO present" ;; *) check 1 relro-segment absent ;; esac
 case "$dynm" in *BIND_NOW* | *NOW*) check 0 bind-now "BIND_NOW set" ;; *) check 1 bind-now absent ;; esac
 case "$hdr" in *"Type:"*DYN*) check 0 pic "ELF type DYN" ;; *) check 1 pic "not DYN" ;; esac

@@ -70,12 +70,33 @@ printf '%s\n' "$contents" | grep -q "/share/man/$VMOD_MAN_PAGE" ||
 stray=$(printf '%s\n' "$contents" | { grep -E '\.(la|a)$' || true; })
 [ -z "$stray" ] || die "libtool archive or static library shipped: $stray"
 echo "OK: no libtool archives or static libraries"
+# Nothing may be installed outside the VMOD directory, the manual, the
+# documentation and the licence tree -- plus the packaging's own artefacts,
+# which are what B3 and B6 were both about.
+#
+# /usr/lib/.build-id/** is RPM's debuginfo hard-link farm. redhat-rpm-config's
+# find-debuginfo adds it to the MAIN package of every debuginfo-enabled build,
+# so it is present in every EL9 package this lane will ever produce; the
+# allowlist was written from the overlay's declared payload and forgot the
+# packaging's own output. Directly the twin of B3's lintian-overrides file on
+# the Debian side, which is why both allowlists were swept together rather than
+# this one being fixed alone -- see the Wave B note's allowlist-symmetry table.
+#
+# `rpm -qpl` prints owned directories indistinguishably from files, so the
+# directory entries are matched here rather than filtered by shape the way
+# `dpkg-deb -c`'s trailing slash lets the Debian half do.
+#
+# Every filter is guarded with `|| true`: an allowlist that happens to select
+# nothing is a passing check, not a pipeline failure, and under `pipefail` an
+# unguarded `grep -v` that filters everything out would abort the script with a
+# success-shaped payload.
 unexpected=$(printf '%s\n' "$contents" |
-	grep -vF "$VINYL_VMODDIR/$VMOD_OBJECT" |
+	{ grep -vF "$VINYL_VMODDIR/$VMOD_OBJECT" || true; } |
+	{ grep -vE '^/usr/lib/\.build-id(/|$)' || true; } |
 	{ grep -vE '^/usr/share/(man|doc|licenses)/' || true; })
 [ -z "$unexpected" ] || die "unexpected files in the payload:
 $unexpected"
-echo "OK: payload contains only the declared object, manual, documentation and licence"
+echo "OK: payload contains only the declared object, manual, documentation, licence and RPM's build-id links"
 
 note "4 -- the VMOD advertises no soname provide"
 # It is a dlopen()ed plugin, not a system library. The generated spec's
@@ -89,6 +110,14 @@ printf '%s\n' "$provides" | grep -q "^${VMOD_OBJECT}" &&
 echo "OK: no soname provide for the plugin"
 
 note "5 -- hardening inspection"
+# The same split as the Debian half, for the same reason: relro, BIND_NOW and
+# PIC are properties of the linked object, and the stack protector is a property
+# of the compile line. Asserted from mock's own build.log, which build-rpm.sh's
+# EXIT trap copies into the lane. See check-build-flags.sh.
+sh /lane/scripts/check-build-flags.sh /lane/logs/mock-build.log \
+	-fstack-protector-strong ||
+	die "the build did not apply the distribution hardening flags; see above"
+
 mkdir -p /tmp/x && (cd /tmp/x && rpm2cpio "$rpm" | cpio -idm --quiet)
 so=/tmp/x$VINYL_VMODDIR/$VMOD_OBJECT
 fail=0
@@ -102,7 +131,13 @@ dyn=$(readelf -W --dyn-syms --syms "$so" 2>/dev/null || true)
 seg=$(readelf -W -l "$so" 2>/dev/null || true)
 dynm=$(readelf -W -d "$so" 2>/dev/null || true)
 hdr=$(readelf -W -h "$so" 2>/dev/null || true)
-case "$dyn" in *__stack_chk_fail*) check 0 stack-protector "__stack_chk_fail referenced" ;; *) check 1 stack-protector absent ;; esac
+case "$dyn" in
+*__stack_chk_fail*)
+	printf 'PASS  %-18s %s\n' stack-protector "__stack_chk_fail referenced (corroborating)" ;;
+*)
+	printf 'NOTE  %-18s %s\n' stack-protector \
+		"no canary symbol: no function in this source needs one. Not a failure -- the flag is asserted from the build log above." ;;
+esac
 case "$seg" in *GNU_RELRO*) check 0 relro-segment "GNU_RELRO present" ;; *) check 1 relro-segment absent ;; esac
 case "$dynm" in *BIND_NOW* | *NOW*) check 0 bind-now "BIND_NOW set" ;; *) check 1 bind-now absent ;; esac
 case "$hdr" in *"Type:"*DYN*) check 0 pic "ELF type DYN" ;; *) check 1 pic "not DYN" ;; esac

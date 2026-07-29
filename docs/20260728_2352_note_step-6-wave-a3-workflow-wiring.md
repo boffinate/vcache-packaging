@@ -270,6 +270,10 @@ FAIL: unexpected files in the payload:
 
 RPM's debuginfo machinery adds `/usr/lib/.build-id/**` to the main package. Every EL9 package has them; the allowlist was written from the declared payload and, as with B3's lintian override on the Debian side, forgot the packaging's own artefacts. Same class, other backend — which is itself worth noting, because B3 was fixed on Debian only and the RPM twin went unexamined.
 
+## Runs 4 onwards
+
+Both defects above are fixed, and the run-by-run evidence continues in [the Wave B live-proof report](20260729_0119_report_step-6-wave-b-live-proof.md). This note stays the record of the wiring and of the defects the first three runs found in it.
+
 ## Open questions for the audit
 
 1. **`target-generated` has one classification for six distinct checks.** `verify-deb.sh` covers payload, ABI, hardening, lint, install smoke and behaviour in one step, so all six classify as `failed_install_or_smoke`. The cachetag path separates `failed_abi_or_hardening`, `failed_lint`, `failed_install_or_smoke` and `failed_behavior` because it has four steps. Splitting the verify script into four container invocations would restore the distinction at the cost of four container starts per row; leaving it means the summary names the log to read rather than the stage that failed. Worth deciding before Wave B, since Wave B is what will make anybody read those classifications in anger.

@@ -145,7 +145,8 @@ note "stage the verification scripts and the ported VTCs into the lane"
 # never seen the build tree is the whole point. So everything they need has to
 # be placed here first.
 mkdir -p "$out/scripts" "$out/tests"
-cp -p "$here/container/verify-deb.sh" "$here/container/verify-rpm.sh" "$out/scripts/"
+cp -p "$here/container/verify-deb.sh" "$here/container/verify-rpm.sh" \
+	"$here/container/check-build-flags.sh" "$out/scripts/"
 chmod 0755 "$out/scripts"/*.sh
 tests_dir=$repo/recipes/vmods/overlays/$vmod_id/tests
 if [ -d "$tests_dir" ]; then

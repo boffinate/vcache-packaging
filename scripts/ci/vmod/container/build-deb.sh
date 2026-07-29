@@ -25,6 +25,7 @@ set -euo pipefail
 lane=/lane
 work=$lane/build
 out=$lane/out
+logdir=$lane/logs
 base_tar=$lane/chroot/$DEBIAN_DISTRIBUTION-amd64.tar
 base_tgz=/base.tgz
 localrepo=/localrepo
@@ -39,7 +40,7 @@ die() {
 : "${VMOD_SOURCE_DATE_EPOCH:?}"
 
 [ -f "$base_tar" ] || die "no base tarball at $base_tar; run make-chroot.sh first"
-mkdir -p "$out"
+mkdir -p "$out" "$logdir"
 
 note "build toolchain"
 export DEBIAN_FRONTEND=noninteractive
@@ -84,6 +85,14 @@ note "dpkg-buildpackage -S: $VMOD_SOURCE_NAME"
 [ -f "$dsc" ] || die "expected $dsc after dpkg-buildpackage -S"
 
 note "pbuilder build: $VMOD_SOURCE_NAME"
+# `tee` into the lane, not merely onto the job log. The verify stage runs in a
+# fresh container that mounts only the lane, and its hardening check reads the
+# compile lines out of this file: -fstack-protector-strong is observable in the
+# compiler invocation and not reliably in the linked object, so the build log is
+# the evidence. The EL9 half gets the equivalent from mock's own build.log,
+# copied by build-rpm.sh's EXIT trap. Writing as the build runs rather than
+# copying afterwards means a failing build still leaves its log behind, which is
+# the same lesson container-mock.sh:79-116 records.
 SOURCE_DATE_EPOCH=$VMOD_SOURCE_DATE_EPOCH pbuilder build \
 	--basetgz "$base_tgz" \
 	--buildresult "$out" \
@@ -96,7 +105,7 @@ SOURCE_DATE_EPOCH=$VMOD_SOURCE_DATE_EPOCH pbuilder build \
 	--no-auto-cross \
 	--bindmounts "$localrepo" \
 	--othermirror "deb [trusted=yes] file://$localrepo ./" \
-	"$dsc"
+	"$dsc" 2>&1 | tee "$logdir/pbuilder-build.log"
 
 note "source package artefacts"
 cp -v "$work/${VMOD_SOURCE_NAME}"_*.dsc \
