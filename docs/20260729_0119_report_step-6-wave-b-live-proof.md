@@ -735,7 +735,16 @@ Item 5 is re-dispatched against the fix.
 
 `engine/vinyl-release/el9-x86_64` cancelled at its budget for the **third consecutive run**, while `engine/vinyl-trunk-pinned/el9-x86_64` — same image, same script, same runner pool, different Vinyl source — passed in every one of them. No reconciled ledger, so item 5 is still unadjudicated and B11's fix is unverified live.
 
-The concentration on one row is worth recording as a lead rather than a conclusion. Both engine rows install the same EPEL packages, so pure mirror luck should hit them equally often; that it does not suggests the release row normally runs closer to its 35-minute budget than the trunk row does, and the mirror retries only push the marginal one over. Measuring that, and deciding whether the budget or the EPEL dependency is the thing to change, is the first task when the line restarts.
+The concentration on one row looked like a lead. **It was not one.** Measured from the two runs where both EL9 engine rows completed, using the job logs' own timestamps:
+
+| Run | `vinyl-release` el9 | `vinyl-trunk-pinned` el9 |
+| --- | --- | --- |
+| 30413513970 | 3.3 min | 3.5 min |
+| 30415386761 | 3.5 min | 4.3 min |
+
+The **trunk** row is the slower of the two, not the release row, and both sit about ten times inside their 35-minute budget. There is no margin difference for the mirror retries to push over, so the hypothesis that the release row is the marginal one is refuted rather than merely unproven.
+
+Three consecutive losses on one of two equally-exposed rows is unremarkable at the observed per-job failure rate — one specific row losing three times running at roughly even odds is a one-in-eight coincidence, and one-in-eight things happen. **Recorded as mirror luck**, so nobody spends time hardening a row that has nothing wrong with it. The budgets are not the problem either: at 3.5 minutes normal against 35 allowed, a row that dies at its budget was not slightly slow, it was stuck.
 
 ### Remaining dispatches
 
