@@ -847,13 +847,29 @@ It is also **the first deliberate exercise of `target-generated`'s `blocked_by_e
 
 The three surviving engine rows and the remaining eight package rows all passed — including dict's EL9 row, which names a different engine row and is untouched.
 
+### Item 10b — `inject=suppress_engine_artifact`, [30435730520](https://github.com/boffinate/vcache-packaging/actions/runs/30435730520): **exact**
+
+```text
+counts: expected=14 passed=12 failed=2 missing=0 not_selected=1 required_failed=2
+  target/cachetag/release/vinyl-release/debian-13-amd64   blocked_by_engine_artifact
+  target/dict/release/vinyl-release/debian-13-amd64       blocked_by_engine_artifact
+      engine/vinyl-release/debian-13-amd64 published no engine-vinyl-release-debian-13-amd64
+```
+
+**All four engine rows `passed`** — including the injected one. The difference from 10a is the whole point of running both: there the producer failed and its consumers were blocked; here the producer **succeeded** and published nothing, and its consumers are blocked identically, with the same status and the same message.
+
+That separates the consumer-side classification from the producer's outcome entirely. A consumer must not infer "the engine is fine because its row is green"; it must verify that the artifact it needs actually exists, and say so when it does not. Twelve rows passed, and the two that did not are exactly the two that name the silent engine row — one per VMOD.
+
+## The sequence is complete
+
+Ten injection cases, thirteen items, **every one adjudicated against an expectation written before its run**. No case produced a result its documented expectation did not predict, once the three defects the sequence itself found (B10, B11, and the EL9 mirror condition) were fixed or waited out.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
 
 | # | `inject=` | Expected |
 | --- | --- | --- |
-| 10b | `suppress_engine_artifact` | same blocked set, from a *green* producer that published nothing |
 
 Every one of those expectations was read back out of `ci_matrix.py expand` before dispatching, so the adjudication is against the tool rather than against memory:
 
@@ -908,7 +924,7 @@ Three of them — B3, B6 and B9 — are the same class: a lesson one backend's s
 | 8b `source_digest` | [30431584255](https://github.com/boffinate/vcache-packaging/actions/runs/30431584255) | **PASS** — exact |
 | 9 `suppress_result` | [30432639448](https://github.com/boffinate/vcache-packaging/actions/runs/30432639448) | **PASS** — exact, `missing=1` |
 | 10a `engine_build` | [30434296849](https://github.com/boffinate/vcache-packaging/actions/runs/30434296849) | **PASS** — exact; both VMODs blocked by one cause |
-| 10b | in progress | |
+| 10b `suppress_engine_artifact` | [30435730520](https://github.com/boffinate/vcache-packaging/actions/runs/30435730520) | **PASS** — exact; producer green, consumers blocked |
 | 11 equivalence | run 30413513970 vs `main` 30397392846 | **PASS** — 10 `.deb` byte-identical, 18 RPMs equivalent |
 | 12 case 8 | one-off containers | **PASS** — both targets refuse, both name the dependency |
 | 13 evidence flip | run 30413513970 + the upgrade matrix | **PASS** — `--require-releasable` exits 0 |
