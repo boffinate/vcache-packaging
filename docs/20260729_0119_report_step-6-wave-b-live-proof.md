@@ -640,7 +640,38 @@ Everything points outside this repository:
 - the identical EL9 rows passed at 2.1 and 2.4 minutes in runs 30413513970 and 30415386761 earlier the same night, from the same lane code;
 - in 30416382776 cachetag's four target jobs did not exist at all, so the pool was *less* contended, not more.
 
-Nothing in `vcache-packaging` changed between the green EL9 rows and the timed-out ones. The lane's timeouts are not tight — the normal case has roughly fourteen times the headroom — so raising them would be treating a symptom of an upstream mirror or runner condition, and would make every future genuine hang cost half an hour instead of thirty minutes. **The line is stopped here** until EL9 jobs complete in their normal time again.
+Nothing in `vcache-packaging` changed between the green EL9 rows and the timed-out ones. The lane's timeouts are not tight — the normal case has roughly fourteen times the headroom — so raising them would be treating a symptom of an upstream mirror or runner condition, and would make every future genuine hang cost half an hour instead of thirty minutes. **The line is stopped here** until EL9 jobs complete normally again; the fourth attempt below names why.
+
+#### Root cause, from the fourth attempt: the EPEL mirrors are down
+
+Attempt four, [30419753356](https://github.com/boffinate/vcache-packaging/actions/runs/30419753356), stopped guessing. The EL9 engine row did not time out this time — it **failed outright**, with the reason in plain text:
+
+```text
+Errors during downloading metadata for repository 'epel':
+  - Curl error (28): Timeout was reached for
+    http://mirror.us.mirhosting.net/epel/9/Everything/x86_64/repodata/…-filelists.xml.xz
+    [Failed to connect to mirror.us.mirhosting.net port 80: Connection timed out]
+  - Curl error (28): … port 443: Connection timed out
+  - Curl error (18): Transferred a partial file for
+    https://mirror.fcix.net/epel/9/Everything/x86_64/repodata/…-filelists.xml.xz
+    [transfer closed with 7338617 bytes remaining to read]
+Error: Failed to download metadata for repo 'epel': Yum repo downloading error:
+  … Cannot download, all mirrors were already tried without success
+```
+
+**EPEL is unreachable from GitHub's runners.** That explains all three failures as one condition:
+
+| Attempt | Symptom | Same cause |
+| --- | --- | --- |
+| 30416382776 | dict's EL9 row killed at 30 min in Mock `build setup` | dnf retrying dead EPEL mirrors |
+| 30418133557 | the EL9 **engine** row killed at 35 min in `installing minimal buildroot with dnf` | same, one job earlier |
+| 30419753356 | the EL9 engine row **failed** with the curl errors above | same, now fatal rather than slow |
+
+Every EL9 job in this repository needs EPEL, and needs it early: `epel-release` before `mock` and `mock-core-configs` (B2), before `rpmlint`, and for `libunwind.so.8`, which the runtime package requires because `vinyld` is built `--with-unwind` and it ships in neither BaseOS nor AppStream. There is no EL9 path that does not touch it.
+
+The Debian lane is untouched throughout — it resolves against `snapshot.debian.org` at a pinned timestamp, which stayed healthy — which is why **every Debian row in all four attempts passed**.
+
+Nothing in `vcache-packaging` caused this and nothing in it can fix it. Raising the timeouts would not help, because attempt four failed rather than timing out; pinning an EPEL mirror or vendoring its metadata would be a lookaside cache, which `SCOPE.md` places explicitly out of scope. The correct response is the one `SCOPE.md`'s source policy already states: *"a failed build is an acceptable and useful signal"*. **The line stops until EPEL is reachable again.**
 
 #### One thing this bought, unintentionally
 
