@@ -229,6 +229,47 @@ The generated lane was written from that script's structure and inherited neithe
 
 The [Q2 ruling](20260728_2334_note_step-6-wave-a2-ci-integration.md) kept the two lane implementations separate so cachetag's package bytes could not move, and that has held perfectly: cachetag's six rows have been green in both runs while dict's have failed four different ways. The cost is now measured rather than asserted, and it is higher than "some duplicated lines": every non-obvious thing `container-mock.sh` had learned had to be rediscovered by failing. Worth recording plainly when the merge is reconsidered after Wave B — the argument for merging is stronger than it looked when the trade was made.
 
+## Wave B run 3: after the parity pass and local debugging
+
+**Run 3 — `inject=none`, [30409242057](https://github.com/boffinate/vcache-packaging/actions/runs/30409242057), conclusion `failure`.** Stopped per the rule.
+
+Same 12 of 14 green. **Both lanes now build**: the EL9 Mock path produced its packages for the first time in CI, and both rows now fail inside *verification*, four and five stages deeper than run 1.
+
+### The parity pass and local debugging worked
+
+Ported by reading `container-mock.sh` end to end rather than by failing — each recorded in `build-rpm.sh`'s header with its source line: the mockbuild/`runuser` user (`:126-148`), the chown of resultdir/topdir (`:142`), `SOURCE_DATE_EPOCH` via `config_opts['environment']` (`:152-171`), pinning the derived config's root to the **stock** name so `--no-clean` shares one chroot (`:158-160` — this lane had declared a root of its own), the two epoch macros as `--define` on every invocation rather than as config macros (`:211-222`), the explicit `--init` (`:207`), `--no-clean` after it (`:232+`), `--addrepo` instead of `--install` (`:276-293`), and the EXIT trap copying `build.log`/`root.log` (`:79-116`). From the verify stages: `-p debug=+vclrel` (`stage-vtc-suite.sh:90-98`), without which 9.0.1's missing pool shutdown turns every VTC teardown into a `-t 60` timeout; and `epel-release` before `rpmlint`, the same trap `mock` set.
+
+Local running found two more before they cost a round trip:
+
+- the uid mock drops to was read with `stat` on a directory **this script creates itself**, so it measured its own `mkdir` rather than the caller. It now stats the bind mount, as `container-mock.sh` does;
+- `--platform` cannot be combined with a digest-pinned image — Docker refuses with "cannot overwrite digest", and `DOCKER_DEFAULT_PLATFORM` likewise. The digest **is** the platform pin. Recorded in the script, with the local-only consequence: on an arm64 host the install-and-behaviour stages cannot be exercised against x86_64 packages, so local debugging reaches the build stages and stops there.
+
+**Local result:** Mock built `vmod-dict-1.7-1.el9.x86_64.rpm` plus debuginfo and debugsource in a clean chroot, and the trap copied a 394-line `build.log` and a 2358-line `root.log`.
+
+### B5 — the stack-protector check is a false negative on a small VMOD
+
+```text
+FAIL  stack-protector    absent
+PASS  relro-segment      GNU_RELRO present
+PASS  bind-now           BIND_NOW set
+PASS  pic                ELF type DYN
+```
+
+The check looks for a `__stack_chk_fail` reference. `-fstack-protector-strong` was unquestionably applied — run 1's compile line shows it, and `DEB_BUILD_MAINT_OPTIONS = hardening=+all` is in the generated rules — but `vmod_dict.c` has no function with a stack-allocated buffer worth a canary, so GCC emits no reference. **Absence of the symbol means "no function needed one", not "the flag was off".** cachetag passes the identical check only because cachetag has such buffers.
+
+This is a defect in the check, and it is the kind that must not be relaxed casually: the fix is to assert the thing that is actually observable for any VMOD — that the build used the distribution's hardening flags — rather than a symbol whose presence depends on the source. Three of the four checks are properties of the linked object and stay as they are.
+
+### B6 — the RPM payload allowlist rejects the build-id symlinks
+
+```text
+FAIL: unexpected files in the payload:
+/usr/lib/.build-id
+/usr/lib/.build-id/08
+/usr/lib/.build-id/08/28df1c0c4488bebb8f200b8ef8da67589705e8
+```
+
+RPM's debuginfo machinery adds `/usr/lib/.build-id/**` to the main package. Every EL9 package has them; the allowlist was written from the declared payload and, as with B3's lintian override on the Debian side, forgot the packaging's own artefacts. Same class, other backend — which is itself worth noting, because B3 was fixed on Debian only and the RPM twin went unexamined.
+
 ## Open questions for the audit
 
 1. **`target-generated` has one classification for six distinct checks.** `verify-deb.sh` covers payload, ABI, hardening, lint, install smoke and behaviour in one step, so all six classify as `failed_install_or_smoke`. The cachetag path separates `failed_abi_or_hardening`, `failed_lint`, `failed_install_or_smoke` and `failed_behavior` because it has four steps. Splitting the verify script into four container invocations would restore the distinction at the cost of four container starts per row; leaving it means the summary names the log to read rather than the stage that failed. Worth deciding before Wave B, since Wave B is what will make anybody read those classifications in anger.
