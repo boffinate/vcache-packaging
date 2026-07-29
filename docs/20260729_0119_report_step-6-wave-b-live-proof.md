@@ -677,6 +677,40 @@ Nothing in `vcache-packaging` caused this and nothing in it can fix it. Raising 
 
 `target/dict/release/vinyl-release/el9-x86_64` reported **`blocked_by_engine_artifact`, naming the engine row that produced nothing**. That is `target-generated`'s engine-blocked path — the one ruling R-2 moved `INJECT_ENGINE_ROW` in order to exercise for the first time — taken live, from a real infrastructure failure rather than an injection. It classified correctly and named the shared cause, which is exactly what items 10a and 10b are meant to demonstrate deliberately. It does not substitute for those runs, because it says nothing about the *cachetag* consumer of the same engine row, but it is the first evidence that the path works on the generated lane.
 
+### Item 4, fifth attempt — [30420921127](https://github.com/boffinate/vcache-packaging/actions/runs/30420921127): **adjudicated, exact**
+
+```text
+counts: expected=7 passed=6 failed=1 missing=0 not_selected=0 required_failed=1
+  vmod/cachetag    failed_manifest_validation
+      registry/vmods/cachetag.yml did not validate as vmod-ci/v1
+```
+
+**One failed row, and it is the injected one.**
+
+| Expected | Observed |
+| --- | --- |
+| the ledger shrinks to **7** rows | **7** |
+| cachetag collapses to one `failed_manifest_validation` | **exactly one**, and its source and four target rows were never created |
+| all four dict rows PASS | **all four PASS** — invocation, source, debian-13-amd64 **and el9-x86_64** |
+| the two `vinyl-trunk-pinned` engine rows are **not** reported missing | absent from the ledger, `missing=0` |
+| the two `vinyl-release` engine rows PASS | **PASS** |
+
+This is ruling R-B's claim demonstrated live: a manifest that does not parse costs **its own invocation and the engine rows nothing else consumes, and nothing more**. The trunk-pinned engine rows disappear from the expected set because only cachetag's lanes asked for them, and the collector does not report as missing something nobody requested. The Wave A3 note could only simulate this; it is now a real graph.
+
+#### The EPEL condition is intermittent, not absolute
+
+The run's EL9 jobs completed, but the logs show what they had to survive:
+
+```text
+[MIRROR] libunwind-1.8.0-4.el9.x86_64.rpm: Curl error (28): Timeout was reached for
+  https://mirror.us.mirhosting.net/epel/9/Everything/x86_64/Packages/l/libunwind-1.8.0-4.el9.x86_64.rpm
+  [Failed to connect to mirror.us.mirhosting.net port 443: Connection timed out]
+```
+
+`dnf` retried the dead mirror for every EPEL package and fell back to a working one, which is why attempts two and three ran into their timeouts and attempt four gave up on metadata entirely. `libunwind` is the package that matters: `vinyld` is built `--with-unwind` and `libunwind.so.8` ships in neither BaseOS nor AppStream, so no EL9 row can avoid EPEL.
+
+**The condition is a flaky mirror in EPEL's rotation, not an outage**, and it costs an EL9 row roughly one attempt in two at present. Recorded so the next unexplained EL9 timeout is recognised rather than re-diagnosed: look for `[MIRROR] … Curl error (28)` in the job log before suspecting the lane.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
@@ -737,8 +771,8 @@ Three of them — B3, B6 and B9 — are the same class: a lesson one backend's s
 | 1 baseline | [30413513970](https://github.com/boffinate/vcache-packaging/actions/runs/30413513970) | **PASS** — 14/14, `success` |
 | 2 `dict_source` | [30414399323](https://github.com/boffinate/vcache-packaging/actions/runs/30414399323) | **PASS** — exact |
 | 3 `recipe_generation` | [30415386761](https://github.com/boffinate/vcache-packaging/actions/runs/30415386761) | **PASS** — exact |
-| 4 `manifest` | 30416252749 / 30416382776 / 30418133557 / 30419753356 | **BLOCKED** — the ledger collapses correctly every time; the EL9 rows are lost to EPEL |
-| 5-10 | not dispatched | **BLOCKED** — every one needs EL9 rows |
+| 4 `manifest` | [30420921127](https://github.com/boffinate/vcache-packaging/actions/runs/30420921127) (5th attempt) | **PASS** — exact; four earlier attempts lost EL9 rows to a flaky EPEL mirror |
+| 5-10 | in progress | dispatching sequentially; EL9 rows cost about one retry in two while the EPEL mirror is flaky |
 | 11 equivalence | run 30413513970 vs `main` 30397392846 | **PASS** — 10 `.deb` byte-identical, 18 RPMs equivalent |
 | 12 case 8 | one-off containers | **PASS** — both targets refuse, both name the dependency |
 | 13 evidence flip | run 30413513970 + the upgrade matrix | **PASS** — `--require-releasable` exits 0 |
