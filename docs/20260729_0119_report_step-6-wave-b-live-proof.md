@@ -537,6 +537,8 @@ Exactly one row, classified as a *generation* failure rather than a build failur
 
 Two things are proven at once. D4 — the `--inject-token` flag that was computed and never passed, found by containerized actionlint — is fixed, because the case is no longer inert. And the *lane* refuses a recipe that a build would otherwise consume literally, which is a different property from the generator refusing to render one; `tools/vmod_recipe_selftest.py` covers the latter, and only a live run can cover the former.
 
+Collector: `expected 14, passed 13, failed 1, missing 0, required_failed 1`. One row, no collateral.
+
 The sibling EL9 row passing is the point of running this at all: a generation failure on one target does not cost the other target of the same VMOD, let alone the other VMOD.
 
 ### Remaining dispatches
