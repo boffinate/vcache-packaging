@@ -523,13 +523,28 @@ target/dict/release/vinyl-release/el9-x86_64          blocked_by_vmod_source
 
 This is D1's fix proven live. The Wave A3 note recorded that `expand()` injects a dict source failure by rewriting the row's `ref`, that `source.sh` used to read the ref back out of the manifest instead, and that `inject=dict_source` would therefore have produced a **green** run. It produces a classified red source row and two correctly blocked consumers, while cachetag's source and every engine row carry on — the two-way isolation property, from dict's side, in a real graph rather than in a fixture.
 
+### Item 3 — `inject=recipe_generation`, [30415386761](https://github.com/boffinate/vcache-packaging/actions/runs/30415386761)
+
+| Row | Expected | Observed |
+| --- | --- | --- |
+| `target/dict/release/vinyl-release/debian-13-amd64` | `failed_recipe_generation` | **`failed_recipe_generation`** — *"the native recipe could not be generated, or an unresolved token survived into it"* |
+| `target/dict/release/vinyl-release/el9-x86_64` | PASS | **PASS** |
+| `source/dict/release`, `vmod/dict` | PASS | **PASS** |
+| cachetag's 6 rows | PASS | **PASS** |
+| 4 engine rows | PASS | **PASS** |
+
+Exactly one row, classified as a *generation* failure rather than a build failure, which is the whole reason `failed_recipe_generation` was added to the vocabulary: nothing was compiled, the inputs were wrong, and the reader is sent to the manifest, the overlay, the adapter or the generator rather than to a compiler log.
+
+Two things are proven at once. D4 — the `--inject-token` flag that was computed and never passed, found by containerized actionlint — is fixed, because the case is no longer inert. And the *lane* refuses a recipe that a build would otherwise consume literally, which is a different property from the generator refusing to render one; `tools/vmod_recipe_selftest.py` covers the latter, and only a live run can cover the former.
+
+The sibling EL9 row passing is the point of running this at all: a generation failure on one target does not cost the other target of the same VMOD, let alone the other VMOD.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
 
 | # | `inject=` | Expected |
 | --- | --- | --- |
-| 3 | `recipe_generation` | exactly one dict target row `failed_recipe_generation`; everything else PASS |
 | 4 | `manifest` | ledger shrinks to **7** rows: cachetag collapses to one `failed_manifest_validation`, all 4 dict rows PASS, and the 2 `vinyl-trunk-pinned` engine rows are **not** reported missing |
 | 5 | `dict_build` | dict's Debian row `failed_package_build`; dict's EL9 row and all cachetag rows PASS |
 | 6 | `debian_build` | cachetag's 2 Debian target rows red; all 4 dict rows PASS |
