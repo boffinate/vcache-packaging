@@ -829,13 +829,30 @@ counts: expected=14 passed=13 failed=1 missing=1 not_selected=1 required_failed=
 
 That is the property the whole collector design exists for: a row that silently produces no evidence is indistinguishable from a row that never ran, and both must be louder than a green run. All other thirteen rows passed, dict included.
 
+### Item 10a — `inject=engine_build`, [30434296849](https://github.com/boffinate/vcache-packaging/actions/runs/30434296849): **exact, and the reason R-2 was worth doing**
+
+```text
+counts: expected=14 passed=11 failed=3 missing=0 not_selected=1 required_failed=3
+  engine/vinyl-release/debian-13-amd64                    failed_engine_build
+      injected engine-build failure
+  target/cachetag/release/vinyl-release/debian-13-amd64   blocked_by_engine_artifact
+      engine/vinyl-release/debian-13-amd64 published no engine-vinyl-release-debian-13-amd64
+  target/dict/release/vinyl-release/debian-13-amd64       blocked_by_engine_artifact
+      engine/vinyl-release/debian-13-amd64 published no engine-vinyl-release-debian-13-amd64
+```
+
+**One root cause, two consumers, one in each VMOD, both naming the cause.** This is the case the matrix plan asks the summary to report as a shared dependency failure rather than as unrelated broken jobs, and under the old constant it could not have shown it: `engine/vinyl-trunk-pinned/debian-13-amd64` has one consumer, so the run would have looked exactly like a single-VMOD build failure.
+
+It is also **the first deliberate exercise of `target-generated`'s `blocked_by_engine_artifact` path**. The upstream-recipe lane has had that path since Phase 2; the generated-recipe lane had never taken it until an EPEL failure took it by accident earlier tonight, and never on purpose until now.
+
+The three surviving engine rows and the remaining eight package rows all passed — including dict's EL9 row, which names a different engine row and is untouched.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
 
 | # | `inject=` | Expected |
 | --- | --- | --- |
-| 10a | `engine_build` | `engine/vinyl-release/debian-13-amd64` red; **both** its consumers — cachetag's and dict's Debian rows — `blocked_by_engine_artifact` naming that engine row; the other 3 engine rows and the other 4 package rows PASS |
 | 10b | `suppress_engine_artifact` | same blocked set, from a *green* producer that published nothing |
 
 Every one of those expectations was read back out of `ci_matrix.py expand` before dispatching, so the adjudication is against the tool rather than against memory:
@@ -890,7 +907,8 @@ Three of them — B3, B6 and B9 — are the same class: a lesson one backend's s
 | 8a `source_checkout` | [30430481913](https://github.com/boffinate/vcache-packaging/actions/runs/30430481913) | **PASS** — exact |
 | 8b `source_digest` | [30431584255](https://github.com/boffinate/vcache-packaging/actions/runs/30431584255) | **PASS** — exact |
 | 9 `suppress_result` | [30432639448](https://github.com/boffinate/vcache-packaging/actions/runs/30432639448) | **PASS** — exact, `missing=1` |
-| 10a-10b | in progress | sequential |
+| 10a `engine_build` | [30434296849](https://github.com/boffinate/vcache-packaging/actions/runs/30434296849) | **PASS** — exact; both VMODs blocked by one cause |
+| 10b | in progress | |
 | 11 equivalence | run 30413513970 vs `main` 30397392846 | **PASS** — 10 `.deb` byte-identical, 18 RPMs equivalent |
 | 12 case 8 | one-off containers | **PASS** — both targets refuse, both name the dependency |
 | 13 evidence flip | run 30413513970 + the upgrade matrix | **PASS** — `--require-releasable` exits 0 |
