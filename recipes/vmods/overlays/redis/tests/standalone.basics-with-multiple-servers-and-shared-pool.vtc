@@ -1,0 +1,127 @@
+vtest "Tests basics with multiple servers and shared pool"
+
+server s1 {
+   rxreq
+   txresp
+} -repeat 1 -start
+
+vinyl v1 -arg "-p vsl_reclen=1024" -vcl+backend {
+    import ${vmod_redis};
+
+    sub vcl_init {
+        redis.subnets(
+            masks={""});
+
+        redis.sentinels(
+            locations={""},
+            period=0,
+            connection_timeout=500,
+            command_timeout=0);
+
+        new master1 = redis.db(
+            location="${redis_master1_ip}:${redis_master1_port}",
+            type=master,
+            connection_timeout=500,
+            connection_ttl=0,
+            command_timeout=0,
+            max_command_retries=0,
+            shared_connections=true,
+            max_connections=1,
+            password="",
+            sickness_ttl=0,
+            ignore_slaves=false,
+            max_cluster_hops=0);
+
+        new master2 = redis.db(
+            location="${redis_master2_ip}:${redis_master2_port}",
+            type=master,
+            connection_timeout=500,
+            connection_ttl=0,
+            command_timeout=0,
+            max_command_retries=0,
+            shared_connections=true,
+            max_connections=1,
+            password="",
+            sickness_ttl=0,
+            ignore_slaves=false,
+            max_cluster_hops=0);
+    }
+
+    sub vcl_deliver {
+        # SET (master1) -> GET (master1) -> GET (master2).
+        master1.command("SET");
+        master1.push("foo");
+        master1.push("Hello world!");
+        master1.execute(true);
+
+        master1.command("GET");
+        master1.push("foo");
+        master1.execute(true);
+        set resp.http.Reply-1 = master1.get_reply();
+
+        master2.command("GET");
+        master2.push("foo");
+        master2.execute(true);
+        set resp.http.Reply-2 = master2.get_reply();
+
+        # SET (master2) -> GET (master2) -> GET (master1).
+        master2.command("SET");
+        master2.push("bar");
+        master2.push("Hello world!");
+        master2.execute(true);
+
+        master2.command("GET");
+        master2.push("bar");
+        master2.execute(true);
+        set resp.http.Reply-3 = master2.get_reply();
+
+        master1.command("GET");
+        master1.push("bar");
+        master1.execute(true);
+        set resp.http.Reply-4 = master1.get_reply();
+
+        # Stats.
+        set resp.http.master1-stats = master1.stats();
+        set resp.http.master1-servers-total = master1.counter("servers.total");
+        set resp.http.master1-connections-total = master1.counter("connections.total");
+        set resp.http.master1-connections-dropped-overflow = master1.counter("connections.dropped.overflow");
+        set resp.http.master1-commands-total = master1.counter("commands.total");
+        set resp.http.master1-commands-error = master1.counter("commands.error");
+        set resp.http.master1-commands-noscript = master1.counter("commands.noscript");
+
+        set resp.http.master2-stats = master2.stats();
+        set resp.http.master2-servers-total = master2.counter("servers.total");
+        set resp.http.master2-connections-dropped-overflow = master2.counter("connections.dropped.overflow");
+        set resp.http.master2-connections-total = master2.counter("connections.total");
+        set resp.http.master2-commands-total = master2.counter("commands.total");
+        set resp.http.master2-commands-error = master2.counter("commands.error");
+        set resp.http.master2-commands-noscript = master2.counter("commands.noscript");
+    }
+} -start
+
+client c1 {
+    txreq
+    rxresp
+
+    expect resp.http.Reply-1 == "Hello world!"
+    expect resp.http.Reply-2 == ""
+
+    expect resp.http.Reply-3 == "Hello world!"
+    expect resp.http.Reply-4 == ""
+
+    expect resp.http.master1-servers-total == "1"
+    expect resp.http.master1-connections-total == "1"
+    expect resp.http.master1-connections-dropped-overflow == "0"
+    expect resp.http.master1-commands-total == "3"
+    expect resp.http.master1-commands-error == "0"
+    expect resp.http.master1-commands-noscript == "0"
+
+    expect resp.http.master2-servers-total == "1"
+    expect resp.http.master2-connections-total == "1"
+    expect resp.http.master2-connections-dropped-overflow == "0"
+    expect resp.http.master2-commands-total == "3"
+    expect resp.http.master2-commands-error == "0"
+    expect resp.http.master2-commands-noscript == "0"
+} -run
+
+vinyl v1 -expect client_req == 1

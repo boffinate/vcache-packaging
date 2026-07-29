@@ -1,0 +1,83 @@
+vtest "Tests workers are blocked when using a small shared pool"
+
+server s1 {
+   rxreq
+   txresp
+} -repeat 2 -start
+
+vinyl v1 -arg "-p vsl_reclen=1024" -vcl+backend {
+    import ${vmod_redis};
+
+    sub vcl_init {
+        redis.subnets(
+            masks={""});
+
+        redis.sentinels(
+            locations={""},
+            period=0,
+            connection_timeout=500,
+            command_timeout=0);
+
+        new db = redis.db(
+            location="${redis_master1_ip}:${redis_master1_port}",
+            type=master,
+            connection_timeout=500,
+            connection_ttl=0,
+            command_timeout=0,
+            max_command_retries=0,
+            shared_connections=true,
+            max_connections=1,
+            password="",
+            sickness_ttl=0,
+            ignore_slaves=false,
+            max_cluster_hops=0);
+    }
+
+    sub vcl_deliver {
+        # Slow vs fast command.
+        if (req.http.Slow == "1") {
+            db.command("DEBUG");
+            db.push("sleep");
+            db.push("3");
+        } else {
+            db.command("SET");
+            db.push("foo");
+            db.push("hello");
+        }
+        db.execute(true);
+        set resp.http.Replied = db.replied();
+        set resp.http.Reply = db.get_reply();
+
+        # Stats.
+        set resp.http.db-stats = db.stats();
+        set resp.http.db-servers-total = db.counter("servers.total");
+        set resp.http.db-connections-total = db.counter("connections.total");
+        set resp.http.db-workers-blocked = db.counter("workers.blocked");
+        set resp.http.db-commands-total = db.counter("commands.total");
+    }
+} -start
+
+client c1 {
+    txreq -hdr "Slow: 1"
+    rxresp
+
+    expect resp.http.Replied == "true"
+    expect resp.http.Reply == "OK"
+} -start
+
+delay 1.0
+
+client c2 {
+    txreq -hdr "Slow: 0"
+    rxresp
+
+    expect resp.http.Replied == "true"
+    expect resp.http.Reply == "OK"
+
+    expect resp.http.db-servers-total == "1"
+    expect resp.http.db-connections-total == "1"
+    expect resp.http.db-workers-blocked == "1"
+    expect resp.http.db-commands-total == "2"
+} -run
+
+vinyl v1 -expect client_req == 2

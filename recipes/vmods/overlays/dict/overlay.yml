@@ -19,7 +19,11 @@ adapter: autotools
 
 # Bump on any change to this file. Recorded in the generated changelog and in
 # the generation record.
-revision: "1"
+#
+# 2 (2026-07-29, Step 7 Wave 1): the Summary is capitalised and the reviewed
+# rpmlint waivers below arrived. Both move package bytes, which is why they are
+# one revision and one change rather than two -- see the package.revision note.
+revision: "2"
 
 upstream:
   # AC_INIT([vmod-dict],[1.7],[gray@gnu.org]) in configure.ac.
@@ -98,9 +102,25 @@ package:
   # registry/README.md defines it for cachetag. It moves when the same
   # vmod-dict source is rebuilt against a different engine input or for a
   # packaging-only fix.
-  revision: "1"
+  #
+  # 2 (2026-07-29): a packaging-only fix. Wave 0 measured the EL9 lane
+  # reporting `0 errors, 6 warnings` and passing, because verify-rpm.sh
+  # propagates rpmlint's exit status and that is non-zero only for errors --
+  # weaker than the cachetag EL9 gate, which filters through a reviewed waiver
+  # file and then asserts "0 errors, 0 warnings". Closing it needed two things,
+  # and the audit ruled they are ONE change: the summary-not-capitalized
+  # finding is a real defect and gets fixed, the other five are the class a
+  # reviewed waiver exists for. Doing them separately would move dict's package
+  # bytes twice for two separately-reasoned tidy-ups, and every byte movement
+  # is supposed to have one attributable cause.
+  revision: "2"
 
-  summary: dictionary look-up VMOD for Vinyl Cache
+  # Capitalised since revision 2. rpmlint's summary-not-capitalized is a real
+  # finding: RPM summaries are sentence-like and start with a capital. Debian's
+  # opposite convention (a lower-case synopsis) is not violated -- lintian's
+  # description-synopsis-starts-with-article and friends care about articles,
+  # not case, and the Debian package carried no finding either way.
+  summary: Dictionary look-up VMOD for Vinyl Cache
 
   # Rendered into Debian's continuation format and into the RPM %description.
   # An empty string becomes a paragraph break.
@@ -232,6 +252,25 @@ behaviour:
   # vinyltest runs the whole ledger itself; there are no fixture servers to
   # start.
   driver: none
+
+rpmlint_overrides:
+  # Reviewed waivers for the EL9 gating pass, added at revision 2. Each carries
+  # its reason; a filter without one is a bug. Measured against the run
+  # 30437775658 package: with these five filters and the capitalised Summary,
+  # rpmlint reports 0 errors and 0 warnings.
+  filters:
+    - "# rpmlint 1.11 ships a en_US dictionary that predates the vocabulary of"
+    - "# this project's own %description. `initialisation` is British spelling in"
+    - "# a British-English project; `whitespace`, `ci` and `unresolvable` are"
+    - "# ordinary technical words the dictionary does not carry. The description"
+    - "# is correct; the dictionary is the thing that is out of date."
+    - "addFilter(r' W: spelling-error %description -l en_US (initialisation|whitespace|ci|unresolvable) ')"
+    - ""
+    - "# rpmlint 1.11 predates SPDX identifiers and wants legacy strings. SPDX is"
+    - "# correct for modern packaging and is what upstream's COPYING actually"
+    - "# says. The same filter, for the same reason, is in the cachetag lane's"
+    - "# recipes/el9/rpmlint-waivers.rpmlintrc."
+    - "addFilter(r' W: invalid-license GPL-3.0-or-later')"
 
 lintian_overrides:
   source: []

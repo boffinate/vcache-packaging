@@ -207,7 +207,7 @@ def test_dict_deb_render(root: Path) -> None:
         "vinyld-abi-423648c4cb6b225b3268ffc337354ea938f5efee,",
         "vinyld-vrt (= 23.0),",
         f"vinyld-cohort-{RELEASE_COHORT},",
-        "Description: dictionary look-up VMOD for Vinyl Cache",
+        "Description: Dictionary look-up VMOD for Vinyl Cache",
     ):
         check(f"deb control contains {fragment!r}", fragment in control, control)
     check(
@@ -254,12 +254,12 @@ def test_dict_rpm_render(root: Path) -> None:
     model = _model(root, target=target, debian_distribution=None)
     recipe_root = root / vr.RECIPE_ROOT
     outputs = vr.render(model, recipe_root / "templates", recipe_root / "licenses")
-    check("rpm render: one spec", sorted(outputs) == ["vmod-dict.spec"], str(sorted(outputs)))
+    check("rpm render: one spec", sorted(outputs) == ["vmod-dict.rpmlintrc", "vmod-dict.spec"], str(sorted(outputs)))
     spec = outputs["vmod-dict.spec"]
     for fragment in (
         "Name:           vmod-dict",
         "Version:        1.7",
-        "Release:        1%{?dist}",
+        "Release:        2%{?dist}",
         "License:        GPL-3.0-or-later",
         "BuildRequires:  vinyl-cache-devel = 9.0.1-1.el9",
         "Requires:       vinyld(abi)%{?_isa} = 423648c4cb6b225b3268ffc337354ea938f5efee",
@@ -269,7 +269,7 @@ def test_dict_rpm_render(root: Path) -> None:
         "%{vinyl_vmoddir}/libvmod_dict.so",
         "%{_mandir}/man3/vmod_dict.3*",
         "%license COPYING",
-        "* Wed Mar 25 2026 Boffinate <noreply@boffinate.com> - 1.7-1",
+        "* Wed Mar 25 2026 Boffinate <noreply@boffinate.com> - 1.7-2",
     ):
         check(f"rpm spec contains {fragment!r}", fragment in spec, spec)
     check(
@@ -452,7 +452,7 @@ def test_inspection_commands_do_not_need_a_maintainer(root: Path) -> None:
     )
     check(
         "inspect: names resolve with no maintainer",
-        model["artifacts"]["native_filenames"] == ["vmod-dict_1.7-1_amd64.deb"],
+        model["artifacts"]["native_filenames"] == ["vmod-dict_1.7-2_amd64.deb"],
         json.dumps(model["artifacts"]),
     )
     check(
@@ -771,7 +771,7 @@ def test_expected_names(root: Path) -> None:
         "names: Debian binary and source packages",
         deb["source_package_name"] == "vmod-dict"
         and deb["binary_package_names"] == ["vmod-dict", "vmod-dict-dbgsym"]
-        and deb["native_filenames"] == ["vmod-dict_1.7-1_amd64.deb"],
+        and deb["native_filenames"] == ["vmod-dict_1.7-2_amd64.deb"],
         json.dumps(deb),
     )
     check(
@@ -779,14 +779,14 @@ def test_expected_names(root: Path) -> None:
         deb["source_package_filenames"]
         == [
             "vmod-dict_1.7.orig.tar.gz",
-            "vmod-dict_1.7-1.debian.tar.xz",
-            "vmod-dict_1.7-1.dsc",
+            "vmod-dict_1.7-2.debian.tar.xz",
+            "vmod-dict_1.7-2.dsc",
         ],
         json.dumps(deb["source_package_filenames"]),
     )
     check(
         "names: the release asset carries distro and arch",
-        deb["release_asset_filenames"] == ["vmod-dict-1.7-1-debian-13-amd64.deb"],
+        deb["release_asset_filenames"] == ["vmod-dict-1.7-2-debian-13-amd64.deb"],
         json.dumps(deb["release_asset_filenames"]),
     )
     target = manifest_mod.load_target(
@@ -797,8 +797,8 @@ def test_expected_names(root: Path) -> None:
         "names: RPM binary, debuginfo and source packages",
         rpm["binary_package_names"]
         == ["vmod-dict", "vmod-dict-debuginfo", "vmod-dict-debugsource"]
-        and rpm["native_filenames"] == ["vmod-dict-1.7-1.el9.x86_64.rpm"]
-        and rpm["source_package_filenames"] == ["vmod-dict-1.7-1.el9.src.rpm"],
+        and rpm["native_filenames"] == ["vmod-dict-1.7-2.el9.x86_64.rpm"]
+        and rpm["source_package_filenames"] == ["vmod-dict-1.7-2.el9.src.rpm"],
         json.dumps(rpm),
     )
     check(
@@ -926,6 +926,7 @@ def _fixture_model() -> dict:
             "license_files": ["COPYING"],
         },
         "lintian_overrides": {"source": [], "binary": []},
+        "rpmlint_overrides": [],
         "patches": [],
         "artifacts": {},
     }
@@ -1205,7 +1206,7 @@ def test_changelog_lines_fit(root: Path) -> None:
     )
     check(
         "changelog: the version header is untouched",
-        changelog.startswith("vmod-dict (1.7-1) trixie; urgency=medium\n"),
+        changelog.startswith("vmod-dict (1.7-2) trixie; urgency=medium\n"),
         changelog,
     )
 
@@ -1283,19 +1284,25 @@ def test_reviewed_lint_overrides_are_rendered(root: Path) -> None:
 # Reviewed source patches (Step 7 Wave 1)
 # ---------------------------------------------------------------------------
 
-# The dict recipe digests as rendered by the commit BEFORE the patch capability
-# existed, measured on 2026-07-29 from `vmod_recipe.py generate` for both
-# targets against the checked-in dict inputs.
+# dict's rendered recipe digests, pinned rather than recomputed: a comparison
+# against a value the same code produces would pass no matter what the code did.
 #
-# This is the plan's Phase 3 requirement stated as a test: "confirm the first
-# generated VMOD's output unchanged". It is pinned rather than recomputed
-# because a comparison against a value the same code produces would pass no
-# matter what the code did. It moves only when dict's own inputs move -- and
-# when they do, the mover has to say so here, which is exactly the friction
-# wanted on a package whose artifact digests are recorded release evidence.
+# This is the plan's Phase 3 requirement stated as a test -- "confirm the first
+# generated VMOD's output unchanged" -- and the friction is the feature. The
+# digests move only when dict's own inputs move, and whoever moves them has to
+# say so here, on a package whose artifact digests are recorded release
+# evidence.
+#
+# History, because the two entries are what makes the claim checkable:
+#   * measured before the patch capability existed, and unchanged by it:
+#     7e7055b8a5c99e493e398d41cca6a583c911bd7eae4245592d9ef5024d1ba360 (deb)
+#     a64f74b8764d2630e72529901e4b00feb1682c4102a0175ad1c16f761196e6dd (rpm)
+#   * moved at dict overlay revision 2 -- the capitalised Summary and the
+#     reviewed rpmlint waivers, one change with one attributable cause -- to
+#     the values below.
 DICT_PRE_PATCH_RECIPE_SHA256 = {
-    "debian-13-amd64": "7e7055b8a5c99e493e398d41cca6a583c911bd7eae4245592d9ef5024d1ba360",
-    "el9-x86_64": "a64f74b8764d2630e72529901e4b00feb1682c4102a0175ad1c16f761196e6dd",
+    "debian-13-amd64": "6f637e4bc4f09968b4e1662f30773de866d2df2698f8c97889480bd29f3be1e1",
+    "el9-x86_64": "a814b6245a11ec2058f7b378fd9c45d0d5b4251bec9a887debfdbc0baf141b65",
 }
 
 _PATCH_TEXT = (
@@ -1367,7 +1374,7 @@ def test_patchless_render_is_unchanged_by_the_patch_capability(root: Path) -> No
             repo_root=root,
         )
         check(
-            f"patches: {target} renders byte-identically to the pre-capability recipe",
+            f"patches: {target} renders byte-identically to the pinned recipe",
             record["recipe_sha256"] == expected,
             f"got {record['recipe_sha256']}, want {expected}",
         )
@@ -1550,6 +1557,67 @@ def test_patch_declared_twice_is_refused(root: Path) -> None:
     )
 
 
+def test_reviewed_rpmlint_overrides_are_rendered(root: Path) -> None:
+    """The RPM twin of lintian_overrides, and the same two directions.
+
+    Wave 0 measured the generated lane passing on `0 errors, 6 warnings`
+    because rpmlint's exit status is non-zero only for errors, while the
+    cachetag EL9 lane filtered through a reviewed waiver file and then asserted
+    the summary. dict declares the waivers at overlay revision 2; a VMOD that
+    declares none must get no file at all, because an empty waiver file passed
+    with -f would look like a reviewed decision that nobody made.
+    """
+    inputs = _inputs(root)
+    recipe_root = root / vr.RECIPE_ROOT
+    target = manifest_mod.load_target(
+        root / "registry" / "targets" / RELEASE_COHORT / "el9-x86_64.yml"
+    )
+    model = _model(root, target=target)
+    outputs = vr.render(model, recipe_root / "templates", recipe_root / "licenses")
+    rendered = outputs.get("vmod-dict.rpmlintrc", "")
+    declared = inputs["overlay"]["rpmlint_overrides"]["filters"]
+    check(
+        "rpmlint overrides: the overlay declares at least one filter",
+        bool(declared),
+        str(declared),
+    )
+    check(
+        "rpmlint overrides: the rendered file is a Python config rpmlint 1.11 reads",
+        rendered.count("from Config import addFilter") == 1,
+        rendered,
+    )
+    for line in declared:
+        check(
+            f"rpmlint overrides: rendered file carries {line[:40]!r}",
+            line in rendered or not line,
+            rendered,
+        )
+    check(
+        "rpmlint overrides: dict's capitalised Summary reaches the spec",
+        "Summary:        Dictionary look-up VMOD for Vinyl Cache"
+        in outputs["vmod-dict.spec"],
+        outputs["vmod-dict.spec"][:900],
+    )
+    empty = _clone(inputs["overlay"])
+    empty["rpmlint_overrides"]["filters"] = []
+    none_outputs = vr.render(
+        _model(root, overlay=empty, target=target),
+        recipe_root / "templates",
+        recipe_root / "licenses",
+    )
+    check(
+        "rpmlint overrides: none declared renders no waiver file",
+        sorted(none_outputs) == ["vmod-dict.spec"],
+        str(sorted(none_outputs)),
+    )
+    check(
+        "rpmlint overrides: the Debian family renders no waiver file either",
+        not any(name.endswith(".rpmlintrc") for name in vr.render(
+            _model(root), recipe_root / "templates", recipe_root / "licenses"
+        )),
+    )
+
+
 def test_behaviour_contract_reaches_the_lane(root: Path) -> None:
     """The fixture contract is declared per VMOD and consumed generically.
 
@@ -1692,6 +1760,7 @@ def main(repo_root: Path = None) -> int:
     test_patch_is_rendered_digested_and_verbatim(root)
     test_patch_content_changes_the_recipe_digest(root)
     test_patch_declared_twice_is_refused(root)
+    test_reviewed_rpmlint_overrides_are_rendered(root)
     test_behaviour_contract_reaches_the_lane(root)
     test_archive_method_and_url_must_agree(root)
 

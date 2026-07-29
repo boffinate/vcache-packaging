@@ -1,0 +1,124 @@
+Description: build against Vinyl Cache instead of Varnish Cache
+ libvmod-redis 9.0-23.1 addresses the engine exclusively through the Varnish
+ names: varnishapi.pc, the varnish.m4 macros VARNISH_PREREQ / VARNISH_VMODS,
+ the VARNISHAPI_* substitutions those macros define, and the varnishtest
+ driver. Vinyl Cache is a Varnish fork that renames all of them -- vinylapi.pc,
+ vinyl.m4, VINYL_PREREQ / VINYL_VMODS, VINYLAPI_*, vinyltest -- so the
+ unpatched source cannot configure at all: m4_ifndef([VARNISH_PREREQ]) fires
+ before anything else runs.
+ .
+ This patch is a rename and one deletion, in four build-system files. It
+ touches no C source, no VCC, no test and no documentation, and it changes no
+ behaviour of the module: every hunk is the same call to the same macro under
+ the name the installed engine publishes it as.
+ .
+   * autogen.sh          -- ask pkg-config for vinylapi's datarootdir, so
+                            `aclocal -I ${dataroot}/aclocal` finds vinyl.m4.
+   * Makefile.am         -- ACLOCAL_AMFLAGS uses ${VINYLAPI_DATAROOTDIR}, the
+                            variable vinyl.m4 substitutes (vinyl.m4 documents
+                            this exact line).
+   * configure.ac        -- VARNISH_PREREQ/VARNISH_VMODS and the m4_ifndef
+                            guard become their VINYL_ names, and the
+                            PKG_CHECK_VAR([LIBVARNISHAPI_LIBDIR]) /
+                            AC_SUBST([VARNISH_LIBRARY_PATH]) pair is DELETED
+                            rather than renamed: vinyl.m4's _VINYL_PKG_CONFIG
+                            already substitutes VINYL_LIBRARY_PATH as
+                            $VINYLAPI_LIBDIR:$VINYLAPI_LIBDIR/vinyl-cache, so
+                            keeping a local definition would be a second,
+                            divergent authority for the same value.
+   * src/Makefile.am     -- VARNISHAPI_CFLAGS/LIBS and VARNISH_LIBRARY_PATH
+                            become the VINYL_ substitutions; the VTC log
+                            compiler drives vinyltest.
+ .
+ VINYL_PREREQ([9.0], [9.1]) is kept, not dropped. It does numeric comparison on
+ vinylapi.pc's Version, which is why this VMOD is packaged on the vinyl-release
+ lane only: Vinyl trunk's AC_INIT still says the literal string "trunk", and
+ the comparison cannot be made against it. That is a recorded manifest fact
+ (registry/vmods/redis.yml), not something this patch works around.
+Author: Boffinate <noreply@boffinate.com>
+Origin: other
+Forwarded: not-needed
+Last-Update: 2026-07-29
+Applied-Upstream: no
+Bug: none
+ Not forwarded because it is meaningless upstream: it replaces support for the
+ engine upstream targets with support for a fork upstream does not package
+ for. A downstream provider absorbing the rename is exactly the case
+ AGENTS.md's "absorbing packaging is the downstream provider's job" describes.
+
+diff -urN a/Makefile.am b/Makefile.am
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -1,4 +1,4 @@
+-ACLOCAL_AMFLAGS = -I m4 -I ${VARNISHAPI_DATAROOTDIR}/aclocal
++ACLOCAL_AMFLAGS = -I m4 -I ${VINYLAPI_DATAROOTDIR}/aclocal
+ 
+ SUBDIRS = src
+ 
+diff -urN a/autogen.sh b/autogen.sh
+--- a/autogen.sh
++++ b/autogen.sh
+@@ -35,12 +35,12 @@
+ 	esac
+ fi
+ 
+-# check for varnishapi.m4 in custom paths
+-dataroot=$(pkg-config --variable=datarootdir varnishapi 2>/dev/null)
++# check for vinylapi.m4 in custom paths
++dataroot=$(pkg-config --variable=datarootdir vinylapi 2>/dev/null)
+ if [ -z "$dataroot" ] ; then
+ 	cat >&2 <<'EOF'
+-Package varnishapi was not found in the pkg-config search path.
+-Perhaps you should add the directory containing `varnishapi.pc'
++Package vinylapi was not found in the pkg-config search path.
++Perhaps you should add the directory containing `vinylapi.pc'
+ to the PKG_CONFIG_PATH environment variable
+ EOF
+ 	exit 1
+diff -urN a/configure.ac b/configure.ac
+--- a/configure.ac
++++ b/configure.ac
+@@ -33,17 +33,13 @@
+     [RST2MAN="$withval"],
+     [AC_CHECK_PROGS(RST2MAN, [rst2man rst2man.py], [])])
+ 
+-m4_ifndef([VARNISH_PREREQ], AC_MSG_ERROR([Need varnish.m4 -- see README.rst]))
++m4_ifndef([VINYL_PREREQ], AC_MSG_ERROR([Need vinyl.m4 -- see README.rst]))
+ 
+-VARNISH_PREREQ([9.0], [9.1])
+-VARNISH_VMODS([redis])
++VINYL_PREREQ([9.0], [9.1])
++VINYL_VMODS([redis])
+ 
+ VMOD_TESTS="$(cd $srcdir/src && echo tests/*.vtc)"
+ AC_SUBST(VMOD_TESTS)
+-
+-PKG_CHECK_VAR([LIBVARNISHAPI_LIBDIR], [varnishapi], [libdir])
+-AC_SUBST([VARNISH_LIBRARY_PATH],
+-	[$LIBVARNISHAPI_LIBDIR:$LIBVARNISHAPI_LIBDIR/varnish])
+ 
+ # Check for libhiredis.
+ AC_CHECK_LIB(
+diff -urN a/src/Makefile.am b/src/Makefile.am
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -1,5 +1,5 @@
+-AM_CFLAGS = $(VARNISHAPI_CFLAGS) $(CODE_COVERAGE_CFLAGS) -Wall -DEV_COMPAT3=1
+-AM_LDFLAGS = $(VARNISHAPI_LIBS) $(VMOD_LDFLAGS) $(CODE_COVERAGE_LDFLAGS)
++AM_CFLAGS = $(VINYLAPI_CFLAGS) $(CODE_COVERAGE_CFLAGS) -Wall -DEV_COMPAT3=1
++AM_LDFLAGS = $(VINYLAPI_LIBS) $(VMOD_LDFLAGS) $(CODE_COVERAGE_LDFLAGS)
+ 
+ vmod_LTLIBRARIES = libvmod_redis.la
+ 
+@@ -21,9 +21,9 @@
+ 
+ AM_TESTS_ENVIRONMENT = \
+ 	PATH="$(VMOD_TEST_PATH)" \
+-	LD_LIBRARY_PATH="$(VARNISH_LIBRARY_PATH)"
++	LD_LIBRARY_PATH="$(VINYL_LIBRARY_PATH)"
+ TEST_EXTENSIONS = .vtc
+-VTC_LOG_COMPILER = $(abs_srcdir)/tests/runner.sh varnishtest
++VTC_LOG_COMPILER = $(abs_srcdir)/tests/runner.sh vinyltest
+ AM_VTC_LOG_FLAGS = -v -Dvmod_redis="$(VMOD_REDIS)"
+ 
+ TESTS = @VMOD_TESTS@

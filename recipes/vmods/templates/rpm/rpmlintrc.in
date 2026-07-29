@@ -1,0 +1,23 @@
+# Reviewed rpmlint waivers for @RPM_NAME@ on the @TARGET_ID@ lane.
+#
+# GENERATED FILE. Produced by tools/vmod_recipe.py from the @VMOD_ID@ overlay
+# (revision @OVERLAY_REVISION@). Do not edit it: the edit is lost on the next
+# generation and hides the input that is wrong.
+#
+# This is the RPM twin of debian/@BINARY_NAME@.lintian-overrides. It is NOT
+# part of the package: scripts/ci/vmod/container/verify-rpm.sh passes it to
+# rpmlint with -f, and rpmlint's exit status still gates the lane. A finding
+# without a filter here fails the row, which is the point -- the filter is
+# where a finding becomes a reviewed decision.
+#
+# Format: rpmlint 1.11 (EL9 AppStream) reads this as a Python configuration
+# file -- the old pre-2.x format, not TOML -- and each addFilter() argument is
+# a regular expression matched against the formatted output line
+#   <package>.<arch>: <severity>: <check> <details>
+# Style follows recipes/el9/rpmlint-waivers.rpmlintrc, the cachetag lane's
+# reviewed waiver file: every filter carries its reason, and a filter without
+# one is a bug.
+
+from Config import addFilter
+
+@RPM_LINT_FILTERS@

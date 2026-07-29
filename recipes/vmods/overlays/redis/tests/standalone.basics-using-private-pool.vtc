@@ -1,0 +1,211 @@
+vtest "Tests basics using private pool"
+
+server s1 {
+   rxreq
+   txresp
+} -repeat 1 -start
+
+vinyl v1 -arg "-p vsl_reclen=1024" -vcl+backend {
+    import ${vmod_redis};
+
+    sub vcl_init {
+        redis.subnets(
+            masks={""});
+
+        redis.sentinels(
+            locations={""},
+            period=0,
+            connection_timeout=500,
+            command_timeout=0);
+
+        new db = redis.db(
+            location="${redis_master1_ip}:${redis_master1_port}",
+            type=master,
+            connection_timeout=500,
+            connection_ttl=0,
+            command_timeout=0,
+            max_command_retries=0,
+            shared_connections=false,
+            max_connections=1,
+            password="",
+            sickness_ttl=0,
+            ignore_slaves=false,
+            max_cluster_hops=0);
+    }
+
+    sub vcl_deliver {
+        # SET.
+        db.command("SET");
+        db.push("foo");
+        db.push("hello");
+        db.execute(true);
+        if (db.reply_is_status()) {
+            set resp.http.Reply-1 = db.get_status_reply();
+        }
+
+        # SETEX.
+        db.command("SETEX");
+        db.push("bar");
+        db.push("3600");
+        db.push("Hello world!");
+        db.execute(true);
+        if (db.reply_is_status()) {
+            set resp.http.Reply-2 = db.get_status_reply();
+        }
+
+        # GET.
+        db.command("GET");
+        db.push("bar");
+        db.execute(true);
+        if (db.reply_is_string()) {
+            set resp.http.Reply-3 = db.get_string_reply();
+        }
+
+        # DEL.
+        db.command("DEL");
+        db.push("bar");
+        db.execute(true);
+        if (db.reply_is_integer()) {
+            set resp.http.Reply-4 = db.get_integer_reply();
+        }
+
+        # MGET.
+        db.command("MGET");
+        db.push("foo");
+        db.push("bar");
+        db.execute(true);
+        if (db.reply_is_array()) {
+            set resp.http.Reply-5-Length = db.get_array_reply_length();
+            set resp.http.Reply-5-Value-1 = db.get_array_reply_value(0);
+            set resp.http.Reply-5-Value-2 = db.get_array_reply_value(1);
+        }
+
+        # HMSET.
+        db.command("HMSET");
+        db.push("bar");
+        db.push("field1");
+        db.push("Hello world!");
+        db.push("field2");
+        db.push("42");
+        db.execute(true);
+        if (db.reply_is_status()) {
+            set resp.http.Reply-6 = db.get_status_reply();
+        }
+
+        # HMGET.
+        db.command("HGET");
+        db.push("bar");
+        db.push("field1");
+        db.execute(true);
+        if (db.reply_is_string()) {
+            set resp.http.Reply-7 = db.get_string_reply();
+        }
+
+        # INCR.
+        db.command("INCR");
+        db.push("foo");
+        db.execute(true);
+        if (db.reply_is_error()) {
+            set resp.http.Reply-8 = db.get_error_reply();
+        }
+
+        # EVAL.
+        set req.http.Script = {"
+            redis.call('SET', KEYS[1], ARGV[1])
+            redis.call('SET', KEYS[2], ARGV[1])
+        "};
+        db.command("EVAL");
+        db.push(req.http.Script);
+        db.push("2");
+        db.push("foo");
+        db.push("bar");
+        db.push("Atomic!");
+        db.execute(true);
+        if (db.reply_is_nil()) {
+            set resp.http.Reply-9 = "o/";
+        }
+
+        # EVAL.
+        db.command("EVAL");
+        db.push(req.http.Script);
+        db.push("2");
+        db.push("foo");
+        db.push("bar");
+        db.push("Atomic x 2!");
+        db.execute(true);
+        if (db.reply_is_nil()) {
+            set resp.http.Reply-10 = "o/";
+        }
+
+        # GET.
+        db.command("GET");
+        db.push("foo");
+        db.execute(true);
+        if (db.reply_is_string()) {
+            set resp.http.Reply-11 = db.get_string_reply();
+        }
+
+        # EVAL (large integer).
+        set req.http.Script = {"
+            return tonumber(ARGV[1])
+        "};
+        db.command("EVAL");
+        db.push(req.http.Script);
+        db.push("0");
+        db.push("34359738368");  # 2^35 = 34359738368. Beware of VRT_INTEGER_MAX & VRT_DECIMAL_MAX.
+        db.execute(true);
+        if (db.reply_is_integer()) {
+            set resp.http.Reply-12 = db.get_integer_reply();
+        }
+
+        # Stats.
+        set resp.http.db-stats = db.stats();
+        set resp.http.db-servers-total = db.counter("servers.total");
+        set resp.http.db-connections-total = db.counter("connections.total");
+        set resp.http.db-commands-total = db.counter("commands.total");
+        set resp.http.db-commands-error = db.counter("commands.error");
+        set resp.http.db-commands-noscript = db.counter("commands.noscript");
+    }
+} -start
+
+# Needed for testing purposes, to store scripts in HTTP headers.
+vinyl v1 -cliok "param.set feature -validate_headers"
+
+client c1 {
+    txreq
+    rxresp
+
+    expect resp.http.Reply-1 == "OK"
+
+    expect resp.http.Reply-2 == "OK"
+
+    expect resp.http.Reply-3 == "Hello world!"
+
+    expect resp.http.Reply-4 == "1"
+
+    expect resp.http.Reply-5-Length == "2"
+    expect resp.http.Reply-5-Value-1 == "hello"
+    expect resp.http.Reply-5-Value-2 == ""
+
+    expect resp.http.Reply-6 == "OK"
+
+    expect resp.http.Reply-7 == "Hello world!"
+
+    expect resp.http.Reply-8 != ""
+
+    expect resp.http.Reply-9 == "o/"
+
+    expect resp.http.Reply-10 == "o/"
+
+    expect resp.http.Reply-11 == "Atomic x 2!"
+
+    expect resp.http.Reply-12 == "34359738368"
+
+    expect resp.http.db-servers-total == "1"
+    expect resp.http.db-connections-total == "1"
+    expect resp.http.db-commands-total == "12"
+    expect resp.http.db-commands-error == "1"
+    expect resp.http.db-commands-noscript == "2"
+} -run
+
+vinyl v1 -expect client_req == 1

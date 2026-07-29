@@ -231,6 +231,18 @@ OVERLAY_SPEC = _map(
             }
         ),
         "lintian_overrides": _map({"source": _list(_s(FREE_TEXT_RE)), "binary": _list(_s(FREE_TEXT_RE))}),
+        # The RPM twin of lintian_overrides. Free-text lines rendered verbatim
+        # into a reviewed <rpm_name>.rpmlintrc that the verify stage passes with
+        # -f, so a waived finding is a decision with a reason next to it rather
+        # than a log line nobody read. Empty renders no file and passes no -f,
+        # which is what keeps a VMOD with nothing to waive on the strict gate.
+        #
+        # rpmlint 1.11 (EL9 AppStream) reads this as a Python configuration
+        # file, so the content is `from Config import addFilter` plus
+        # addFilter(r'...') calls -- the same shape and the same "every filter
+        # carries its reason" rule as recipes/el9/rpmlint-waivers.rpmlintrc,
+        # which the cachetag lane has used since Step 7-8.
+        "rpmlint_overrides": _map({"filters": _list(_s(FREE_TEXT_RE))}),
         # Reviewed source patches, applied in the order written, one entry per
         # file under overlays/<id>/patches/. The digest is not decoration: the
         # generator refuses to render if a declared file is missing or if its
@@ -598,6 +610,7 @@ def build_model(
             "source": list(overlay["lintian_overrides"]["source"]),
             "binary": list(overlay["lintian_overrides"]["binary"]),
         },
+        "rpmlint_overrides": list(overlay["rpmlint_overrides"]["filters"]),
         "patches": patches,
         # Not rendered into any recipe: the lane consumes it through `lane-env`.
         # It lives in the model because it is a fact about one VMOD that the
@@ -1146,6 +1159,7 @@ def token_values(model: dict, licenses_dir: Path) -> dict:
         "RPM_MAKE_FLAGS": " -j1" if model["build"]["parallel_build"] == "no" else "",
         "RPM_FILES": _rpm_files(model),
         "DEBIAN_DOC_FILES": "\n".join(model["payload"]["doc_files"]),
+        "RPM_LINT_FILTERS": "\n".join(model["rpmlint_overrides"]),
         "SOURCE_LINTIAN_OVERRIDES": "\n".join(model["lintian_overrides"]["source"]),
         "BINARY_LINTIAN_OVERRIDES": "\n".join(model["lintian_overrides"]["binary"]),
     }
@@ -1208,6 +1222,15 @@ def render(model: dict, templates_dir, licenses_dir) -> dict:
     else:
         name = model["package"]["rpm_name"]
         out[f"{name}.spec"] = substitute(read("rpm/vmod.spec.in"), values, f"{name}.spec")
+        # The reviewed rpmlint waiver file, only when there is something to
+        # waive. It is not part of the package: verify-rpm.sh passes it to
+        # rpmlint with -f. Rendered here, and therefore digested into
+        # recipe_sha256, because a waiver nobody can see the review of is a
+        # weakened gate.
+        if model["rpmlint_overrides"]:
+            out[f"{name}.rpmlintrc"] = substitute(
+                read("rpm/rpmlintrc.in"), values, f"{name}.rpmlintrc"
+            )
         # Beside the spec, which is where rpmbuild's SOURCES lookup finds them.
         for entry in model["patches"]:
             out[entry["file"]] = entry["text"]
@@ -1437,6 +1460,7 @@ def _template_inputs(recipe_root: Path, model: dict) -> dict:
         ]
         if fmt == "deb"
         else ["rpm/vmod.spec.in"]
+        + (["rpm/rpmlintrc.in"] if model["rpmlint_overrides"] else [])
     )
     inputs = {f"template:{name}": templates / name for name in names}
     if fmt == "deb":
