@@ -301,18 +301,41 @@ The cause is dispatch discipline, not the lane. Run 6 was dispatched while run 5
 
 #### The EL9 buildroot package set (continued) The registry's per-VMOD `build.build_dependencies` needs the buildroot the package was built in. Debian's falls out for free: dpkg writes `Installed-Build-Depends` into the `.buildinfo`, which the row already uploads. Mock resolves its buildroot itself and writes no such list, and `root.log` records only the packages each transaction *added* — 33 for this build, against the 351 cachetag's EL9 entry records. So `build-rpm.sh` now asks the chroot directly after the build, the same thing `recipes/el9/container/build.sh:76-77` does on its own lane, and writes `logs/buildroot-packages.tsv` into the artifact. Non-fatal by construction: a row that produced a good package must not fail on a bookkeeping step.
 
-### Run 6 — `inject=none`, [30413513970](https://github.com/boffinate/vcache-packaging/actions/runs/30413513970)
+### Run 6 — `inject=none`, [30413513970](https://github.com/boffinate/vcache-packaging/actions/runs/30413513970), conclusion **`success`**
 
-**Both dict target rows PASS.** For the first time, `vmod-dict` has verified binary packages on *both* selected targets, built from recipes generated in this repository out of the manifest and the reviewed overlay, with no upstream Debian or RPM files anywhere in the picture.
+**The baseline gate is met. All 14 selected rows green.** The collector's reconciled ledger:
+
+```json
+"counts": { "expected": 14, "failed": 0, "missing": 0,
+            "not_selected": 1, "passed": 14, "required_failed": 0 },
+"ok": true
+```
 
 | Row group | Result |
 | --- | --- |
 | 4 engine rows | PASS |
+| cachetag: invocation, source, 4 targets | PASS |
 | dict: invocation, `source-generated` | PASS |
 | dict: `target-generated` debian-13-amd64 | **PASS** |
 | dict: `target-generated` el9-x86_64 | **PASS** |
-| cachetag: invocation, source | PASS |
-| cachetag: 4 target rows | see the table below |
+| collector | 14 expected, 14 passed, 0 failed, 0 missing, 1 lane not selected for this tier |
+
+For the first time, `vmod-dict` has verified binary packages on *both* selected targets, built from recipes generated in this repository out of the manifest and the reviewed overlay, with no upstream Debian or RPM files anywhere in the picture: clean pbuilder and Mock builds, payload allowlists, generated ABI and cohort dependencies, hardening asserted from the build log, `lintian --fail-on error,warning` and `rpmlint` both clean, runtime-pair-only install smoke, and upstream's own behaviour expectations passing against the packaged `.so`.
+
+**Nine defects across six runs, none of them in a package.** B1 and B2 were lane omissions, B3 through B6 and B9 were defects in checks, B7a and B7c were defects in the generator and its parser, B7b was a reviewed upstream exception, and B8 was a defect in a test binding. Every `vmod-dict` package produced from run 2 onwards was correct; what kept failing was the machinery that inspects them. That is the shape a first live proof is supposed to have.
+
+### Cachetag equivalence against `main` — confirmed on the green baseline
+
+Repeated against run 30413513970, all four cachetag rows green.
+
+| Target | Channel | Method | Verdict |
+| --- | --- | --- | --- |
+| debian-13-amd64 | `vinyl-release` | digests excluding `.buildinfo`/`.changes` | **11/11 identical** |
+| debian-13-amd64 | `vinyl-trunk-pinned` | same | **11/11 identical** |
+| el9-x86_64 | `vinyl-release` | normalized semantic comparison | **9/9 EQUIVALENT** |
+| el9-x86_64 | `vinyl-trunk-pinned` | same | **9/9 EQUIVALENT** |
+
+10 `.deb` packages byte-identical, 18 RPMs semantically equivalent with an empty diff in every section, and the package sets match exactly on all four rows. `Requires` checked directly on both channels and unchanged, so the A3 note's reasoning about the unconsumed `rpm_requires` change holds. **Equivalence: PASS.** This wave changed no file cachetag builds from, and the packages confirm it.
 
 ## Verification case 8, and a one-off transaction matrix
 
