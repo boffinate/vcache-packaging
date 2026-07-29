@@ -729,3 +729,29 @@ Wave B took ten defects to reach a green baseline and a green releasable gate. *
 
 Three of them — B3, B6 and B9 — are the same class: a lesson one backend's script had learned and the other had not. That class was closed by sweeping the two allowlists side by side after B6 and the two verify scripts side by side after B9, rather than by patching whichever one failed. It is the measured cost of the deliberate lane duplication the [Wave A2 Q2 ruling](20260728_2334_note_step-6-wave-a2-ci-integration.md) accepted, and it is higher than "some duplicated lines": every non-obvious thing the cachetag scripts had learned had to be rediscovered, sometimes by failing.
 
+
+## Where Wave B stands
+
+| Item | Run | Verdict |
+| --- | --- | --- |
+| 1 baseline | [30413513970](https://github.com/boffinate/vcache-packaging/actions/runs/30413513970) | **PASS** — 14/14, `success` |
+| 2 `dict_source` | [30414399323](https://github.com/boffinate/vcache-packaging/actions/runs/30414399323) | **PASS** — exact |
+| 3 `recipe_generation` | [30415386761](https://github.com/boffinate/vcache-packaging/actions/runs/30415386761) | **PASS** — exact |
+| 4 `manifest` | 30416252749 / 30416382776 / 30418133557 / 30419753356 | **BLOCKED** — the ledger collapses correctly every time; the EL9 rows are lost to EPEL |
+| 5-10 | not dispatched | **BLOCKED** — every one needs EL9 rows |
+| 11 equivalence | run 30413513970 vs `main` 30397392846 | **PASS** — 10 `.deb` byte-identical, 18 RPMs equivalent |
+| 12 case 8 | one-off containers | **PASS** — both targets refuse, both name the dependency |
+| 13 evidence flip | run 30413513970 + the upgrade matrix | **PASS** — `--require-releasable` exits 0 |
+
+Item 4's expectation is *partly* adjudicated and the part that matters most is settled: on all three attempts that got past the structural gate, the ledger shrank to **7 rows**, cachetag collapsed to exactly one `failed_manifest_validation`, the two `vinyl-trunk-pinned` engine rows were **absent rather than reported missing** (`missing=0` every time), and dict's invocation, source and Debian rows passed. Only the EL9 half is unproven, and it is unproven for a reason that has nothing to do with the injection.
+
+## Step 6 exit gate
+
+| Clause | Verdict |
+| --- | --- |
+| A second real VMOD is packaged without requiring upstream Debian or RPM files | **MET.** Run 30413513970, 14/14 green: `vmod-dict` 1.7 built from recipes generated here on both selected targets, upstream ships no packaging, none was vendored or forked |
+| Generated recipes are deterministic and validated | **MET.** 146 generator self-tests; regeneration byte-identical; unresolved tokens refused by the generator and again by the lane, the latter proven live in item 3 |
+| A failure in either VMOD does not hide the other VMOD's results | **PARTIALLY MET.** dict→cachetag proven twice (items 2 and 3, both exact). cachetag→dict proven on the Debian half in item 4's three attempts. The remaining seven cases are blocked on EPEL |
+| Both package families meet the same evidence policy as cachetag | **MET.** Both `vmods.dict` entries are `recorded` against the same schema and the same `--require-releasable` policy as cachetag's, which exits 0 with no errors |
+
+Three of four clauses are met. The fourth is met in one direction and blocked in the other by an upstream outage rather than by anything in this repository, which is the one thing a Step 6 exit gate should not be signed off around.
