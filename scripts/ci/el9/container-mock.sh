@@ -14,7 +14,7 @@
 #
 # Mounts (set by mock-build.sh):
 #   /recipes    recipes/el9, read-only
-#   /ci         scripts/ci, read-only -- lib/mock.sh
+#   /ci         scripts/ci, read-only -- lib/mock.sh and lib/package-checks.sh
 #   /vinyl-src  the pinned Vinyl checkout (or an empty stub), read-only
 #   /cachetag   the libvmod-cachetag checkout (or an empty stub), read-only
 #   /out        dist/el9, writable
@@ -58,6 +58,8 @@ set -euo pipefail
 . /recipes/cohort.env
 # shellcheck source=../lib/mock.sh
 . /ci/lib/mock.sh
+# shellcheck source=../lib/package-checks.sh
+. /ci/lib/package-checks.sh
 
 scope=${MOCK_SCOPE:-all}
 mock_cfg=alma+epel-9-x86_64
@@ -95,7 +97,11 @@ mock_install_log_trap
 say "install Mock"
 ###############################################################################
 
-mock_install_toolchain
+# cpio and binutils are this lane's extras: the payload and hardening block at
+# the end of the cachetag half extracts the built RPM and reads its ELF, and
+# almalinux:9 ships neither. They are container tools, not buildroot packages,
+# so they cannot reach a package.
+mock_install_toolchain cpio binutils
 
 # The BIND MOUNT, not a subdirectory: see mock_setup_build_user.
 mock_setup_build_user /out "$resultdir" "$topdir"
@@ -277,6 +283,50 @@ mock_as -r "$cachetag_mock_cfg" --no-clean "${mock_epoch_defines[@]}" \
 
 find "$resultdir/cachetag" -name 'libvmod-cachetag*.rpm' -exec cp -p {} /out/packages/ \;
 cp -p "$cachetag_srpm" /out/packages/
+
+###############################################################################
+say "libvmod-cachetag: payload and hardening, against the built RPM"
+###############################################################################
+#
+# STEP 7 WAVE 0, asymmetry settlements (b) and (c). Both are checks, not
+# packaging: nothing above this line changed, and nothing below it writes a byte
+# into a package.
+#
+# The generated-recipe lane has asserted both since Wave A2 and the cachetag
+# lane had not, which is the gate asymmetry the recipe-generation plan's "gates
+# identical in strength regardless of recipe strategy" clause exists to prevent
+# -- here with the AUDITED recipe on the weaker side.
+#
+# The payload allowlist is pc_assert_rpm_payload, the same one verify-rpm.sh
+# calls, including the /usr/lib/.build-id allowance B6 cost a CI round trip to
+# find. The hardening block is pc_verify_build in its `log` form: the two
+# distribution flags are asserted from mock's own build.log, and the canary and
+# fortify SYMBOL checks drop to corroborating because their absence is a fact
+# about the source rather than about the build (B5). Measured against the green
+# baseline 30437775658 before being written: seven `libtool: compile:` lines,
+# every one carrying both flags, and the .so reporting DYN, GNU_RELRO and
+# BIND_NOW.
+#
+# It runs here, in the build container, rather than in a fresh one, because the
+# EL9 cachetag row has no later stage that mounts this library and adding one
+# would be a workflow change. What is read is the build log and the package
+# file; neither is affected by what else this container has seen.
+cachetag_rpm=$(find /out/packages -maxdepth 1 \
+	-name "libvmod-cachetag-$CACHETAG_VERSION-$CACHETAG_RELEASE.el9.$arch.rpm" |
+	sort | head -1)
+[ -n "$cachetag_rpm" ] || die "no built libvmod-cachetag RPM in /out/packages"
+
+pc_assert_rpm_payload "$cachetag_rpm" "$vmoddir" libvmod_cachetag.so \
+	man3/vmod_cachetag.3 ||
+	die "the libvmod-cachetag payload is not what the recipe declares; see above"
+
+rm -rf /tmp/ct-hardening
+mkdir -p /tmp/ct-hardening
+(cd /tmp/ct-hardening && rpm2cpio "$cachetag_rpm" | cpio -idm --quiet)
+pc_verify_build "/tmp/ct-hardening$vmoddir/libvmod_cachetag.so" libvmod_cachetag.so \
+	log "$resultdir/cachetag/build.log" ||
+	die "hardening inspection failed for libvmod_cachetag.so"
+rm -rf /tmp/ct-hardening
 
 # The rpmbuild build.log and root.log copies happen in the mock_capture_logs
 # EXIT trap registered at the top of this script, on success and failure alike.
