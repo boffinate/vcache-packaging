@@ -245,6 +245,37 @@ OVERLAY_SPEC = _map(
         "patches": _list(
             _map({"file": _s(PATCH_NAME_RE), "sha256": _s(SHA256_RE)}), optional=True
         ),
+        # The installed-package behaviour suite's fixture contract.
+        #
+        # It is declared here and consumed by scripts/ci/lib/vtc-suite.sh, which
+        # names no VMOD, no file extension, no macro and no driver. Until Step 7
+        # Wave 1 dict's two values were stated in a `case` in scripts/ci/vmod/
+        # run.sh; a third VMOD would have needed a branch there, which is
+        # exactly the shape the shared library exists to avoid.
+        "behaviour": _map(
+            {
+                # Fixture packages the verify container installs before the
+                # suite runs -- a database server the VTCs talk to, say. Empty
+                # for a suite that needs nothing but the engine.
+                "packages": _map({"debian": _list(_s(DEP_RE)), "rpm": _list(_s(DEP_RE))}),
+                # Where the fixtures are inside the release archive, and which
+                # files out of it the suite needs. A match keeps its path
+                # relative to fixture_root, so a runner that resolves its own
+                # assets relative to itself still finds them.
+                "fixture_root": _s(PATH_RE),
+                "fixture_patterns": _list(_s(r"^[A-Za-z0-9*][A-Za-z0-9._/*+-]*$"), min_len=1),
+                # vinyltest -D macros. The literal token @FIXTURES@ becomes the
+                # staged fixture directory; anything else passes through.
+                "macros": _list(_s(r"^[A-Za-z_][A-Za-z0-9_]*=[^\s]+$"), min_len=1),
+                # `none` runs vinyltest over the whole ledger at once. Otherwise
+                # a path under the fixture directory naming an executable staged
+                # out of the archive, which takes the test driver as its first
+                # argument and one VTC as its last -- upstream's own suite
+                # runner, for a suite whose fixtures are servers rather than
+                # files.
+                "driver": _s(r"^(none|[A-Za-z0-9][A-Za-z0-9._/-]*)$"),
+            }
+        ),
     }
 )
 
@@ -568,6 +599,17 @@ def build_model(
             "binary": list(overlay["lintian_overrides"]["binary"]),
         },
         "patches": patches,
+        # Not rendered into any recipe: the lane consumes it through `lane-env`.
+        # It lives in the model because it is a fact about one VMOD that the
+        # generator already owns the schema for, and because putting it anywhere
+        # else would mean a second reader of the overlay.
+        "behaviour": {
+            "packages": list(overlay["behaviour"]["packages"][family]),
+            "fixture_root": overlay["behaviour"]["fixture_root"],
+            "fixture_patterns": list(overlay["behaviour"]["fixture_patterns"]),
+            "macros": list(overlay["behaviour"]["macros"]),
+            "driver": overlay["behaviour"]["driver"],
+        },
         "artifacts": names,
     }
 
@@ -1495,6 +1537,7 @@ def cmd_lane_env(args) -> int:
     package = model["package"]
     engine = model["engine"]
     payload = model["payload"]
+    behaviour = model["behaviour"]
     values = {
         "VMOD_SOURCE_NAME": package["debian_source_name"],
         "VMOD_BINARY_NAME": package["debian_binary_name"],
@@ -1505,6 +1548,15 @@ def cmd_lane_env(args) -> int:
         "VMOD_SOURCE_DATE_EPOCH": model["source"]["source_date_epoch"],
         "VMOD_OBJECT": payload["vmod_object"],
         "VMOD_MAN_PAGE": payload["man_pages"][0],
+        # The behaviour suite's fixture contract, for scripts/ci/lib/vtc-suite.sh.
+        # Space-separated because the shared functions take word lists; the
+        # overlay schema forbids whitespace inside any element, so the split is
+        # unambiguous. Declared per VMOD, consumed by a runner that names none.
+        "VMOD_TEST_PACKAGES": " ".join(behaviour["packages"]),
+        "VMOD_TEST_FIXTURE_ROOT": behaviour["fixture_root"],
+        "VMOD_TEST_FIXTURES": " ".join(behaviour["fixture_patterns"]),
+        "VMOD_TEST_MACROS": " ".join(behaviour["macros"]),
+        "VMOD_TEST_DRIVER": behaviour["driver"],
         "VINYL_VMODDIR": engine["vmoddir"],
         "VINYL_STRICT_ABI": engine["strict_abi"],
         "VINYL_VRT": engine["vrt"],

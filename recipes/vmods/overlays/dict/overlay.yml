@@ -205,6 +205,34 @@ payload:
     - NEWS
     - AUTHORS
 
+behaviour:
+  # The installed-package behaviour suite's fixture contract. These two values
+  # were hardcoded in a `case` in scripts/ci/vmod/run.sh until Step 7 Wave 1;
+  # they are the same values, moved to the file that owns per-VMOD facts.
+
+  # Nothing to install: the ported VTCs drive the packaged daemon and read a
+  # dictionary file. The Debian and RPM lists are separate because a fixture
+  # package is a distribution package name, not a portable one.
+  packages:
+    debian: []
+    rpm: []
+
+  # tests/*.dict in the release archive: the dictionaries tests/ci.at and
+  # tests/cs.at load. They are staged from upstream's archive rather than
+  # copied into this repository, so the oracle's input data cannot drift from
+  # the expectations the ported VTCs assert.
+  fixture_root: tests
+  fixture_patterns:
+    - "*.dict"
+
+  # The ported VTCs address the staged directory as ${dictdir}.
+  macros:
+    - "dictdir=@FIXTURES@"
+
+  # vinyltest runs the whole ledger itself; there are no fixture servers to
+  # start.
+  driver: none
+
 lintian_overrides:
   source: []
 

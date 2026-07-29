@@ -38,7 +38,11 @@ die() {
 : "${VMOD_RPM_NAME:?}" "${VMOD_OBJECT:?}" "${VMOD_UPSTREAM_VERSION:?}" "${VMOD_RPM_RELEASE:?}"
 : "${VINYL_VMODDIR:?}" "${VINYL_STRICT_ABI:?}" "${VINYL_VRT:?}" "${COHORT_ID:?}"
 : "${VMOD_MAN_PAGE:?}" "${VMOD_SOURCE_SHA256:?}"
-: "${VMOD_TEST_FIXTURES:?}" "${VMOD_TEST_FIXTURE_MACRO:?}"
+: "${VMOD_TEST_FIXTURE_ROOT:?}" "${VMOD_TEST_FIXTURES:?}" "${VMOD_TEST_MACROS:?}"
+: "${VMOD_TEST_DRIVER:?}"
+# VMOD_TEST_PACKAGES may legitimately be empty: dict's suite needs no fixture
+# server. It is still declared, so `set -u` on an UNSET name stays a defect.
+: "${VMOD_TEST_PACKAGES?}"
 
 # shellcheck source=../../lib/package-checks.sh
 . /lane/scripts/package-checks.sh
@@ -146,9 +150,14 @@ echo "OK: runtime pair installed, single packaged .so, packaged vinyltest driver
 
 note "8 -- behaviour: upstream's own expectations against the installed package"
 archive=$(find /lane/src -maxdepth 1 -name '*.tar.gz' | sort | head -1)
-vtc_stage_fixtures "$archive" "$VMOD_SOURCE_SHA256" "$VMOD_TEST_FIXTURES" /tmp/fixtures ||
+# shellcheck disable=SC2086 # the declared package list is a deliberate word list
+vtc_install_packages dnf $VMOD_TEST_PACKAGES ||
+	die "the declared behaviour fixture packages could not be installed"
+vtc_stage_fixtures "$archive" "$VMOD_SOURCE_SHA256" \
+	"$VMOD_TEST_FIXTURE_ROOT" "$VMOD_TEST_FIXTURES" /tmp/fixtures ||
 	die "the declared test fixtures could not be staged"
-vtc_run_suite /lane/tests "$VINYL_VMODDIR" "$VMOD_TEST_FIXTURE_MACRO" /tmp/fixtures ||
+vtc_run_suite /lane/tests "$VINYL_VMODDIR" /tmp/fixtures \
+	"$VMOD_TEST_DRIVER" "$VMOD_TEST_MACROS" ||
 	die "the installed-package behaviour suite failed"
 
 note "verify-rpm complete"

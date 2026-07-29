@@ -105,40 +105,31 @@ note "buildroot image, from the verified engine identity: $image"
 # not a second reading of the image pin, the thing the runbook rule is about.
 . "$repo/recipes/debian-13/pins.env"
 
-# WAVE 1 SEAM -- the behaviour suite's fixture contract.
+# The behaviour suite's fixture contract comes out of the overlay, through the
+# `lane-env` eval above, exactly like the package names: VMOD_TEST_PACKAGES,
+# VMOD_TEST_FIXTURE_ROOT, VMOD_TEST_FIXTURES, VMOD_TEST_MACROS and
+# VMOD_TEST_DRIVER. Until Step 7 Wave 1 dict's two values were a `case` here,
+# with no default so that a third VMOD would fail loudly rather than inherit
+# them; the third VMOD arrived, and the case became the declaration.
 #
-# Which files out of the verified release archive are test fixtures, and what
-# vinyltest macro the ported VTCs address them by. Both were hardcoded inside
-# the two verify scripts until Step 7 Wave 0 moved the staging into the shared
-# scripts/ci/lib/vtc-suite.sh, which names no VMOD and no file extension. They
-# are stated here, once, until Wave 1 declares them in the overlay and renders
-# them through `vmod_recipe.py lane-env` beside the package names; that change
-# deletes this block and adds two variables to the eval above, and nothing else
-# moves.
-#
-# A `case` with no default rather than a default value, deliberately: a third
-# VMOD arriving before the overlay work must fail loudly here instead of
-# silently inheriting dict's fixtures and running its suite against the wrong
-# input.
-case $vmod_id in
-dict)
-	VMOD_TEST_FIXTURES='tests/*.dict'
-	VMOD_TEST_FIXTURE_MACRO=dictdir
-	;;
-*)
-	die "no fixture contract for '$vmod_id'. Declare its test fixtures and their
-vinyltest macro (Wave 1: in the overlay; until then: here), because a behaviour
-suite that runs without its fixtures tests nothing the VMOD does."
-	;;
-esac
+# Through an --env-file rather than through $common_env, because three of the
+# five values are word LISTS and $common_env is expanded unquoted. A pattern
+# list folded into that would arrive in the container as several variables and
+# several stray docker flags.
+fixture_env=$lane/fixture.env
+{
+	printf 'VMOD_TEST_PACKAGES=%s\n' "$VMOD_TEST_PACKAGES"
+	printf 'VMOD_TEST_FIXTURE_ROOT=%s\n' "$VMOD_TEST_FIXTURE_ROOT"
+	printf 'VMOD_TEST_FIXTURES=%s\n' "$VMOD_TEST_FIXTURES"
+	printf 'VMOD_TEST_MACROS=%s\n' "$VMOD_TEST_MACROS"
+	printf 'VMOD_TEST_DRIVER=%s\n' "$VMOD_TEST_DRIVER"
+} >"$fixture_env"
 
 # CI is forwarded, not inherited: docker gives the container a fresh
 # environment, so mock_setup_build_user's "root-owned mount is fatal in CI"
 # guard would be decorative without this. Empty when run from a workstation,
 # which is exactly when the uid-1000 fallback is the wanted behaviour.
 common_env="-e CI=${CI:-} \
- -e VMOD_TEST_FIXTURES=$VMOD_TEST_FIXTURES \
- -e VMOD_TEST_FIXTURE_MACRO=$VMOD_TEST_FIXTURE_MACRO \
  -e VMOD_ID=$vmod_id \
  -e VMOD_SOURCE_NAME=$VMOD_SOURCE_NAME \
  -e VMOD_BINARY_NAME=$VMOD_BINARY_NAME \
@@ -171,6 +162,7 @@ verify-deb)
 	# shellcheck disable=SC2086 # common_env and platform are deliberate flag lists
 	docker run --rm \
 		-v "$lane:/lane" \
+		--env-file "$fixture_env" \
 		$common_env -w /lane \
 		"$image" bash -c 'bash /lane/scripts/verify-deb.sh'
 	;;
@@ -187,6 +179,7 @@ verify-rpm)
 	# shellcheck disable=SC2086 # common_env and platform are deliberate flag lists
 	docker run --rm \
 		-v "$lane:/lane" \
+		--env-file "$fixture_env" \
 		$common_env -w /lane \
 		"$image" bash -c 'bash /lane/scripts/verify-rpm.sh'
 	;;

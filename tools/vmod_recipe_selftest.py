@@ -1550,6 +1550,80 @@ def test_patch_declared_twice_is_refused(root: Path) -> None:
     )
 
 
+def test_behaviour_contract_reaches_the_lane(root: Path) -> None:
+    """The fixture contract is declared per VMOD and consumed generically.
+
+    It used to be a `case` in scripts/ci/vmod/run.sh, which a third VMOD would
+    have had to add a branch to. What matters here is that every value the
+    shared runner takes as an argument comes out of the overlay, per family,
+    and reaches `lane-env` -- because a value the lane computes for itself is a
+    second place for it to be wrong.
+    """
+    deb = _model(root)
+    rpm = _model(
+        root,
+        target=manifest_mod.load_target(
+            root / "registry" / "targets" / RELEASE_COHORT / "el9-x86_64.yml"
+        ),
+    )
+    check(
+        "behaviour: dict declares the fixtures the run.sh case used to hold",
+        deb["behaviour"]["fixture_root"] == "tests"
+        and deb["behaviour"]["fixture_patterns"] == ["*.dict"]
+        and deb["behaviour"]["macros"] == ["dictdir=@FIXTURES@"]
+        and deb["behaviour"]["driver"] == "none",
+        str(deb["behaviour"]),
+    )
+    check(
+        "behaviour: the package list is selected per family",
+        deb["behaviour"]["packages"] == []
+        and rpm["behaviour"]["packages"] == [],
+        f"{deb['behaviour']['packages']} / {rpm['behaviour']['packages']}",
+    )
+    import io
+    import contextlib
+
+    args = vr.build_parser().parse_args(
+        [
+            "lane-env",
+            "--manifest", str(root / DICT_MANIFEST),
+            "--overlay", str(root / DICT_OVERLAY),
+            "--cohort", RELEASE_COHORT,
+            "--target", "debian-13-amd64",
+        ]
+    )
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        vr.cmd_lane_env(args)
+    emitted = dict(
+        line.split("=", 1) for line in buffer.getvalue().splitlines() if "=" in line
+    )
+    for name, want in (
+        ("VMOD_TEST_FIXTURE_ROOT", "tests"),
+        ("VMOD_TEST_FIXTURES", "*.dict"),
+        ("VMOD_TEST_MACROS", "dictdir=@FIXTURES@"),
+        ("VMOD_TEST_DRIVER", "none"),
+        ("VMOD_TEST_PACKAGES", ""),
+    ):
+        check(
+            f"behaviour: lane-env carries {name}",
+            emitted.get(name) == f"'{want}'",
+            f"{emitted.get(name)!r} != {want!r}",
+        )
+    # And the shared runner must still name no VMOD. This is the property the
+    # whole contract exists for, so it is asserted rather than assumed.
+    runner = (root / "scripts" / "ci" / "lib" / "vtc-suite.sh").read_text(encoding="utf-8")
+    body = "\n".join(
+        line for line in runner.splitlines() if not line.lstrip().startswith("#")
+    )
+    for word in ("dict", "redis", "dictdir", ".dict", "runner.sh"):
+        check(
+            f"behaviour: the shared suite runner does not mention {word!r} in code",
+            word not in body,
+            body,
+        )
+
+
 def test_archive_method_and_url_must_agree(root: Path) -> None:
     """The method and the manifest's archive_url are one statement, not two."""
     inputs = _inputs(root)
@@ -1618,6 +1692,7 @@ def main(repo_root: Path = None) -> int:
     test_patch_is_rendered_digested_and_verbatim(root)
     test_patch_content_changes_the_recipe_digest(root)
     test_patch_declared_twice_is_refused(root)
+    test_behaviour_contract_reaches_the_lane(root)
     test_archive_method_and_url_must_agree(root)
 
     failed = 0
