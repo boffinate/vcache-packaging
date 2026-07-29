@@ -1316,7 +1316,18 @@ _PATCH_TEXT = (
 )
 
 
-def _patched_overlay(root: Path, text: str = _PATCH_TEXT, digest: str = None):
+# dict's own release commit. The patch fixtures below are dict-shaped overlays,
+# so a patch declared on one has to be reviewed against dict's selected source
+# or the new cross-check refuses it -- which is the cross-check working.
+DICT_COMMIT = "784584d272894a39cf995377618aad551a196424"
+
+
+def _patched_overlay(
+    root: Path,
+    text: str = _PATCH_TEXT,
+    digest: str = None,
+    reviewed_against: str = DICT_COMMIT,
+):
     """A dict-shaped overlay in a temporary directory, with one patch declared.
 
     Returns ``(overlay_path, patch_path)``. Copying dict's real overlay keeps
@@ -1336,7 +1347,9 @@ def _patched_overlay(root: Path, text: str = _PATCH_TEXT, digest: str = None):
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     overlay_path.write_text(
         overlay_path.read_text(encoding="utf-8")
-        + f"\npatches:\n  - file: 0001-fixture.patch\n    sha256: {digest}\n",
+        + "\npatches:\n  - file: 0001-fixture.patch\n"
+        + f"    sha256: {digest}\n"
+        + f"    reviewed_against: {reviewed_against}\n",
         encoding="utf-8",
     )
     return overlay_path, patch_path
@@ -1547,7 +1560,8 @@ def test_patch_declared_twice_is_refused(root: Path) -> None:
     digest = hashlib.sha256(patch_path.read_bytes()).hexdigest()
     overlay_path.write_text(
         overlay_path.read_text(encoding="utf-8")
-        + f"  - file: 0001-fixture.patch\n    sha256: {digest}\n",
+        + f"  - file: 0001-fixture.patch\n    sha256: {digest}\n"
+        + f"    reviewed_against: {DICT_COMMIT}\n",
         encoding="utf-8",
     )
     _expect_error(
@@ -1680,16 +1694,117 @@ def test_behaviour_contract_reaches_the_lane(root: Path) -> None:
         )
     # And the shared runner must still name no VMOD. This is the property the
     # whole contract exists for, so it is asserted rather than assumed.
+    #
+    # The forbidden words are DERIVED from the catalog and the overlays, not
+    # listed. A fixed list -- it was five strings -- checks that the runner does
+    # not name the VMODs somebody thought of while writing the test, which is
+    # not the property. The audit demonstrated the gap directly: a hardcoding
+    # for a VMOD not in the list would have passed. Deriving it means a fourth
+    # VMOD's id, macro name, fixture extension and driver basename are all
+    # forbidden the moment its manifest lands, with nobody having to remember.
     runner = (root / "scripts" / "ci" / "lib" / "vtc-suite.sh").read_text(encoding="utf-8")
     body = "\n".join(
         line for line in runner.splitlines() if not line.lstrip().startswith("#")
     )
-    for word in ("dict", "redis", "dictdir", ".dict", "runner.sh"):
+    forbidden = _behaviour_vocabulary(root)
+    check(
+        "behaviour: the forbidden vocabulary is derived from the catalog, not listed",
+        {"dict", "redis", "dictdir", ".dict", "runner.sh"} <= forbidden,
+        str(sorted(forbidden)),
+    )
+    for word in sorted(forbidden):
         check(
             f"behaviour: the shared suite runner does not mention {word!r} in code",
             word not in body,
             body,
         )
+
+
+def _behaviour_vocabulary(root: Path) -> set:
+    """Every per-VMOD word the shared suite runner must not contain.
+
+    Derived, per W1: the catalog's ids, plus each overlay's macro NAMES, its
+    fixture-pattern extensions and directory components, and its driver
+    basename. Macro VALUES are excluded on purpose -- `@FIXTURES@` is the shared
+    contract's own token and appears in the runner by design, and a value like
+    `redis` is already covered by the id.
+    """
+    words = set()
+    recipe_root = root / vr.RECIPE_ROOT
+    for entry in ci_matrix.discover(root):
+        words.add(entry["id"])
+        overlay_path = recipe_root / "overlays" / entry["id"] / "overlay.yml"
+        if not overlay_path.is_file():
+            # cachetag is in the catalog and is not generated; it has no
+            # overlay, and that is not a defect.
+            continue
+        behaviour = vr.load_overlay(overlay_path)["behaviour"]
+        for macro in behaviour["macros"]:
+            words.add(macro.split("=", 1)[0])
+        for pattern in behaviour["fixture_patterns"]:
+            base = pattern.rsplit("/", 1)[-1]
+            if "*" in base:
+                # A glob: what identifies the VMOD is the extension it selects
+                # on (`*.dict`), not the star.
+                suffix = base.lstrip("*")
+                if suffix.startswith("."):
+                    words.add(suffix)
+            else:
+                # A literal name: the whole name, not its extension. `.sh` is
+                # not a per-VMOD word and forbidding it would stop the shared
+                # runner from ever mentioning a script.
+                words.add(base)
+            for component in pattern.split("/")[:-1]:
+                if "*" not in component:
+                    words.add(component)
+        if behaviour["driver"] != "none":
+            words.add(behaviour["driver"].rsplit("/", 1)[-1])
+    # Never let the derivation quietly produce nothing useful: a set this small
+    # would mean the loop above found no overlays and the check became vacuous.
+    if len(words) < 3:
+        raise AssertionError(f"the derived behaviour vocabulary is too small: {words}")
+    return words
+
+
+def test_patch_reviewed_against_must_be_the_selected_commit(root: Path) -> None:
+    """A ref move under an unreviewed patch is a hard refusal (G1).
+
+    Nothing else could catch this. The file is intact, its digest is right, and
+    it is being applied to a tree nobody read it against -- which is the exact
+    shape of the maintenance risk the note flagged as having no mechanism.
+    """
+    stale, _ = _patched_overlay(root, reviewed_against="0" * 39 + "1")
+    _expect_error(
+        "patches: a patch reviewed against another commit is refused",
+        lambda: _generate_with(root, stale, "debian-13-amd64"),
+        "the source moved under a patch nobody re-read",
+    )
+    _expect_error(
+        "patches: the same refusal on the RPM family",
+        lambda: _generate_with(root, stale, "el9-x86_64"),
+        "was reviewed against",
+    )
+    ok, _ = _patched_overlay(root)
+    _m, _o, record = _generate_with(root, ok, "debian-13-amd64")
+    check(
+        "patches: the reviewed commit is recorded in the generation record",
+        record["patches"][0]["reviewed_against"] == DICT_COMMIT,
+        str(record["patches"]),
+    )
+    # And the real overlay must satisfy it against the real manifest, which is
+    # the only place this is checked against data nobody wrote for the test.
+    redis_overlay = vr.load_overlay(
+        root / vr.RECIPE_ROOT / "overlays" / "redis" / "overlay.yml"
+    )
+    redis_manifest = vr.load_vmod_manifest(root / "registry" / "vmods" / "redis.yml", "redis")
+    check(
+        "patches: redis's declared patch is reviewed against its selected commit",
+        all(
+            entry["reviewed_against"] == redis_manifest["sources"]["release"]["expected_commit"]
+            for entry in redis_overlay["patches"]
+        ),
+        str(redis_overlay["patches"]),
+    )
 
 
 def test_archive_method_and_url_must_agree(root: Path) -> None:
@@ -1760,6 +1875,7 @@ def main(repo_root: Path = None) -> int:
     test_patch_is_rendered_digested_and_verbatim(root)
     test_patch_content_changes_the_recipe_digest(root)
     test_patch_declared_twice_is_refused(root)
+    test_patch_reviewed_against_must_be_the_selected_commit(root)
     test_reviewed_rpmlint_overrides_are_rendered(root)
     test_behaviour_contract_reaches_the_lane(root)
     test_archive_method_and_url_must_agree(root)

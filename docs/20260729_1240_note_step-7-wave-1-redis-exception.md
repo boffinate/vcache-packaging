@@ -68,15 +68,16 @@ Two decisions inside it are worth stating.
 
 `patches:` in the overlay is a list of `{file, sha256}` under `overlays/<id>/patches/`, applied in the written order. Rendered as `debian/patches/` plus a 3.0 (quilt) `series` for Debian, and `PatchN:` with `%autosetup -p1` for RPM — same patches, same order, one declaration.
 
-Three properties, each a test:
+Four properties, each a test:
 
 - **missing file** → generation fails, naming the path;
 - **digest moved** → generation fails, printing both digests and saying not to update the pin to make it pass;
+- **reviewed against another commit** → generation fails. `reviewed_against` is required on every patch entry and must equal the manifest's `expected_commit` for the channel being generated. This is the one nothing else could catch: the file is intact and its digest is right, and it is being applied to a tree nobody read it against. It was the note's own open question 1 and the audit ruled it in; it is what schedules the re-review a version bump needs, and moving the tag is now a hard refusal rather than a silent carry-forward;
 - **content is inside `recipe_sha256`** → the patch is BOTH an input of the generation record (`inputs["patch:<name>"]`) and a rendered output. Changing one byte changes the recipe digest on both families, which is verification case 10's "cannot be omitted or silently replaced" stated as an assertion.
 
 Patch bytes bypass the whitespace normaliser. A context line in a unified diff may legitimately end in a space, and normalising one would produce a patch that silently no longer applies.
 
-**And the lane refuses one too.** `generate.sh --omit-patch` (injection `patch_omission`) deletes a rendered patch after generation. Debian refuses because `dpkg-source` cannot read a file the series names — measured: `dpkg-source: error: cannot read libvmod-redis-23.1/debian/patches/0001-build-against-vinyl-cache.patch`. EL9 refuses because `build-rpm.sh` now compares the spec's `Patch` lines against the files rendered beside it. Two families, two mechanisms, both fatal.
+**And the lane refuses one too, in two places.** `ci_matrix.expand` refuses `patch_omission` aimed at a VMOD whose overlay declares no patches, before a runner is started — three of Wave B's ten defects were inert injections producing green runs that looked like demonstrations, and this one has exactly that shape available to it. Then `generate.sh --omit-patch` deletes a rendered patch after generation. Debian refuses because `dpkg-source` cannot read a file the series names — measured: `dpkg-source: error: cannot read libvmod-redis-23.1/debian/patches/0001-build-against-vinyl-cache.patch`. EL9 refuses because `build-rpm.sh` now compares the spec's `Patch` lines against the files rendered beside it. Two families, two mechanisms, both fatal.
 
 ### R2 — what a bounded shim is, recorded
 
@@ -95,6 +96,8 @@ The overlay declares `behaviour:` — fixture packages per family, the fixture r
 - `vtc_stage_fixtures` takes a root and keeps each match's path relative to it. Necessary, not cosmetic: upstream's runner resolves its TLS certificates as `$ROOT/assets/…`, and a flattened copy would leave it looking for files that are not there.
 - `vtc_run_suite` takes a driver. `none` is the old behaviour — the whole ledger through `vinyltest` in one go. Otherwise it is an executable staged out of the archive, given the test driver as its first argument and one VTC as its last, once per case. That shape is forced: upstream's runner decides which fixture topology to launch by matching the **last** argument against `standalone.*` or `clustered.*`, and it tears the servers down on exit.
 - `vtc_install_packages`, so an empty declaration is a no-op rather than a branch in each caller.
+
+The genericity assertion **derives** its forbidden vocabulary from the catalog and the overlays — every VMOD id, every macro name, every fixture extension and directory component, every driver basename — rather than listing words somebody thought of. The audit demonstrated why: against a fixed list, a hardcoding for a VMOD not in that list would have passed. A fourth VMOD's vocabulary becomes forbidden the moment its manifest lands, with nobody having to remember.
 
 **dict migrated to the contract in the same change**, which is what makes "generic" a measurement. Its two hardcoded values moved from a `case` in `run.sh` into its overlay; its rendered recipe did not move, because the contract is lane data and is not rendered into any recipe.
 
@@ -171,13 +174,13 @@ The lane code itself was exercised too, in containers, against the real inputs:
 
 - **No package was built.** The lane images are digest-pinned and this host is arm64; `run.sh` documents why it will not pass `--platform` against a digest. The Mock and pbuilder stages need x86_64.
 - **No installed-package verification.** It needs x86_64 packages on an x86_64 package manager.
-- **`rpmlint` on the redis RPM.** Its `License:` field is `BSD-2-Clause AND BSD-3-Clause AND LicenseRef-Public-Domain`, and rpmlint 1.11 predates SPDX. `invalid-license` is a live possibility, and `rpmlint_overrides.filters` is deliberately **empty** rather than pre-populated: a filter for a finding that does not fire produces its own complaint, and guessing at a waiver is exactly the habit the mechanism exists to replace.
+- **`rpmlint` on the redis RPM.** Its `License:` field is `BSD-2-Clause AND BSD-3-Clause AND LicenseRef-Public-Domain`, and rpmlint 1.11 predates SPDX, so `invalid-license` is expected. redis carries **one** filter, written for the full rendered expression: the cachetag lane's `(BSD-2-Clause|MPL-2\.0)` regex does **not** match a compound field, because rpmlint reports the whole `License:` value rather than a token from it, and reusing it would have failed the row on a finding that was reviewed. Nothing else is waived. **Wave 2's unfiltered informational pass is the measurement, and it binds: if `invalid-license` does not fire, the filter is dead and is removed in the same wave, before redis is ever released.**
 
 ## What Wave 2 must prove live
 
 1. **Both redis packages build**, on both targets, through the consolidated lane.
 2. **The full 20-VTC suite passes against the INSTALLED package**, on both targets. The local runs were source-built; the subject has to be the packaged `.so` reached through `-p vmod_path`.
-3. **rpmlint on redis.** If `invalid-license` fires, it gets a reviewed filter with its reason and redis goes to package revision 2. If anything else fires, it is a finding about the templates or the overlay first.
+3. **rpmlint on redis.** Read the **unfiltered informational pass**. If `invalid-license` does not fire, the one declared filter is removed in this wave. If anything else fires, it is a finding about the templates or the overlay first, not a waiver.
 4. **lintian on redis.** Upstream's `dist_doc_DATA` installs `LICENSE` into the documentation directory, which raises `extra-license-file`. Checked in a `debian:13` container: severity **info**, so `--fail-on error,warning` does not fail on it. Confirm rather than assume.
 5. **dict's revision-2 evidence, re-recorded**, and `--require-releasable` back to green.
 6. **Verification case 10, both demonstrations.** `inject=patch_omission` must produce `failed_package_build` on both redis rows while cachetag's six and dict's four complete. And the recorded `recipe_sha256` for redis must be the value this branch renders — that is the evidence half, and it is what makes a substituted patch impossible to hide.
@@ -188,11 +191,11 @@ The lane code itself was exercised too, in containers, against the real inputs:
 
 | Check | Result |
 | --- | --- |
-| `vmod_recipe.py selftest` | **201/201**, exit 0 |
-| `ci_matrix.py selftest` | **230/230**, exit 0, then 201/201 for the generator |
-| `release_tool.py selftest` | **149/149**, exit 0 |
+| `vmod_recipe.py selftest` | **209/209**, exit 0 |
+| `ci_matrix.py selftest` | **233/233**, exit 0, then 209/209 for the generator |
+| `release_tool.py selftest` | **153/153**, exit 0 |
 | `release_tool.py validate` | OK, 10 manifests |
-| `release_tool.py validate --require-releasable` | **RED, and correctly so** — 28 errors, dict and redis both `pending`, cachetag blamed for none of them |
+| `release_tool.py validate --require-releasable` | **RED, and correctly so** — 30 errors, dict and redis both `pending`, cachetag blamed for none of them |
 | `ci_matrix.py check-catalog` | OK, **3 VMODs** |
 | `ci_matrix.py ledger --tier ci` | **19 rows, 18 selected** |
 | containerised `actionlint`, all workflows | clean |
@@ -203,9 +206,34 @@ Three `release_tool.py` self-tests had to move with this, and the reason is wort
 
 `scripts/ci/lib/` changed in exactly one file, `vtc-suite.sh`, and only for the fixture contract: a fixture root and a driver argument, plus `vtc_install_packages`. Its cachetag callers are `verify-deb.sh` and `verify-rpm.sh`, both of which changed with it; the cachetag lanes' own suites do not use this file (Wave 0's `debug=+vclrel` carry-forward, still five files, still open).
 
+## The audit's fix batch, 2026-07-29
+
+The audit returned **clear for Wave 2, no code defects**: the byte-identity proof reproduced across all four commits, the patch verified claim-by-claim against real Vinyl source, and every fail-closed probe refused correctly. Five items came back, all implemented before dispatch.
+
+| Item | What it closes |
+| --- | --- |
+| **W1** | The vtc-suite genericity assertion derived its forbidden words from a fixed five-string list. A hardcoding for a VMOD not in that list would have passed — demonstrated, not hypothesised. The vocabulary is now derived from `registry/vmods/` plus every overlay's macro names, fixture extensions, path components and driver basename. |
+| **G1** | `reviewed_against` on every patch entry, cross-checked against the manifest's `expected_commit`. |
+| **G2** | redis's `invalid-license` filter, written for the full compound expression, with the measurement rule that removes it if Wave 2's unfiltered pass shows the tag does not fire. |
+| **G3** | `tests.fixture_packages` in the per-VMOD evidence schema, required for a releasable entry whose overlay declares fixture packages, selected per family. |
+| **G4** | `patch_omission` aimed at a patchless VMOD raises at expansion time. |
+
+G1 and G2 both changed redis's rendered RPM recipe, so the case-10 evidence-half values were re-derived after the batch and are recorded below.
+
+| Recipe | `recipe_sha256` |
+| --- | --- |
+| redis `debian-13-amd64` | `cd7a6c24ae7b1aa1de90595c7d0fe1b1467d7934560c2b90a456ff8a2c753651` |
+| redis `el9-x86_64` | `74f1a930c860f8fb6d930075e8e3e72f95ec5e9777480ae5c8ce19ea7e1d53ac` |
+| dict `debian-13-amd64` | `6f637e4bc4f09968b4e1662f30773de866d2df2698f8c97889480bd29f3be1e1` |
+| dict `el9-x86_64` | `a814b6245a11ec2058f7b378fd9c45d0d5b4251bec9a887debfdbc0baf141b65` |
+
+The redis Debian digest is unchanged by the batch, which is the expected shape: `reviewed_against` is not a rendered token and `rpmlint_overrides` has no Debian output. The EL9 digest moved from `c1f1229ed1f2b0f58eec49e179605ab25fffd67ba62686f0ec36a82e7e6a4b61` because the waiver file is now rendered.
+
 ## Open questions for the audit
 
-1. **The patch is pinned to one tag, and nothing schedules its re-review.** A version bump has to re-derive it, review it, and record a new digest. Nothing in the registry expresses "this patch was reviewed against commit X" other than the patch living beside a manifest that names X. Is a `reviewed_against` field worth its validation rules, or is the coupling adequate as it stands?
-2. **`rpmlint_overrides.filters: []` on redis.** Left empty deliberately, so Wave 2 measures rather than guesses. If `invalid-license` fires it costs redis a package revision before it has ever been released. Would it be better to record the filter now on the strength of the cachetag lane already carrying the identical waiver for the identical reason?
-3. **The behaviour suite now depends on a distribution package outside the selected set.** `redis-server` 8.0.2 on Debian and 6.2.20 on EL9 are different enough that "the suite passes" means two different things. Both pass today. Should the versions be recorded as evidence in `registry/targets/`, the way build dependencies are, so a distribution's redis moving becomes a visible change rather than a silent one?
-4. **`--omit-patch` is the only injection that acts on exactly one VMOD by construction** rather than by table choice, because redis is the only patched VMOD. The table says so with a comment. Is that the right place for the constraint, or should the injection be refused at expansion time when the target VMOD declares no patches?
+1. ~~**The patch is pinned to one tag, and nothing schedules its re-review.**~~ **Closed by the audit, 2026-07-29.** `reviewed_against` is required on every patch entry and cross-checked against the manifest's `expected_commit`. Moving the ref is now a hard validation failure that only a deliberate re-review clears.
+2. ~~**`rpmlint_overrides.filters: []` on redis.**~~ **Closed by the audit, 2026-07-29.** The `invalid-license` filter is recorded now, written for the full compound expression rather than reused from cachetag, whose regex would not have matched it. The measurement rule is written into the overlay: Wave 2's unfiltered pass decides whether the filter survives.
+3. ~~**The behaviour suite now depends on a distribution package outside the selected set.**~~ **Closed by the audit, 2026-07-29.** `tests.fixture_packages` is now part of the per-VMOD evidence schema, beside `build.build_dependencies` and recorded the same way: name and version, from the run. `--require-releasable` refuses a recorded entry that does not name every fixture package the VMOD's overlay declares **for that target's family** — the overlay declares both because a fixture package is a distribution package name, and requiring the union would ask each target to record what the other installed.
+4. ~~**`--omit-patch` is the only injection that acts on exactly one VMOD by construction.**~~ **Closed by the audit, 2026-07-29.** `ci_matrix.expand` raises when `patch_omission` targets a VMOD whose overlay declares no patches. The lane guard stays as well, deliberately: this one fails before a runner starts and names the manifest, the lane's fails if the declaration changes between expansion and generation, and belt and braces is the right posture when the failure being guarded against is silence.
+
+There are no open questions left from Wave 1. The audit's five items (W1, G1–G4) are implemented above.

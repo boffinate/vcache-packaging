@@ -254,8 +254,23 @@ OVERLAY_SPEC = _map(
         # substitution pass or a shared shim layer remains forbidden -- if N
         # VMODs need the same change, that is an adapter decision, not N copies
         # of a patch.
+        # `reviewed_against` is the commit the patch was reviewed against, and
+        # it is cross-checked against the manifest's expected_commit for the
+        # channel being generated. It exists because nothing else schedules the
+        # re-review a version bump needs: without it, moving the manifest's ref
+        # forward silently carries the old patch onto new source, and the only
+        # thing that would notice is a build failure or, worse, a build that
+        # succeeded against source nobody re-read. With it, a ref move is a hard
+        # refusal cleared only by re-reviewing the patch and saying so here.
         "patches": _list(
-            _map({"file": _s(PATCH_NAME_RE), "sha256": _s(SHA256_RE)}), optional=True
+            _map(
+                {
+                    "file": _s(PATCH_NAME_RE),
+                    "sha256": _s(SHA256_RE),
+                    "reviewed_against": _s(COMMIT_RE),
+                }
+            ),
+            optional=True,
         ),
         # The installed-package behaviour suite's fixture contract.
         #
@@ -525,7 +540,9 @@ def build_model(
     if not any(line.strip() for line in package["description"]):
         raise GeneratorError("package.description is empty; a package description is required")
 
-    patches = _load_patches(overlay.get("patches") or [], overlay_dir)
+    patches = _load_patches(
+        overlay.get("patches") or [], overlay_dir, source["expected_commit"], channel
+    )
 
     return {
         "schema": MODEL_SCHEMA,
@@ -627,12 +644,12 @@ def build_model(
     }
 
 
-def _load_patches(declared: list, overlay_dir) -> list:
-    """Read, verify and order the reviewed patches. Fails closed on both sides.
+def _load_patches(declared: list, overlay_dir, expected_commit: str, channel: str) -> list:
+    """Read, verify and order the reviewed patches. Fails closed on three sides.
 
-    Returns ``[{'file', 'sha256', 'text'}]`` in the declared order, which is the
-    order they are applied in. Two refusals, and neither is recoverable by
-    editing anything downstream:
+    Returns ``[{'file', 'sha256', 'reviewed_against', 'text'}]`` in the declared
+    order, which is the order they are applied in. Three refusals, and none is
+    recoverable by editing anything downstream:
 
       * a declared patch file that is not there -- a recipe whose series names a
         file the source package will not contain is a build that fails much
@@ -640,7 +657,11 @@ def _load_patches(declared: list, overlay_dir) -> list:
       * a declared patch whose bytes no longer hash to the recorded digest --
         the patch was changed without the change being reviewed. Updating the
         digest is the deliberate act that makes it reviewed again, and it moves
-        the generation record, which is the point.
+        the generation record, which is the point;
+      * a declared patch reviewed against a commit that is no longer the one the
+        manifest selects -- the SOURCE moved under a patch nobody re-read. This
+        is the one nothing else could catch: the file is intact and its digest
+        is right, and it is being applied to a tree it was never read against.
     """
     if not declared:
         return []
@@ -678,7 +699,22 @@ def _load_patches(declared: list, overlay_dir) -> list:
             raise GeneratorError(
                 f"patch {name!r} is not UTF-8; a reviewed patch must be readable text"
             ) from None
-        out.append({"file": name, "sha256": digest, "text": text})
+        if entry["reviewed_against"] != expected_commit:
+            raise GeneratorError(
+                f"patch {name!r} was reviewed against {entry['reviewed_against']}, but "
+                f"sources.{channel} selects {expected_commit}. The source moved under a "
+                "patch nobody re-read. Re-read it against the new tree, confirm it still "
+                "does what its header says, and only then update reviewed_against -- "
+                "deliberately, in the same commit that explains why."
+            )
+        out.append(
+            {
+                "file": name,
+                "sha256": digest,
+                "reviewed_against": entry["reviewed_against"],
+                "text": text,
+            }
+        )
     return out
 
 
@@ -1317,7 +1353,11 @@ def generation_record(
         # File and digest only: the content is in `outputs`, and repeating it
         # here would give one set of bytes two records.
         "patches": [
-            {"file": entry["file"], "sha256": entry["sha256"]}
+            {
+                "file": entry["file"],
+                "sha256": entry["sha256"],
+                "reviewed_against": entry["reviewed_against"],
+            }
             for entry in model["patches"]
         ],
         "artifacts": dict(model["artifacts"]),

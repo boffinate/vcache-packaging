@@ -864,9 +864,10 @@ def injection_vmod(inject: str) -> str:
     return INJECTION_TARGET_VMOD.get(inject) or ""
 
 
-def expand(data: dict, tier: str, inject: str = "none") -> dict:
+def expand(data: dict, tier: str, inject: str = "none", repo_root=None) -> dict:
     """Matrices for one VMOD's reusable-workflow invocation."""
     vmod = data["id"]
+    _refuse_inert_injection(vmod, inject, repo_root)
     rows = vmod_rows(data, tier, "")
     # An injection aimed at the other VMOD must leave every row here untouched,
     # which is exactly the property the two-VMOD isolation cases demonstrate.
@@ -973,6 +974,48 @@ def expand(data: dict, tier: str, inject: str = "none") -> dict:
         "target_count": len(targets),
         "harness_count": len(harnesses),
     }
+
+
+def _refuse_inert_injection(vmod: str, inject: str, repo_root=None) -> None:
+    """An injection that cannot act is worse than an absent one (G4).
+
+    Three of Wave B's ten defects were inert injections -- a flag that reached a
+    job nothing read, producing a GREEN run that looked like a demonstration.
+    `patch_omission` has the same shape available to it: aimed at a VMOD whose
+    overlay declares no patches, it would delete nothing and the row would pass.
+
+    The lane keeps its own guard as well, and that is deliberate rather than
+    redundant. This one fails at expansion, before a runner is started, and
+    names the manifest; the lane's fails inside generate.sh if the declaration
+    changes between expansion and generation. Belt and braces is the correct
+    posture for anti-inertness specifically, because the failure mode being
+    guarded against is silence.
+    """
+    if inject != "patch_omission" or INJECTION_TARGET_VMOD.get(inject) != vmod:
+        return
+    overlay = (
+        (Path(repo_root) if repo_root else REPO_ROOT)
+        / "recipes"
+        / "vmods"
+        / "overlays"
+        / vmod
+        / "overlay.yml"
+    )
+    declared = []
+    if overlay.is_file():
+        try:
+            declared = yaml_subset.parse_file(overlay).get("patches") or []
+        except yaml_subset.ManifestSyntaxError:
+            # The overlay has its own validator; a syntax error there must not
+            # be reported here as an injection problem.
+            return
+    if not declared:
+        raise CatalogError(
+            f"inject=patch_omission targets {vmod!r}, whose overlay declares no patches. "
+            "The injection would delete nothing and the run would go green, which is a "
+            "demonstration of nothing. Point it at a VMOD with a declared patch, or "
+            "remove the injection."
+        )
 
 
 def engine_matrix(tier: str, repo_root=None, inject: str = "none") -> dict:

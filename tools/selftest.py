@@ -136,6 +136,7 @@ vmods:
       installed_package_smoke: pass
       full_behavior_suite: pass
       upgrade_transactions: pass
+      fixture_packages: []
 """
 
 
@@ -1142,6 +1143,91 @@ def test_per_vmod_evidence(repo_root: Path) -> None:
     )
 
 
+def test_fixture_packages_are_required_when_the_overlay_declares_them(repo_root: Path) -> None:
+    """G3: a releasable VMOD must say which fixture servers its suite ran against.
+
+    libvmod-redis's behaviour suite talks to a real Redis server, and the two
+    targets ship materially different ones -- 8.0.2 on Debian 13, 6.2.20 on
+    EL9. That difference is behaviourally live (upstream's runner writes
+    `enable-debug-command local` only for redis >= 7, and three of the twenty
+    VTCs use DEBUG), so "the full behaviour suite passed" means two different
+    things without this recorded.
+
+    vmod-dict's suite declares none, and an empty list stays correct for it --
+    which is the other half of the rule and is asserted here too.
+    """
+    import copy
+
+    path = repo_root / "registry" / "targets" / "vinyl-9.0.1-ac4f719c16f4" / "el9-x86_64.yml"
+    cohort = manifest.load_cohort(
+        repo_root / "registry" / "cohorts" / "vinyl-9.0.1-ac4f719c16f4.yml"
+    )
+    data = manifest.load_target(path)
+
+    # A recorded redis entry with no fixture packages must be refused. Built
+    # here rather than taken from the live file, which is pending today and
+    # will not be after Wave 2.
+    forged = copy.deepcopy(data)
+    entry = forged["vmods"]["redis"]
+    entry["evidence"] = "recorded"
+    entry.pop("pending_reason", None)
+    entry["build"].update(
+        {
+            "configure_options": "./configure",
+            "cflags": "-O2",
+            "ldflags": "-Wl,-z,relro",
+            "source_date_epoch": "1774962915",
+            "hardening_check": "pass",
+        }
+    )
+    entry["artifacts"] = [
+        {"filename": "libvmod-redis-23.1-1.el9.x86_64.rpm", "sha256": "b" * 64}
+    ]
+    entry["tests"] = {
+        "package_lint": "pass",
+        "installed_package_smoke": "pass",
+        "full_behavior_suite": "pass",
+        "upgrade_transactions": "pass",
+        "fixture_packages": [],
+    }
+    errors = manifest.validate_target(
+        forged, str(path), cohort=cohort, require_releasable=True, repo_root=repo_root
+    )
+    check(
+        "fixture_packages: a releasable redis with none recorded is refused",
+        any(
+            "tests.fixture_packages does not record ['redis']" in e and "redis" in e
+            for e in errors
+        ),
+        str(errors),
+    )
+
+    entry["tests"]["fixture_packages"] = [{"name": "redis", "version": "6.2.20-1.el9"}]
+    errors = manifest.validate_target(
+        forged, str(path), cohort=cohort, require_releasable=True, repo_root=repo_root
+    )
+    check(
+        "fixture_packages: recording the declared package clears it",
+        not any("fixture_packages" in e for e in errors),
+        str([e for e in errors if "fixture_packages" in e]),
+    )
+    check(
+        "fixture_packages: the EL9 target is asked for its OWN family's names",
+        all("redis-server" not in e for e in errors),
+        str([e for e in errors if "fixture_packages" in e]),
+    )
+
+    check(
+        "fixture_packages: dict declares none, so an empty list stays correct",
+        not any(
+            "fixture_packages" in e and "dict" in e
+            for e in manifest.validate_target(
+                forged, str(path), cohort=cohort, require_releasable=True, repo_root=repo_root
+            )
+        ),
+    )
+
+
 def test_metadata_is_byte_neutral_across_the_v2_migration(repo_root: Path) -> None:
     """Every value a v1 target produced, a v2 target still produces.
 
@@ -1310,6 +1396,7 @@ def main(repo_root: Path = None, cachetag_src=None) -> int:
     test_repo_cachetag_cross_check(root, src)
     test_required_vmods_matches_the_catalog(root)
     test_per_vmod_evidence(root)
+    test_fixture_packages_are_required_when_the_overlay_declares_them(root)
     test_metadata_is_byte_neutral_across_the_v2_migration(root)
     test_distro_native(root)
 

@@ -487,3 +487,4 @@ vmods:
       # (s16, REMOVED-VMOD -- the pin weakness the step-9 note records), and the
       # same-ABI candidate is held back rather than upgraded (s12).
       upgrade_transactions: pass
+      fixture_packages: []

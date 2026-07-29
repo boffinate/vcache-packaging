@@ -305,6 +305,25 @@ _TESTS_FIELDS = {
     "installed_package_smoke": _enum(TEST_STATUS),
     "full_behavior_suite": _enum(TEST_STATUS),
     "upgrade_transactions": _enum(TEST_STATUS),
+    # The fixture packages the behaviour suite ran against, recorded the same
+    # way build.build_dependencies records the buildroot: name and version, from
+    # the run, not restated from what a distribution is expected to ship.
+    #
+    # Added 2026-07-29 with the third VMOD, and it is not bookkeeping.
+    # libvmod-redis's suite talks to a real Redis server, and the two targets
+    # ship materially different ones -- 8.0.2 on Debian 13, 6.2.20 on EL9.
+    # The difference is behaviourally live: upstream's runner writes
+    # `enable-debug-command local` only for redis >= 7, and three of the twenty
+    # VTCs use DEBUG. They pass on 6.2 because 6.2 does not restrict DEBUG at
+    # all, which is a fact about that version rather than about the VMOD. So
+    # "the full behaviour suite passed" means two different things on the two
+    # targets, and without this field it would mean them silently.
+    #
+    # Empty is the correct and common value: a suite that needs nothing but the
+    # engine has no fixture packages, and vmod-dict's does not.
+    "fixture_packages": _list(
+        _map({"name": _s(BUILDROOT_NAME_RE), "version": _s(FREE_TEXT_RE)}), min_len=0
+    ),
 }
 
 _ARTIFACTS = _list(_map({"filename": _s(FILENAME_RE), "sha256": _s(SHA256_RE)}), min_len=0)
@@ -911,13 +930,71 @@ def validate_target(
                         "a releasable target needs recorded evidence for every selected VMOD"
                     )
                 for key, value in sorted(block["tests"].items()):
+                    # fixture_packages is a RECORD, not a verdict: it lists what
+                    # the behaviour suite ran against. Its releasability rule is
+                    # below, and it is a different rule -- an empty list is
+                    # correct for a VMOD whose suite needs no fixture server.
+                    if key == "fixture_packages":
+                        continue
                     if value not in ("pass", "not-applicable"):
                         errors.append(f"{label}tests.{key} is {value!r}; a releasable target needs 'pass'")
                 if block["build"]["hardening_check"] not in ("pass", "not-applicable"):
                     errors.append(f"{label}build.hardening_check must be 'pass' for a releasable target")
                 if not block["artifacts"]:
                     errors.append(f"{label}artifacts: a releasable target needs at least one artifact digest")
+                errors.extend(
+                    _fixture_package_errors(
+                        label, block, repo_root, data["target"]["package_format"]
+                    )
+                )
     return [f"{path}: {e}" for e in errors]
+
+
+def _fixture_package_errors(label: str, block: dict, repo_root, package_format: str) -> list:
+    """A VMOD whose suite needs fixture servers must record which ones it got.
+
+    The overlay is the authority for whether a suite has fixture packages at
+    all; this only checks that a RELEASABLE entry recorded a version for each
+    one the overlay declares. Without it, "the full behaviour suite passed"
+    means different things on two targets whose distributions ship materially
+    different servers, and means them silently -- which is the whole reason the
+    field exists.
+
+    Silent when there is no overlay (cachetag is not generated) or when the
+    overlay declares no fixture packages (vmod-dict's suite needs none).
+    """
+    vmod = label.split(".")[1] if label.startswith("vmods.") else None
+    if vmod is None or repo_root is None:
+        return []
+    overlay_path = (
+        Path(repo_root) / "recipes" / "vmods" / "overlays" / vmod / "overlay.yml"
+    )
+    if not overlay_path.is_file():
+        return []
+    try:
+        overlay = yaml_subset.parse_file(overlay_path)
+    except (OSError, yaml_subset.ManifestSyntaxError):
+        # The overlay has its own validator and its own error message; failing
+        # a target manifest for a defect in a different file would name the
+        # wrong thing.
+        return []
+    # This target's family only. The overlay declares both because a fixture
+    # package is a distribution package name -- `redis-server`/`redis-tools` on
+    # Debian, `redis` on EL9 -- and requiring the union here would demand that
+    # each target record packages the other one installed.
+    family = "debian" if package_format == "deb" else "rpm"
+    declared = sorted((overlay.get("behaviour") or {}).get("packages", {}).get(family, []))
+    if not declared:
+        return []
+    recorded = {entry["name"] for entry in block["tests"]["fixture_packages"]}
+    missing = [name for name in declared if name not in recorded]
+    if not missing:
+        return []
+    return [
+        f"{label}tests.fixture_packages does not record {missing}; the overlay declares "
+        "them as behaviour fixtures, and a releasable target has to say which versions "
+        "the suite actually ran against"
+    ]
 
 
 def _evidence_blocks(data: dict, distro_native: bool) -> list:

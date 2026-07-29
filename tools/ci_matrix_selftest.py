@@ -1702,6 +1702,53 @@ def test_ledger_covers_both_vmods(repo_root: Path) -> None:
 # --- the checked-in manifest ----------------------------------------------
 
 
+def test_patch_omission_refuses_a_patchless_vmod(repo_root: Path) -> None:
+    """G4: an injection that cannot act is refused before a runner starts.
+
+    Three of Wave B's ten defects were inert injections -- a flag reaching a job
+    nothing read, producing a GREEN run that looked like a demonstration.
+    `patch_omission` has the same shape available to it, so the refusal is at
+    expansion time, against the real overlay, naming the manifest.
+    """
+    redis = _load(repo_root, "redis")
+    result = ci_matrix.expand(redis, "ci", inject="patch_omission", repo_root=repo_root)
+    check(
+        "patch_omission: redis declares a patch, so both its rows are injected",
+        [row["inject_patch"] for row in result["targets"]["include"]] == ["true", "true"],
+        str(result["targets"]["include"]),
+    )
+
+    # A patchless VMOD in the target seat must be refused. Built by pointing the
+    # table at dict rather than by editing an overlay, because the property is
+    # about the pairing of an injection with a VMOD.
+    original = ci_matrix.INJECTION_TARGET_VMOD["patch_omission"]
+    ci_matrix.INJECTION_TARGET_VMOD["patch_omission"] = "dict"
+    try:
+        ci_matrix.expand(_load(repo_root, "dict"), "ci", inject="patch_omission", repo_root=repo_root)
+    except ci_matrix.CatalogError as exc:
+        check(
+            "patch_omission: a target VMOD with no declared patch is refused",
+            "declares no patches" in str(exc) and "demonstration of nothing" in str(exc),
+            str(exc),
+        )
+    else:
+        check("patch_omission: a target VMOD with no declared patch is refused", False,
+              "expand returned instead of raising")
+    finally:
+        ci_matrix.INJECTION_TARGET_VMOD["patch_omission"] = original
+
+    # And it must not fire for the VMODs the injection does not target: dict's
+    # rows expand normally while redis is the one being injected.
+    dict_rows = ci_matrix.expand(
+        _load(repo_root, "dict"), "ci", inject="patch_omission", repo_root=repo_root
+    )
+    check(
+        "patch_omission: an untargeted VMOD expands untouched",
+        [row["inject_patch"] for row in dict_rows["targets"]["include"]] == ["false", "false"],
+        str(dict_rows["targets"]["include"]),
+    )
+
+
 def test_repo_catalog(repo_root: Path) -> None:
     entries = ci_matrix.discover(repo_root)
     # The selected set, in discovery (file name) order. Asserted exactly rather
@@ -2152,6 +2199,7 @@ def main(repo_root: Path = None) -> int:
     test_recipe_generation_status_is_in_the_vocabulary()
     test_source_facts_are_emitted_for_a_lane_script(root)
     test_ledger_covers_both_vmods(root)
+    test_patch_omission_refuses_a_patchless_vmod(root)
     test_repo_catalog(root)
     test_pin_parsing()
     test_pins_do_not_drift_from_the_manifest(root)

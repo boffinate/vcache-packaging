@@ -64,3 +64,4 @@ vmods:
       installed_package_smoke: pending
       full_behavior_suite: pending
       upgrade_transactions: pending
+      fixture_packages: []

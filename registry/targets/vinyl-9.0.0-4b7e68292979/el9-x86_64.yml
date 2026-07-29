@@ -848,3 +848,4 @@ vmods:
       # carries --allowerasing with a package named alongside it, versionlock
       # blocks the erasing install, and history undo restores the cohort.
       upgrade_transactions: pass
+      fixture_packages: []

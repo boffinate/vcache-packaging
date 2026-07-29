@@ -864,6 +864,7 @@ vmods:
       # it, versionlock blocks the erasing install, and history undo restores
       # the cohort.
       upgrade_transactions: pass
+      fixture_packages: []
   # dict joined the selected set on 2026-07-28 (SCOPE.md). Its lanes select
   # vinyl-release on both targets, so this cohort and target must carry its
   # evidence -- and the entry has existed since that date rather than being
@@ -893,6 +894,7 @@ vmods:
       installed_package_smoke: pending
       full_behavior_suite: pending
       upgrade_transactions: pending
+      fixture_packages: []
   # redis joined the selected set on 2026-07-29 (SCOPE.md) as Step 7's third
   # VMOD: the controlled exception that exercises the reviewed-source-patch
   # capability. Its lanes select vinyl-release on both targets, so this cohort
@@ -922,3 +924,4 @@ vmods:
       installed_package_smoke: pending
       full_behavior_suite: pending
       upgrade_transactions: pending
+      fixture_packages: []

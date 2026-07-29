@@ -93,9 +93,17 @@ source:
 # and the patch is BOTH an input of the generation record and a rendered output
 # inside recipe_sha256. It cannot be omitted, swapped or edited without the
 # recorded evidence moving.
+# `reviewed_against` is what schedules the re-review a version bump needs.
+# Nothing else does: the file and its digest stay perfectly valid while the
+# manifest's ref moves forward underneath them, and a patch silently carried
+# onto source nobody re-read is the failure this field exists to make
+# impossible. The generator requires it to equal sources.<channel>.
+# expected_commit, so moving the tag is a hard refusal until somebody re-reads
+# the patch against the new tree and says so here.
 patches:
   - file: 0001-build-against-vinyl-cache.patch
     sha256: 3e18e62688a7a6f148084d2930a79d80a3c9692716621ab9e124f8057392eb01
+    reviewed_against: b6ca669fc9af3399f3845d9d4930683b4e378aa8
 
 package:
   # `libvmod-redis` on BOTH families, which is upstream's own name and the same
@@ -341,12 +349,37 @@ behaviour:
   driver: runner.sh
 
 rpmlint_overrides:
-  # None. Measured intent rather than an empty stanza: the Summary is
-  # capitalised, the description avoids the vocabulary dict's waivers cover,
-  # and the licence expression is checked against rpmlint's own list in Wave 2.
-  # If a finding appears there it gets a reviewed filter with its reason, not a
-  # relaxation of the gate.
-  filters: []
+  # One filter, for the licence expression, and NOTHING else. The Summary is
+  # capitalised and the description avoids the vocabulary dict's waivers cover,
+  # so those classes are expected not to fire; if they do, they are findings
+  # about this overlay and get fixed, not waived.
+  #
+  # The filter is written for the FULL rendered expression rather than reused
+  # from the cachetag lane. recipes/el9/rpmlint-waivers.rpmlintrc:24 waives
+  # `(BSD-2-Clause|MPL-2\.0)`, which does not match this package's
+  # `BSD-2-Clause AND BSD-3-Clause AND LicenseRef-Public-Domain` -- rpmlint
+  # reports the whole field, not a token from it, so a regex written for a
+  # single-licence package would have silently failed to match and the row
+  # would have failed on a finding that WAS reviewed. Matching the exact string
+  # is also the safer form: a licence expression that changes stops being
+  # covered, which is the direction a waiver should fail in.
+  #
+  # MEASUREMENT RULE, and it binds before redis is ever released. Wave 2's
+  # unfiltered informational pass is the measurement. If invalid-license does
+  # not fire there, this filter is dead and is REMOVED in the same wave -- an
+  # unused waiver is a claim about a tool's behaviour that nobody checked, and
+  # rpmlint has no unused-override complaint of its own to catch it.
+  filters:
+    - "# rpmlint 1.11 (EL9 AppStream) predates SPDX identifiers and wants legacy"
+    - "# strings such as `BSD`. SPDX is correct for modern packaging and this"
+    - "# expression is what the three licence notices in the tree actually say:"
+    - "# LICENSE is two-clause, src/crc16.c carries the endorsement clause, and"
+    - "# src/sha1.c is public domain. Correct metadata is not changed to satisfy a"
+    - "# 2017 tool. The cachetag lane waives the same check for the same reason in"
+    - "# recipes/el9/rpmlint-waivers.rpmlintrc; its regex is written for a"
+    - "# single-licence field and does not match a compound expression, so this is"
+    - "# written out in full rather than reused."
+    - "addFilter(r' W: invalid-license BSD-2-Clause AND BSD-3-Clause AND LicenseRef-Public-Domain$')"
 
 lintian_overrides:
   source: []
