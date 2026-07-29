@@ -609,6 +609,43 @@ One small positive falls out of it: a row killed by its own timeout classifies a
 
 Item 4 is therefore **re-dispatched** rather than adjudicated on this run. Deviations stop the line; an unexplained slow runner is not an expected classification.
 
+### Item 4, third attempt — [30418133557](https://github.com/boffinate/vcache-packaging/actions/runs/30418133557): the same external condition, one step earlier
+
+```text
+counts: expected=7 passed=4 failed=3 missing=0 required_failed=3
+  engine/vinyl-release/el9-x86_64                 failed_infrastructure
+      the engine artifact could not be staged or described
+  vmod/cachetag                                   failed_manifest_validation
+  target/dict/release/vinyl-release/el9-x86_64    blocked_by_engine_artifact
+      engine/vinyl-release/el9-x86_64 published no engine-vinyl-release-el9-x86_64
+```
+
+This time the **engine** row was killed by its 35-minute budget, cancelled inside `Start: installing minimal buildroot with dnf` — the same package-manager phase, one job earlier in the graph. The Debian half of the run was untouched again: `engine/vinyl-release/debian-13-amd64`, dict's invocation, its source row and its Debian target all passed.
+
+#### The blocker: EL9 package-manager phases are running ten to twenty times slow
+
+Two consecutive runs, two different EL9 jobs, both cancelled at their timeout inside a `dnf` phase:
+
+| Run | Job killed | Phase it died in | Elapsed |
+| --- | --- | --- | --- |
+| 30416382776 | `target/dict/.../el9-x86_64` | Mock `build setup` for the SRPM | 30 min (budget 30) |
+| 30418133557 | `engine/vinyl-release/el9-x86_64` | Mock `installing minimal buildroot with dnf` | 30 min (budget 35) |
+
+Against the measured normal, from run 30413513970's own log timestamps: the whole EL9 VMOD lane — Mock init, `--buildsrpm`, `--rebuild`, buildroot capture and the fresh-container verification — takes **2.1 minutes**. In 30416382776 the `--buildsrpm` alone took **14.5**.
+
+Everything points outside this repository:
+
+- both failures are in `dnf` metadata or download phases, not in compilation or in any script this wave changed;
+- **every Debian row in both runs passed normally**, from the same checkouts and the same runners;
+- the identical EL9 rows passed at 2.1 and 2.4 minutes in runs 30413513970 and 30415386761 earlier the same night, from the same lane code;
+- in 30416382776 cachetag's four target jobs did not exist at all, so the pool was *less* contended, not more.
+
+Nothing in `vcache-packaging` changed between the green EL9 rows and the timed-out ones. The lane's timeouts are not tight — the normal case has roughly fourteen times the headroom — so raising them would be treating a symptom of an upstream mirror or runner condition, and would make every future genuine hang cost half an hour instead of thirty minutes. **The line is stopped here** until EL9 jobs complete in their normal time again.
+
+#### One thing this bought, unintentionally
+
+`target/dict/release/vinyl-release/el9-x86_64` reported **`blocked_by_engine_artifact`, naming the engine row that produced nothing**. That is `target-generated`'s engine-blocked path — the one ruling R-2 moved `INJECT_ENGINE_ROW` in order to exercise for the first time — taken live, from a real infrastructure failure rather than an injection. It classified correctly and named the shared cause, which is exactly what items 10a and 10b are meant to demonstrate deliberately. It does not substitute for those runs, because it says nothing about the *cachetag* consumer of the same engine row, but it is the first evidence that the path works on the generated lane.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
