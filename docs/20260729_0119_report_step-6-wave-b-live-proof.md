@@ -594,3 +594,25 @@ suppress_engine_artifact
 ```
 
 Dispatch discipline, learned the hard way in run 5: **one run at a time**. Two runs sharing the runner pool pushed a cachetag EL9 row past its 35-minute budget and GitHub cancelled it. There is no `concurrency:` group to serialise them.
+
+## The ten defects, in one table
+
+Wave B took ten defects to reach a green baseline and a green releasable gate. **Not one of them was a defect in a package.** Every `vmod-dict` package produced from run 2 onwards was correct; what kept failing was the machinery that builds, inspects and records them. That is the shape a first live proof should have, and it is the argument for running one.
+
+| # | Where | What | Found by |
+| --- | --- | --- | --- |
+| B1 | Debian recipe template | `parallel_build: "no"` reached the spec and not `debian/rules`; a real `make` race | run 30405770446 |
+| B2 | EL9 lane script | `mock` is in EPEL, not AlmaLinux; `epel-release` was not installed first | run 30405770446 |
+| B3 | Debian payload allowlist | rejected the recipe's own `lintian-overrides` file | run 30407186693 |
+| B4 | EL9 lane script | mock refuses to run as root; no `mockbuild` user | run 30407186693 |
+| B5 | both hardening checks | asserted a canary *symbol*, which a source without canary-worthy buffers never emits | run 30409242057 |
+| B6 | EL9 payload allowlist | rejected RPM's `/usr/lib/.build-id` debuginfo farm | run 30409242057 |
+| B7a | recipe generator | changelog line carrying the 64-char digest exceeded lintian's 80 columns | run 30410876882 |
+| B7b | upstream man page | `rst2man` selects font `C`; needed a reviewed override | run 30410876882 |
+| B7c | `yaml_subset` parser | refused a *quoted* scalar containing `": "` — the fix its own diagnostic recommends | reached while fixing B7b |
+| B8 | ported VTC bindings | `varnish v1` addressed a driver command `vinyltest` does not register | run 30410876882 |
+| B9 | Debian uniqueness check | counted the tree the hardening stage had extracted; the RPM script had pruned it since it was written | run 30412067149 |
+| B10 | `release_tool` self-test | asserted dict's evidence was `pending`, so recording it raised `KeyError` rather than failing | run 30416252749 |
+
+Three of them — B3, B6 and B9 — are the same class: a lesson one backend's script had learned and the other had not. That class was closed by sweeping the two allowlists side by side after B6 and the two verify scripts side by side after B9, rather than by patching whichever one failed. It is the measured cost of the deliberate lane duplication the [Wave A2 Q2 ruling](20260728_2334_note_step-6-wave-a2-ci-integration.md) accepted, and it is higher than "some duplicated lines": every non-obvious thing the cachetag scripts had learned had to be rediscovered, sometimes by failing.
+
