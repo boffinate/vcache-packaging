@@ -872,23 +872,461 @@ vmods:
   # --require-releasable rejects it by name.
   dict:
     evidence: pending
-    pending_reason: "Wave B has not run the dict lanes yet; recorded 2026-07-28"
+    pending_reason: "Everything but the upgrade-transaction matrix is recorded from run 30413513970. That one dimension needs an engine that is simultaneously newer and ABI-incompatible, which only the mismatch fixture builds and only nightly-transactions.yml produces; wiring dict into it is Step 8. Recorded 2026-07-29"
     package:
-      upstream_version: "1.7"
-      revision: 1
+      upstream_version: 1.7
+      revision: "1"
       source_name: vmod-dict
       binary_name: vmod-dict
     build:
       profile: production
-      configure_options: PLACEHOLDER
-      cflags: PLACEHOLDER
-      ldflags: PLACEHOLDER
-      source_date_epoch: PLACEHOLDER
-      hardening_check: pending
-      build_dependencies: []
-    artifacts: []
+      # Read off the build log this run captured, not restated from
+      # what the toolchain is expected to emit. Run 30413513970.
+      configure_options: "./configure --build=x86_64-redhat-linux-gnu --host=x86_64-redhat-linux-gnu --program-prefix= --disable-dependency-tracking --prefix=/usr --exec-prefix=/usr --bindir=/usr/bin --sbindir=/usr/sbin --sysconfdir=/etc --datadir=/usr/share --includedir=/usr/include --libdir=/usr/lib64 --libexecdir=/usr/libexec --localstatedir=/var --sharedstatedir=/var/lib --mandir=/usr/share/man --infodir=/usr/share/info --disable-static"
+      cflags: "-O2 -flto=auto -ffat-lto-objects -fexceptions -g -grecord-gcc-switches -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -fstack-protector-strong -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -march=x86-64-v2 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection"
+      ldflags: "-Wl,-z,now -Wl,-z -Wl,relro -Wl,--as-needed -Wl,-z -Wl,now -Wl,-soname -Wl,libvmod_dict.so"
+      source_date_epoch: "1774429462"
+      hardening_check: pass
+      build_dependencies:
+        - name: R-srpm-macros
+          version: "1.3.7-2.el9.noarch"
+        - name: almalinux-gpg-keys
+          version: "9.8-1.el9.x86_64"
+        - name: almalinux-release
+          version: "9.8-1.el9.x86_64"
+        - name: almalinux-repos
+          version: "9.8-1.el9.x86_64"
+        - name: alternatives
+          version: "1.24-2.el9.x86_64"
+        - name: ansible-srpm-macros
+          version: "1-16.el9.noarch"
+        - name: audit-libs
+          version: "3.1.5-8.el9.x86_64"
+        - name: basesystem
+          version: "11-13.el9.noarch"
+        - name: bash
+          version: "5.1.8-9.el9.x86_64"
+        - name: binutils
+          version: "2.35.2-72.el9.x86_64"
+        - name: binutils-gold
+          version: "2.35.2-72.el9.x86_64"
+        - name: bzip2
+          version: "1.0.8-11.el9.x86_64"
+        - name: bzip2-libs
+          version: "1.0.8-11.el9.x86_64"
+        - name: ca-certificates
+          version: "2025.2.80_v9.0.305-91.el9.noarch"
+        - name: coreutils
+          version: "8.32-41.el9_8.x86_64"
+        - name: coreutils-common
+          version: "8.32-41.el9_8.x86_64"
+        - name: cpio
+          version: "2.13-16.el9.x86_64"
+        - name: cracklib
+          version: "2.9.6-28.el9.x86_64"
+        - name: cracklib-dicts
+          version: "2.9.6-28.el9.x86_64"
+        - name: crypto-policies
+          version: "20260224-1.gitea0f072.el9_8.noarch"
+        - name: curl
+          version: "7.76.1-40.el9.x86_64"
+        - name: cyrus-sasl-lib
+          version: "2.1.27-22.el9.x86_64"
+        - name: debugedit
+          version: "5.0-11.el9.x86_64"
+        - name: diffutils
+          version: "3.7-12.el9.x86_64"
+        - name: dwz
+          version: "0.16-1.el9.x86_64"
+        - name: ed
+          version: "1.14.2-12.el9.x86_64"
+        - name: efi-srpm-macros
+          version: "6-4.el9.noarch"
+        - name: elfutils
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: elfutils-debuginfod-client
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: elfutils-default-yama-scope
+          version: "0.194-1.el9.alma.1.noarch"
+        - name: elfutils-libelf
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: elfutils-libs
+          version: "0.194-1.el9.alma.1.x86_64"
+        - name: epel-rpm-macros
+          version: "9-18.el9.noarch"
+        - name: file
+          version: "5.39-17.el9.x86_64"
+        - name: file-libs
+          version: "5.39-17.el9.x86_64"
+        - name: filesystem
+          version: "3.16-5.el9.x86_64"
+        - name: findutils
+          version: "4.8.0-7.el9.x86_64"
+        - name: fonts-srpm-macros
+          version: "2.0.5-7.el9.1.noarch"
+        - name: forge-srpm-macros
+          version: "0.4.0-1.el9.noarch"
+        - name: fpc-srpm-macros
+          version: "1.3-7.el9.noarch"
+        - name: gawk
+          version: "5.1.0-6.el9.x86_64"
+        - name: gdb-minimal
+          version: "16.3-3.el9.x86_64"
+        - name: gdbm-libs
+          version: "1.23-1.el9.x86_64"
+        - name: ghc-srpm-macros
+          version: "1.5.0-6.el9.noarch"
+        - name: ghc-srpm-macros-epel
+          version: "1.9.1-1.el9.noarch"
+        - name: glibc
+          version: "2.34-274.el9_8.x86_64"
+        - name: glibc-common
+          version: "2.34-274.el9_8.x86_64"
+        - name: glibc-gconv-extra
+          version: "2.34-274.el9_8.x86_64"
+        - name: glibc-minimal-langpack
+          version: "2.34-274.el9_8.x86_64"
+        - name: gmp
+          version: "6.2.0-13.el9.x86_64"
+        - name: go-srpm-macros
+          version: "3.8.1-1.el9.noarch"
+        - name: go-srpm-macros-epel
+          version: "3.8.0-1.el9.noarch"
+        - name: gpg-pubkey
+          version: "3228467c-613798eb.(none)"
+        - name: gpg-pubkey
+          version: "b86b3716-61e69f29.(none)"
+        - name: grep
+          version: "3.6-5.el9.x86_64"
+        - name: groff-base
+          version: "1.22.4-10.el9.x86_64"
+        - name: gzip
+          version: "1.12-1.el9.x86_64"
+        - name: info
+          version: "6.7-15.el9.x86_64"
+        - name: json-c
+          version: "0.14-11.el9.x86_64"
+        - name: kernel-srpm-macros
+          version: "1.0-14.el9.noarch"
+        - name: keyutils-libs
+          version: "1.6.3-1.el9.x86_64"
+        - name: krb5-libs
+          version: "1.21.1-10.el9_8.x86_64"
+        - name: libacl
+          version: "2.4.0-1.el9_8.x86_64"
+        - name: libarchive
+          version: "3.5.3-9.el9_7.x86_64"
+        - name: libattr
+          version: "2.5.1-3.el9.x86_64"
+        - name: libblkid
+          version: "2.37.4-25.el9.x86_64"
+        - name: libbrotli
+          version: "1.0.9-9.el9_7.x86_64"
+        - name: libcap
+          version: "2.48-10.el9_8.1.x86_64"
+        - name: libcap-ng
+          version: "0.8.2-7.el9.x86_64"
+        - name: libcom_err
+          version: "1.46.5-8.el9.x86_64"
+        - name: libcurl
+          version: "7.76.1-40.el9.x86_64"
+        - name: libdb
+          version: "5.3.28-57.el9_6.x86_64"
+        - name: libeconf
+          version: "0.4.1-7.el9_8.x86_64"
+        - name: libevent
+          version: "2.1.12-8.el9_4.x86_64"
+        - name: libfdisk
+          version: "2.37.4-25.el9.x86_64"
+        - name: libffi
+          version: "3.4.2-8.el9.x86_64"
+        - name: libgcc
+          version: "11.5.0-14.el9.alma.1.x86_64"
+        - name: libgcrypt
+          version: "1.10.0-11.el9.x86_64"
+        - name: libgomp
+          version: "11.5.0-14.el9.alma.1.x86_64"
+        - name: libgpg-error
+          version: "1.42-5.el9.x86_64"
+        - name: libidn2
+          version: "2.3.0-7.el9.x86_64"
+        - name: libmount
+          version: "2.37.4-25.el9.x86_64"
+        - name: libnghttp2
+          version: "1.43.0-6.el9_8.1.x86_64"
+        - name: libpkgconf
+          version: "1.7.3-10.el9.x86_64"
+        - name: libpsl
+          version: "0.21.1-5.el9.x86_64"
+        - name: libpwquality
+          version: "1.4.4-8.el9.x86_64"
+        - name: libselinux
+          version: "3.6-3.el9.x86_64"
+        - name: libsemanage
+          version: "3.6-5.el9_6.x86_64"
+        - name: libsepol
+          version: "3.6-3.el9.x86_64"
+        - name: libsigsegv
+          version: "2.13-4.el9.x86_64"
+        - name: libsmartcols
+          version: "2.37.4-25.el9.x86_64"
+        - name: libssh
+          version: "0.10.4-18.el9.x86_64"
+        - name: libssh-config
+          version: "0.10.4-18.el9.noarch"
+        - name: libstdc++
+          version: "11.5.0-14.el9.alma.1.x86_64"
+        - name: libtasn1
+          version: "4.16.0-10.el9_8.x86_64"
+        - name: libtool-ltdl
+          version: "2.4.6-46.el9.x86_64"
+        - name: libunistring
+          version: "0.9.10-15.el9.x86_64"
+        - name: libutempter
+          version: "1.2.1-6.el9.x86_64"
+        - name: libuuid
+          version: "2.37.4-25.el9.x86_64"
+        - name: libverto
+          version: "0.3.2-3.el9.x86_64"
+        - name: libxcrypt
+          version: "4.4.18-3.el9.x86_64"
+        - name: libxml2
+          version: "2.9.13-14.el9_8.2.x86_64"
+        - name: libzstd
+          version: "1.5.5-1.el9.x86_64"
+        - name: lua-libs
+          version: "5.4.4-4.el9.x86_64"
+        - name: lua-srpm-macros
+          version: "1-6.el9.noarch"
+        - name: lz4-libs
+          version: "1.9.3-5.el9.x86_64"
+        - name: mpfr
+          version: "4.1.0-10.el9.x86_64"
+        - name: ncurses
+          version: "6.2-12.20210508.el9.x86_64"
+        - name: ncurses-base
+          version: "6.2-12.20210508.el9.noarch"
+        - name: ncurses-libs
+          version: "6.2-12.20210508.el9.x86_64"
+        - name: ocaml-srpm-macros
+          version: "6-6.el9.noarch"
+        - name: openblas-srpm-macros
+          version: "2-11.el9.noarch"
+        - name: openldap
+          version: "2.6.8-4.el9.x86_64"
+        - name: openssl
+          version: "3.5.5-6.el9_8.x86_64"
+        - name: openssl-fips-provider
+          version: "3.5.5-6.el9_8.x86_64"
+        - name: openssl-libs
+          version: "3.5.5-6.el9_8.x86_64"
+        - name: p11-kit
+          version: "0.26.2-1.el9.x86_64"
+        - name: p11-kit-trust
+          version: "0.26.2-1.el9.x86_64"
+        - name: pam
+          version: "1.5.1-28.el9.x86_64"
+        - name: patch
+          version: "2.7.6-16.el9.x86_64"
+        - name: pcre
+          version: "8.44-4.el9.x86_64"
+        - name: pcre2
+          version: "10.40-6.el9.x86_64"
+        - name: pcre2-syntax
+          version: "10.40-6.el9.noarch"
+        - name: perl-AutoLoader
+          version: "5.74-481.1.el9_6.noarch"
+        - name: perl-B
+          version: "1.80-481.1.el9_6.x86_64"
+        - name: perl-Carp
+          version: "1.50-460.el9.noarch"
+        - name: perl-Class-Struct
+          version: "0.66-481.1.el9_6.noarch"
+        - name: perl-Data-Dumper
+          version: "2.174-462.el9.x86_64"
+        - name: perl-Digest
+          version: "1.19-4.el9.noarch"
+        - name: perl-Digest-MD5
+          version: "2.58-4.el9.x86_64"
+        - name: perl-Encode
+          version: "3.08-462.el9.x86_64"
+        - name: perl-Errno
+          version: "1.30-481.1.el9_6.x86_64"
+        - name: perl-Exporter
+          version: "5.74-461.el9.noarch"
+        - name: perl-Fcntl
+          version: "1.13-481.1.el9_6.x86_64"
+        - name: perl-File-Basename
+          version: "2.85-481.1.el9_6.noarch"
+        - name: perl-File-Path
+          version: "2.18-4.el9.noarch"
+        - name: perl-File-Temp
+          version: "0.231.100-4.el9.noarch"
+        - name: perl-File-stat
+          version: "1.09-481.1.el9_6.noarch"
+        - name: perl-FileHandle
+          version: "2.03-481.1.el9_6.noarch"
+        - name: perl-Getopt-Long
+          version: "2.52-4.el9.noarch"
+        - name: perl-Getopt-Std
+          version: "1.12-481.1.el9_6.noarch"
+        - name: perl-HTTP-Tiny
+          version: "0.076-462.el9.noarch"
+        - name: perl-IO
+          version: "1.43-481.1.el9_6.x86_64"
+        - name: perl-IO-Socket-IP
+          version: "0.41-5.el9.noarch"
+        - name: perl-IO-Socket-SSL
+          version: "2.073-2.el9.noarch"
+        - name: perl-IPC-Open3
+          version: "1.21-481.1.el9_6.noarch"
+        - name: perl-MIME-Base64
+          version: "3.16-4.el9.x86_64"
+        - name: perl-Mozilla-CA
+          version: "20200520-6.el9.noarch"
+        - name: perl-Net-SSLeay
+          version: "1.94-3.el9.x86_64"
+        - name: perl-POSIX
+          version: "1.94-481.1.el9_6.x86_64"
+        - name: perl-PathTools
+          version: "3.78-461.el9.x86_64"
+        - name: perl-Pod-Escapes
+          version: "1.07-460.el9.noarch"
+        - name: perl-Pod-Perldoc
+          version: "3.28.01-461.el9.noarch"
+        - name: perl-Pod-Simple
+          version: "3.42-4.el9.noarch"
+        - name: perl-Pod-Usage
+          version: "2.01-4.el9.noarch"
+        - name: perl-Scalar-List-Utils
+          version: "1.56-462.el9.x86_64"
+        - name: perl-SelectSaver
+          version: "1.02-481.1.el9_6.noarch"
+        - name: perl-Socket
+          version: "2.031-4.el9.x86_64"
+        - name: perl-Storable
+          version: "3.21-460.el9.x86_64"
+        - name: perl-Symbol
+          version: "1.08-481.1.el9_6.noarch"
+        - name: perl-Term-ANSIColor
+          version: "5.01-461.el9.noarch"
+        - name: perl-Term-Cap
+          version: "1.17-460.el9.noarch"
+        - name: perl-Text-ParseWords
+          version: "3.30-460.el9.noarch"
+        - name: perl-Text-Tabs+Wrap
+          version: "2013.0523-460.el9.noarch"
+        - name: perl-Time-Local
+          version: "1.300-7.el9.noarch"
+        - name: perl-URI
+          version: "5.09-3.el9.noarch"
+        - name: perl-base
+          version: "2.27-481.1.el9_6.noarch"
+        - name: perl-constant
+          version: "1.33-461.el9.noarch"
+        - name: perl-if
+          version: "0.60.800-481.1.el9_6.noarch"
+        - name: perl-interpreter
+          version: "5.32.1-481.1.el9_6.x86_64"
+        - name: perl-libnet
+          version: "3.13-4.el9.noarch"
+        - name: perl-libs
+          version: "5.32.1-481.1.el9_6.x86_64"
+        - name: perl-mro
+          version: "1.23-481.1.el9_6.x86_64"
+        - name: perl-overload
+          version: "1.31-481.1.el9_6.noarch"
+        - name: perl-overloading
+          version: "0.02-481.1.el9_6.noarch"
+        - name: perl-parent
+          version: "0.238-460.el9.noarch"
+        - name: perl-podlators
+          version: "4.14-460.el9.noarch"
+        - name: perl-srpm-macros
+          version: "1-41.el9.noarch"
+        - name: perl-subs
+          version: "1.03-481.1.el9_6.noarch"
+        - name: perl-vars
+          version: "1.05-481.1.el9_6.noarch"
+        - name: pkgconf
+          version: "1.7.3-10.el9.x86_64"
+        - name: pkgconf-m4
+          version: "1.7.3-10.el9.noarch"
+        - name: pkgconf-pkg-config
+          version: "1.7.3-10.el9.x86_64"
+        - name: popt
+          version: "1.18-8.el9.x86_64"
+        - name: publicsuffix-list-dafsa
+          version: "20210518-3.el9.noarch"
+        - name: pyproject-srpm-macros
+          version: "1.18.5-1.el9.noarch"
+        - name: python-srpm-macros
+          version: "3.9-54.el9.noarch"
+        - name: qt5-srpm-macros
+          version: "5.15.9-1.el9.noarch"
+        - name: qt6-srpm-macros
+          version: "6.6.2-1.el9.noarch"
+        - name: readline
+          version: "8.1-4.el9.x86_64"
+        - name: redhat-rpm-config
+          version: "210-1.el9.alma.1.noarch"
+        - name: rpm
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpm-build
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpm-build-libs
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpm-libs
+          version: "4.16.1.3-40.el9.x86_64"
+        - name: rpmautospec-rpm-macros
+          version: "0.8.4-1.el9.noarch"
+        - name: rust-srpm-macros
+          version: "17-4.el9.noarch"
+        - name: rust-srpm-macros-epel
+          version: "26.3-1.el9.noarch"
+        - name: sed
+          version: "4.8-10.el9.x86_64"
+        - name: setup
+          version: "2.13.7-10.el9.noarch"
+        - name: shadow-utils
+          version: "4.9-16.el9.x86_64"
+        - name: sqlite-libs
+          version: "3.34.1-10.el9_8.x86_64"
+        - name: systemd-libs
+          version: "252-67.el9_8.4.alma.1.x86_64"
+        - name: tar
+          version: "1.34-11.el9.x86_64"
+        - name: tzdata
+          version: "2026b-1.el9.noarch"
+        - name: unzip
+          version: "6.0-60.el9.x86_64"
+        - name: util-linux
+          version: "2.37.4-25.el9.x86_64"
+        - name: util-linux-core
+          version: "2.37.4-25.el9.x86_64"
+        - name: which
+          version: "2.21-30.el9_6.x86_64"
+        - name: xz
+          version: "5.2.5-8.el9_0.x86_64"
+        - name: xz-libs
+          version: "5.2.5-8.el9_0.x86_64"
+        - name: zip
+          version: "3.0-35.el9.x86_64"
+        - name: zlib
+          version: "1.2.11-40.el9.x86_64"
+        - name: zstd
+          version: "1.5.5-1.el9.x86_64"
+    artifacts:
+      - filename: vmod-dict-1.7-1.el9.src.rpm
+        sha256: efc8b685b3df9356949096f53a3157b4746bd059d76f58098ff0a4a19d43bd82
+      - filename: vmod-dict-1.7-1.el9.x86_64.rpm
+        sha256: 47f5bb30f479b75fb5cc5096b8b02eb2fcc6f650145c44e8de28990c2df4caf8
+      - filename: vmod-dict-debuginfo-1.7-1.el9.x86_64.rpm
+        sha256: a535e2b5a8765299ebb27445fcf84b4709eb31f6fdaad3e4b0085b237c0b1e53
+      - filename: vmod-dict-debugsource-1.7-1.el9.x86_64.rpm
+        sha256: 24973c59b571b2ac94c1d2ee26cb7c26d3f4609b08ad0cef4b75d4f269547232
     tests:
-      package_lint: pending
-      installed_package_smoke: pending
-      full_behavior_suite: pending
+      package_lint: pass
+      installed_package_smoke: pass
+      full_behavior_suite: pass
       upgrade_transactions: pending

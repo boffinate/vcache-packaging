@@ -376,3 +376,34 @@ Nine assertions per target, all passing:
 **What this is not: an upgrade-transaction matrix.** Stated plainly because it bears directly on the evidence flip. The only incompatible engine a `ci.yml` run produces is the trunk-pinned one, and `9.0.0~git20260520.25761f8505-1` sorts **below** `9.0.1-1` in both dpkg's and rpm's version comparison. So no resolver on either target ever considers the candidate an upgrade, and every row above that mentions "upgrade" is really testing that the resolver declines to *downgrade*. That is a genuine result — nothing mismatched, nothing broke — but it is not the property cachetag's thirteen-scenario matrix tests.
 
 Proving the upgrade dimension needs an engine that is simultaneously **newer** and **ABI-incompatible**, which is exactly what `recipes/debian-13/mismatch-fixture.sh` and `recipes/el9/mismatch-fixture.sh` exist to build and what only `nightly-transactions.yml` produces. Building that for dict is the Step 8 integration the brief defers, so **`vmods.dict.tests.upgrade_transactions` cannot honestly be recorded as `pass` from this work.** See the evidence section below.
+
+## The evidence flip, and why it is partial
+
+Both `vmods.dict` entries in `registry/targets/vinyl-9.0.1-*/` are populated from run 30413513970's own artifacts. Nothing was typed by hand:
+
+| Field | Source |
+| --- | --- |
+| `build.configure_options` | the `./configure` line in the captured build log (`pbuilder-build.log`, `mock-build.log`) |
+| `build.cflags` | the `libtool: compile:` line, minus the package's own `-I` and `-DHAVE_CONFIG_H`/`-DLOCALSTATEDIR` |
+| `build.ldflags` | the `libtool: link:` line's `-Wl,` arguments |
+| `build.source_date_epoch` | the overlay's recorded release-commit committer date, confirmed in the build |
+| `build.hardening_check` | `pass`, from the stage that now asserts the flag rather than the canary |
+| `build.build_dependencies` | Debian: 178 entries from the `.buildinfo`'s `Installed-Build-Depends`. EL9: 214 entries from `logs/buildroot-packages.tsv`, the chroot asked directly |
+| `artifacts` | filenames and digests from the row's own `SHA256SUMS` |
+| `tests.package_lint` | `pass` — `lintian --fail-on error,warning` / `rpmlint`, both hard-gated |
+| `tests.installed_package_smoke` | `pass` — runtime pair only, no `-dev`/`-devel` |
+| `tests.full_behavior_suite` | `pass` — `dict_cs.vtc` and `dict_ci.vtc`, 2/2, 0 skipped, against the packaged `.so` |
+| `tests.upgrade_transactions` | **`pending`** |
+
+**`--require-releasable` is still RED, and deliberately so.** It went from **14 errors to 4**, and all four name the same one thing:
+
+```text
+ERROR  …/debian-13-amd64.yml: vmods.dict.tests.upgrade_transactions is 'pending'; a releasable target needs 'pass'
+ERROR  …/el9-x86_64.yml:      vmods.dict.tests.upgrade_transactions is 'pending'; a releasable target needs 'pass'
+```
+
+plus the two `evidence: pending` errors that follow from them. The entries carry a `pending_reason` naming the missing dimension rather than a general one.
+
+**Why it was not flipped green.** `upgrade_transactions` means the upgrade matrix, and the one-off matrix above cannot test an upgrade: the only incompatible engine a `ci.yml` run produces sorts *below* the release engine in both dpkg's and rpm's version comparison, so no resolver ever treats it as one. Recording `pass` on that basis would be recording a claim the evidence does not support, in the one field whose whole purpose is to stop exactly that. The registry exists to prevent broader claims than the evidence carries.
+
+**What would close it.** Either dict is wired through `recipes/*/mismatch-fixture.sh`, which builds an engine that is both newer and ABI-incompatible, and through the transaction matrix that consumes it — that is the Step 8 `nightly-transactions.yml` migration the brief defers — or the maintainer rules that a VMOD with one published revision and a proven refusal path may record the dimension differently. This is a decision, not an implementation detail, so it is recorded here rather than resolved locally.
