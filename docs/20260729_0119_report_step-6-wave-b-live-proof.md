@@ -261,7 +261,7 @@ What is left is package-manager vocabulary and one extra RPM stage that has no D
 
 #### Also landed with B9: the EL9 buildroot package set
 
-Not a defect — a gap found while preparing the evidence flip. *(continued below)*
+Not a defect — a gap found while preparing the evidence flip; the detail is below, after the equivalence measurement.
 
 ### Cachetag equivalence against `main` — first measurement
 
@@ -299,7 +299,9 @@ Whole-RPM sha256 differs on all nine, which is expected and is not an equivalenc
 
 The cause is dispatch discipline, not the lane. Run 6 was dispatched while run 5 was still executing, both runs competed for the same runner pool, and the row that would ordinarily finish inside 35 minutes did not. There is no `concurrency:` group in `ci.yml`, so nothing cancels a superseded run — the two simply share runners and both get slower. **Recorded as a caution: a second dispatch while a run is in flight can time out a row in the first one, and a timed-out row is indistinguishable at a glance from a failed one.** Run 5's other three cachetag rows were already green, which is why this cost nothing beyond the row itself.
 
-#### The EL9 buildroot package set (continued) The registry's per-VMOD `build.build_dependencies` needs the buildroot the package was built in. Debian's falls out for free: dpkg writes `Installed-Build-Depends` into the `.buildinfo`, which the row already uploads. Mock resolves its buildroot itself and writes no such list, and `root.log` records only the packages each transaction *added* — 33 for this build, against the 351 cachetag's EL9 entry records. So `build-rpm.sh` now asks the chroot directly after the build, the same thing `recipes/el9/container/build.sh:76-77` does on its own lane, and writes `logs/buildroot-packages.tsv` into the artifact. Non-fatal by construction: a row that produced a good package must not fail on a bookkeeping step.
+#### The EL9 buildroot package set (continued)
+
+The registry's per-VMOD `build.build_dependencies` needs the buildroot the package was built in. Debian's falls out for free: dpkg writes `Installed-Build-Depends` into the `.buildinfo`, which the row already uploads. Mock resolves its buildroot itself and writes no such list, and `root.log` records only the packages each transaction *added* — 33 for this build, against the 351 cachetag's EL9 entry records. So `build-rpm.sh` now asks the chroot directly after the build, the same thing `recipes/el9/container/build.sh:76-77` does on its own lane, and writes `logs/buildroot-packages.tsv` into the artifact. Non-fatal by construction: a row that produced a good package must not fail on a bookkeeping step.
 
 ### Run 6 — `inject=none`, [30413513970](https://github.com/boffinate/vcache-packaging/actions/runs/30413513970), conclusion **`success`**
 
