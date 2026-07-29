@@ -400,7 +400,9 @@ Nine assertions per target, all passing:
 
 **What this is not: an upgrade-transaction matrix.** Stated plainly because it bears directly on the evidence flip. The only incompatible engine a `ci.yml` run produces is the trunk-pinned one, and `9.0.0~git20260520.25761f8505-1` sorts **below** `9.0.1-1` in both dpkg's and rpm's version comparison. So no resolver on either target ever considers the candidate an upgrade, and every row above that mentions "upgrade" is really testing that the resolver declines to *downgrade*. That is a genuine result — nothing mismatched, nothing broke — but it is not the property cachetag's thirteen-scenario matrix tests.
 
-Proving the upgrade dimension needs an engine that is simultaneously **newer** and **ABI-incompatible**, which is exactly what `recipes/debian-13/mismatch-fixture.sh` and `recipes/el9/mismatch-fixture.sh` exist to build and what only `nightly-transactions.yml` produces. Building that for dict is the Step 8 integration the brief defers, so **`vmods.dict.tests.upgrade_transactions` cannot honestly be recorded as `pass` from this work.** See the evidence section below.
+At the time this was written the conclusion drawn was that the upgrade dimension needed an engine that is simultaneously **newer** and **ABI-incompatible** — the `mismatch-fixture.sh` machinery only `nightly-transactions.yml` produces — and therefore that `upgrade_transactions` could not honestly be recorded.
+
+**That conclusion was wrong, and the next section is why.** The upgrade under test is the *VMOD's*, not the engine's, and a second revision of dict costs one field in a scratch overlay. Left in place rather than rewritten, because the reasoning that produced a too-quick "cannot be done" is worth seeing next to what actually could be.
 
 ## The upgrade-transaction matrix, and the evidence flip
 
