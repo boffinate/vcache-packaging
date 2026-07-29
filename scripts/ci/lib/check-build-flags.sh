@@ -15,13 +15,19 @@
 # -fstack-protector-strong instruments only functions that have something worth
 # a canary. vmod_dict.c has none, so GCC emitted no reference and the check
 # reported the flag as missing. Absence of that symbol means "no function
-# needed one", not "the flag was off"; cachetag passes the identical check only
+# needed one", not "the flag was off"; cachetag passed the identical check only
 # because cachetag's source happens to have such buffers. A check whose verdict
 # depends on the shape of the source is not a check of the build.
 #
 # So the flag is asserted where it is actually stated. relro, BIND_NOW and PIC
-# stay binary-level assertions in the verify scripts, because those ARE
-# properties of the linked object and are source-independent.
+# stay binary-level assertions, because those ARE properties of the linked
+# object and are source-independent.
+#
+# Step 7 Wave 0 moved this script here from scripts/ci/vmod/container/ and gave
+# the cachetag lanes the same assertion, so the accident above cannot be true of
+# one lane and not the other. Callers do not name the flags: the reviewed list
+# is PC_REQUIRED_BUILD_FLAGS in package-checks.sh, and pc_assert_build_flags is
+# the one caller of this script.
 #
 # WHY `libtool: compile:`. That prefix is libtool's echo of the real compiler
 # invocation for one of the package's own translation units. Selecting on it
@@ -50,9 +56,9 @@ shift
 
 [ -f "$log" ] || die "no build log at $log.
 The hardening evidence for this package is the build log, so a missing log is
-a failed check and not a reason to skip one. The Debian lane writes it in
-build-deb.sh; the EL9 lane copies mock's own build.log in build-rpm.sh's EXIT
-trap."
+a failed check and not a reason to skip one. Every Debian lane tees the pbuilder
+build into it through pbuilder_build_one; every EL9 lane copies mock's own
+build.log through the EXIT trap mock_install_log_trap registers."
 
 compiles=$(grep -F 'libtool: compile:' "$log" || true)
 [ -n "$compiles" ] || die "no compile lines in $log.

@@ -144,9 +144,19 @@ note "stage the verification scripts and the ported VTCs into the lane"
 # no repository checkout, deliberately, because a fresh container that has
 # never seen the build tree is the whole point. So everything they need has to
 # be placed here first.
+#
+# The shared check libraries travel with them. package-checks.sh, vtc-suite.sh
+# and check-build-flags.sh live in scripts/ci/lib/ and are the SAME files the
+# cachetag lanes call -- the cachetag lanes reach them through a repository
+# checkout or a mount of scripts/ci, and this lane gets a copy because its
+# verify containers mount nothing else. Copying is what makes "one
+# implementation" true here rather than aspirational: package-checks.sh
+# computes its own directory, so it finds check-build-flags.sh in either layout.
 mkdir -p "$out/scripts" "$out/tests"
 cp -p "$here/container/verify-deb.sh" "$here/container/verify-rpm.sh" \
-	"$here/container/check-build-flags.sh" "$out/scripts/"
+	"$repo/scripts/ci/lib/package-checks.sh" \
+	"$repo/scripts/ci/lib/vtc-suite.sh" \
+	"$repo/scripts/ci/lib/check-build-flags.sh" "$out/scripts/"
 chmod 0755 "$out/scripts"/*.sh
 tests_dir=$repo/recipes/vmods/overlays/$vmod_id/tests
 if [ -d "$tests_dir" ]; then

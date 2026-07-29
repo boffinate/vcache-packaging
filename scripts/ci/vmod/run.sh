@@ -29,7 +29,12 @@
 # test driver in a container that has seen no build tree, and that is the whole
 # point of running them separately.
 
-set -eu
+# -f, because $common_env is expanded unquoted into the docker command line and
+# the fixture pattern below contains a `*`. Nothing in this script globs, so
+# disabling pathname expansion costs nothing and stops a value that happens to
+# look like a pattern from being rewritten by whatever directory the caller
+# happened to be standing in.
+set -euf
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo=$(CDPATH= cd -- "$here/../../.." && pwd)
@@ -100,7 +105,36 @@ note "buildroot image, from the verified engine identity: $image"
 # not a second reading of the image pin, the thing the runbook rule is about.
 . "$repo/recipes/debian-13/pins.env"
 
-common_env="-e VMOD_ID=$vmod_id \
+# WAVE 1 SEAM -- the behaviour suite's fixture contract.
+#
+# Which files out of the verified release archive are test fixtures, and what
+# vinyltest macro the ported VTCs address them by. Both were hardcoded inside
+# the two verify scripts until Step 7 Wave 0 moved the staging into the shared
+# scripts/ci/lib/vtc-suite.sh, which names no VMOD and no file extension. They
+# are stated here, once, until Wave 1 declares them in the overlay and renders
+# them through `vmod_recipe.py lane-env` beside the package names; that change
+# deletes this block and adds two variables to the eval above, and nothing else
+# moves.
+#
+# A `case` with no default rather than a default value, deliberately: a third
+# VMOD arriving before the overlay work must fail loudly here instead of
+# silently inheriting dict's fixtures and running its suite against the wrong
+# input.
+case $vmod_id in
+dict)
+	VMOD_TEST_FIXTURES='tests/*.dict'
+	VMOD_TEST_FIXTURE_MACRO=dictdir
+	;;
+*)
+	die "no fixture contract for '$vmod_id'. Declare its test fixtures and their
+vinyltest macro (Wave 1: in the overlay; until then: here), because a behaviour
+suite that runs without its fixtures tests nothing the VMOD does."
+	;;
+esac
+
+common_env="-e VMOD_TEST_FIXTURES=$VMOD_TEST_FIXTURES \
+ -e VMOD_TEST_FIXTURE_MACRO=$VMOD_TEST_FIXTURE_MACRO \
+ -e VMOD_ID=$vmod_id \
  -e VMOD_SOURCE_NAME=$VMOD_SOURCE_NAME \
  -e VMOD_BINARY_NAME=$VMOD_BINARY_NAME \
  -e VMOD_RPM_NAME=$VMOD_RPM_NAME \

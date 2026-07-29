@@ -5,9 +5,10 @@
 # container that has never seen a build tree, so the subject is the installed
 # package and nothing else.
 #
-# Mount contract (set by ../verify-deb.sh):
+# Mount contract (set by ../run.sh):
 #   /lane   out/ the built .debs, engine/ the verified engine .debs,
-#           tests/ the ported VTCs, src/ the verified upstream archive
+#           tests/ the ported VTCs, src/ the verified upstream archive,
+#           scripts/ this script and the shared check libraries
 #   /meta   names.json and the generated recipe's generation-record.json
 #
 # The check families are cachetag's, applied to a generated package: the
@@ -16,6 +17,12 @@
 # recipe, lint has an explicit expectation rather than a shrug, the runtime
 # pair alone can load the VMOD, and upstream's own test expectations pass
 # against the installed .so.
+#
+# Since Step 7 Wave 0 the payload allowlist, the hardening inspection and the
+# behaviour suite are not written here: they are the shared implementations in
+# scripts/ci/lib/package-checks.sh and scripts/ci/lib/vtc-suite.sh, which the
+# cachetag lanes call too. generate.sh stages both into lane/scripts/ because
+# this container mounts only the lane.
 
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -36,6 +43,12 @@ die() {
 : "${VMOD_BINARY_NAME:?}" "${VMOD_OBJECT:?}" "${VMOD_DEBIAN_VERSION:?}"
 : "${VINYL_VMODDIR:?}" "${VINYL_STRICT_ABI:?}" "${VINYL_VRT:?}" "${COHORT_ID:?}"
 : "${VMOD_MAN_PAGE:?}" "${VMOD_SOURCE_SHA256:?}"
+: "${VMOD_TEST_FIXTURES:?}" "${VMOD_TEST_FIXTURE_MACRO:?}"
+
+# shellcheck source=../../lib/package-checks.sh
+. /lane/scripts/package-checks.sh
+# shellcheck source=../../lib/vtc-suite.sh
+. /lane/scripts/vtc-suite.sh
 
 apt-get update -qq
 apt-get install -y --no-install-recommends \
@@ -58,95 +71,15 @@ for want in "vinyld-abi-$VINYL_STRICT_ABI" "vinyld-vrt (= $VINYL_VRT)" "vinyld-c
 done
 
 note "3 -- payload is exactly what the overlay declared"
-# Read the listing into a variable first. `dpkg-deb -c | grep -q` makes grep
-# exit on the first match, dpkg-deb dies of SIGPIPE, and under pipefail the
-# pipeline reports failure even though the file WAS found. That trap already
-# cost a run in the cachetag work; do not reintroduce it.
-contents=$(dpkg-deb -c "$deb")
-printf '%s\n' "$contents"
-case "$contents" in
-*"$VINYL_VMODDIR/$VMOD_OBJECT"*) echo "OK: $VMOD_OBJECT is packaged into $VINYL_VMODDIR" ;;
-*) die "$VMOD_OBJECT is not in $VINYL_VMODDIR" ;;
-esac
-case "$contents" in
-*"/usr/share/man/$VMOD_MAN_PAGE"*) echo "OK: the declared manual page is packaged" ;;
-*) die "the declared manual page /usr/share/man/$VMOD_MAN_PAGE is missing" ;;
-esac
-stray=$(printf '%s\n' "$contents" | { grep -E '\.(la|a)$' || true; })
-[ -z "$stray" ] || die "libtool archive or static library shipped: $stray"
-echo "OK: no libtool archives or static libraries"
-# Nothing may be installed outside the VMOD directory and the documentation
-# and manual trees. A generated recipe with a wrong payload declaration would
-# otherwise ship whatever `make install` happened to produce.
-# The recipe's own lintian override file is named exactly, not allowed by
-# directory: debhelper installs debian/<binary>.lintian-overrides at
-# /usr/share/lintian/overrides/<binary>, and cachetag ships one too. Narrowness
-# is this check's entire value, so it gets the one path it is owed and not the
-# directory it sits in.
-#
-# There is deliberately no /usr/lib/debug or build-id entry here, which is the
-# asymmetry with the RPM half's /usr/lib/.build-id allowance: debhelper puts the
-# debug objects and their build-id links in a SEPARATE -dbgsym binary package,
-# and the package selected above is the main one by exact name. The RPM
-# equivalent lands in the main package. Recorded so the difference reads as a
-# fact about the two packaging systems rather than as an oversight in one of the
-# two lists.
-#
-# Every filter is guarded with `|| true`: an allowlist that happens to select
-# nothing is a passing check, not a pipeline failure, and under `pipefail` an
-# unguarded `grep -v` that filters everything out would abort the script with a
-# success-shaped payload.
-unexpected=$(printf '%s\n' "$contents" | awk '{ print $NF }' |
-	{ grep -v '/$' || true; } |
-	{ grep -vF "$VINYL_VMODDIR/$VMOD_OBJECT" || true; } |
-	{ grep -vFx "./usr/share/lintian/overrides/$VMOD_BINARY_NAME" || true; } |
-	{ grep -vE '^\./usr/share/(man|doc)/' || true; })
-[ -z "$unexpected" ] || die "unexpected files in the payload:
-$unexpected"
-echo "OK: payload contains only the declared VMOD object, manual and documentation"
+pc_assert_deb_payload "$deb" "$VMOD_BINARY_NAME" "$VINYL_VMODDIR" \
+	"$VMOD_OBJECT" "$VMOD_MAN_PAGE" ||
+	die "the payload is not what the overlay declared; see above"
 
 note "4 -- hardening inspection"
-# Two kinds of evidence, and the split is deliberate.
-#
-# relro, BIND_NOW and PIC are properties of the LINKED OBJECT. The linker either
-# produced them or it did not, whatever the source looks like, so they are
-# asserted against the binary.
-#
-# The stack protector is not observable that way, and Wave B run 30409242057
-# proved it by failing this row on a package whose compile lines carry
-# -fstack-protector-strong: the flag instruments only functions with something
-# worth a canary, and vmod_dict.c has none. So the FLAG is asserted, from the
-# build log the build stage captured, and the canary symbol is demoted to
-# corroboration whose absence is never a failure. See check-build-flags.sh.
-sh /lane/scripts/check-build-flags.sh /lane/logs/pbuilder-build.log \
-	-fstack-protector-strong ||
-	die "the build did not apply the distribution hardening flags; see above"
-
 mkdir -p /tmp/x && dpkg-deb -x "$deb" /tmp/x
-so=/tmp/x$VINYL_VMODDIR/$VMOD_OBJECT
-fail=0
-check() {
-	if [ "$1" -eq 0 ]; then printf 'PASS  %-18s %s\n' "$2" "$3"; else
-		printf 'FAIL  %-18s %s\n' "$2" "$3"
-		fail=1
-	fi
-}
-dyn=$(readelf -W --dyn-syms --syms "$so" 2>/dev/null || true)
-seg=$(readelf -W -l "$so" 2>/dev/null || true)
-dynm=$(readelf -W -d "$so" 2>/dev/null || true)
-hdr=$(readelf -W -h "$so" 2>/dev/null || true)
-case "$dyn" in
-*__stack_chk_fail*)
-	printf 'PASS  %-18s %s\n' stack-protector "__stack_chk_fail referenced (corroborating)" ;;
-*)
-	printf 'NOTE  %-18s %s\n' stack-protector \
-		"no canary symbol: no function in this source needs one. Not a failure -- the flag is asserted from the build log above." ;;
-esac
-case "$seg" in *GNU_RELRO*) check 0 relro-segment "GNU_RELRO present" ;; *) check 1 relro-segment absent ;; esac
-case "$dynm" in *BIND_NOW* | *NOW*) check 0 bind-now "BIND_NOW set" ;; *) check 1 bind-now absent ;; esac
-case "$hdr" in *"Type:"*DYN*) check 0 pic "ELF type DYN" ;; *) check 1 pic "not DYN" ;; esac
-[ "$fail" -eq 0 ] || die "hardening inspection failed"
-echo "HARDENING INSPECTION: PASS"
+pc_verify_build "/tmp/x$VINYL_VMODDIR/$VMOD_OBJECT" "$VMOD_OBJECT" \
+	log /lane/logs/pbuilder-build.log ||
+	die "hardening inspection failed"
 # The extracted tree goes away before the uniqueness check below runs, so that
 # check can stay maximally strict instead of learning to ignore a directory.
 rm -rf /tmp/x
@@ -154,7 +87,8 @@ rm -rf /tmp/x
 note "5 -- lintian, with an explicit expectation"
 # Not `|| true`. The generated recipe carries its own overrides for the two
 # tags every package of this shape emits; anything else is a finding about the
-# generator and has to be seen.
+# generator and has to be seen. The cachetag lane runs the same --fail-on since
+# Step 7 Wave 0.
 lint_status=0
 lintian --no-tag-display-limit --fail-on error,warning "$deb" 2>&1 | tee /tmp/lintian.log || lint_status=$?
 [ "$lint_status" -eq 0 ] || die "lintian reported errors or warnings; see above.
@@ -187,39 +121,10 @@ dpkg -S "$VINYL_VMODDIR/$VMOD_OBJECT"
 echo "OK: runtime pair installed, single packaged .so, packaged vinyltest driver"
 
 note "7 -- behaviour: upstream's own expectations against the installed package"
-# The fixture is upstream's tests/num.dict, taken from the verified release
-# archive rather than copied into this repository, so there is one copy of it
-# and the oracle cannot drift.
 archive=$(find /lane/src -maxdepth 1 -name "*.tar.gz" | sort | head -1)
-echo "$VMOD_SOURCE_SHA256  $archive" | sha256sum -c - || die "source archive digest mismatch"
-mkdir -p /tmp/upstream /tmp/fixtures
-tar -C /tmp/upstream --strip-components=1 -xzf "$archive"
-cp -v /tmp/upstream/tests/*.dict /tmp/fixtures/
-ls -1 /lane/tests/*.vtc >/tmp/vtc-ledger
-count=$(wc -l </tmp/vtc-ledger | tr -d ' ')
-[ "$count" -gt 0 ] || die "no ported VTCs were staged"
-echo "ledger: $count VTCs"
-# debug=+vclrel ("Rapid VCL release", include/tbl/debug_bits.h, present in both
-# 9.0.1 and trunk) makes workers release their cached VCL reference after every
-# task, so vcl->busy is zero at stop and every VTC teardown's CLI stop
-# completes promptly. Needed because 9.0.1 lacks 7de492b0e8 ("Shut down pools
-# when stopping"): pools are not shut down on stop, so idle workers hold their
-# VCL refs through a 60s cond-wait, and with -t 60 that is a timeout rather
-# than a slow teardown. Ported from
-# recipes/debian-13/container/stage-vtc-suite.sh:90-98; remove when the release
-# track reaches a Vinyl containing 7de492b0e8.
-status=0
-# shellcheck disable=SC2046
-vinyltest -v -k -j1 -t 60 \
-	-p vmod_path="$VINYL_VMODDIR" \
-	-p debug=+vclrel \
-	-Ddictdir=/tmp/fixtures \
-	$(cat /tmp/vtc-ledger) 2>&1 | tee /tmp/vtc.log || status=$?
-passed=$(grep -c 'TEST .* passed' /tmp/vtc.log || true)
-skipped=$(grep -c 'TEST .* skipped' /tmp/vtc.log || true)
-[ "$status" -eq 0 ] || die "vinyltest reported failures"
-[ "$passed" -eq "$count" ] || die "passed $passed of $count VTCs"
-[ "$skipped" -eq 0 ] || die "$skipped VTCs skipped; the suite must run completely"
-printf 'VTC-SUITE SUMMARY: %s/%s passed, 0 skipped\n' "$passed" "$count"
+vtc_stage_fixtures "$archive" "$VMOD_SOURCE_SHA256" "$VMOD_TEST_FIXTURES" /tmp/fixtures ||
+	die "the declared test fixtures could not be staged"
+vtc_run_suite /lane/tests "$VINYL_VMODDIR" "$VMOD_TEST_FIXTURE_MACRO" /tmp/fixtures ||
+	die "the installed-package behaviour suite failed"
 
 note "verify-deb complete"
