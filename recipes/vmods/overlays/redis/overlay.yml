@@ -135,7 +135,7 @@ package:
     - libvmod-redis lets VCL execute commands against one or more Redis
     - servers. It supports standalone servers, replicated master/slave pairs
     - with automatic role discovery, Redis Cluster with MOVED and ASK
-    - redirection following, Sentinel-driven failover, and TLS.
+    - redirection following, Sentinel-driven fail-over, and TLS.
     - ""
     - Connections are pooled either privately per worker thread or shared
     - across them, with configurable connection and command timeouts,
@@ -150,8 +150,8 @@ package:
     - The module declares a strict ABI tag, so the binary works only with the
     - exact Vinyl Cache build it was compiled against. That coupling is
     - encoded as dependencies on virtual packages which only the matching
-    - runtime provides, so an incompatible upgrade is unresolvable rather
-    - than silently loadable.
+    - runtime provides, so an incompatible upgrade fails to resolve rather
+    - than silently loading.
     - ""
     - The packaging carries one reviewed patch against upstream, which renames
     - the Varnish build-system interfaces to their Vinyl Cache equivalents. It
@@ -350,36 +350,39 @@ behaviour:
 
 rpmlint_overrides:
   # One filter, for the licence expression, and NOTHING else. The Summary is
-  # capitalised and the description avoids the vocabulary dict's waivers cover,
-  # so those classes are expected not to fire; if they do, they are findings
-  # about this overlay and get fixed, not waived.
+  # capitalised and the description avoids vocabulary rpmlint's dictionary
+  # rejects, so those classes are expected not to fire; if they do, they are
+  # findings about this overlay and get fixed, not waived. Wave 2's first live
+  # pass (run 30490103610, 2026-07-29) enforced exactly that: spelling-error
+  # fired on "failover" and "unresolvable", and the description was reworded
+  # rather than the check waived.
   #
-  # The filter is written for the FULL rendered expression rather than reused
-  # from the cachetag lane. recipes/el9/rpmlint-waivers.rpmlintrc:24 waives
-  # `(BSD-2-Clause|MPL-2\.0)`, which does not match this package's
-  # `BSD-2-Clause AND BSD-3-Clause AND LicenseRef-Public-Domain` -- rpmlint
-  # reports the whole field, not a token from it, so a regex written for a
-  # single-licence package would have silently failed to match and the row
-  # would have failed on a finding that WAS reviewed. Matching the exact string
-  # is also the safer form: a licence expression that changes stops being
-  # covered, which is the direction a waiver should fail in.
+  # The filter matches per TOKEN, because that is rpmlint 1.11's measured
+  # behaviour. Wave 1 wrote it for the full rendered expression on the belief
+  # that rpmlint reports the whole License: field; the same live pass showed
+  # the opposite -- the tool splits the expression and reports each
+  # unrecognised token on its own line, three findings for this package. The
+  # alternation below enumerates exactly the three reviewed tokens and nothing
+  # else, which keeps the direction a waiver should fail in: a licence
+  # expression that changes produces a token the regex has never heard of, and
+  # the row fails for re-review.
   #
-  # MEASUREMENT RULE, and it binds before redis is ever released. Wave 2's
-  # unfiltered informational pass is the measurement. If invalid-license does
-  # not fire there, this filter is dead and is REMOVED in the same wave -- an
-  # unused waiver is a claim about a tool's behaviour that nobody checked, and
-  # rpmlint has no unused-override complaint of its own to catch it.
+  # MEASUREMENT RULE, resolved 2026-07-29. Wave 1 bound this filter to Wave 2's
+  # unfiltered informational pass: removed if invalid-license did not fire.
+  # It fired -- once per token -- so the filter earns its place, rewritten to
+  # the shape the tool actually emits rather than the shape Wave 1 assumed.
   filters:
     - "# rpmlint 1.11 (EL9 AppStream) predates SPDX identifiers and wants legacy"
     - "# strings such as `BSD`. SPDX is correct for modern packaging and this"
     - "# expression is what the three licence notices in the tree actually say:"
     - "# LICENSE is two-clause, src/crc16.c carries the endorsement clause, and"
     - "# src/sha1.c is public domain. Correct metadata is not changed to satisfy a"
-    - "# 2017 tool. The cachetag lane waives the same check for the same reason in"
-    - "# recipes/el9/rpmlint-waivers.rpmlintrc; its regex is written for a"
-    - "# single-licence field and does not match a compound expression, so this is"
-    - "# written out in full rather than reused."
-    - "addFilter(r' W: invalid-license BSD-2-Clause AND BSD-3-Clause AND LicenseRef-Public-Domain$')"
+    - "# 2017 tool. rpmlint reports each unrecognised token of the expression on"
+    - "# its own line (measured live, run 30490103610), so the filter enumerates"
+    - "# the three reviewed tokens; any change to the licence expression"
+    - "# introduces a token this line does not cover and fails the row for"
+    - "# re-review."
+    - "addFilter(r' W: invalid-license (BSD-2-Clause|BSD-3-Clause|LicenseRef-Public-Domain)$')"
 
 lintian_overrides:
   source: []
