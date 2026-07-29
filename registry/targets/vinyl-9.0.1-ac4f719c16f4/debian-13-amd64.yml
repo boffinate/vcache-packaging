@@ -496,10 +496,11 @@ vmods:
       upgrade_transactions: pass
   # dict joined the selected set on 2026-07-28 (SCOPE.md). Its lanes select
   # vinyl-release on both targets, so this cohort and target must carry its
-  # evidence -- and the entry exists, explicitly pending, rather than being
+  # evidence -- and the entry has existed since that date rather than being
   # absent. An absent entry would let "the release is complete" be true with a
-  # required VMOD's results simply missing; a pending one cannot, because
-  # --require-releasable rejects it by name.
+  # required VMOD's results simply missing; the entry was created explicitly
+  # pending, which cannot, because --require-releasable rejects pending by
+  # name. Recorded from run 30413513970 on 2026-07-29.
   dict:
     evidence: recorded
     package:

@@ -864,14 +864,9 @@ That separates the consumer-side classification from the producer's outcome enti
 
 Ten injection cases, thirteen items, **every one adjudicated against an expectation written before its run**. No case produced a result its documented expectation did not predict, once the three defects the sequence itself found (B10, B11, and the EL9 mirror condition) were fixed or waited out.
 
-### Remaining dispatches
+### How the expectations were derived
 
-The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
-
-| # | `inject=` | Expected |
-| --- | --- | --- |
-
-Every one of those expectations was read back out of `ci_matrix.py expand` before dispatching, so the adjudication is against the tool rather than against memory:
+Each case's expected result was written from the ledger before its run, and then read back out of `ci_matrix.py expand` to confirm which rows the injection actually marks -- so every adjudication above is against the tool rather than against memory:
 
 ```text
 dict_build        inject_build on target/dict/release/vinyl-release/debian-13-amd64
