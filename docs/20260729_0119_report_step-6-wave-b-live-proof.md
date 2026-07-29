@@ -439,3 +439,22 @@ Expected results were stated before each dispatch, from the ledger rather than f
 
 **`INJECT_ENGINE_ROW` is `("vinyl-trunk-pinned", "debian-13-amd64")`**, and the expansion shows exactly one consumer of it — `target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64`. dict's two target rows both name `engine/vinyl-release/…`. So `inject=engine_build` and `inject=suppress_engine_artifact` block **one** row, cachetag's, and **`target-generated`'s engine-blocked path is not exercised by them**. Proving that path live would need `INJECT_ENGINE_ROW` moved to a `vinyl-release` row, which changes what the existing cachetag-side cases demonstrate; it is recorded as a gap rather than papered over.
 
+### Remaining dispatches
+
+The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
+
+| # | `inject=` | Expected |
+| --- | --- | --- |
+| 2 | `dict_source` | dict source `failed_source_checkout`; dict's 2 targets `blocked_by_vmod_source`; all 6 cachetag rows and all 4 engine rows PASS |
+| 3 | `recipe_generation` | exactly one dict target row `failed_recipe_generation`; everything else PASS |
+| 4 | `manifest` | ledger shrinks to **7** rows: cachetag collapses to one `failed_manifest_validation`, all 4 dict rows PASS, and the 2 `vinyl-trunk-pinned` engine rows are **not** reported missing |
+| 5 | `dict_build` | dict's Debian row `failed_package_build`; dict's EL9 row and all cachetag rows PASS |
+| 6 | `debian_build` | cachetag's 2 Debian target rows red; all 4 dict rows PASS |
+| 7 | `el9_build` | cachetag's 2 EL9 target rows red; all 4 dict rows PASS |
+| 8a | `source_checkout` | cachetag source red; its 4 targets `blocked_by_vmod_source`; dict PASS |
+| 8b | `source_digest` | same shape, different source status |
+| 9 | `suppress_result` | one cachetag row green with no result artifact; collector synthesizes `missing_result_record`; run red; dict PASS |
+| 10a | `engine_build` | `engine/vinyl-trunk-pinned/debian-13-amd64` red; **exactly one** consumer, `target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64`, `blocked_by_engine_artifact`; everything else PASS |
+| 10b | `suppress_engine_artifact` | same blocked set, from a *green* producer that published nothing |
+
+Dispatch discipline, learned the hard way in run 5: **one run at a time**. Two runs sharing the runner pool pushed a cachetag EL9 row past its 35-minute budget and GitHub cancelled it. There is no `concurrency:` group to serialise them.
