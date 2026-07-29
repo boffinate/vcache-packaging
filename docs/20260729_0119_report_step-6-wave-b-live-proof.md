@@ -565,13 +565,56 @@ Two separate faults, and the second is the one worth recording.
 
 The reconciled ledger from the failed attempt is worth keeping for one reason: the **ledger shape was already right**. It shrank to **7 expected rows** with the two `vinyl-trunk-pinned` engine rows correctly absent rather than reported missing, and cachetag collapsed to a single `failed_manifest_validation`. Everything else read `missing_result_record` or `blocked_by_vmod_source` because no job downstream of the structural gate ran at all. Item 4 is therefore **not adjudicated** and is re-dispatched below.
 
+### Item 4, second attempt — [30416382776](https://github.com/boffinate/vcache-packaging/actions/runs/30416382776): the ledger was right, one row timed out
+
+**The shape of the case is proven.** The ledger did exactly what ruling R-B predicted:
+
+```text
+counts: expected=7 passed=5 failed=2 missing=0 not_selected=0 required_failed=2
+  vmod/cachetag                                   failed_manifest_validation
+  target/dict/release/vinyl-release/el9-x86_64    failed_infrastructure
+```
+
+| Expected | Observed |
+| --- | --- |
+| ledger shrinks to **7** rows | **7 rows** |
+| cachetag collapses to one `failed_manifest_validation` | **yes**, and its four target rows and its source row were never created |
+| the two `vinyl-trunk-pinned` engine rows are **not** reported missing | **absent from the ledger entirely**, and `missing=0` |
+| the two `vinyl-release` engine rows PASS | **PASS** |
+| all four dict rows PASS | invocation, source and the Debian target **PASS**; the EL9 target **timed out** |
+
+Only cachetag's lanes consumed the trunk-pinned engine, so with cachetag's manifest unparseable nobody asked for those rows, and the collector correctly does not report them missing. That is the property D2 made untestable and R-B restored, now demonstrated live rather than in a simulation.
+
+#### The one deviation, and why it is not the injection
+
+`target/dict/release/vinyl-release/el9-x86_64` was cancelled at its 30-minute `timeout-minutes` while Mock was still in *build setup*, and classified `failed_infrastructure` — *"the row did not reach its checksums"*. Measured from the job logs' own timestamps:
+
+| Phase | run 30413513970 (green) | run 30416382776 (cancelled) |
+| --- | --- | --- |
+| Mock initialises the root | 0.5 min | 2.6 min |
+| `--buildsrpm` complete | 1.2 min | **14.5 min** |
+| build phase complete | 1.5 min | never — axed at 30.2 min |
+| **whole EL9 lane** | **2.1 min** | — |
+
+Every Mock phase ran ten to twenty times slower than normal. The evidence that this is environmental rather than a property of the injection:
+
+- the injection corrupts `registry/vmods/cachetag.yml`, and nothing on dict's EL9 path reads it;
+- **dict's Debian row in the same run passed normally**, from the same corrupted checkout;
+- the identical EL9 row passed in runs 30413513970 and 30415386761 at 2.1 and 2.4 minutes, from the same lane code;
+- cachetag's four target jobs did not exist in this run, so the runner pool was *less* contended, not more.
+
+`mock --buildsrpm` spends its time on chroot init and package-manager metadata, so twelve minutes for what normally takes forty seconds points at mirror or runner latency. Nothing in this repository changed to cause it.
+
+One small positive falls out of it: a row killed by its own timeout classifies as `failed_infrastructure` rather than being misattributed to the package or to the injection, which is what that status is for. The 30-minute budget is not tight — the normal run has fourteen times the headroom.
+
+Item 4 is therefore **re-dispatched** rather than adjudicated on this run. Deviations stop the line; an unexplained slow runner is not an expected classification.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
 
 | # | `inject=` | Expected |
 | --- | --- | --- |
-| 4 | `manifest` | ledger shrinks to **7** rows: cachetag collapses to one `failed_manifest_validation`, all 4 dict rows PASS, and the 2 `vinyl-trunk-pinned` engine rows are **not** reported missing |
 | 5 | `dict_build` | dict's Debian row `failed_package_build`; dict's EL9 row and all cachetag rows PASS |
 | 6 | `debian_build` | cachetag's 2 Debian target rows red; all 4 dict rows PASS |
 | 7 | `el9_build` | cachetag's 2 EL9 target rows red; all 4 dict rows PASS |
