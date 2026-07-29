@@ -2,7 +2,7 @@
 
 Date: 2026-07-29
 
-Status: **Implemented, pending the CI equivalence gate.** Every claim below is verified locally, in containers, against the artifacts of the last green `main` run. The authoritative equivalence proof is a baseline CI run whose cachetag artifacts must be byte-identical (Debian) and semantically equivalent (EL9) to [30437775658](https://github.com/boffinate/vcache-packaging/actions/runs/30437775658). Nothing here is pushed.
+Status: **Implemented and proven live.** The CI equivalence gate is [30445082182](https://github.com/boffinate/vcache-packaging/actions/runs/30445082182), conclusion `success`, all eight criteria met; the run-by-run evidence is the last section of this note. Everything before that section was verified locally in containers *before* the dispatch, and is left as written so the local claims can be read against what the run then produced.
 
 Branch: `step7-lane-consolidation`, off `main` at `d925b56`.
 
@@ -346,16 +346,120 @@ Staging was checked in the same run: `lane/scripts/` contains `verify-deb.sh`, `
 - **No install or behaviour stage ran.** They need x86_64 packages on an x86_64 package manager.
 - **Digest reproduction against CI was not attempted.** The Wave B report already measured that whole-RPM digests differ by `BUILDHOST` alone, and a local Debian build cannot reproduce a runner's `.buildinfo`. The equivalence proof is the CI gate, not a local build.
 
-## The CI gate this is waiting on
+## The CI gate: run 30445082182, all eight criteria met
 
-Push, dispatch a baseline `inject=none` run, and require:
+Dispatched `ci.yml --ref step7-lane-consolidation -f inject=none` on 2026-07-29. Conclusion **`success`**. Compared against the last green `main` run, [30437775658](https://github.com/boffinate/vcache-packaging/actions/runs/30437775658).
 
-1. **All 14 selected rows green.** The ledger is unchanged at 15/14, so the shape is the same.
-2. **cachetag Debian: byte-identical** to 30437775658, excluding `.buildinfo` and `.changes`, on both engine channels — 11 digest entries each, 10 `.deb` files in total.
-3. **cachetag EL9: semantically equivalent** to 30437775658 under the Step 3 normalized comparison, on both channels — 9 RPMs each, empty diff in every section. Whole-RPM digests are expected to differ (`BUILDHOST`).
-4. **The new checks are visible and passing** in the row logs: `BUILD-FLAG ASSERTION: PASS` with 7 compile lines on each cachetag row, `OK: payload contains only …` on both, and `lintian exit status: 0` with `--fail-on error,warning` in the Debian lint stage.
+### 1. All 14 selected rows green
 
-If (2) or (3) moves, the cause is in this change set and the per-hunk table above is the list of suspects — the tee'd log and the container-side `dnf` additions first, because they are the only hunks that write anything at all.
+```json
+"counts": { "expected": 14, "failed": 0, "missing": 0,
+            "not_selected": 1, "passed": 14, "required_failed": 0 },
+"ok": true
+```
+
+The one `not_selected` row is the trunk lane no VMOD asks for on this tier. The ledger shape is unchanged at 15/14.
+
+### 2. dict — the most sensitive detector, checked first
+
+dict's build path was rewritten onto `lib/pbuilder.sh`, `lib/mock.sh`, `lib/package-checks.sh` and `lib/vtc-suite.sh` in their entirety, so if the consolidation moved anything, it moves here.
+
+**Debian 13 amd64, byte-identical**, excluding `.buildinfo` and `.changes`:
+
+| Entry | Verdict |
+| --- | --- |
+| `vmod-dict_1.7-1_amd64.deb` | identical |
+| `vmod-dict-dbgsym_1.7-1_amd64.deb` | identical |
+| `vmod-dict_1.7-1.dsc` | identical |
+| `vmod-dict_1.7-1.debian.tar.xz` | identical |
+| `vmod-dict_1.7.orig.tar.gz` | identical |
+
+**5 of 5 digest entries identical.**
+
+**EL9 x86_64, normalized semantic comparison** — package set matches exactly, and every section (NEVRA; summary/licence/group/URL/sourcerpm/buildtime/size; payload path, size, content digest, mode, owner, group, flags, rdev, symlink target; payload mtimes; Provides; Requires; Conflicts; Obsoletes; the four weak-dependency classes; scripts; triggers; changelog) diffs empty:
+
+| RPM | Verdict |
+| --- | --- |
+| `vmod-dict-1.7-1.el9.x86_64.rpm` | **EQUIVALENT** |
+| `vmod-dict-debuginfo-1.7-1.el9.x86_64.rpm` | **EQUIVALENT** |
+| `vmod-dict-debugsource-1.7-1.el9.x86_64.rpm` | **EQUIVALENT** |
+| `vmod-dict-1.7-1.el9.src.rpm` | **EQUIVALENT** |
+
+**4 of 4 equivalent.** Whole-RPM digests differ, which is expected and not an equivalence requirement: the Step 4 report measured the cause as `BUILDHOST`.
+
+### 3. cachetag Debian 13 amd64 — byte-identical on both channels
+
+| Engine channel | Digest entries compared | Verdict |
+| --- | --- | --- |
+| `vinyl-release` | 11 | **11/11 identical** |
+| `vinyl-trunk-pinned` | 11 | **11/11 identical** |
+
+Both sets are the 5 cachetag entries (`.deb`, `-dbgsym.deb`, `.dsc`, `.debian.tar.xz`, `.orig.tar.gz`) and the 6 Vinyl ones. **10 `.deb` files across the two channels, byte for byte**, plus the two `-dbgsym` and the source artefacts.
+
+### 4. cachetag EL9 x86_64 — semantically equivalent on both channels
+
+| Engine channel | RPMs | Verdict |
+| --- | --- | --- |
+| `vinyl-release` | 9 | **9/9 EQUIVALENT**, empty diff in every section |
+| `vinyl-trunk-pinned` | 9 | **9/9 EQUIVALENT**, empty diff in every section |
+
+**18 RPMs**, package sets matching exactly on both channels: `libvmod-cachetag` and its `-debuginfo`, `-debugsource` and SRPM, plus `vinyl-cache`, `-devel`, `-debuginfo`, `-debugsource` and its SRPM.
+
+### 5. Engine rows
+
+All four green. The Debian engine row's pbuilder behaviour is unchanged against the baseline row: same `I: Building the build Environment`, same source-file copy, and **123 `libtool: compile:` lines in both**. Its produced packages are among the 11 digest entries compared in criterion 3 and are identical; the EL9 engine rows' packages are among the 9 compared in criterion 4 and are equivalent.
+
+### 6. The new checks, visible and passing
+
+Identical output on all four cachetag rows:
+
+```text
+ledger: 7 compile lines
+PASS  -fstack-protector-strong     present on all 7 compile lines
+PASS  -D_FORTIFY_SOURCE=2          present on all 7 compile lines
+BUILD-FLAG ASSERTION: PASS
+HARDENING INSPECTION: PASS (libvmod_cachetag.so)
+```
+
+| Row | compile lines | payload allowlist | lint |
+| --- | --- | --- | --- |
+| cachetag debian-13 (`vinyl-release`) | 7 | `OK: payload contains only the declared VMOD object, manual and documentation` | `lintian exit status: 0 (0 = no error-level or warning-level tag)` |
+| cachetag debian-13 (`vinyl-trunk-pinned`) | 7 | same | same |
+| cachetag el9 (`vinyl-release`) | 7 | `OK: payload contains only the declared object, manual, documentation, licence and RPM build-id links` | `9 packages and 0 specfiles checked; 0 errors, 0 warnings` |
+| cachetag el9 (`vinyl-trunk-pinned`) | 7 | same | same |
+
+The predicted count was 7 and the measured count is 7 on every row, which is the check confirming it read the right log rather than any log. dict's rows report 2 compile lines, as before, plus the new shared output: `fixtures staged: 1 file(s) from tests/*.dict` and `VTC-SUITE SUMMARY: 2/2 passed, 0 skipped` — the declared-fixture seam working through `lib/vtc-suite.sh`.
+
+The EL9 rpmlint gate still reads `0 errors, 0 warnings` on both channels, unchanged.
+
+### 7. The tee'd build logs — and one precise correction to the expectation
+
+`pbuilder-libvmod-cachetag.log` is present in **both** cachetag Debian rows' uploaded artifacts, under `logs/`, beside `lint.log`, `smoke.log` and `vtc-suite.log`. It is the file `assert-packages.sh` reads its hardening evidence from, and criterion 6's `7 compile lines` is the proof it was read. dict's row carries the equivalent `pbuilder-build.log`.
+
+**`pbuilder-vinyl-cache.log` is not in any uploaded artifact, and cannot be.** It is produced only in the *engine* Debian rows — a VMOD row runs `PBUILDER_SCOPE=vmod` and builds no engine — and the engine artifact is `packages/` plus `engine-metadata.json` and `engine-identity.env` by design (`ci.yml`'s `stage and describe the engine artifact` step copies package files by suffix and nothing else). The log is written into the engine job's `dist/debian-13/logs/` and its content is also on the job's stdout, because `tee` writes to both.
+
+That is a **correction to the criterion, not a failure**: nothing reads `pbuilder-vinyl-cache.log`, because `vinyld` is deliberately on the `nolog` path (criterion 8). If a future change moves the engine to `log`, publishing it becomes a requirement and the engine artifact's path list has to grow — recorded here so that dependency is written down rather than discovered.
+
+### 8. The `nolog` reason, visible
+
+From both cachetag Debian rows:
+
+```text
+NOTE  vinyld             no build log in this row (the engine is a verified artifact in a
+                         VMOD row, and its own row has no libtool compile lines for vinyld);
+                         the compile-line evidence is unavailable, so the canary and
+                         fortify SYMBOL checks below stay fatal rather than corroborating.
+PASS  stack-protector    __stack_chk_fail referenced (vinyld)
+PASS  fortify-source     __asprintf_chk __fprintf_chk __memset_chk __printf_chk
+                         __snprintf_chk __sprintf_chk __syslog_chk __vsnprintf_chk (vinyld)
+HARDENING INSPECTION: PASS (vinyld)
+```
+
+The engine's two symbol checks are still fatal and still pass, and the reason they were not demoted is in the log rather than only in this note.
+
+### The D5 guard did not fire, which is what it should do
+
+Both EL9 rows report `mock runs as mockbuild (uid 1001, groups: mockbuild mock)` — the runner's uid, taken from the bind mount — and neither log contains `is owned by root, in CI`. `CI=true` reached the container through the new forward, and the guard was reachable and silent, which is the difference between a guard and a comment.
 
 ## Audit rulings, 2026-07-29
 
