@@ -999,11 +999,20 @@ def test_per_vmod_evidence(repo_root: Path) -> None:
         sorted(data["vmods"]) == ["cachetag", "dict"],
         str(sorted(data["vmods"])),
     )
+    # What the live registry must say is that BOTH entries are recorded; the
+    # `pending` machinery is exercised below against a constructed entry.
+    #
+    # This used to assert that dict's entry was pending, and the two pending
+    # checks further down reached into the live file to strip and inspect its
+    # `pending_reason`. That worked only while dict's evidence did not exist.
+    # When Wave B recorded it, one of those checks did not start failing -- it
+    # raised KeyError and took the whole self-test process down, which CI caught
+    # as a failed structural gate rather than as a named failing assertion.
+    # A test that depends on a particular VMOD being mid-flight tests nothing
+    # once the work lands, so the state under test is now built here.
     check(
-        "evidence: cachetag's is recorded, dict's is pending with a reason",
-        data["vmods"]["cachetag"]["evidence"] == "recorded"
-        and data["vmods"]["dict"]["evidence"] == "pending"
-        and data["vmods"]["dict"]["pending_reason"].strip(),
+        "evidence: every entry in the release target is recorded",
+        all(v["evidence"] == "recorded" for v in data["vmods"].values()),
         str({k: v["evidence"] for k, v in data["vmods"].items()}),
     )
     check(
@@ -1044,10 +1053,16 @@ def test_per_vmod_evidence(repo_root: Path) -> None:
         str(errors),
     )
 
+    # `pending`, constructed rather than borrowed from whichever VMOD happens
+    # to be unfinished today.
+    pending = copy.deepcopy(data)
+    pending["vmods"]["dict"]["evidence"] = "pending"
+    pending["vmods"]["dict"]["pending_reason"] = "constructed by the self-test"
+
     # The field is optional in the schema, so absence -- not emptiness -- is
     # the case the semantic check has to catch. An empty string is already
     # refused by FREE_TEXT_RE one layer up.
-    pending_no_reason = copy.deepcopy(data)
+    pending_no_reason = copy.deepcopy(pending)
     del pending_no_reason["vmods"]["dict"]["pending_reason"]
     errors = manifest.validate_target(
         pending_no_reason, str(path), cohort=cohort, repo_root=repo_root
@@ -1059,7 +1074,7 @@ def test_per_vmod_evidence(repo_root: Path) -> None:
     )
 
     errors = manifest.validate_target(
-        data, str(path), cohort=cohort, require_releasable=True, repo_root=repo_root
+        pending, str(path), cohort=cohort, require_releasable=True, repo_root=repo_root
     )
     check(
         "evidence: pending evidence blocks release, by name",
@@ -1067,9 +1082,21 @@ def test_per_vmod_evidence(repo_root: Path) -> None:
         str(errors),
     )
     check(
-        "evidence: cachetag's recorded evidence raises no releasability error",
+        "evidence: a pending entry costs only itself",
         not any(e.startswith(f"{path}: vmods.cachetag.") for e in errors),
         str([e for e in errors if "cachetag" in e]),
+    )
+
+    # And the live file, unmodified, must now be releasable: this is the Step 6
+    # exit gate's "both package families meet the same evidence policy" clause
+    # asserted against the real data rather than against a constructed case.
+    errors = manifest.validate_target(
+        data, str(path), cohort=cohort, require_releasable=True, repo_root=repo_root
+    )
+    check(
+        "evidence: the recorded release target is releasable as written",
+        not errors,
+        str(errors),
     )
 
 

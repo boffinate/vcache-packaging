@@ -541,6 +541,26 @@ Collector: `expected 14, passed 13, failed 1, missing 0, required_failed 1`. One
 
 The sibling EL9 row passing is the point of running this at all: a generation failure on one target does not cost the other target of the same VMOD, let alone the other VMOD.
 
+### Item 4, first attempt — [30416252749](https://github.com/boffinate/vcache-packaging/actions/runs/30416252749): stopped at the structural gate, and the defect was mine
+
+The run never reached the injection. `structural validation and tooling selftests` failed first:
+
+```text
+File "tools/selftest.py", line 1051, in test_per_vmod_evidence
+    del pending_no_reason["vmods"]["dict"]["pending_reason"]
+KeyError: 'pending_reason'
+```
+
+**B10 — a self-test that depended on the work not being finished.** `test_per_vmod_evidence` read the live release target and asserted *"cachetag's is recorded, dict's is pending with a reason"*, then reached into that live entry to strip its `pending_reason` and to check that `pending` blocks release. Every one of those only held while dict's evidence did not exist. The evidence flip removed the field, and the test did not fail — it raised `KeyError` and took the whole self-test process down.
+
+Two separate faults, and the second is the one worth recording.
+
+**The test.** A check that depends on a particular VMOD being mid-flight stops testing anything the moment the work lands, and here it did worse than stop: it crashed. The `pending` state is now **constructed** from the recorded data inside the test, so both pending checks keep working with every VMOD complete, and a new check asserts the live file is releasable as written — the exit gate's evidence clause, against real data rather than a constructed case.
+
+**How it reached CI.** Locally I ran `release_tool.py selftest | grep -E '^# (TOTAL|FAIL)'`. A crash prints neither line, so the filter turned a traceback into silence and I read silence as a pass. The output of the battery I ran afterwards is missing its first block entirely, and I did not notice. **Filtering a self-test's output without checking its exit status is not running the self-test.** CI, which runs it under `set -e`, caught it on the first attempt — the gate did its job.
+
+The reconciled ledger from the failed attempt is worth keeping for one reason: the **ledger shape was already right**. It shrank to **7 expected rows** with the two `vinyl-trunk-pinned` engine rows correctly absent rather than reported missing, and cachetag collapsed to a single `failed_manifest_validation`. Everything else read `missing_result_record` or `blocked_by_vmod_source` because no job downstream of the structural gate ran at all. Item 4 is therefore **not adjudicated** and is re-dispatched below.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
