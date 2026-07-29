@@ -293,4 +293,86 @@ vinyld(vrt)(x86-64) = 23.0                  identical
 
 Whole-RPM sha256 differs on all nine, which is expected and is not an equivalence requirement — the Step 4 report measured the cause as `BUILDHOST`, the container's random hostname, with `BUILDTIME` correctly clamped and identical.
 
+#### Run 5's cachetag EL9 row was cancelled by its own timeout
+
+`cachetag el9-x86_64 (vinyl-release)` ran past its 35-minute `timeout-minutes` budget and GitHub terminated it mid-`build.sh`. Nothing in the row failed; the run's `failure` conclusion is dict's Debian row.
+
+The cause is dispatch discipline, not the lane. Run 6 was dispatched while run 5 was still executing, both runs competed for the same runner pool, and the row that would ordinarily finish inside 35 minutes did not. There is no `concurrency:` group in `ci.yml`, so nothing cancels a superseded run — the two simply share runners and both get slower. **Recorded as a caution: a second dispatch while a run is in flight can time out a row in the first one, and a timed-out row is indistinguishable at a glance from a failed one.** Run 5's other three cachetag rows were already green, which is why this cost nothing beyond the row itself.
+
 #### The EL9 buildroot package set (continued) The registry's per-VMOD `build.build_dependencies` needs the buildroot the package was built in. Debian's falls out for free: dpkg writes `Installed-Build-Depends` into the `.buildinfo`, which the row already uploads. Mock resolves its buildroot itself and writes no such list, and `root.log` records only the packages each transaction *added* — 33 for this build, against the 351 cachetag's EL9 entry records. So `build-rpm.sh` now asks the chroot directly after the build, the same thing `recipes/el9/container/build.sh:76-77` does on its own lane, and writes `logs/buildroot-packages.tsv` into the artifact. Non-fatal by construction: a row that produced a good package must not fail on a bookkeeping step.
+
+### Run 6 — `inject=none`, [30413513970](https://github.com/boffinate/vcache-packaging/actions/runs/30413513970)
+
+**Both dict target rows PASS.** For the first time, `vmod-dict` has verified binary packages on *both* selected targets, built from recipes generated in this repository out of the manifest and the reviewed overlay, with no upstream Debian or RPM files anywhere in the picture.
+
+| Row group | Result |
+| --- | --- |
+| 4 engine rows | PASS |
+| dict: invocation, `source-generated` | PASS |
+| dict: `target-generated` debian-13-amd64 | **PASS** |
+| dict: `target-generated` el9-x86_64 | **PASS** |
+| cachetag: invocation, source | PASS |
+| cachetag: 4 target rows | see the table below |
+
+## Verification case 8, and a one-off transaction matrix
+
+The recipe-generation plan's case 8 — *an incompatible engine package cannot satisfy the generated ABI or cohort dependency* — run as a one-off in containers on both targets, per the brief. Permanent transaction-lane integration for dict is Step 8 work and is **not** attempted here; `nightly-transactions.yml` remains cachetag-only.
+
+**The fixture.** Both package sets come from run 6 itself: dict's package and the `vinyl-release` engine in the baseline repository, and the **`vinyl-trunk-pinned` engine packages from the same run** as the incompatible candidate. They differ in exactly the way the dependencies are meant to catch:
+
+```text
+baseline  ABI 423648c4cb6b225b3268ffc337354ea938f5efee   cohort vinyl-9.0.1-ac4f719c16f4
+candidate ABI 25761f8505817ac50df994270bfe75b60073e33e   cohort vinyl-9.0.0-4b7e68292979
+```
+
+Run in `--platform linux/amd64` containers from the `debian:trixie` and `almalinux:9` tags rather than through `run.sh`. `run.sh` cannot force a platform — the image reference is digest-pinned and Docker refuses `--platform` against a digest — so a one-off that must exercise an x86_64 package manager on an arm64 host uses the tag directly. This is a local investigation, not a lane; CI remains the evidence authority for everything the lane itself asserts.
+
+### Debian 13 amd64 — apt refuses, and names both dependencies
+
+```text
+The following packages have unmet dependencies:
+ vmod-dict : Depends: vinyld-abi-423648c4cb6b225b3268ffc337354ea938f5efee but it is not installable
+             Depends: vinyld-cohort-vinyl-9.0.1-ac4f719c16f4 but it is not installable
+E: Unable to correct problems, you have held broken packages.
+E: The following information from --solver 3.0 may provide additional context:
+   Unable to satisfy dependencies. Reached two conflicting decisions:
+   1. vmod-dict:amd64=1.7-1 is selected for install
+   2. vmod-dict:amd64 Depends vinyld-abi-423648c4cb6b225b3268ffc337354ea938f5efee
+      but none of the choices are installable:
+      [no choices]
+```
+
+`apt-get` exits 100 and installs nothing.
+
+### EL9 x86_64 — dnf refuses, and names both dependencies
+
+```text
+Error:
+ Problem: conflicting requests
+  - nothing provides vinyld(abi)(x86-64) = 423648c4cb6b225b3268ffc337354ea938f5efee needed by vmod-dict-1.7-1.el9.x86_64
+  - nothing provides vinyld(cohort-vinyl-9.0.1-ac4f719c16f4)(x86-64) needed by vmod-dict-1.7-1.el9.x86_64
+```
+
+`dnf` exits 1 and installs nothing.
+
+**Case 8: PASS on both targets.** The generated ABI and cohort dependencies do what they were generated to do, and the error a user would actually see names the token that is missing rather than failing obscurely.
+
+### The rest of the matrix, and what it does not prove
+
+Nine assertions per target, all passing:
+
+| Assertion | debian-13-amd64 | el9-x86_64 |
+| --- | --- | --- |
+| the two engines differ in ABI (the fixture is not vacuous) | OK | OK |
+| the resolver refuses the incompatible pairing | OK, exit 100 | OK, exit 1 |
+| the error names the unsatisfied `vinyld` dependency | OK, 2 of 3 token families | OK, 2 of 2 |
+| nothing was installed by the refused transaction | OK | OK |
+| the coherent cohort installs | OK | OK |
+| the engine never moves while the VMOD stays | OK | OK |
+| the surviving VMOD's dependencies are still provided | OK | OK |
+| `dist-upgrade` / `--allowerasing`: VMOD removed or engine held | OK | OK |
+| removal takes the VMOD and leaves the engine | OK | OK |
+
+**What this is not: an upgrade-transaction matrix.** Stated plainly because it bears directly on the evidence flip. The only incompatible engine a `ci.yml` run produces is the trunk-pinned one, and `9.0.0~git20260520.25761f8505-1` sorts **below** `9.0.1-1` in both dpkg's and rpm's version comparison. So no resolver on either target ever considers the candidate an upgrade, and every row above that mentions "upgrade" is really testing that the resolver declines to *downgrade*. That is a genuine result — nothing mismatched, nothing broke — but it is not the property cachetag's thirteen-scenario matrix tests.
+
+Proving the upgrade dimension needs an engine that is simultaneously **newer** and **ABI-incompatible**, which is exactly what `recipes/debian-13/mismatch-fixture.sh` and `recipes/el9/mismatch-fixture.sh` exist to build and what only `nightly-transactions.yml` produces. Building that for dict is the Step 8 integration the brief defers, so **`vmods.dict.tests.upgrade_transactions` cannot honestly be recorded as `pass` from this work.** See the evidence section below.
