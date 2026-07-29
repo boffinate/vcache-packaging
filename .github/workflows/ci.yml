@@ -91,7 +91,10 @@ on:
           # refuse it for different reasons -- dpkg-source rejects a 3.0 (quilt)
           # series naming a missing file, build-rpm.sh compares the spec's Patch
           # lines against the files rendered beside it.
-          - redis_source # a ref that cannot resolve -> failed_source_checkout
+          # redis derives its archive from the tag in one step, so a bad ref
+          # dies inside the derivation and classifies as failed_source_archive,
+          # not dict_source's failed_source_checkout. Measured: run 30491871562.
+          - redis_source # a ref that cannot resolve -> failed_source_archive
           - redis_build # a failing EL9 row -> failed_package_build
           - patch_omission # a declared patch removed -> failed_package_build
           # Neither VMOD: these act entirely in the engine matrix below.
