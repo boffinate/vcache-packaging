@@ -152,6 +152,11 @@ mock_install_toolchain() {
 # four of Wave B's defects should have been found. Before Step 7 Wave 0 the
 # cachetag lane died here instead; on a Linux runner the branch is unreachable,
 # so adopting the fallback changes nothing CI does.
+#
+# And because "unreachable in CI" is an assumption rather than a mechanism, the
+# fallback is FATAL when CI=true. Both host drivers forward CI into the
+# container for that reason; without the forward the guard would be decorative,
+# since docker does not inherit the runner's environment.
 mock_setup_build_user() {
 	_mock_mount=$1
 	shift
@@ -159,6 +164,17 @@ mock_setup_build_user() {
 	MOCK_BUILD_UID=$(stat -c %u "$_mock_mount")
 	MOCK_BUILD_GID=$(stat -c %g "$_mock_mount")
 	if [ "$MOCK_BUILD_UID" -eq 0 ]; then
+		# The fallback is a local-development affordance and nothing else. On a
+		# Linux runner the bind mount carries the caller's uid, so a root-owned
+		# mount there means something about the job changed -- and silently
+		# building as uid 1000 instead would leave the results owned by an
+		# account the job does not have, with only a warning nobody reads. In
+		# CI it is fatal; elsewhere it is the warning.
+		if [ "${CI:-}" = "true" ]; then
+			printf 'E: %s is owned by root, in CI.\n' "$_mock_mount" >&2
+			printf 'E: mock cannot run as root and the uid-1000 fallback is a local-host affordance, not a CI path.\n' >&2
+			return 1
+		fi
 		printf 'W: %s reports root ownership; this is a non-Linux bind mount.\n' "$_mock_mount" >&2
 		printf 'W: using uid/gid 1000 so mock has an unprivileged account to drop to.\n' >&2
 		MOCK_BUILD_UID=1000

@@ -133,6 +133,7 @@ docker run --privileged --rm \
 	-v "$out:/out" \
 	-e "VINYL_TRACK=$VINYL_TRACK" \
 	-e "MOCK_SCOPE=$scope" \
+	-e "CI=${CI:-}" \
 	-w /out \
 	"$image" \
 	bash /ci/el9/container-mock.sh

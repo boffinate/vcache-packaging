@@ -45,7 +45,7 @@ Every lesson the brief names, and where it now lives exactly once:
 | the build user takes the bind mount's uid so results land owned by the caller | — | `mock.sh:mock_setup_build_user` |
 | `config_opts['root']` pinned to the STOCK config's name | rediscovered when writing `build-rpm.sh` | `mock.sh:mock_derived_config` |
 | `SOURCE_DATE_EPOCH` through `config_opts['environment']` | the 1.0.0-1 evidence recorded a changelog-derived epoch | `mock.sh:mock_derived_config` |
-| both epoch macros as `--define` on **every** invocation | measured; config macros alone are not the good form | `mock.sh:mock_epoch_defines` |
+| both epoch macros as `--define` on **every** invocation | measured; config macros alone are not the good form | `mock.sh:mock_epoch_defines` for both Mock drivers; **still duplicated in the local `rpmbuild` lane**, see below |
 | `--addrepo`, not `mock --install` plus `--no-clean` | run 30167536066 | `mock.sh:mock_publish_localrepo` + a header note |
 | EXIT trap copying `build.log` and `root.log` | run 30344401137's EL9 failures were undiagnosable | `mock.sh:mock_install_log_trap` |
 | pbuilder's apt resolver (`aptitude` is absent from a buildd chroot) | first Debian CI run | `pbuilder.sh:pbuilder_configure` |
@@ -57,9 +57,33 @@ Every lesson the brief names, and where it now lives exactly once:
 | `\|\| true` on every allowlist filter | a latent abort on an all-allowed payload | the same two functions |
 | assert the flag, not the canary | B5 | `package-checks.sh:pc_verify_build` |
 | `dpkg-deb -c \| grep -q` is a SIGPIPE trap under `pipefail` | cost a run in the cachetag work | `pc_assert_deb_payload` |
-| `debug=+vclrel`, and why 9.0.1 needs it | — | `vtc-suite.sh:vtc_run_suite` for the generated lane; **still duplicated**, see below |
+| `debug=+vclrel`, and why 9.0.1 needs it | — | `vtc-suite.sh:vtc_run_suite` for the generated lane; **still in four cachetag-lane files**, see below |
 
-**`debug=+vclrel` is the one named lesson not reduced to a single copy.** It was in four places and is now in three: `vtc-suite.sh`, `recipes/debian-13/container/stage-vtc-suite.sh` and `recipes/el9/vtc-suite/vtc-suite.sh`. The cachetag suites run under a different mount contract and drive a fixed suite rather than a declared one, so folding them in means designing the fixture contract first — which is Wave 1's job. All three carry the same comment and the same removal condition (a Vinyl containing `7de492b0e8`). Recorded as a carry-forward rather than half-done.
+### Two lessons this wave did NOT reduce to a single copy
+
+Both are carry-forwards with a named reason, and both were miscounted in the first draft of this note. The counts below are from `grep -rl` over `scripts/` and `recipes/`, not from memory.
+
+**`debug=+vclrel` is in FIVE files, not three.** The first draft said three and was wrong: it counted the VTC suites and missed the two smoke stages, which drive a daemon under the same 9.0.1 teardown condition and carry the same flag for the same reason.
+
+| File | Lane | Role |
+| --- | --- | --- |
+| `scripts/ci/lib/vtc-suite.sh` | generated-recipe, both targets | the consolidated copy |
+| `recipes/debian-13/container/stage-vtc-suite.sh` | cachetag Debian | full VTC suite |
+| `recipes/debian-13/container/stage-smoke.sh` | cachetag Debian | installed-package smoke |
+| `recipes/el9/vtc-suite/vtc-suite.sh` | cachetag EL9 | full VTC suite |
+| `recipes/el9/smoke/smoke.sh` | cachetag EL9 | installed-package smoke |
+
+All five carry the same reasoning and the same removal condition (a Vinyl containing `7de492b0e8`). The four cachetag copies run under three different mount contracts and drive fixed suites rather than declared ones, so folding them in means designing the fixture contract first — Wave 1's job. **The open question below needs this count, not the wrong one:** consolidating is four call sites to rewrite, not two.
+
+**The two EL9 epoch macros are still in three places.** `mock.sh:mock_epoch_defines` is the consolidated copy for both Mock drivers, but the local whole-cohort lane keeps its own:
+
+| File | Line | Why it was not folded in |
+| --- | --- | --- |
+| `scripts/ci/lib/mock.sh` | `mock_epoch_defines` | the consolidated copy, both Mock drivers |
+| `recipes/el9/container/build.sh` | 39 | `rpmb()` wraps `rpmbuild`, not `mock`; it takes the macros as `--define` on a different tool, and the container mounts only `/recipes` |
+| `recipes/el9/mismatch/container.sh` | 199 | the mismatch fixture's own `rpmbuild`, same mount problem |
+
+Both are the *local* lane, which CI does not run, and both would need the `/recipes` mount widened the way `mock-build.sh`'s was. Listed here beside `debug=+vclrel` so the carry-forward is one list rather than two half-remembered ones.
 
 ## The three asymmetry settlements
 
@@ -183,7 +207,8 @@ Both are Wave 1 work, and (2) is the honest fix. Recorded here and in a comment 
 | `. /ci/lib/mock.sh`, `. /ci/lib/package-checks.sh` | consolidation | Reachable because `mock-build.sh` widened the mount by one directory. |
 | `copy_mock_log` / `copy_mock_logs` / `trap` replaced by `mock_watch_logs` ×2 + `mock_install_log_trap` | consolidation | Same source files, same destination names, same tolerance of an absent log, same EXIT trap registered at the same point. |
 | `dnf` installs replaced by `mock_install_toolchain cpio binutils` | consolidation + container tooling | `epel-release` still first and alone. `createrepo_c` moves from just-in-time to up-front, and `rpm-build`, `cpio` and `binutils` are added. All four are **container** packages; the buildroot is Mock's chroot and is untouched. |
-| build-user block replaced by `mock_setup_build_user /out …` | consolidation, with one behaviour change | Same uid/gid derivation from the same `/out` mount, same group, same `usermod -aG mock`, same `mock_as`. **Changed:** the user is created only if the uid is free, and a root-owned mount warns and falls back to uid 1000 instead of `die`ing. On a Linux runner `/out` carries the runner's uid, so neither branch is reachable in CI. Locally on macOS the old code stopped dead; the new one runs. |
+| build-user block replaced by `mock_setup_build_user /out …` | consolidation, with one behaviour change | Same uid/gid derivation from the same `/out` mount, same group, same `usermod -aG mock`, same `mock_as`. **Changed:** the user is created only if the uid is free, and a root-owned mount warns and falls back to uid 1000 **unless `CI=true`, where it is fatal** (audit ruling D5). On a Linux runner `/out` carries the runner's uid, so neither branch is reachable in CI. Locally on macOS the old code stopped dead; the new one runs. |
+| `-e "CI=${CI:-}"` added to the `docker run` | check-strengthening | Docker gives the container a fresh environment, so the D5 guard would be decorative without the forward. Empty when run from a workstation, which is exactly when the fallback is wanted. Same one-line addition in `vmod/run.sh`. |
 | `mock_epoch_cfg` replaced by two `mock_derived_config` calls | consolidation | Byte-identical config file content, same `chmod 0644`, same root-name pinning. |
 | `epoch_defines` → `mock_epoch_defines` | consolidation | Same two `--define` arguments, same array, passed to the same invocations. |
 | `dnf install createrepo_c` + `find`/`createrepo_c`/`chown` replaced by `mock_publish_localrepo` | consolidation | Same `find … ! -name '*.src.rpm' -exec cp -p`, plus `-maxdepth 1` on a directory that is flat either way; same `createrepo_c`; same `chown`; same fatal-if-empty check with a shared message. |
@@ -298,6 +323,10 @@ The only lines the branch adds anywhere are the two `tee [/out/logs/pbuilder-<pa
 
 The complete set of differences on the EL9 side is: the container-side `dnf` lines (`-q`, and `rpm-build`/`createrepo_c`/`cpio`/`binutils` installed up front), an `rpm -q` version print, and the new `rpm -qpl` / `rpm2cpio` / `cpio` reads of the settlement block. No `mock` argument moved.
 
+**The EL9 trace has a stub boundary, and it matters where it is.** After `mock --install`, `container-mock.sh` reads four values back out of the mock-installed development package — `vmoddir`, `pkgincludedir`, the two VRT components and the ABI string — through `mock --chroot -- pkg-config` and `mock --chroot -- sed`, and then refuses to continue unless the ABI equals `VINYL_STRICT_ABI`. A recorder that stubs `mock` itself cannot answer those, so **it stops at the Vinyl ABI cross-check**, and everything past that point — cachetag's `--buildsrpm` and `--rebuild` — is then verified by source-level comparison rather than by the trace. The audit's independent reproduction, with a stricter recorder that also captured cwd, environment and tty, hit exactly that wall and adjudicated those two invocations that way.
+
+The harness used here stubs `runuser` instead, one level *above* `mock`, and synthesises the four readbacks (returning the real `VINYL_STRICT_ABI` from `cohort.env` so the cross-check passes as it does in CI). That is why the table above reads ten `mock` invocations in `vmod` scope rather than eight: the last two are cachetag's `--buildsrpm` and `--rebuild`, recorded and identical. Both methods agree; they are recorded separately because the synthesised readbacks are an input this harness supplies and CI does not, and a reader should be able to tell which invocations were observed and which were reasoned about.
+
 One incidental result worth recording: on this macOS Docker host, `main`'s `container-mock.sh` **cannot run at all** — it dies at `/out is owned by root; mock cannot run as root` — while the branch's proceeds. That is the local-debuggability change, demonstrated rather than argued.
 
 ### Generated-recipe determinism against the baseline
@@ -328,10 +357,20 @@ Push, dispatch a baseline `inject=none` run, and require:
 
 If (2) or (3) moves, the cause is in this change set and the per-hunk table above is the list of suspects — the tee'd log and the container-side `dnf` additions first, because they are the only hunks that write anything at all.
 
+## Audit rulings, 2026-07-29
+
+The audit reproduced the trace method with a stricter recorder (cwd, environment and tty added to the recorded `argv`) and it held; the `-D_FORTIFY_SOURCE=2` pairing and the `nolog` carve-out were both endorsed; the payload and lintian settlements reproduced exactly. Five items came back, and the four rulings among them are recorded here rather than left as open questions.
+
+**D5 — the uid-1000 fallback is fatal in CI.** Implemented. `mock_setup_build_user` returns non-zero with two `E:` lines when the mount is root-owned and `CI=true`; the macOS warning path is unchanged otherwise. Both host drivers now forward `CI` into the container, because docker gives the container a fresh environment and the guard would otherwise have been decorative — a check that cannot fire is worse than no check, since it reads like coverage. This closes what was open question 5.
+
+**The rpmlint asymmetry is Wave 1, and it is one change, not two.** Wave 1 builds `rpmlint_overrides` — the twin of the `lintian_overrides` list B7b and B7c already built — **and** fixes dict's `summary-not-capitalized` in the same change. That takes dict to package revision 2 **once**, with one attributable cause and one evidence re-record, rather than moving its bytes twice for two separately-reasoned tidy-ups. The four spelling findings and `invalid-license GPL-3.0-or-later` are the class the override mechanism exists for; the capitalisation is a real defect and gets fixed rather than waived. This closes what was open question 1.
+
+**Open questions 2 and 3 are one carry-forward, not two.** The engine's compile-line selector and the two local-lane copies of the ELF block are the same piece of work: the copies cannot be folded into `package-checks.sh` without deciding what `pc_assert_build_flags` selects for `vinyld`'s non-libtool translation units, because folding them in without that would demote their canary checks with nothing put in their place. The audit's **preferred eventual direction is to retire the local whole-cohort lane's hardening stage in favour of `assert-packages.sh`** rather than to consolidate a stage CI never runs — but that is a scope decision about the local lane's purpose and is deliberately left for later, not settled here.
+
+**The two miscounts.** `debug=+vclrel` is in five files and the EL9 epoch macros in three, both corrected above with the `grep -rl` evidence. The counts matter because open question 4's decision is sized by them.
+
 ## Open questions for the audit
 
-1. **The rpmlint asymmetry (the fourth one).** Wave 1 should add an `rpmlint_overrides` list to the overlay schema, render it as an `.rpmlintrc`, stage it into the lane and assert `0 errors, 0 warnings` the way the cachetag lane does. Until then the generated lane's rpmlint gate is the weaker of the two. Is that the right shape, or should the generated lane instead fix `summary-not-capitalized` in the overlay and accept a dict package-byte change plus an evidence re-record?
-2. **The engine's build-flag assertion.** `libtool: compile:` is an autotools-adapter selector for `vmod_LTLIBRARIES`. `vinyld` is a program and its own objects never go through libtool. Deciding a selector for the engine would let `assert-packages.sh` move `vinyld` from `nolog` to `log` and finish the demotion everywhere. Worth doing, or is the engine's canary check sufficient because a daemon that large always has one?
-3. **`recipes/debian-13/container/stage-vinyl.sh` and `stage-cachetag.sh`.** Two more copies of the ELF block, in a lane CI does not run. Fold them in (needs a `dpkg-buildpackage` tee and the answer to (2)), or retire the local whole-cohort lane's hardening stage in favour of `assert-packages.sh`?
-4. **`debug=+vclrel` in three places.** It is a constant with a paragraph of reasoning, not logic, and the three copies live under three different mount contracts. Consolidating it means the cachetag VTC suites adopt the declared-fixture contract Wave 1 builds. Wave 1, or later?
-5. **Whether `mock_setup_build_user`'s uid-1000 fallback should be loud enough to fail CI.** It is unreachable on a Linux runner today, and the warning is the only thing standing between a future CI change that root-owns the mount and a silently different build user. A guard keyed on `CI` would close it; it would also be a check that only ever fires in an environment nobody has.
+1. **`debug=+vclrel` in five files.** It is a constant with a paragraph of reasoning, not logic, and the four cachetag copies live under three different mount contracts — two VTC suites and two smoke stages. Consolidating means the cachetag suites adopt the declared-fixture contract Wave 1 builds, and it is four call sites to rewrite rather than two. Wave 1, or later?
+2. **The two EL9 epoch macros in the local `rpmbuild` lane** (`recipes/el9/container/build.sh:39`, `recipes/el9/mismatch/container.sh:199`). They apply the macros to `rpmbuild` rather than to `mock`, and their containers mount only `/recipes`. Widening that mount the way `mock-build.sh`'s was would fold them in. Worth it for a lane CI does not run, or does it go the same way as the ELF copies?
+3. **The joint carry-forward** recorded above: the engine compile-line selector plus the local-lane ELF copies, with retiring the local lane's hardening stage as the preferred direction. Needs a decision about what the local whole-cohort lane is *for* before it can be sized.

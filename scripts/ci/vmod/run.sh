@@ -132,7 +132,12 @@ suite that runs without its fixtures tests nothing the VMOD does."
 	;;
 esac
 
-common_env="-e VMOD_TEST_FIXTURES=$VMOD_TEST_FIXTURES \
+# CI is forwarded, not inherited: docker gives the container a fresh
+# environment, so mock_setup_build_user's "root-owned mount is fatal in CI"
+# guard would be decorative without this. Empty when run from a workstation,
+# which is exactly when the uid-1000 fallback is the wanted behaviour.
+common_env="-e CI=${CI:-} \
+ -e VMOD_TEST_FIXTURES=$VMOD_TEST_FIXTURES \
  -e VMOD_TEST_FIXTURE_MACRO=$VMOD_TEST_FIXTURE_MACRO \
  -e VMOD_ID=$vmod_id \
  -e VMOD_SOURCE_NAME=$VMOD_SOURCE_NAME \
