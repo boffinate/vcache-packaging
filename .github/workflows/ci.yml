@@ -82,6 +82,18 @@ on:
           - dict_source # a ref that cannot resolve -> failed_source_checkout
           - dict_build # a failing Debian row -> failed_package_build
           - recipe_generation # a corrupt generated recipe -> failed_recipe_generation
+          # Redis-scoped, added in Step 7 Wave 1 with the third VMOD. Each must
+          # leave cachetag's six rows AND dict's four green, which is what makes
+          # the isolation claim about a SET rather than about a pair. The build
+          # one is aimed at the RPM family because dict's is aimed at the Debian
+          # one. patch_omission is the reviewed-patch capability's own gate: it
+          # deletes the rendered patch after generation, and the two families
+          # refuse it for different reasons -- dpkg-source rejects a 3.0 (quilt)
+          # series naming a missing file, build-rpm.sh compares the spec's Patch
+          # lines against the files rendered beside it.
+          - redis_source # a ref that cannot resolve -> failed_source_checkout
+          - redis_build # a failing EL9 row -> failed_package_build
+          - patch_omission # a declared patch removed -> failed_package_build
           # Neither VMOD: these act entirely in the engine matrix below.
           - engine_build # one engine row fails -> blocked_by_engine_artifact
           - suppress_engine_artifact # one engine row publishes nothing -> ditto

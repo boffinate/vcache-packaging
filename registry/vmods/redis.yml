@@ -1,0 +1,86 @@
+# libvmod-redis: the third VMOD the maintainer has placed in scope (SCOPE.md),
+# and the one selected to exercise ONE useful variation rather than to broaden
+# coverage.
+#
+# The variation is a SOURCE PATCH. libvmod-redis cannot build against Vinyl
+# Cache unpatched -- its build system addresses the engine by its Varnish names
+# throughout, and m4_ifndef([VARNISH_PREREQ]) fires before anything else runs.
+# The reviewed, digested, manifest-visible patch that fixes it is
+# recipes/vmods/overlays/redis/patches/0001-build-against-vinyl-cache.patch.
+# See docs/20260729_1240_note_step-7-wave-1-redis-exception.md.
+#
+# It is also the first production use of `method: derived-git-tag`. Upstream
+# publishes no release archive at all -- no GitHub release, no download page --
+# so the lane derives one from the tag with scripts/ci/vmod-source-archive.sh
+# and pins its digest below. That script was written in Wave A1 for a case that
+# turned out not to need it; this is the case it was written for.
+#
+# A catalog entry, not repository discovery. The file name stem is the
+# discovery id; ci.yml derives it without parsing this file, so a syntax error
+# here fails exactly one matrix copy instead of hiding every other VMOD.
+#
+# NEVER edit a pin here to make an assertion pass. A mismatch means the
+# recorded source identity and the actual source disagree, which is the thing
+# the checks exist to catch.
+#
+# Facts verified against the upstream tree at 9.0-23.1 on 2026-07-29. The
+# reviewed packaging data is recipes/vmods/overlays/redis/overlay.yml.
+schema: vmod-ci/v1
+id: redis
+
+source_host: github
+repository: carlosabalde/libvmod-redis
+
+required: true
+adapter: autotools
+recipe: generated
+
+sources:
+  release:
+    # THE TAG IS NOT THE VERSION. Upstream tags <varnish-series>-<vmod-version>,
+    # so 9.0-23.1 means "the 23.1 release of the VMOD, for the Varnish 9.0
+    # series". configure.ac at this tag says AC_INIT([libvmod-redis], [23.1]),
+    # and 23.1 is what the package version is and what the source stage
+    # cross-checks. Reading 9.0 out of the tag and calling it the version would
+    # produce a package whose version disagrees with its own configure.ac.
+    ref: 9.0-23.1
+
+    # The annotated (unsigned) tag object peels to this commit.
+    expected_commit: b6ca669fc9af3399f3845d9d4930683b4e378aa8
+    version: "23.1"
+
+    # No archive_url, deliberately: upstream publishes none, so there is
+    # nothing to download and no URL that would honestly describe these bytes.
+    # The overlay declares `method: derived-git-tag` and the source stage
+    # derives the archive with scripts/ci/vmod-source-archive.sh; the two
+    # declarations are cross-checked against each other by vmod_recipe.py,
+    # which refuses a method and a URL that disagree.
+    #
+    # The digest below is the derived archive's, measured on 2026-07-29 by
+    # running the derivation TWICE in a debian:13 container: identical both
+    # times, 221100 bytes. It is a statement about exactly those bytes, and it
+    # is the same kind of statement the published-archive VMODs make -- the
+    # difference is who produced the tarball, not how strongly it is pinned.
+    archive_sha256: 9ccab93f53e8f1bc3249a1dc2f2b5e7fcc2a0c474e4f13ac870501e88171cccb
+    publishable: true
+
+# vinyl-release only, and no trunk source channel at all, for a reason that is
+# recorded rather than cautious: configure.ac calls VINYL_PREREQ([9.0], [9.1])
+# after the patch, which does NUMERIC comparison on vinylapi.pc's Version.
+# Vinyl trunk's AC_INIT still says the literal string `trunk`, so vinylapi.pc
+# carries `Version: trunk` and there is nothing to compare. That is the same
+# root cause that excludes vmod-dict from the trunk lane -- dict's acvmod.m4
+# does configure-time arithmetic on the major component -- and it has the same
+# fix: adding the lane back is a one-line manifest edit once Vinyl trunk emits
+# a numeric snapshot version. Dropping VINYL_PREREQ from the patch to buy the
+# lane would be deleting a real compatibility check to make a matrix row green.
+lanes:
+  - kind: package
+    source: release
+    engine: vinyl-release
+    tiers:
+      - ci
+      - release
+    targets:
+      - debian-13-amd64
+      - el9-x86_64

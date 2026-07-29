@@ -171,6 +171,22 @@ INJECTIONS = [
     "recipe_generation",
     "dict_source",
     "dict_build",
+    # Wave 1, the third VMOD. Same two shapes from redis's side, so a run can
+    # show any of the three VMODs failing while the other two complete; the
+    # build one is aimed at the RPM family because dict's is aimed at the
+    # Debian one, and a third copy of the same family would demonstrate
+    # nothing the second did not.
+    "redis_source",
+    "redis_build",
+    # The patch capability's own gate, and the lane half of the plan's
+    # verification case 10. The generator already refuses a declared patch that
+    # is missing or whose digest moved -- that is covered by
+    # vmod_recipe_selftest -- so this proves the LANE refuses a rendered recipe
+    # whose patch has gone away afterwards. The two families refuse it for
+    # different reasons and both are worth seeing: dpkg-source rejects a 3.0
+    # (quilt) series naming a file that is not there, and build-rpm.sh compares
+    # the spec's Patch lines against the files rendered beside it.
+    "patch_omission",
 ]
 
 # Which VMOD each injection acts on. Before the second VMOD every injection
@@ -200,6 +216,12 @@ INJECTION_TARGET_VMOD = {
     "recipe_generation": "dict",
     "dict_source": "dict",
     "dict_build": "dict",
+    "redis_source": "redis",
+    "redis_build": "redis",
+    # redis is the only VMOD with a declared patch, so this injection has
+    # nowhere else it could act. If a second patched VMOD is ever selected the
+    # choice becomes a real one and belongs here, not in a workflow expression.
+    "patch_omission": "redis",
 }
 
 # The engine row both Phase 2 injections act on. It is a constant so the
@@ -212,16 +234,21 @@ INJECTION_TARGET_VMOD = {
 # row belonged to cachetag, so any engine row had exactly one consumer and the
 # only property on show was that the three siblings survived.
 #
-# With two VMODs the rows are no longer interchangeable. Read off the ledger:
+# With more than one VMOD the rows are no longer interchangeable. Read off the
+# ledger, as of Step 7 Wave 1 and its third VMOD:
 #
 #   engine/vinyl-trunk-pinned/debian-13-amd64  ->  1 consumer, cachetag's
-#   engine/vinyl-release/debian-13-amd64       ->  2 consumers, ONE PER VMOD:
+#   engine/vinyl-release/debian-13-amd64       ->  3 consumers, ONE PER VMOD:
 #                                                    target/cachetag/release/vinyl-release/debian-13-amd64
 #                                                    target/dict/release/vinyl-release/debian-13-amd64
+#                                                    target/redis/release/vinyl-release/debian-13-amd64
 #
-# dict declares no `vinyl-trunk-pinned` lane -- Vinyl trunk emits no numeric
-# version, so Step 5 excluded it -- which is why the trunk row has one consumer
-# and always will while dict is the second VMOD.
+# Neither dict nor redis declares a `vinyl-trunk-pinned` lane -- Vinyl trunk
+# emits no numeric version, and both of their build systems do arithmetic on it
+# (acvmod.m4's modversion split for dict, VINYL_PREREQ for redis) -- which is
+# why the trunk row has one consumer and will keep having one until that
+# changes. The two exclusions have ONE root cause, which is worth knowing: the
+# lane comes back for both VMODs at once, or for neither.
 #
 # Injecting the release row is therefore the only version of this case that
 # demonstrates what the matrix plan asks for: one root cause blocking consumers
@@ -423,16 +450,21 @@ def validate_vmod_manifest(data: dict, path: str, discovery_id: str = None) -> l
                 f"sources.{channel}: publishable requires expected_commit, version and "
                 "archive_sha256; a moving ref can never be published"
             )
-        # A generated recipe is rendered from an archive the lane fetches by
-        # URL and verifies by digest; there is no VMOD repository packaging to
-        # fall back on and no derivation step in that lane. Requiring the URL
-        # here means the failure is "the manifest does not say where the source
-        # is" at validation time rather than an empty download much later.
-        if data["recipe"] == "generated" and pinned and not source.get("archive_url"):
-            problems.append(
-                f"sources.{channel}: recipe: generated needs archive_url; the lane "
-                "fetches the published archive and verifies it against archive_sha256"
-            )
+        # An absent archive_url means the lane DERIVES the archive from the ref,
+        # which is what the field's own comment says and what
+        # scripts/ci/vmod-source-archive.sh exists for. That was unreachable
+        # until Step 7 Wave 1: libvmod-redis publishes no release archive at
+        # all, so requiring the URL here would have refused a selected VMOD over
+        # a field it cannot honestly fill in.
+        #
+        # Nothing is weakened by dropping the requirement, because the two
+        # cases are still told apart, just in the file that can see both halves:
+        # the overlay declares `source.archive.method`, and vmod_recipe.py
+        # cross-checks it against the presence of archive_url here --
+        # upstream-release requires both and requires them equal,
+        # derived-git-tag refuses either. A manifest that says nothing about
+        # where its source is still fails, and now it fails with the two
+        # declarations named rather than with one field missing.
 
     seen_rows: dict = {}
     for index, lane in enumerate(data["lanes"]):
@@ -854,7 +886,7 @@ def expand(data: dict, tier: str, inject: str = "none") -> dict:
             "source_artifact": row["source_artifact"],
             "result_artifact": row["result_artifact"],
         }
-        if active and inject in ("source_checkout", "dict_source"):
+        if active and inject in ("source_checkout", "dict_source", "redis_source"):
             # A ref that cannot exist: proves a source failure is confined to
             # this VMOD's rows. No build script is touched. `dict_source` is the
             # same case from the other side, so a run can show either VMOD's
@@ -894,10 +926,17 @@ def expand(data: dict, tier: str, inject: str = "none") -> dict:
                     (inject == "debian_build" and row["family"] == "deb")
                     or (inject == "el9_build" and row["family"] == "rpm")
                     or (inject == "dict_build" and row["family"] == "deb")
+                    or (inject == "redis_build" and row["family"] == "rpm")
                 )
                 else "false",
                 "inject_recipe": "true"
                 if active and inject == "recipe_generation" and row["family"] == "deb"
+                else "false",
+                # Both families, unlike inject_recipe: the two refusals have
+                # different mechanisms and a run that showed only one would
+                # leave the other untested.
+                "inject_patch": "true"
+                if active and inject == "patch_omission"
                 else "false",
                 "suppress_result": "true"
                 if active

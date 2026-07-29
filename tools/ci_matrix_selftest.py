@@ -832,6 +832,16 @@ def test_injected_engine_row_has_consumers_in_both_vmods() -> None:
         len(survivors) >= 3,
         str(survivors),
     )
+    # Three VMODs since Step 7 Wave 1, and the count is asserted rather than
+    # left at "more than one": the shared-root-cause report is only as good as
+    # the number of distinct VMODs the injected row actually blocks, and a
+    # future manifest edit that quietly took one of them off this engine row
+    # would otherwise still pass the "> 1" checks above.
+    check(
+        "inject-engine-row: all three selected VMODs consume it",
+        sorted(consumers) == ["cachetag", "dict", "redis"],
+        str(sorted(consumers)),
+    )
 
 
 def test_reconcile_blocked_by_engine_artifact() -> None:
@@ -1322,14 +1332,25 @@ def test_recipe_strategy_is_recorded(repo_root: Path) -> None:
         "schema: dict records the generated recipe strategy",
         _load(repo_root, "dict")["recipe"] == "generated",
     )
+    # An absent archive_url is legal from Step 7 Wave 1 on: it means the lane
+    # derives the archive from the ref, which is what libvmod-redis needs
+    # because upstream publishes no archive at all. What used to be a catalog
+    # rule is now a cross-check in vmod_recipe.py between the overlay's declared
+    # method and this field, where both halves are visible; see
+    # vmod_recipe_selftest.test_archive_method_and_url_must_agree.
     data = _load(repo_root, "dict")
-    bad = json.loads(json.dumps(data))
-    del bad["sources"]["release"]["archive_url"]
-    errors = ci_matrix.validate_vmod_manifest(bad, "x/dict.yml", "dict")
+    derived = json.loads(json.dumps(data))
+    del derived["sources"]["release"]["archive_url"]
+    errors = ci_matrix.validate_vmod_manifest(derived, "x/dict.yml", "dict")
     check(
-        "schema: a generated recipe needs a published archive URL",
-        any("needs archive_url" in e for e in errors),
+        "schema: a generated recipe with no archive URL is a derived-archive VMOD",
+        not errors,
         str(errors),
+    )
+    check(
+        "schema: redis records a derived archive and no URL",
+        _load(repo_root, "redis")["sources"]["release"].get("archive_url") is None,
+        str(_load(repo_root, "redis")["sources"]["release"]),
     )
 
 
@@ -1665,11 +1686,15 @@ def test_ledger_covers_both_vmods(repo_root: Path) -> None:
             "source/dict/release",
             "target/dict/release/vinyl-release/debian-13-amd64",
             "target/dict/release/vinyl-release/el9-x86_64",
+            "vmod/redis",
+            "source/redis/release",
+            "target/redis/release/vinyl-release/debian-13-amd64",
+            "target/redis/release/vinyl-release/el9-x86_64",
         ]
     )
-    check("ledger: the ci tier expects exactly these 14 rows", keys == expected, str(keys))
+    check("ledger: the ci tier expects exactly these 18 rows", keys == expected, str(keys))
     check(
-        "ledger: dict adds no engine row, because it shares vinyl-release",
+        "ledger: dict and redis add no engine row, because they share vinyl-release",
         sum(1 for r in ledger["rows"] if r["kind"] == "engine" and r["selected"]) == 4,
     )
 
@@ -1689,6 +1714,7 @@ def test_repo_catalog(repo_root: Path) -> None:
         == [
             {"id": "cachetag", "manifest": "registry/vmods/cachetag.yml"},
             {"id": "dict", "manifest": "registry/vmods/dict.yml"},
+            {"id": "redis", "manifest": "registry/vmods/redis.yml"},
         ],
         str(entries),
     )

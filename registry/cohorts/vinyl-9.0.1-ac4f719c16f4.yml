@@ -61,6 +61,7 @@ build_profile:
 required_vmods:
   - cachetag
   - dict
+  - redis
 storage_support:
   - default
 targets:

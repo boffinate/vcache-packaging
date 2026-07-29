@@ -109,20 +109,39 @@ note "6 -- rpmlint, with an explicit expectation"
 # reviewed: either the templates or the overlay is wrong, or it belongs in a
 # reviewed override.
 #
-# ASYMMETRY, measured and left standing in Step 7 Wave 0. The cachetag EL9 lane
-# is STRICTER here, not weaker: recipes/el9/container/build.sh's stage_lint
-# filters through a reviewed waiver file and then asserts "0 errors, 0
-# warnings", while rpmlint's own exit status is non-zero only for errors. On the
-# green baseline 30437775658 this lane reported `0 errors, 6 warnings` and
-# passed. Closing it needs an rpmlint-override mechanism in the overlay -- the
-# twin of the lintian_overrides list that already exists -- because the
-# alternative is editing dict's Summary and %description, which moves package
-# bytes whose digests are recorded release evidence. That mechanism is Wave 1
-# work; see the Wave 0 note.
+# The Wave 0 asymmetry, closed. rpmlint's own exit status is non-zero only for
+# ERRORS, so this lane used to pass on `0 errors, 6 warnings` while the cachetag
+# EL9 lane -- which filters through a reviewed waiver file and then asserts "0
+# errors, 0 warnings" -- would have failed on the same package. Both halves are
+# now here: the overlay's rpmlint_overrides render a reviewed .rpmlintrc the
+# generator digests into recipe_sha256, and the summary line is asserted rather
+# than the exit status.
+#
+# Not `|| true`, and not the exit status alone. A generated recipe has no
+# excuse for a diagnostic nobody reviewed: either the templates or the overlay
+# is wrong, or it belongs in the overlay's reviewed rpmlint_overrides.
+rpmlintrc=/lane/recipe/$VMOD_RPM_NAME.rpmlintrc
+lint_args=()
+if [ -f "$rpmlintrc" ]; then
+	echo "reviewed rpmlint waivers: $rpmlintrc"
+	sed 's/^/  | /' "$rpmlintrc"
+	lint_args+=(-f "$rpmlintrc")
+else
+	echo "reviewed rpmlint waivers: none declared by the overlay"
+fi
+# The unfiltered pass first, informational, so every waived finding stays
+# visible in the log rather than only in the overlay.
+rpmlint "$rpm" 2>&1 | tee /tmp/rpmlint-unfiltered.log || true
 lint_status=0
-rpmlint "$rpm" 2>&1 | tee /tmp/rpmlint.log || lint_status=$?
+rpmlint "${lint_args[@]}" "$rpm" 2>&1 | tee /tmp/rpmlint.log || lint_status=$?
 [ "$lint_status" -eq 0 ] || die "rpmlint reported findings; see above.
 A generated recipe is not hand-patched to silence one."
+# rpmlint exits 0 on warnings. The cachetag lane learned that and asserts the
+# summary; so does this one now, so the two gates are the same strength.
+grep -qE '^[0-9]+ packages and [0-9]+ specfiles checked; 0 errors, 0 warnings' \
+	/tmp/rpmlint.log || die "rpmlint reported surviving warnings; see above.
+Either the finding is a real defect in the templates or the overlay, or it
+belongs in the overlay's reviewed rpmlint_overrides with its reason."
 
 note "7 -- installed-package smoke: the runtime pair alone loads the VMOD"
 mkdir -p /repo && cp /lane/out/*.rpm /lane/engine/*.rpm /repo/ 2>/dev/null || true

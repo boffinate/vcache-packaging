@@ -893,3 +893,32 @@ vmods:
       installed_package_smoke: pending
       full_behavior_suite: pending
       upgrade_transactions: pending
+  # redis joined the selected set on 2026-07-29 (SCOPE.md) as Step 7's third
+  # VMOD: the controlled exception that exercises the reviewed-source-patch
+  # capability. Its lanes select vinyl-release on both targets, so this cohort
+  # and target must carry its evidence, and the entry exists explicitly pending
+  # rather than being absent. An absent entry would let "the release is
+  # complete" be true with a required VMOD's results simply missing; a pending
+  # one cannot, because --require-releasable rejects pending by name.
+  redis:
+    evidence: pending
+    pending_reason: "redis entered scope on 2026-07-29 (Step 7 Wave 1) and its lanes have not run in CI yet; Wave 2 records the results. The source-level build and the full 20-VTC behaviour suite were proven in debian:13 and almalinux:9 containers on 2026-07-29, which is not package evidence."
+    package:
+      upstream_version: "23.1"
+      revision: 1
+      source_name: libvmod-redis
+      binary_name: libvmod-redis
+    build:
+      profile: production
+      configure_options: PLACEHOLDER
+      cflags: PLACEHOLDER
+      ldflags: PLACEHOLDER
+      source_date_epoch: PLACEHOLDER
+      hardening_check: pending
+      build_dependencies: []
+    artifacts: []
+    tests:
+      package_lint: pending
+      installed_package_smoke: pending
+      full_behavior_suite: pending
+      upgrade_transactions: pending

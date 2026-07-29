@@ -3,16 +3,30 @@
 # Source stage for a generated-recipe VMOD whose upstream publishes a release
 # archive. Produces exactly one verified tarball and nothing else.
 #
-#   source.sh --manifest PATH --id ID --channel CHANNEL --out DIR [--ref REF]
+#   source.sh --manifest PATH --overlay PATH --id ID --channel CHANNEL \
+#             --out DIR [--ref REF]
 #
-# Four checks, in this order, because each one makes the next meaningful:
+# Two ways to obtain one archive, chosen by the overlay's declared
+# `source.archive.method` and never discovered:
 #
-#   1. download the archive the manifest names;
+#   upstream-release   download what upstream published;
+#   derived-git-tag    derive it from the tag with vmod-source-archive.sh.
+#
+# Four checks either way, in this order, because each one makes the next
+# meaningful:
+#
+#   1. obtain the archive;
 #   2. assert its sha256 against the manifest's pin -- these exact bytes;
 #   3. `git ls-remote` the recorded tag and require it to peel to the recorded
 #      commit;
 #   4. unpack it and cross-check the manifest's version against the archive's
 #      own AC_INIT.
+#
+# The derivation path makes check 1 and check 3 overlap, and that is not a
+# reason to drop either: vmod-source-archive.sh peels the tag inside its own
+# fetch and refuses a mismatch there, and check 3 then asks the REMOTE the same
+# question afterwards. A tag moved between the two would be caught by the
+# digest, which is the strongest of the three.
 #
 # WHY NO CLONE. cachetag's lane checks its source out with actions/checkout and
 # derives the archive; this VMOD is not on GitHub, and Step 5's ruling 5 flagged
@@ -47,6 +61,7 @@ repo=$(CDPATH= cd -- "$here/../../.." && pwd)
 . "$here/lib.sh"
 
 manifest=
+overlay=
 vmod_id=
 channel=release
 out=
@@ -55,6 +70,7 @@ ref_override=
 while [ $# -gt 0 ]; do
 	case $1 in
 	--manifest) manifest=${2:?}; shift 2 ;;
+	--overlay) overlay=${2:?}; shift 2 ;;
 	--id) vmod_id=${2:?}; shift 2 ;;
 	--channel) channel=${2:?}; shift 2 ;;
 	--out) out=${2:?}; shift 2 ;;
@@ -64,6 +80,7 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$manifest" ] || die "--manifest is required"
+[ -n "$overlay" ] || die "--overlay is required"
 [ -n "$vmod_id" ] || die "--id is required"
 [ -n "$out" ] || die "--out is required"
 
@@ -75,9 +92,15 @@ command -v curl >/dev/null 2>&1 || die "curl is required"
 # second thing that can disagree with the validator.
 eval "$(python3 "$repo/tools/ci_matrix.py" source-facts \
 	--manifest "$manifest" --id "$vmod_id" --channel "$channel" --format shell)"
+# How the archive is obtained. The overlay owns the method, the stem and the
+# recorded source epoch; the manifest owns the identity. Neither file alone can
+# say what this stage must do, so the tool that owns both schemas says it.
+eval "$(python3 "$repo/tools/vmod_recipe.py" archive-plan \
+	--manifest "$manifest" --overlay "$overlay" --channel "$channel")"
 
 : "${VMOD_SOURCE_REF:?}" "${VMOD_SOURCE_COMMIT:?}" "${VMOD_SOURCE_VERSION:?}"
-: "${VMOD_SOURCE_ARCHIVE_URL:?}" "${VMOD_SOURCE_ARCHIVE_SHA256:?}" "${VMOD_CLONE_URL:?}"
+: "${VMOD_SOURCE_ARCHIVE_SHA256:?}" "${VMOD_CLONE_URL:?}"
+: "${VMOD_ARCHIVE_METHOD:?}" "${VMOD_ARCHIVE_NAME:?}" "${VMOD_ARCHIVE_EPOCH:?}"
 
 if [ -n "$ref_override" ] && [ "$ref_override" != "$VMOD_SOURCE_REF" ]; then
 	note "ref overridden on the command line: $VMOD_SOURCE_REF -> $ref_override"
@@ -85,13 +108,43 @@ if [ -n "$ref_override" ] && [ "$ref_override" != "$VMOD_SOURCE_REF" ]; then
 fi
 
 mkdir -p "$out"
-archive_name=$(basename -- "$VMOD_SOURCE_ARCHIVE_URL")
-archive="$out/$archive_name"
-
-note "1 -- download $VMOD_SOURCE_ARCHIVE_URL"
-curl -sSfL --retry 3 --retry-delay 2 -o "$archive.part" "$VMOD_SOURCE_ARCHIVE_URL" ||
-	die "could not download $VMOD_SOURCE_ARCHIVE_URL"
-mv "$archive.part" "$archive"
+case $VMOD_ARCHIVE_METHOD in
+upstream-release)
+	: "${VMOD_SOURCE_ARCHIVE_URL:?}"
+	archive_name=$(basename -- "$VMOD_SOURCE_ARCHIVE_URL")
+	archive="$out/$archive_name"
+	note "1 -- download $VMOD_SOURCE_ARCHIVE_URL"
+	curl -sSfL --retry 3 --retry-delay 2 -o "$archive.part" "$VMOD_SOURCE_ARCHIVE_URL" ||
+		die "could not download $VMOD_SOURCE_ARCHIVE_URL"
+	mv "$archive.part" "$archive"
+	;;
+derived-git-tag)
+	archive_name=$VMOD_ARCHIVE_NAME
+	archive="$out/$archive_name"
+	note "1 -- derive $archive_name from tag $VMOD_SOURCE_REF"
+	# The digest is passed in, so the derivation refuses on the spot rather
+	# than producing an archive check 2 then rejects. Both are kept: this one
+	# fails inside the step that knows WHY the bytes differ.
+	submodule_args=""
+	for pair in $VMOD_ARCHIVE_SUBMODULES; do
+		submodule_args="$submodule_args --submodule $pair"
+	done
+	# shellcheck disable=SC2086 # submodule_args is a deliberate flag list
+	sh "$repo/scripts/ci/vmod-source-archive.sh" \
+		--url "$VMOD_ARCHIVE_CLONE_URL" \
+		--tag "$VMOD_SOURCE_REF" \
+		--commit "$VMOD_SOURCE_COMMIT" \
+		--stem "$VMOD_ARCHIVE_STEM" \
+		--version "$VMOD_SOURCE_VERSION" \
+		--epoch "$VMOD_ARCHIVE_EPOCH" \
+		--sha256 "$VMOD_SOURCE_ARCHIVE_SHA256" \
+		--out "$archive" $submodule_args ||
+		die "could not derive $archive_name from tag $VMOD_SOURCE_REF"
+	;;
+*)
+	die "unknown archive method '$VMOD_ARCHIVE_METHOD'"
+	;;
+esac
 ls -l "$archive"
 
 note "2 -- assert the pinned archive digest"

@@ -829,6 +829,7 @@ jobs:
           set -o pipefail
           sh scripts/ci/vmod/source.sh \
             --manifest "${{ inputs.manifest }}" \
+            --overlay "recipes/vmods/overlays/${{ inputs.vmod_id }}/overlay.yml" \
             --id "${{ inputs.vmod_id }}" \
             --channel "${{ matrix.channel }}" \
             --ref "${{ matrix.ref }}" \
@@ -1024,7 +1025,10 @@ jobs:
           if [ "${{ matrix.inject_recipe }}" = "true" ]; then
             inject="--inject-token"
           fi
-          # shellcheck disable=SC2086 # inject is empty or exactly one flag
+          if [ "${{ matrix.inject_patch }}" = "true" ]; then
+            inject="$inject --omit-patch"
+          fi
+          # shellcheck disable=SC2086 # inject is empty or a list of flags
           sh scripts/ci/vmod/generate.sh \
             --manifest "${{ inputs.manifest }}" \
             --overlay "recipes/vmods/overlays/${{ inputs.vmod_id }}/overlay.yml" \

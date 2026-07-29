@@ -1,0 +1,10 @@
+License: public-domain
+ The author of this file, Steve Reid <steve@edmweb.com>, placed it in the
+ public domain with the notice "100% Public Domain" at the top of the file
+ (src/sha1.c). There is no licence text to reproduce, because there is no
+ licence: the author disclaimed copyright entirely.
+ .
+ Debian's copyright-format specification requires a License paragraph for
+ every short name a Files paragraph refers to, and public-domain has no
+ common-licenses text to point at, so the paragraph records the disclaimer
+ and where it is stated instead.

@@ -69,6 +69,25 @@ note "stage the verified upstream archive"
 archive=$(find "$lane/src" -maxdepth 1 -name '*.tar.gz' | sort | head -1)
 [ -n "$archive" ] || die "no verified source archive in $lane/src"
 install -m 0644 "$archive" "$topdir/SOURCES/"
+
+# Reviewed source patches, if the overlay declared any. They are GENERATED
+# output beside the spec -- rendered from the overlay's digested patch list --
+# so they are copied like the spec is and are never edited here. rpmbuild
+# resolves PatchN out of SOURCES, so this is where they have to be for
+# %autosetup -p1 to find them; a declared Patch with no file in SOURCES fails
+# the SRPM build, which is the honest place for it to fail.
+patch_count=0
+for patch in "$lane"/recipe/*.patch; do
+	[ -e "$patch" ] || continue
+	install -m 0644 "$patch" "$topdir/SOURCES/"
+	patch_count=$((patch_count + 1))
+done
+printf 'reviewed source patches staged: %s\n' "$patch_count"
+declared=$(grep -c '^Patch[0-9]\{1,\}:' "$spec" || true)
+[ "$patch_count" -eq "$declared" ] ||
+	die "the spec declares $declared Patch line(s) but $patch_count patch file(s)
+were rendered beside it. The recipe is generated content: fix the overlay or the
+generator, never the spec."
 chown -R "$MOCK_BUILD_UID:$MOCK_BUILD_GID" "$topdir"
 
 note "derived Mock configuration"

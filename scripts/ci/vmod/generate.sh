@@ -4,7 +4,7 @@
 # directory, and lay out the source tree the buildroot will consume.
 #
 #   generate.sh --manifest PATH --overlay PATH --id ID --cohort ID \
-#               --target ID --archive FILE --out DIR [--inject-token]
+#               --target ID --archive FILE --out DIR [--inject-token] [--omit-patch]
 #
 # AGENTS.md's rule that generated content is never hand-edited applies with
 # full force to what this produces. The recipe is an output: if it disagrees
@@ -18,6 +18,15 @@
 # it proves the *lane* catches a recipe that a build would consume literally,
 # not merely that the generator refuses one. The generator's own refusal is
 # covered by tools/vmod_recipe_selftest.py.
+#
+# --omit-patch is the same idea for the plan's verification case 10, added with
+# the reviewed-patch capability in Step 7 Wave 1. It DELETES a rendered patch
+# after generation. The generator already refuses a declared patch that is
+# missing or whose digest moved -- also covered by the selftests -- so what
+# this proves is that the LANE refuses a recipe whose declared patch has gone
+# away afterwards, on both families and for two different reasons: dpkg-source
+# rejects a 3.0 (quilt) series naming a file that is not there, and
+# build-rpm.sh compares the spec's Patch lines against the files beside it.
 
 set -eu
 
@@ -34,6 +43,7 @@ archive=
 out=
 channel=release
 inject_token=no
+omit_patch=no
 
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -46,6 +56,7 @@ while [ $# -gt 0 ]; do
 	--out) out=${2:?}; shift 2 ;;
 	--channel) channel=${2:?}; shift 2 ;;
 	--inject-token) inject_token=yes; shift ;;
+	--omit-patch) omit_patch=yes; shift ;;
 	*) die "unknown argument $1" ;;
 	esac
 done
@@ -99,11 +110,33 @@ if [ "$inject_token" = yes ]; then
 		done
 fi
 
+if [ "$omit_patch" = yes ]; then
+	note "INJECTED: deleting a rendered patch from the generated recipe"
+	victim=$(find "$recipe_dir" -name '*.patch' | sort | head -1)
+	[ -n "$victim" ] ||
+		die "--omit-patch was asked for but this VMOD's overlay declares no patches;
+the injection would be inert, which is worse than absent."
+	rm -f "$victim"
+	printf 'removed %s\n' "$victim"
+fi
+
 note "no unsubstituted token may reach a build"
 # The same two-sided discipline libvmod-cachetag/packaging/check-tokens.sh
 # applies to the hand-written recipes. The generator refuses a token it cannot
 # resolve; this refuses one that survived anyway, from any cause.
-if leftover=$(grep -rn '@[A-Z][A-Z0-9_]\{1,\}@' "$recipe_dir" 2>/dev/null); then
+#
+# --exclude='*.patch', and the reason matters because an exclusion from a
+# refusal usually IS a weakening. A reviewed patch is not rendered from a
+# template: no substitution runs over it, so it cannot carry an unresolved
+# token in the sense this check means. What it does carry is other people's
+# build systems, and `@VAR@` is autoconf's own substitution syntax -- the first
+# redis run stopped dead on the context line `TESTS = @VMOD_TESTS@` in
+# upstream's src/Makefile.am, which is not a defect in anything. The patch is
+# covered by a STRONGER check than a token scan: the generator verified its
+# sha256 against the reviewed digest before rendering it, and the same bytes
+# are inside recipe_sha256. A patch that reached here altered would have failed
+# generation, not this grep.
+if leftover=$(grep -rn --exclude='*.patch' '@[A-Z][A-Z0-9_]\{1,\}@' "$recipe_dir" 2>/dev/null); then
 	printf '%s\n' "$leftover" >&2
 	die "an unsubstituted token is present in the generated recipe. This is never
 fixed by editing the recipe: the recipe is generated content. Fix the manifest,
@@ -134,6 +167,26 @@ unpacked=$(find "$build_dir" -mindepth 1 -maxdepth 1 -type d | head -1)
 cp -p "$archive" "$build_dir/${stem}_${version}.orig.tar.gz"
 
 if [ -d "$recipe_dir/debian" ]; then
+	# Upstream's own debian/ is REMOVED first, loudly, if there is one.
+	#
+	# libvmod-redis ships one, and it targets Varnish: `Build-Depends: varnish,
+	# libvarnishapi-dev`, debhelper compat 7, Standards-Version 3.8.1, and a
+	# ${Varnish:ABI} substvar only Varnish's own dh addon supplies. It cannot
+	# build here and must not be mixed with what the generator produced. Without
+	# this the copy nested the generated recipe at debian/debian and left
+	# upstream's as the one dpkg-buildpackage would read -- found by running
+	# this stage against redis on 2026-07-29, not by reading it.
+	#
+	# AGENTS.md allows upstream packaging where it exists, is tied to the exact
+	# selected release, and meets this project's dependency, provenance,
+	# hardening, payload and testing requirements. This one meets none of them,
+	# and the manifest records `recipe: generated` precisely so a newly
+	# discovered debian/ cannot silently displace that decision.
+	if [ -d "$srcdir/debian" ]; then
+		note "upstream ships debian/; removing it in favour of the generated recipe"
+		find "$srcdir/debian" -maxdepth 1 -mindepth 1 | sort | sed 's/^/  discarded: /'
+		rm -rf "$srcdir/debian"
+	fi
 	cp -R "$recipe_dir/debian" "$srcdir/debian"
 	chmod 0755 "$srcdir/debian/rules"
 	[ ! -d "$srcdir/debian/source" ] || chmod 0755 "$srcdir/debian/source"

@@ -923,14 +923,29 @@ def _copyright_stanzas(model: dict) -> str:
 
 
 def _license_stanzas(model: dict, licenses_dir: Path) -> str:
-    short = model["license"]["debian_short_name"]
-    path = licenses_dir / f"{short}.debian"
-    if not path.is_file():
-        raise GeneratorError(
-            f"no reviewed Debian licence stanza for {short!r} at {path}. A package may not "
-            "ship an unresolved or non-machine-readable licence; write the stanza first."
-        )
-    return path.read_text(encoding="utf-8").rstrip("\n")
+    """Every short name debian/copyright refers to, each exactly once.
+
+    Not just `license.debian_short_name`: copyright-format 1.0 requires a
+    License paragraph for every short name a Files paragraph uses, and a
+    package whose files are under more than one licence refers to more than
+    one. Until redis there was no such VMOD -- dict's two Files paragraphs are
+    both GPL-3+ -- so the single-stanza form was indistinguishable from the
+    correct one. Sorted, so the rendered bytes do not depend on declaration
+    order.
+    """
+    names = {model["license"]["debian_short_name"]}
+    names.update(entry["license"] for entry in model["copyright"]["files"])
+    stanzas = []
+    for short in sorted(names):
+        path = licenses_dir / f"{short}.debian"
+        if not path.is_file():
+            raise GeneratorError(
+                f"no reviewed Debian licence stanza for {short!r} at {path}. A package may "
+                "not ship an unresolved or non-machine-readable licence; write the stanza "
+                "first."
+            )
+        stanzas.append(path.read_text(encoding="utf-8").rstrip("\n"))
+    return "\n\n".join(stanzas)
 
 
 def _deb_auto_build_block(model: dict) -> str:
@@ -1464,8 +1479,10 @@ def _template_inputs(recipe_root: Path, model: dict) -> dict:
     )
     inputs = {f"template:{name}": templates / name for name in names}
     if fmt == "deb":
-        short = model["license"]["debian_short_name"]
-        inputs[f"license:{short}"] = recipe_root / "licenses" / f"{short}.debian"
+        names = {model["license"]["debian_short_name"]}
+        names.update(entry["license"] for entry in model["copyright"]["files"])
+        for short in sorted(names):
+            inputs[f"license:{short}"] = recipe_root / "licenses" / f"{short}.debian"
     return inputs
 
 
@@ -1599,6 +1616,64 @@ def cmd_lane_env(args) -> int:
     return 0
 
 
+def cmd_archive_plan(args) -> int:
+    """How the lane obtains this VMOD's source archive. Shell assignments.
+
+    Deliberately narrow: it loads the manifest and the overlay and nothing else,
+    because the source stage runs before any cohort or target is chosen and has
+    no use for an engine row. The manifest owns the ref, the peeled commit, the
+    version and the digest; the overlay owns the method, the archive stem, the
+    recorded source epoch and the submodule pins. Both are needed to say what
+    the lane must do, and neither file alone can say it -- which is exactly why
+    this is a subcommand of the tool that owns both schemas rather than a
+    second YAML reader in a shell script.
+    """
+    manifest = load_vmod_manifest(args.manifest)
+    overlay = load_overlay(args.overlay)
+    if overlay["id"] != manifest["id"]:
+        raise GeneratorError(
+            f"overlay id {overlay['id']!r} does not match manifest id {manifest['id']!r}"
+        )
+    source = manifest["sources"].get(args.channel)
+    if source is None:
+        raise GeneratorError(f"sources.{args.channel}: not declared in the manifest")
+    archive = overlay["source"]["archive"]
+    method = archive["method"]
+    url = source.get("archive_url", "")
+    if (method == "upstream-release") != bool(url):
+        raise GeneratorError(
+            f"sources.{args.channel}: archive method {method!r} and "
+            f"archive_url {url or '(absent)'!r} disagree; upstream-release needs a URL "
+            "and derived-git-tag must not have one"
+        )
+    version = source.get("version", "")
+    values = {
+        "VMOD_ARCHIVE_METHOD": method,
+        "VMOD_ARCHIVE_URL": url,
+        "VMOD_ARCHIVE_STEM": archive["stem"],
+        "VMOD_ARCHIVE_NAME": f"{archive['stem']}-{version}.tar.gz",
+        "VMOD_ARCHIVE_EPOCH": archive["source_date_epoch"],
+        # The clone address, spelled the way the derivation script wants it. A
+        # GitHub manifest carries owner/name and no clone URL, by the catalog's
+        # own rule, so the URL is composed rather than recorded twice.
+        "VMOD_ARCHIVE_CLONE_URL": manifest.get("clone_url")
+        or (
+            f"https://github.com/{manifest['repository']}.git"
+            if manifest.get("repository")
+            else ""
+        ),
+        # PATH=SHA1 pairs, the form vmod-source-archive.sh --submodule takes.
+        "VMOD_ARCHIVE_SUBMODULES": " ".join(
+            f"{entry['path']}={entry['commit']}"
+            for entry in overlay["source"]["submodules"]
+        ),
+    }
+    for key, value in values.items():
+        escaped = str(value).replace("'", "'\\''")
+        print(f"{key}='{escaped}'")
+    return 0
+
+
 def cmd_selftest(args) -> int:
     import vmod_recipe_selftest
 
@@ -1642,6 +1717,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common(p_env)
     p_env.set_defaults(func=cmd_lane_env)
+
+    p_plan = sub.add_parser(
+        "archive-plan", help="how the lane obtains this VMOD's source archive"
+    )
+    p_plan.add_argument("--manifest", required=True)
+    p_plan.add_argument("--overlay", required=True)
+    p_plan.add_argument("--channel", default="release")
+    p_plan.set_defaults(func=cmd_archive_plan)
 
     p_self = sub.add_parser("selftest", help="run this tool's own tests")
     p_self.set_defaults(func=cmd_selftest)

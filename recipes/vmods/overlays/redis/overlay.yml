@@ -1,0 +1,359 @@
+# libvmod-redis: the reviewed per-VMOD packaging data.
+#
+# registry/vmods/redis.yml records what source is selected and which lanes
+# build it. This file records everything the native recipes need that is a fact
+# about libvmod-redis rather than about the lane: names, licence, description,
+# build dependencies, payload, the build-flow knobs the autotools adapter
+# exposes, the reviewed source patch, and the behaviour suite's fixture
+# contract.
+#
+# Every value here was verified against the upstream source at tag 9.0-23.1
+# (commit b6ca669fc9af3399f3845d9d4930683b4e378aa8) on 2026-07-29, not copied
+# from a survey verdict or a package in another distribution. Where a value has
+# a single authoritative place in the upstream tree, the comment names it.
+#
+# Read docs/20260729_1240_note_step-7-wave-1-redis-exception.md before changing
+# anything here.
+schema: vmod-recipe-overlay/v1
+id: redis
+adapter: autotools
+
+# Bump on any change to this file. Recorded in the generated changelog and in
+# the generation record.
+revision: "1"
+
+upstream:
+  # AC_INIT([libvmod-redis], [23.1], [], [vmod-redis]) in configure.ac. The
+  # tarball name argument is `vmod-redis`; the package name is the first
+  # argument, which is what the project calls itself everywhere else.
+  name: libvmod-redis
+  contact: "Carlos Abalde <carlos.abalde@gmail.com>"
+  homepage: https://github.com/carlosabalde/libvmod-redis
+  vcs_git: https://github.com/carlosabalde/libvmod-redis.git
+  vcs_browser: https://github.com/carlosabalde/libvmod-redis
+
+source:
+  clone_url: https://github.com/carlosabalde/libvmod-redis.git
+
+  archive:
+    # `upstream-release` selects a published release tarball; `derived-git-tag`
+    # selects the deterministic archive scripts/ci/vmod-source-archive.sh
+    # derives from the tag. The choice is recorded, never discovered.
+    #
+    # WHY derived-git-tag: upstream publishes nothing to download. The GitHub
+    # repository has no releases at all (the releases API returns an empty
+    # list, checked 2026-07-29), there is no download page, and the VCC's
+    # documentation names none. GitHub's own /archive/refs/tags/ tarball is not
+    # an acceptable substitute: it is generated on demand, its bytes are not
+    # guaranteed stable across git versions, and pinning a digest against it
+    # would be pinning a digest against a service's implementation detail.
+    #
+    # The derived archive is reproducible by construction -- GNU tar format,
+    # names sorted, uid/gid 0, every mtime the recorded commit epoch, gzip -9n
+    # -- and was produced twice in a debian:13 container on 2026-07-29 with
+    # identical results. Its digest lives in redis.yml with the rest of the
+    # source identity, so there is exactly one authority for it.
+    method: derived-git-tag
+
+    # No `url`. A derived archive has no publication address, and writing a
+    # nearby one would name bytes nobody built. The generator refuses a
+    # derived-git-tag overlay that carries a URL, and refuses an
+    # upstream-release one that does not.
+
+    bytes: "221100"
+
+    # The directory the archive unpacks to, and the stem the Debian source
+    # package and the RPM Source0 use.
+    stem: libvmod-redis
+
+    # SOURCE_DATE_EPOCH, every generated changelog date, and every mtime in the
+    # derived archive. This is the committer date of the release commit
+    # b6ca669f, 2026-03-31T15:15:15+02:00 -- a recorded property of the
+    # selected source, never wall-clock time.
+    source_date_epoch: "1774962915"
+
+  # None. `git ls-tree -r` at b6ca669f reports no gitlink and the tree carries
+  # no .gitmodules, which the derivation script asserts for itself: an
+  # undeclared submodule is a hard error there, so an upstream that adds one
+  # cannot slip it into the archive.
+  submodules: []
+
+# The reviewed source patch, and the whole reason this VMOD was selected.
+#
+# libvmod-redis 9.0-23.1 cannot configure against Vinyl Cache at all: the very
+# first thing configure.ac does after the program checks is
+# m4_ifndef([VARNISH_PREREQ], AC_MSG_ERROR(...)), and Vinyl publishes vinyl.m4
+# with VINYL_ names. The patch is a rename plus one deletion across four
+# build-system files, touches no C source, no VCC, no test and no
+# documentation, and carries a DEP-3 header stating what it does and why it is
+# not forwarded upstream.
+#
+# The digest is what makes this a bounded exception rather than a hole:
+# generation fails if the file is missing and fails if its bytes have moved,
+# and the patch is BOTH an input of the generation record and a rendered output
+# inside recipe_sha256. It cannot be omitted, swapped or edited without the
+# recorded evidence moving.
+patches:
+  - file: 0001-build-against-vinyl-cache.patch
+    sha256: 3e18e62688a7a6f148084d2930a79d80a3c9692716621ab9e124f8057392eb01
+
+package:
+  # `libvmod-redis` on BOTH families, which is upstream's own name and the same
+  # rule cachetag follows. It is a DEVIATION on the RPM side: upstream's own
+  # (unused here) packaging and the Varnish ecosystem convention would call it
+  # `vmod-redis`, and Varnish Software's varnish-modules RPMs use the vmod-
+  # prefix. The deviation is deliberate and its reason is collision avoidance:
+  # a user who has a Varnish repository enabled alongside this one must not be
+  # offered two different packages under one name, built against two different
+  # engines, with only the Requires to tell them apart. dict keeps `vmod-dict`
+  # because nobody publishes that name; `redis` is a name several people
+  # publish, so this package takes one nobody else does.
+  debian_source_name: libvmod-redis
+  debian_binary_name: libvmod-redis
+  rpm_name: libvmod-redis
+  debian_section: web
+
+  # Canonical package revision, starting at 1, exactly as registry/README.md
+  # defines it for cachetag.
+  revision: "1"
+
+  # Capitalised: rpmlint's summary-not-capitalized is a real finding and dict
+  # earned that lesson at its revision 2.
+  summary: Redis client VMOD for Vinyl Cache
+
+  # Rendered into Debian's continuation format and into the RPM %description.
+  # An empty string becomes a paragraph break.
+  description:
+    - libvmod-redis lets VCL execute commands against one or more Redis
+    - servers. It supports standalone servers, replicated master/slave pairs
+    - with automatic role discovery, Redis Cluster with MOVED and ASK
+    - redirection following, Sentinel-driven failover, and TLS.
+    - ""
+    - Connections are pooled either privately per worker thread or shared
+    - across them, with configurable connection and command timeouts,
+    - retries, and per-server sickness tracking. Command execution, reply
+    - inspection and the accumulated counters are all reachable from VCL, and
+    - the counters can be rendered in Prometheus exposition format.
+    - ""
+    - This package installs only the VMOD shared object and its manual page.
+    - It installs no daemon, service unit, system user or VCL, it does not
+    - restart Vinyl Cache, and it installs no Redis server.
+    - ""
+    - The module declares a strict ABI tag, so the binary works only with the
+    - exact Vinyl Cache build it was compiled against. That coupling is
+    - encoded as dependencies on virtual packages which only the matching
+    - runtime provides, so an incompatible upgrade is unresolvable rather
+    - than silently loadable.
+    - ""
+    - The packaging carries one reviewed patch against upstream, which renames
+    - the Varnish build-system interfaces to their Vinyl Cache equivalents. It
+    - changes no program source.
+
+license:
+  # THREE licences, verified from the files rather than from the repository
+  # landing page:
+  #
+  #   * LICENSE at the top level is the two-clause BSD licence, and COPYING
+  #     points at it. It covers everything Carlos Abalde wrote.
+  #   * src/crc16.c carries the Menie/Sanfilippo notice adapted from Redis:
+  #     three clauses, including the "Neither the name of the University of
+  #     California, Berkeley" endorsement clause. That is BSD-3-Clause, not the
+  #     two-clause licence the rest of the tree uses.
+  #   * src/sha1.c is Steve Reid's, marked "100% Public Domain".
+  #
+  # debian_short_name selects the stanza for the catch-all Files paragraph;
+  # the generator renders a License paragraph for every short name any Files
+  # paragraph refers to, which is what a package under more than one licence
+  # needs and what dict never exercised.
+  expression: BSD-2-Clause AND BSD-3-Clause AND LicenseRef-Public-Domain
+  debian_short_name: BSD-2-clause
+
+  # Installed by the RPM %license directive. Debian carries the licence in
+  # debian/copyright. Upstream's own dist_doc_DATA also installs LICENSE into
+  # the documentation directory; %license's docdir reset means the RPM ships it
+  # once, in the licence directory.
+  files:
+    - LICENSE
+
+copyright:
+  # debian/copyright Files: stanzas, in order. The two narrow patterns come
+  # first only by convention; copyright-format resolves by LAST match, so the
+  # order here is the order the generator renders and the narrow ones must
+  # follow the catch-all.
+  files:
+    - pattern: "*"
+      holder: 2014-2026 Carlos Abalde
+      license: BSD-2-clause
+    - pattern: "src/crc16.*"
+      holder: 2001-2010 Georges Menie, 2010-2012 Salvatore Sanfilippo
+      license: BSD-3-clause
+    - pattern: "src/sha1.*"
+      holder: Steve Reid
+      license: public-domain
+  packaging: 2026 Boffinate
+
+abi:
+  # src/vmod_redis.vcc line 9 declares `$ABI strict` explicitly -- unlike dict,
+  # which declares nothing and is defaulted to strict. Same consequence, but
+  # recorded as what it is: an upstream statement rather than an inference.
+  mode: strict
+
+build:
+  # The derived archive is a git tree: no configure, no Makefile.in, no
+  # aclocal.m4, no build-aux. It has to be bootstrapped.
+  #
+  # This is the adapter's first `autoreconf` consumer, and it works here where
+  # it would not for dict: configure.ac declares AC_PREREQ([2.68]) and
+  # AM_INIT_AUTOMAKE([1.12 ...]), both satisfied by AlmaLinux 9's autoconf 2.69
+  # and automake 1.16.2. dict's AC_PREREQ([2.71]) is not, which is why dict
+  # takes the published tarball. Verified by bootstrapping in both distro
+  # userlands on 2026-07-29.
+  bootstrap: autoreconf
+
+  # No declared generator race, unlike dict's. Verified by building at
+  # -j$(nproc) in debian:13 and almalinux:9 containers on 2026-07-29.
+  parallel_build: "yes"
+
+  # The whole suite drives a real daemon AND real Redis servers through
+  # upstream's own runner, so there is no self-contained build-time subset.
+  # Behaviour is proven against the installed package instead, which is the
+  # stronger claim anyway.
+  build_time_tests: none
+
+  # TLS is upstream's default (configure.ac: enable_tls=yes when neither flag
+  # is given). Stated explicitly rather than inherited, so that a change of
+  # upstream default becomes a visible diff here instead of a silent change of
+  # what the package can do. It costs libssl/libcrypto and libhiredis_ssl at
+  # build time, and standalone.6000000.TLS.vtc exercises it against the
+  # installed package on both targets.
+  configure_args:
+    - --enable-tls
+
+build_dependencies:
+  # Added to the autotools adapter's shared list, which already carries the
+  # compiler, make, pkg-config and -- because bootstrap is autoreconf -- the
+  # autotools themselves.
+  #
+  # NOTE, because it is the finding this VMOD was expected to produce and did
+  # not: the DEPENDENCIES are not the exception. The schema already expressed
+  # per-family build dependencies from Wave A1, and a VMOD needing four
+  # libraries rather than none is a longer list, not a new capability. The
+  # exception is the patch.
+  debian:
+    # configure.ac: AC_CHECK_LIB(hiredis, redisCommand), AC_CHECK_LIB(ev,
+    # ev_loop/ev_run), and under --enable-tls AC_CHECK_LIB on crypto, ssl and
+    # hiredis_ssl. libhiredis-dev carries libhiredis_ssl too.
+    - libhiredis-dev
+    - libev-dev
+    - libssl-dev
+    # AX_CODE_COVERAGE, AX_COMPILER_FLAGS_CFLAGS and AX_PTHREAD are
+    # autoconf-archive macros, needed at bootstrap. The adapter's
+    # bootstrap_dependencies carry autoconf, automake and libtool, which is
+    # what EVERY bootstrapped VMOD needs; autoconf-archive is what this one
+    # needs, so it is declared here rather than added to the shared list.
+    - autoconf-archive
+    # python3 runs the engine's vmodtool.py, which generates vcc_redis_if.c;
+    # rst2man (python3-docutils) renders the manual page from the VCC, which
+    # the git tree does not carry pre-generated.
+    - python3
+    - python3-docutils
+  rpm:
+    # hiredis-devel is in EPEL and libev-devel in CRB; both are enabled in the
+    # Mock template. openssl-devel and autoconf-archive are in AppStream.
+    # Verified by repoquery in an almalinux:9 container on 2026-07-29:
+    # hiredis-devel 1.0.2 [epel], libev-devel 4.33 [crb], openssl-devel 3.5.5
+    # [appstream], autoconf-archive 2019.01.06 [appstream].
+    - hiredis-devel
+    - libev-devel
+    - openssl-devel
+    - autoconf-archive
+    - python3
+    - python3-docutils
+
+payload:
+  # src/Makefile.am: vmod_LTLIBRARIES = libvmod_redis.la, built through the
+  # engine's VMOD_LDFLAGS (-module -export-dynamic -avoid-version), so the
+  # installed name has no version suffix.
+  vmod_object: libvmod_redis.so
+
+  # src/Makefile.am: dist_man_MANS = vmod_redis.3, and src/vmod_redis.vcc says
+  # "$Module redis 3", so section and installed path agree. The page is
+  # GENERATED from the VCC by rst2man at build time -- it is not in the git
+  # tree, which is why python3-docutils is a build dependency rather than a
+  # nicety.
+  man_pages:
+    - man3/vmod_redis.3
+
+  # Makefile.am: dist_doc_DATA = README.rst LICENSE, so `make install` places
+  # both in the documentation directory by itself. README.rst is listed so the
+  # Debian recipe installs it explicitly and the RPM %doc directive owns the
+  # documentation directory; LICENSE is not, because %license already owns it
+  # and shipping the same text at two paths in one RPM is noise.
+  doc_files:
+    - README.rst
+
+behaviour:
+  # The installed-package behaviour suite's fixture contract. This VMOD is the
+  # reason the contract exists in the overlay at all: its fixtures are SERVERS,
+  # not files, and nothing about it resembles dict.
+
+  # Real Redis servers, from the distribution. runner.sh launches them itself
+  # -- two masters, four replicas, three sentinels for the standalone cases, or
+  # nine nodes formed into a cluster for the clustered ones -- so what the
+  # package manager has to provide is redis-server and redis-cli on PATH.
+  #
+  # Debian 13 ships redis 8.0.2 in main (redis-server, redis-tools). AlmaLinux
+  # 9 ships redis 6.2.20 in AppStream, one package carrying both binaries.
+  packages:
+    debian:
+      - redis-server
+      - redis-tools
+    rpm:
+      - redis
+
+  # runner.sh resolves its TLS certificates and its hash-slot key table
+  # relative to its own directory ($ROOT/assets/...), so the assets must arrive
+  # in a subdirectory beside it rather than flattened next to it. That is why
+  # the staging function keeps each match's path relative to the fixture root.
+  fixture_root: src/tests
+  fixture_patterns:
+    - runner.sh
+    - "assets/*"
+
+  # The ported VTCs already say `import ${vmod_redis};`, upstream's own macro
+  # for "the module under test". Binding it to the plain module name makes the
+  # import resolve through -p vmod_path, which is the INSTALLED .so -- the
+  # whole point of this suite. Upstream binds it to a path inside its build
+  # tree instead.
+  #
+  # Everything else the VTCs address -- redis_master1_ip, redis_master1_port,
+  # redis_version, the TLS certificate paths, and about thirty more -- is
+  # computed and passed by runner.sh, because only runner.sh knows where it put
+  # the servers it started.
+  macros:
+    - vmod_redis=redis
+
+  # Upstream's own suite runner, staged out of the verified release archive and
+  # given vinyltest as its first argument, exactly as upstream's
+  # VTC_LOG_COMPILER does. It must see one VTC at a time: it decides which
+  # fixture topology to launch by matching the LAST argument against
+  # `standalone.*` or `clustered.*`, and it tears the servers down on exit.
+  driver: runner.sh
+
+rpmlint_overrides:
+  # None. Measured intent rather than an empty stanza: the Summary is
+  # capitalised, the description avoids the vocabulary dict's waivers cover,
+  # and the licence expression is checked against rpmlint's own list in Wave 2.
+  # If a finding appears there it gets a reviewed filter with its reason, not a
+  # relaxation of the gate.
+  filters: []
+
+lintian_overrides:
+  source: []
+
+  # None. dict needed one because its release tarball ships a pre-generated
+  # rst2man page that selects font C; this VMOD's page is generated at build
+  # time by the rst2man the buildroot installs, so whatever that emits is what
+  # is inspected. Wave 2's live run is what turns "none expected" into "none
+  # fired"; a tag that appears there is reviewed and added, not silenced.
+  binary: []
