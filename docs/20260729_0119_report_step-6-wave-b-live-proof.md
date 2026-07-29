@@ -261,4 +261,36 @@ What is left is package-manager vocabulary and one extra RPM stage that has no D
 
 #### Also landed with B9: the EL9 buildroot package set
 
-Not a defect — a gap found while preparing the evidence flip. The registry's per-VMOD `build.build_dependencies` needs the buildroot the package was built in. Debian's falls out for free: dpkg writes `Installed-Build-Depends` into the `.buildinfo`, which the row already uploads. Mock resolves its buildroot itself and writes no such list, and `root.log` records only the packages each transaction *added* — 33 for this build, against the 351 cachetag's EL9 entry records. So `build-rpm.sh` now asks the chroot directly after the build, the same thing `recipes/el9/container/build.sh:76-77` does on its own lane, and writes `logs/buildroot-packages.tsv` into the artifact. Non-fatal by construction: a row that produced a good package must not fail on a bookkeeping step.
+Not a defect — a gap found while preparing the evidence flip. *(continued below)*
+
+### Cachetag equivalence against `main` — first measurement
+
+Compared against the latest green `main` run, [30397392846](https://github.com/boffinate/vcache-packaging/actions/runs/30397392846), using run 5's cachetag artifacts. Repeated against the confirming baseline below; recorded here because run 5 is where the measurement was first available.
+
+**Debian 13 amd64 — byte-identical.** Excluding `.buildinfo` and `.changes`, as the roadmap's Step 3 contract requires:
+
+| Engine channel | Digest entries compared | Verdict |
+| --- | --- | --- |
+| `vinyl-release` | 11 (5 `.deb`, `.dsc`, `.debian.tar.xz`, `.orig.tar.gz`, …) | **all identical** |
+| `vinyl-trunk-pinned` | 11 | **all identical** |
+
+10 `.deb` files across the two channels, byte for byte. **Debian: PASS.**
+
+**EL9 x86_64 — normalized semantic comparison**, per package, inside an `almalinux:9` container: NEVRA; summary, licence, group, URL, sourcerpm, buildtime; payload path, size, content digest, mode, owner, group, flags, rdev and symlink target; payload mtimes; Provides; Requires; Conflicts; Obsoletes; weak dependencies; scripts; triggers; changelog. Whole-RPM digests deliberately not compared.
+
+`vinyl-trunk-pinned`: **9 of 9 EQUIVALENT**, empty diff in every section.
+
+The A3 note named `Requires` as the first place to look if EL9 moved, because `metadata.py`'s `rpm_requires` did change for cachetag on every cohort and the argument for its inertness was that nothing on cachetag's path reads it. Checked directly rather than inferred from the aggregate:
+
+```text
+main                                        branch
+vinyld(abi)(x86-64) = 25761f8505…73e33e     identical
+vinyld(cohort-vinyl-9.0.0-4b7e68292979)…    identical
+vinyld(vrt)(x86-64) = 23.0                  identical
+```
+
+**The reasoning holds.** The EL9 lane substitutes tokens into cachetag's own audited spec, which spells those Requires itself; only the generated spec template renders them from the changed function.
+
+Whole-RPM sha256 differs on all nine, which is expected and is not an equivalence requirement — the Step 4 report measured the cause as `BUILDHOST`, the container's random hostname, with `BUILDTIME` correctly clamped and identical.
+
+#### The EL9 buildroot package set (continued) The registry's per-VMOD `build.build_dependencies` needs the buildroot the package was built in. Debian's falls out for free: dpkg writes `Installed-Build-Depends` into the `.buildinfo`, which the row already uploads. Mock resolves its buildroot itself and writes no such list, and `root.log` records only the packages each transaction *added* — 33 for this build, against the 351 cachetag's EL9 entry records. So `build-rpm.sh` now asks the chroot directly after the build, the same thing `recipes/el9/container/build.sh:76-77` does on its own lane, and writes `logs/buildroot-packages.tsv` into the artifact. Non-fatal by construction: a row that produced a good package must not fail on a bookkeeping step.
