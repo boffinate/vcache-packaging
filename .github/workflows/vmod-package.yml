@@ -1037,9 +1037,23 @@ jobs:
             $inject
         working-directory: vcache-packaging
 
+      # The same injection point the upstream-recipe job has had since Phase 2,
+      # and for the same reason: one step BEFORE the build, so no build script
+      # is modified by any injection. Without it `matrix.inject_build` reached
+      # this job and nothing read it, which made `inject=dict_build` produce a
+      # GREEN run -- the third instance of an inert injection after D1 and D4,
+      # and the reason this one survived is that the generated-recipe jobs were
+      # written after the review pass that found those two. Found live by Wave B
+      # run 30422290121.
+      - name: injected package-build failure
+        id: inject_build
+        if: matrix.inject_build == 'true' && steps.generate.outcome == 'success'
+        continue-on-error: true
+        run: exit 1
+
       - name: build the package in the pinned buildroot
         id: build
-        if: steps.generate.outcome == 'success'
+        if: steps.generate.outcome == 'success' && steps.inject_build.outcome != 'failure'
         continue-on-error: true
         shell: bash
         run: |
@@ -1146,6 +1160,8 @@ jobs:
           elif [ "${{ steps.generate.outcome }}" != "success" ]; then
             set_status failed_recipe_generation \
               "the native recipe could not be generated, or an unresolved token survived into it"
+          elif [ "${{ steps.inject_build.outcome }}" = "failure" ]; then
+            set_status failed_package_build "injected package-build failure"
           elif [ "${{ steps.build.outcome }}" = "failure" ]; then
             set_status failed_package_build "the native package build failed"
           elif [ "${{ steps.verify.outcome }}" = "failure" ]; then

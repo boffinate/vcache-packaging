@@ -711,6 +711,26 @@ The run's EL9 jobs completed, but the logs show what they had to survive:
 
 **The condition is a flaky mirror in EPEL's rotation, not an outage**, and it costs an EL9 row roughly one attempt in two at present. Recorded so the next unexplained EL9 timeout is recognised rather than re-diagnosed: look for `[MIRROR] … Curl error (28)` in the job log before suspecting the lane.
 
+### Item 5, first attempt — [30422290121](https://github.com/boffinate/vcache-packaging/actions/runs/30422290121): the injection was inert
+
+`dict debian-13-amd64 (vinyl-release)` — the row `inject=dict_build` names — **passed**. It was supposed to fail.
+
+#### B11 — `matrix.inject_build` reaches `target-generated` and nothing reads it
+
+The Phase 2 injection point is a step that runs `exit 1` immediately before the build, so that no build script is ever modified by an injection. The upstream-recipe `target` job has had one per family since Phase 2 (`deb_inject` at line 548, `el9_inject` at 597), and ruling D3 rewired both to read the per-row `matrix.inject_build` boolean rather than comparing `inputs.inject`.
+
+`target-generated` never had one. The expansion sets `inject_build: "true"` on dict's Debian row, the workflow passes it into the job, the job ignores it, the build succeeds, and the row passes. **`inject=dict_build` produced a green run.**
+
+This is the third inert-injection defect of the wave, after D1 (the dict source injection whose rewritten `ref` never reached the check) and D4 (the `--inject-token` flag computed and never passed). All three share a cause: the generated-recipe path was built after the review pass that found the first two, and `inject_build` was never re-checked against the new jobs. The self-tests could not catch it — they assert the *expansion* emits the flag, which it does; what was missing was a consumer, and only a live run can show that a flag nobody reads produces a green row.
+
+**Fix:** `target-generated` gains the same step, gated on `matrix.inject_build == 'true'` and placed after `generate` and before `build`, plus the matching `failed_package_build "injected package-build failure"` branch in its classification chain — ahead of the real build-failure branch, so an injected failure is never reported as a genuine one.
+
+Item 5 is re-dispatched against the fix.
+
+#### And a second EL9 row lost to the mirror
+
+`engine/vinyl-release/el9-x86_64` was cancelled again in the same run, while `engine/vinyl-trunk-pinned/el9-x86_64` — the same build, the same image, a different job — completed. That is the per-job mirror lottery described above, and it is why this run has no reconciled ledger: the collector could not run.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
