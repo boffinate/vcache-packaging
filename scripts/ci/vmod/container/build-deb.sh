@@ -1,34 +1,36 @@
 #!/bin/bash
 #
 # Builds one generated-recipe VMOD's Debian package with pbuilder, inside the
-# pinned debian:trixie container that ../build-deb.sh starts.
+# pinned debian:trixie container that ../run.sh starts.
 #
-# Mount contract (set by ../build-deb.sh):
-#   /repo   the vcache-packaging checkout, read-only (pins.env)
+# Mount contract (set by ../run.sh):
+#   /repo   the vcache-packaging checkout, read-only (pins.env and
+#           scripts/ci/lib/pbuilder.sh)
 #   /lane   the per-row work directory: build/ holds the source tree and the
 #           orig tarball, engine/ the verified engine .debs, out/ the results
 #
-# Structurally the same as scripts/ci/debian13/container-pbuilder.sh, and for
-# the same reasons -- pbuilder rather than sbuild, an apt resolver rather than
-# aptitude, a D hook so apt lists exist inside the chroot, and the cohort's
-# engine .debs published as a local repository so the exact-version
-# Build-Depends is satisfiable. That file is not reused because reusing it
-# would mean editing the script that produces cachetag's package bytes, and
-# this wave's equivalence contract is that those bytes do not move. The
-# duplication is deliberate and bounded; if a third VMOD family appears, merge
-# them in a change whose only purpose is that.
+# The pbuilder clean-room is scripts/ci/lib/pbuilder.sh, the SAME file
+# scripts/ci/debian13/container-pbuilder.sh sources. Step 6 kept two copies of
+# it so cachetag's package bytes provably could not move while the second VMOD
+# was brought up; Step 7 Wave 0 merged them, which is what the Wave A2 note said
+# should happen once the proof existed. What is left here is what is true of
+# THIS lane: one package, whose names come from the generator rather than from a
+# pin file, and whose engine .debs arrive in the lane instead of /out.
 
 set -euo pipefail
 
 . /repo/recipes/debian-13/pins.env
+# shellcheck source=../../lib/pbuilder.sh
+. /repo/scripts/ci/lib/pbuilder.sh
 
 lane=/lane
 work=$lane/build
 out=$lane/out
 logdir=$lane/logs
 base_tar=$lane/chroot/$DEBIAN_DISTRIBUTION-amd64.tar
-base_tgz=/base.tgz
 localrepo=/localrepo
+
+PBUILDER_BASE_TGZ=/base.tgz
 
 note() { printf '\n===== %s =====\n' "$*"; }
 die() {
@@ -43,75 +45,33 @@ die() {
 mkdir -p "$out" "$logdir"
 
 note "build toolchain"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y --no-install-recommends \
-	pbuilder debhelper dpkg-dev fakeroot procps
-dpkg-query -W -f='pbuilder ${Version}\n' pbuilder
+pbuilder_install_toolchain
 
-note "pbuilder configuration"
-cat >/etc/pbuilderrc <<'PBUILDERRC'
-PBUILDERSATISFYDEPENDSCMD=/usr/lib/pbuilder/pbuilder-satisfydepends-apt
-PBUILDERRC
-
-mkdir -p /pbuilder-hooks
-cat >/pbuilder-hooks/D05update <<'HOOK'
-#!/bin/sh
-set -e
-apt-get update
-HOOK
-chmod 0755 /pbuilder-hooks/D05update
+note "pbuilder configuration and hooks"
+pbuilder_configure
 
 note "compressing the mmdebstrap base tarball"
-gzip -1 -c "$base_tar" >"$base_tgz"
+pbuilder_base_tgz "$base_tar" "$PBUILDER_BASE_TGZ"
 
 note "publishing the verified engine packages as a local repository"
-# The generated recipe Build-Depends on the engine development package at an
-# exact version, which is on no mirror. Same shape as the cachetag lane and the
-# EL9 createrepo_c step: publish what the row was handed, and let apt resolve.
-rm -rf "$localrepo"
-mkdir -p "$localrepo"
-cp -v "$lane"/engine/*.deb "$localrepo/"
-(cd "$localrepo" && dpkg-scanpackages -m . /dev/null >Packages && gzip -9c Packages >Packages.gz)
-ls -1 "$localrepo"
+# shellcheck disable=SC2086 # the glob is the set of engine packages
+pbuilder_publish_localrepo "$localrepo" "$lane"/engine/*.deb
 
 srcdir=$work/$VMOD_SOURCE_NAME-$VMOD_UPSTREAM_VERSION
 dsc=$work/${VMOD_SOURCE_NAME}_${VMOD_DEBIAN_VERSION}.dsc
 
-[ -d "$srcdir/debian" ] || die "$srcdir has no generated debian/ tree"
-
-note "dpkg-buildpackage -S: $VMOD_SOURCE_NAME"
-(cd "$srcdir" && SOURCE_DATE_EPOCH=$VMOD_SOURCE_DATE_EPOCH dpkg-buildpackage -S -us -uc -d)
-[ -f "$dsc" ] || die "expected $dsc after dpkg-buildpackage -S"
-
-note "pbuilder build: $VMOD_SOURCE_NAME"
-# `tee` into the lane, not merely onto the job log. The verify stage runs in a
-# fresh container that mounts only the lane, and its hardening check reads the
-# compile lines out of this file: -fstack-protector-strong is observable in the
-# compiler invocation and not reliably in the linked object, so the build log is
-# the evidence. The EL9 half gets the equivalent from mock's own build.log,
-# copied by build-rpm.sh's EXIT trap. Writing as the build runs rather than
-# copying afterwards means a failing build still leaves its log behind, which is
-# the same lesson container-mock.sh:79-116 records.
-SOURCE_DATE_EPOCH=$VMOD_SOURCE_DATE_EPOCH pbuilder build \
-	--basetgz "$base_tgz" \
-	--buildresult "$out" \
-	--override-config \
-	--distribution "$DEBIAN_DISTRIBUTION" \
-	--components main \
-	--mirror "$DEBIAN_SNAPSHOT_URI" \
-	--architecture amd64 \
-	--hookdir /pbuilder-hooks \
-	--no-auto-cross \
+# The log name is the one verify-deb.sh reads its hardening evidence from. It
+# is fixed rather than derived from the package name, because the verify stage
+# runs in a fresh container that mounts only the lane and knows nothing about
+# what the package is called.
+pbuilder_build_one "$VMOD_SOURCE_NAME" \
+	"$srcdir" \
+	"$dsc" \
+	"$VMOD_SOURCE_DATE_EPOCH" \
+	"$out" \
+	"$logdir/pbuilder-build.log" \
 	--bindmounts "$localrepo" \
-	--othermirror "deb [trusted=yes] file://$localrepo ./" \
-	"$dsc" 2>&1 | tee "$logdir/pbuilder-build.log"
-
-note "source package artefacts"
-cp -v "$work/${VMOD_SOURCE_NAME}"_*.dsc \
-	"$work/${VMOD_SOURCE_NAME}"_*.orig.tar.gz \
-	"$work/${VMOD_SOURCE_NAME}"_*.debian.tar.* \
-	"$out/" 2>/dev/null || true
+	--othermirror "deb [trusted=yes] file://$localrepo ./"
 
 note "Debian VMOD lane complete"
 ls -la "$out"
