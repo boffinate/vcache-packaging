@@ -817,13 +817,24 @@ counts: expected=14 passed=9 failed=5 missing=0 not_selected=1 required_failed=5
 
 Identical blast radius to 8a and a **different source status**, which is the point of running both: the two failures are distinguishable at the source row — one says the ref did not resolve, the other says the bytes were not the recorded ones — while the consumer classification is the same, because from a consumer's position the two are the same event. All four dict rows and all four engine rows green.
 
+### Item 9 — `inject=suppress_result`, [30432639448](https://github.com/boffinate/vcache-packaging/actions/runs/30432639448): **exact**
+
+```text
+counts: expected=14 passed=13 failed=1 missing=1 not_selected=1 required_failed=1
+  target/cachetag/release/vinyl-release/debian-13-amd64   missing_result_record
+      no result record was uploaded for this expected row
+```
+
+**`missing=1`** — the only run of the whole sequence with a non-zero missing count, and that is the case. The row's job *succeeded*: it built its packages and uploaded them, and then skipped uploading its result record. Nothing failed and nothing reported, and the run went red anyway because the collector rebuilds the expected ledger from the catalog and reconciles against it rather than trusting whatever records happen to arrive.
+
+That is the property the whole collector design exists for: a row that silently produces no evidence is indistinguishable from a row that never ran, and both must be louder than a green run. All other thirteen rows passed, dict included.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
 
 | # | `inject=` | Expected |
 | --- | --- | --- |
-| 9 | `suppress_result` | one cachetag row green with no result artifact; collector synthesizes `missing_result_record`; run red; dict PASS |
 | 10a | `engine_build` | `engine/vinyl-release/debian-13-amd64` red; **both** its consumers — cachetag's and dict's Debian rows — `blocked_by_engine_artifact` naming that engine row; the other 3 engine rows and the other 4 package rows PASS |
 | 10b | `suppress_engine_artifact` | same blocked set, from a *green* producer that published nothing |
 
@@ -878,7 +889,8 @@ Three of them — B3, B6 and B9 — are the same class: a lesson one backend's s
 | 7 `el9_build` | [30429219759](https://github.com/boffinate/vcache-packaging/actions/runs/30429219759) | **PASS** — exact |
 | 8a `source_checkout` | [30430481913](https://github.com/boffinate/vcache-packaging/actions/runs/30430481913) | **PASS** — exact |
 | 8b `source_digest` | [30431584255](https://github.com/boffinate/vcache-packaging/actions/runs/30431584255) | **PASS** — exact |
-| 9-10 | in progress | sequential |
+| 9 `suppress_result` | [30432639448](https://github.com/boffinate/vcache-packaging/actions/runs/30432639448) | **PASS** — exact, `missing=1` |
+| 10a-10b | in progress | sequential |
 | 11 equivalence | run 30413513970 vs `main` 30397392846 | **PASS** — 10 `.deb` byte-identical, 18 RPMs equivalent |
 | 12 case 8 | one-off containers | **PASS** — both targets refuse, both name the dependency |
 | 13 evidence flip | run 30413513970 + the upgrade matrix | **PASS** — `--require-releasable` exits 0 |
