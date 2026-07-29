@@ -1166,6 +1166,118 @@ def _scalar(value) -> str:
 # ---------------------------------------------------------------------------
 
 
+
+# ---------------------------------------------------------------------------
+# Rendered changelog width, and reviewed lint overrides
+# ---------------------------------------------------------------------------
+
+
+def test_changelog_lines_fit(root: Path) -> None:
+    """lintian's debian-changelog-line-too-long fires above 80 columns.
+
+    Wave B run 30410876882 emitted a warning on the entry line carrying the
+    64-character source digest. No test could have caught it, because nothing
+    asserted a property of the rendered changelog's shape -- so the assertion
+    is the fix as much as the wrapping is, and it is written against the real
+    templates and the real dict inputs rather than a fixture.
+    """
+    model = _model(root)
+    recipe_root = root / vr.RECIPE_ROOT
+    changelog = vr.render(model, recipe_root / "templates", recipe_root / "licenses")[
+        "debian/changelog"
+    ]
+    over = [line for line in changelog.split("\n") if len(line) > vr.CHANGELOG_WIDTH]
+    check(
+        "changelog: no rendered line exceeds 80 columns",
+        not over,
+        "\n".join(over),
+    )
+    check(
+        "changelog: the source digest survives the wrap intact",
+        model["source"]["archive_sha256"] in changelog,
+        changelog,
+    )
+    check(
+        "changelog: the trailer keeps its exact syntax through the wrap",
+        "\n -- Boffinate <noreply@boffinate.com>  " in changelog,
+        changelog,
+    )
+    check(
+        "changelog: the version header is untouched",
+        changelog.startswith("vmod-dict (1.7-1) trixie; urgency=medium\n"),
+        changelog,
+    )
+
+    # A value long enough to need wrapping but made of ordinary words must wrap
+    # on whitespace, and a single over-long token must not be split -- a halved
+    # digest is worse than a long line.
+    wrapped = vr.wrap_changelog(
+        "pkg (1-1) trixie; urgency=medium\n"
+        "\n"
+        "  * " + " ".join(["word"] * 40) + "\n"
+        "  * Source sha256: " + "a" * 64 + ".\n"
+        "\n"
+        " -- M <m@example.com>  Wed, 25 Mar 2026 09:04:22 +0000\n"
+    )
+    lines = wrapped.split("\n")
+    check(
+        "changelog: a long prose entry wraps to 80 columns",
+        all(len(line) <= vr.CHANGELOG_WIDTH for line in lines),
+        wrapped,
+    )
+    check(
+        "changelog: an over-long token is never split",
+        ("a" * 64) in wrapped,
+        wrapped,
+    )
+    check(
+        "changelog: wrapping is idempotent",
+        vr.wrap_changelog(wrapped) == wrapped,
+        wrapped,
+    )
+
+
+def test_reviewed_lint_overrides_are_rendered(root: Path) -> None:
+    """A declared override must reach the package, or the gate has no escape.
+
+    dict declares exactly one binary override -- upstream's rst2man page selects
+    font C, which groff warns about and which cannot be fixed without patching
+    upstream source the Step 6 adapter deliberately cannot patch. The override
+    list existed in the schema from Wave A1 and had never been non-empty, so
+    nothing had ever proved the declared lines reach the rendered file.
+    """
+    inputs = _inputs(root)
+    model = _model(root)
+    recipe_root = root / vr.RECIPE_ROOT
+    outputs = vr.render(model, recipe_root / "templates", recipe_root / "licenses")
+    rendered = outputs["debian/vmod-dict.lintian-overrides"]
+    declared = inputs["overlay"]["lintian_overrides"]["binary"]
+    check(
+        "lint overrides: the overlay declares at least one binary override",
+        bool(declared),
+        str(declared),
+    )
+    for line in declared:
+        check(
+            f"lint overrides: rendered file carries {line[:40]!r}",
+            line in rendered,
+            rendered,
+        )
+    check(
+        "lint overrides: the template's own tag is still there",
+        "vmod-dict: initial-upload-closes-no-bugs" in rendered,
+        rendered,
+    )
+    check(
+        "lint overrides: an empty source list renders no stray line",
+        outputs["debian/source/lintian-overrides"].endswith(
+            "vmod-dict source: debian-watch-file-is-missing\n"
+        ),
+        outputs["debian/source/lintian-overrides"],
+    )
+
+
+
 def main(repo_root: Path = None) -> int:
     root = Path(repo_root) if repo_root else vr.REPO_ROOT
     _RESULTS.clear()
@@ -1199,6 +1311,8 @@ def main(repo_root: Path = None) -> int:
     test_fixture_render_matches_the_golden(root)
     test_parallel_build_reaches_both_backends(root)
     test_adapter_defaults_and_overlay_overrides(root)
+    test_changelog_lines_fit(root)
+    test_reviewed_lint_overrides_are_rendered(root)
 
     failed = 0
     for name, ok, detail in _RESULTS:

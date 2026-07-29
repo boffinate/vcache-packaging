@@ -129,7 +129,16 @@ def _parse_block(lines: list, index: int, indent: int, path: str):
 
 def _parse_scalar_block(lines: list, index: int, indent: int, path: str):
     line = lines[index]
-    if ": " in line.text or line.text.endswith(":"):
+    # Only for a PLAIN scalar. `key: value` written where a scalar belongs is a
+    # mistyped mapping and this is the diagnostic for it -- but a quoted scalar
+    # is unambiguous, and quoting is exactly what `_parse_scalar` tells the
+    # author to do when a plain value contains ': '. Applying the guard to a
+    # quoted value made the parser refuse the fix it had just recommended, and
+    # made a whole class of reviewed data unrepresentable: every lintian and
+    # rpmlint override is written `<package>: <tag> <context>`, so an overlay
+    # could declare the override list the schema defines and never fill it in.
+    # Found in Wave B while adding dict's one reviewed groff-message override.
+    if line.text[:1] not in ("\"", "'") and (": " in line.text or line.text.endswith(":")):
         raise ManifestSyntaxError(path, line.lineno, f"malformed mapping entry: {line.text!r}")
     value = _parse_scalar(line.text, path, line.lineno)
     index += 1

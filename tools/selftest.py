@@ -250,6 +250,25 @@ def test_parser() -> None:
     check("parser: no type coercion (23.0 stays a string)", yaml_subset.parse("vrt: 23.0")["vrt"] == "23.0")
     check("parser: quoted empty string", yaml_subset.parse('dist_tag: ""')["dist_tag"] == "")
 
+    # Every lintian and rpmlint override is written `<package>: <tag> <context>`,
+    # so a reviewed override list is unrepresentable if a quoted list item may
+    # not contain ': '. The parser used to reject one at sequence position while
+    # its own diagnostic for the plain case told the author to quote it.
+    overrides = yaml_subset.parse(
+        'binary:\n'
+        '  - "vmod-dict: groff-message *cannot select font \'C\'*"\n'
+        '  - "# a comment line, also colon-free by luck rather than design"\n'
+    )
+    check(
+        "parser: a quoted list item may contain ': '",
+        overrides["binary"][0] == "vmod-dict: groff-message *cannot select font 'C'*",
+        repr(overrides),
+    )
+    check(
+        "parser: a quoted value with ': ' round-trips at mapping position too",
+        yaml_subset.parse('note: "a: b"')["note"] == "a: b",
+    )
+
     rejects = [
         ("tab indentation", "a:\n\tb: c\n"),
         ("duplicate key", "a: 1\na: 2\n"),
@@ -265,6 +284,11 @@ def test_parser() -> None:
         ("dangling key", "a:\nb: 1\n"),
         ("carriage return", "a: 1\r\n"),
         ("bare dash item", "a:\n  -\n"),
+        # Still rejected: the guard only stands down for a quoted scalar,
+        # because that is the form that says "this really is a string". An
+        # unquoted item that reads as a mapping but has no usable key is the
+        # mistyping the guard exists to catch.
+        ("unquoted list item with a colon and no usable key", "a:\n  - vmod dict: tag\n"),
     ]
     for name, text in rejects:
         try:

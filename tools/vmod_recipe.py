@@ -39,6 +39,7 @@ import hashlib
 import json
 import re
 import sys
+import textwrap
 import time
 from pathlib import Path
 
@@ -627,6 +628,67 @@ def rpm_changelog_date(epoch: str) -> str:
     )
 
 
+# Lintian's debian-changelog-line-too-long fires above 80 columns, and Wave B
+# run 30410876882 hit it on the entry line carrying the 64-character source
+# digest: `  * Source sha256: <64 hex>.` is 84 columns and cannot be shortened
+# without dropping the digest, which is the point of recording it.
+#
+# The wrap happens here rather than in the template because the template cannot
+# know how wide a substituted value is. Pre-wrapping the template would fix this
+# one line and leave a longer archive name, cohort id or maintainer string to
+# reintroduce the same tag silently the next time one of them grew. The
+# generated changelog is an output; the property "no line exceeds 80 columns"
+# belongs to whatever produces it.
+CHANGELOG_WIDTH = 80
+
+
+def wrap_changelog(text: str) -> str:
+    """Re-flow the bullet bodies of a rendered debian/changelog to 80 columns.
+
+    Only the bullet block is touched. The version header, the blank separators
+    and the ` -- maintainer  date` trailer have a fixed syntax that a re-flow
+    would corrupt, so anything that is not a bullet or its continuation passes
+    through byte for byte.
+
+    Long words are never broken: a 64-character digest is one token, and
+    splitting it would turn a recorded fact into two unusable halves. A single
+    token wider than the limit therefore still overflows, which is the honest
+    outcome -- and `test_changelog_lines_fit` asserts the real inputs do not.
+    """
+    lines = text.split("\n")
+    out: list[str] = []
+    buf: str | None = None
+
+    def flush() -> None:
+        nonlocal buf
+        if buf is None:
+            return
+        out.extend(
+            textwrap.wrap(
+                buf,
+                width=CHANGELOG_WIDTH,
+                initial_indent="  * ",
+                subsequent_indent="    ",
+                break_long_words=False,
+                break_on_hyphens=False,
+            )
+            or ["  *"]
+        )
+        buf = None
+
+    for line in lines:
+        if line.startswith("  * "):
+            flush()
+            buf = line[4:].strip()
+        elif buf is not None and line.startswith("    ") and line.strip():
+            buf = buf + " " + line.strip()
+        else:
+            flush()
+            out.append(line)
+    flush()
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------------------
 # Token substitution
 # ---------------------------------------------------------------------------
@@ -879,8 +941,8 @@ def render(model: dict, templates_dir, licenses_dir) -> dict:
     if fmt == "deb":
         binary = model["package"]["debian_binary_name"]
         out["debian/control"] = substitute(read("debian/control.in"), values, "debian/control")
-        out["debian/changelog"] = substitute(
-            read("debian/changelog.in"), values, "debian/changelog"
+        out["debian/changelog"] = wrap_changelog(
+            substitute(read("debian/changelog.in"), values, "debian/changelog")
         )
         out["debian/copyright"] = substitute(
             read("debian/copyright.in"), values, "debian/copyright"
