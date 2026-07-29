@@ -731,6 +731,12 @@ Item 5 is re-dispatched against the fix.
 
 `engine/vinyl-release/el9-x86_64` was cancelled again in the same run, while `engine/vinyl-trunk-pinned/el9-x86_64` — the same build, the same image, a different job — completed. That is the per-job mirror lottery described above, and it is why this run has no reconciled ledger: the collector could not run.
 
+### Item 5, second attempt — [30424259052](https://github.com/boffinate/vcache-packaging/actions/runs/30424259052): lost to the same row again
+
+`engine/vinyl-release/el9-x86_64` cancelled at its budget for the **third consecutive run**, while `engine/vinyl-trunk-pinned/el9-x86_64` — same image, same script, same runner pool, different Vinyl source — passed in every one of them. No reconciled ledger, so item 5 is still unadjudicated and B11's fix is unverified live.
+
+The concentration on one row is worth recording as a lead rather than a conclusion. Both engine rows install the same EPEL packages, so pure mirror luck should hit them equally often; that it does not suggests the release row normally runs closer to its 35-minute budget than the trunk row does, and the mirror retries only push the marginal one over. Measuring that, and deciding whether the budget or the EPEL dependency is the thing to change, is the first task when the line restarts.
+
 ### Remaining dispatches
 
 The full expected result for each, stated from the ledger so the next run can be adjudicated without re-deriving it:
@@ -792,7 +798,8 @@ Three of them — B3, B6 and B9 — are the same class: a lesson one backend's s
 | 2 `dict_source` | [30414399323](https://github.com/boffinate/vcache-packaging/actions/runs/30414399323) | **PASS** — exact |
 | 3 `recipe_generation` | [30415386761](https://github.com/boffinate/vcache-packaging/actions/runs/30415386761) | **PASS** — exact |
 | 4 `manifest` | [30420921127](https://github.com/boffinate/vcache-packaging/actions/runs/30420921127) (5th attempt) | **PASS** — exact; four earlier attempts lost EL9 rows to a flaky EPEL mirror |
-| 5-10 | in progress | dispatching sequentially; EL9 rows cost about one retry in two while the EPEL mirror is flaky |
+| 5 `dict_build` | 30422290121, 30424259052 | **BLOCKED.** Attempt 1 found **B11** — the injection was inert on the generated lane; fixed and unverified. Attempt 2 lost `engine/vinyl-release/el9-x86_64` to the mirror |
+| 6-10 | not dispatched | **BLOCKED** on the same condition |
 | 11 equivalence | run 30413513970 vs `main` 30397392846 | **PASS** — 10 `.deb` byte-identical, 18 RPMs equivalent |
 | 12 case 8 | one-off containers | **PASS** — both targets refuse, both name the dependency |
 | 13 evidence flip | run 30413513970 + the upgrade matrix | **PASS** — `--require-releasable` exits 0 |
