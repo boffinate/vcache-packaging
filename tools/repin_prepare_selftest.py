@@ -828,6 +828,40 @@ def test_nothing_the_job_needs_lives_where_the_tree_reset_would_delete_it() -> N
     )
 
 
+def test_the_state_jobs_survive_meeting_an_existing_state_branch() -> None:
+    """The defect run 30577653264 found, plus the observation loss it caused.
+
+    advance-state built the new state at the WORKSPACE ROOT, then switched the
+    same workspace to the state branch -- which tracks a file of exactly that
+    name, so `git checkout` refused to overwrite the untracked copy and the job
+    died. The first-run orphan path never trips this, so it survived every
+    rehearsal until the branch existed. And because record-observations ran
+    only when advance-state was SKIPPED, the failure also discarded the run's
+    tag observations. Text assertions on both ends, same honesty note as
+    above: the live path is not exercised by any test here.
+    """
+    workflow = (REPO / ".github/workflows/trunk-early-warning.yml").read_text(encoding="utf-8")
+    job = workflow.split("\n  advance-state:", 1)[1].split("\n  record-observations:", 1)[0]
+    check(
+        "state: advance-state builds the state in RUNNER_TEMP, not the workspace root",
+        '"$RUNNER_TEMP/state-to-commit.json"' in job
+        and '"$GITHUB_WORKSPACE/$STATE_FILE"' not in job,
+        job[:400],
+    )
+    check(
+        "state: the commit step copies from RUNNER_TEMP after the branch switch",
+        'cp "$RUNNER_TEMP/state-to-commit.json" "$STATE_FILE"' in job
+        and job.index("git checkout")
+        < job.index('cp "$RUNNER_TEMP/state-to-commit.json" "$STATE_FILE"'),
+        "copy-after-switch ordering",
+    )
+    check(
+        "state: tag observations survive an advance-state failure",
+        "needs.advance-state.result == 'skipped' || needs.advance-state.result == 'failure'"
+        in workflow,
+    )
+
+
 def test_the_script_treats_the_abnormal_cases_as_errors() -> None:
     """Three outcomes that must be red rather than shrugged at.
 
@@ -918,6 +952,7 @@ def main() -> int:
     test_the_watcher_writes_a_report_the_tool_can_read()
     test_the_workflow_wires_the_job_the_way_the_decision_requires()
     test_nothing_the_job_needs_lives_where_the_tree_reset_would_delete_it()
+    test_the_state_jobs_survive_meeting_an_existing_state_branch()
     test_the_script_treats_the_abnormal_cases_as_errors()
 
     failed = 0

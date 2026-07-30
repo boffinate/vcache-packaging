@@ -678,13 +678,20 @@ jobs:
       # The gate observed a Vinyl sha; the harness rows TESTED one, and between
       # the two the branch may have moved. What goes into the state is what was
       # tested, or the next run would treat an untested commit as covered.
+      #
+      # The built state goes to RUNNER_TEMP, never the workspace root: the next
+      # step checks out the state branch in this same workspace, and that branch
+      # tracks a file by exactly this name. An untracked file at that path makes
+      # `git checkout` refuse ("would be overwritten by checkout") -- observed
+      # live in run 30577653264, the first time this job met an EXISTING state
+      # branch; the first-run orphan path never trips it.
       - name: build the state from what was tested
         shell: bash
         run: |
           set -eu
           python3 - "$GITHUB_WORKSPACE/observed/next-$STATE_FILE" \
                     "$GITHUB_WORKSPACE/results" \
-                    "$GITHUB_WORKSPACE/$STATE_FILE" <<'PY'
+                    "$RUNNER_TEMP/state-to-commit.json" <<'PY'
           import json, pathlib, sys
 
           observed, results, out = (pathlib.Path(p) for p in sys.argv[1:4])
@@ -736,8 +743,9 @@ jobs:
           # The workspace checkout, not a fresh clone: actions/checkout has
           # already persisted this job's credentials here, and this job is the
           # one with `contents: write`. A second clone would need the token in a
-          # URL, which is a secret in a command line for no benefit.
-          cp "$GITHUB_WORKSPACE/$STATE_FILE" "$RUNNER_TEMP/state-to-commit.json"
+          # URL, which is a secret in a command line for no benefit. The state
+          # to commit is already in RUNNER_TEMP (see the build step's comment),
+          # so nothing untracked collides with the branch switch below.
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if git ls-remote --exit-code --heads origin "$STATE_BRANCH" >/dev/null 2>&1; then
@@ -800,12 +808,17 @@ jobs:
   # It advances ONLY the `tags` map. The `refs` map keeps its tested-not-
   # observed meaning and is written exclusively by advance-state; committing
   # observed refs from here would mark untested trunk commits as covered.
-  # The two jobs cannot race: this one runs precisely when advance-state was
-  # skipped (gate red, run=false, or incomplete evidence).
+  # The two jobs cannot race: `needs` orders them, and this one runs precisely
+  # when advance-state persisted nothing -- skipped (gate red, run=false, or
+  # incomplete evidence) or FAILED before its push. The failure leg is from
+  # run 30577653264: advance-state died on the state-branch checkout and this
+  # job's skipped-only condition then discarded the run's tag observations,
+  # which are facts about the remote and deserve recording regardless of what
+  # went wrong with the tested-refs half.
   record-observations:
     name: record tag observations
     needs: [gate, collect, advance-state]
-    if: ${{ !cancelled() && needs.advance-state.result == 'skipped' }}
+    if: ${{ !cancelled() && (needs.advance-state.result == 'skipped' || needs.advance-state.result == 'failure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
