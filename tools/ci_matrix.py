@@ -2059,6 +2059,219 @@ def load_records_from(rows: list, observed: dict) -> dict:
     return merged
 
 
+# ---------------------------------------------------------------------------
+# Publication completeness
+# ---------------------------------------------------------------------------
+
+
+def _sha256sums_problems(directory: Path) -> list:
+    """Verify every SHA256SUMS under one artifact directory. [] means clean.
+
+    Every listed file is resolved relative to the SHA256SUMS that lists it,
+    which is what `sha256sum -c` does, because the two lanes upload different
+    trees: the upstream-recipe rows have their checksum file at the artifact
+    root and the generated rows have it under `out/`. Searching for the file
+    rather than knowing where it is means neither layout is special.
+    """
+    problems: list = []
+    sums = sorted(directory.rglob("SHA256SUMS"))
+    if not sums:
+        return [f"{directory.name}: no SHA256SUMS anywhere in the artifact"]
+    for path in sums:
+        listed = 0
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            digest, _, name = line.partition("  ")
+            if not re.fullmatch(r"[0-9a-f]{64}", digest) or not name:
+                problems.append(f"{path.name}:{lineno}: not `<sha256>  <name>`: {line!r}")
+                continue
+            listed += 1
+            target = path.parent / name
+            if not target.is_file():
+                problems.append(f"{path.parent.name}/{name}: listed but not in the artifact")
+                continue
+            if _sha256_file(target) != digest:
+                problems.append(f"{path.parent.name}/{name}: digest does not match SHA256SUMS")
+        if listed == 0:
+            # A checksum file that lists nothing verifies nothing, and would
+            # let an empty artifact pass this gate silently.
+            problems.append(f"{path.parent.name}/SHA256SUMS lists no files")
+    return problems
+
+
+def verify_release_set(reconciled: dict, packages_dir, required_vmods: list) -> dict:
+    """Is this run's evidence a complete, publishable set?
+
+    The publication gate the plan asks for: "release assembly must not publish a
+    partial required package set merely because the other nine succeeded".
+    Reconciliation already answers "did every expected row report"; this answers
+    the different question of whether what they reported is enough to publish,
+    which needs the artifacts themselves and the cohort's own required list.
+
+    Four findings, and each is a different repair:
+
+      row_failed        a required row did not pass
+      missing_artifact  a passing row published no package artifact
+      bad_checksums     an artifact's SHA256SUMS is unparseable, incomplete or
+                        does not describe the bytes beside it
+      required_mismatch the VMODs this run built are not the VMODs the cohort
+                        says it must contain
+    """
+    packages_dir = Path(packages_dir)
+    rows = [r for r in reconciled["rows"] if r.get("selected")]
+    problems: list = []
+
+    # 1. Every selected row of a required VMOD passed.
+    for row in rows:
+        if not row.get("required"):
+            continue
+        if row["status"] in OK_STATUSES:
+            continue
+        problems.append(
+            {
+                "kind": "row_failed",
+                "row_key": row["row_key"],
+                "vmod": row.get("vmod", ""),
+                "detail": f"{row['status']}: {row.get('detail', '')}".strip().rstrip(":"),
+            }
+        )
+
+    # 2 and 3. Every selected package row published an artifact whose checksum
+    # file describes the bytes inside it.
+    built: set = set()
+    for row in rows:
+        if row["kind"] != "package-target":
+            continue
+        built.add(row["vmod"])
+        artifact = row.get("packages_artifact", "")
+        directory = packages_dir / artifact
+        if not directory.is_dir():
+            problems.append(
+                {
+                    "kind": "missing_artifact",
+                    "row_key": row["row_key"],
+                    "vmod": row["vmod"],
+                    "detail": f"{artifact} was not published by this run",
+                }
+            )
+            continue
+        for problem in _sha256sums_problems(directory):
+            problems.append(
+                {
+                    "kind": "bad_checksums",
+                    "row_key": row["row_key"],
+                    "vmod": row["vmod"],
+                    "detail": problem,
+                }
+            )
+
+    # 4. The VMOD set agrees with the cohort's own required list, in both
+    # directions. A release missing a required VMOD is incomplete; a release
+    # carrying one the cohort does not require is a package nobody selected.
+    declared = set(required_vmods)
+    for vmod in sorted(declared - built):
+        problems.append(
+            {
+                "kind": "required_mismatch",
+                "row_key": "",
+                "vmod": vmod,
+                "detail": "required by the cohort but this run built no package row for it",
+            }
+        )
+    for vmod in sorted(built - declared):
+        problems.append(
+            {
+                "kind": "required_mismatch",
+                "row_key": "",
+                "vmod": vmod,
+                "detail": "this run built it but the cohort does not require it",
+            }
+        )
+
+    return {
+        "schema": "release-set-verification/v1",
+        "complete": not problems,
+        "required_vmods": sorted(declared),
+        "built_vmods": sorted(built),
+        "package_rows": sum(1 for r in rows if r["kind"] == "package-target"),
+        "problems": problems,
+    }
+
+
+def render_release_set(report: dict) -> str:
+    lines = ["", "## Release-set completeness", ""]
+    lines.append(f"required VMODs: {', '.join(report['required_vmods']) or '(none)'}")
+    lines.append(f"built VMODs:    {', '.join(report['built_vmods']) or '(none)'}")
+    lines.append(f"package rows:   {report['package_rows']}")
+    lines.append("")
+    if report["complete"]:
+        lines.append("Every required VMOD's release rows passed, published an artifact, and that")
+        lines.append("artifact's SHA256SUMS describes the bytes beside it. The set is complete.")
+    else:
+        lines.append(f"**{len(report['problems'])} omission(s):**")
+        lines.append("")
+        lines.append("| finding | VMOD | row | detail |")
+        lines.append("| --- | --- | --- | --- |")
+        for problem in report["problems"]:
+            lines.append(
+                "| {kind} | {vmod} | {row_key} | {detail} |".format(
+                    kind=problem["kind"],
+                    vmod=problem["vmod"] or "-",
+                    row_key=problem["row_key"] or "-",
+                    detail=problem["detail"],
+                )
+            )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def cmd_verify_release_set(args) -> int:
+    reconciled = json.loads(Path(args.reconciled).read_text(encoding="utf-8"))
+    root = Path(args.repo_root) if args.repo_root else REPO_ROOT
+    cohort_path = root / "registry" / "cohorts" / f"{args.cohort}.yml"
+    if not cohort_path.is_file():
+        print(f"ERROR    no cohort manifest at {cohort_path}", file=sys.stderr)
+        return 2
+    cohort = yaml_subset.parse_file(cohort_path)
+    report = verify_release_set(reconciled, args.packages, cohort.get("required_vmods") or [])
+
+    text = render_release_set(report)
+    sys.stdout.write(text)
+    if args.summary:
+        with open(args.summary, "a", encoding="utf-8") as handle:
+            handle.write(text)
+    if args.json:
+        Path(args.json).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    if report["complete"]:
+        return 0
+    for problem in report["problems"]:
+        print(
+            "ERROR    {kind} {vmod} {row_key}: {detail}".format(**problem).replace("  ", " "),
+            file=sys.stderr,
+        )
+    if args.allow_incomplete:
+        # LISTED, not skipped. The check ran, every omission is in the report
+        # and in the summary, and the manifest carries them as evidence gaps --
+        # so the published artefact states what it is missing rather than
+        # looking complete.
+        print(
+            "\nW: assembling anyway; --allow-incomplete was given and every omission "
+            "above is recorded.",
+            file=sys.stderr,
+        )
+        return 0
+    print(
+        "\nA release must not publish a partial required package set. Fix the set, or "
+        "dispatch with allow_incomplete_evidence for an explicitly experimental "
+        "pre-release, which records every omission above in release-manifest.json.",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def cmd_reconcile(args) -> int:
     expected = ledger(args.tier, args.repo_root)
     observed = load_records(args.results)
@@ -2231,6 +2444,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_col.add_argument("--summary", help="append the rendered summary to this file")
     p_col.add_argument("--json", help="write the resolved ledger here")
     p_col.set_defaults(func=cmd_reconcile)
+
+    p_set = sub.add_parser(
+        "verify-release-set",
+        help="is this run's evidence a complete, publishable package set",
+    )
+    p_set.add_argument("--reconciled", required=True, help="the reconcile --json output")
+    p_set.add_argument("--packages", required=True, help="the downloaded packages-* tree")
+    p_set.add_argument("--cohort", required=True, help="the cohort whose required_vmods to demand")
+    p_set.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help="list omissions instead of blocking, for an explicitly experimental pre-release",
+    )
+    p_set.add_argument("--summary", help="append the rendered report to this file")
+    p_set.add_argument("--json", help="write the machine-readable report here")
+    p_set.set_defaults(func=cmd_verify_release_set)
 
     p_self = sub.add_parser("selftest", help="run this tool's own tests")
     p_self.set_defaults(func=cmd_selftest)

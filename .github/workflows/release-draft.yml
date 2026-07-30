@@ -1,31 +1,44 @@
 name: Release draft assembly
 
-# Design notes: docs/20260725_1740_note_step-10-ci-design.md (the file the
-# other comments here call DESIGN.md; it was renamed into docs/ under this
-# repository's dated-note convention). Manual-trigger only:
-# this is the plan's release workflow steps 1-12 ("Upload every asset to an
-# internal draft GitHub Release for final validation"), NOT step 14
+# Design notes: docs/20260725_1740_note_step-10-ci-design.md. Manual-trigger
+# only: this is the plan's release workflow steps 1-12 ("Upload every asset to
+# an internal draft GitHub Release for final validation"), NOT step 14
 # ("publish it as a GitHub pre-release"). Publishing the pre-release stays a
-# human/orchestrator action, per the gate note's step-10 sequencing
-# ("CI clean-room builds first, then the draft release, then a real
-# experimental pre-release is allowed").
+# human/orchestrator action, per the gate note's step-10 sequencing.
 #
-# This workflow always does a full, fresh, clean-room rebuild rather than
-# reusing a prior ci.yml run's artifacts -- so that what lands in the draft
-# release is unambiguously the output of one traceable run, not a mix of
-# whatever artifacts happened to still be retained from an earlier one.
+# This workflow always does a full, fresh, CLEAN-ROOM REBUILD rather than
+# reusing a prior run's artifacts -- so that what lands in the draft release is
+# unambiguously the output of one traceable run, not a mix of whatever
+# artifacts happened to still be retained from an earlier one. That policy
+# predates the isolated graph and survives it unchanged: the engine and package
+# rows below build from the pinned inputs on every dispatch.
+#
+# Migrated to the isolated graph in Step 8 Wave 3e, which is the last of the
+# four workflows Phase 4 of
+# docs/20260728_0833_plan_vmod-matrix-failure-isolation.md names. The legacy
+# graph -- registry-selftest, one shared cachetag-source-archive, and one
+# hardcoded job per lane -- could describe exactly one VMOD, so a cohort
+# requiring three could not be assembled by it at all. The five jobs below are
+# ci.yml's, at --tier release, and the per-VMOD reusable workflow does the rest.
+#
+# Two things are new rather than migrated:
+#
+#   verify-release-set     the publication completeness gate the plan asks for:
+#                          "release assembly must not publish a partial required
+#                          package set merely because the other nine succeeded".
+#   assemble-draft-release now waits on it, and downloads by the ledger's stable
+#                          artifact names rather than by three hardcoded ones.
 
 on:
   workflow_dispatch:
     inputs:
       track:
         description: >-
-          Vinyl pin track to assemble. release (default) drafts the
-          release cohort built from the digest-pinned upstream tarball --
-          what users install, this workflow's purpose after the two-track
-          cutover; trunk drafts the pinned-snapshot cohort. The default can
-          be release without surprising anything because this workflow is
-          dispatch-only.
+          Vinyl pin track to assemble. release (default) drafts the release
+          cohort built from the digest-pinned upstream tarball -- what users
+          install, this workflow's purpose after the two-track cutover; trunk
+          drafts the pinned-snapshot cohort. The default can be release without
+          surprising anything because this workflow is dispatch-only.
         required: false
         default: release
         type: choice
@@ -35,9 +48,11 @@ on:
       allow_incomplete_evidence:
         description: >-
           Assemble a draft even when the registry does not describe a
-          releasable cohort. For an explicitly experimental pre-release only.
-          Every failing check is copied into release-manifest.json as
-          evidence_gaps, so the published artefact states what it is missing.
+          releasable cohort, or when the run's package set is incomplete. For
+          an explicitly experimental pre-release only. Every failing check and
+          every omission is copied into release-manifest.json as evidence_gaps
+          and into the release body, so the published artefact states what it
+          is missing.
         required: false
         default: false
         type: boolean
@@ -48,18 +63,15 @@ permissions:
 env:
   # Selects the pin block every build.sh invocation and release-manifest.sh's
   # pins.env/cohort.env sourcing resolve -- including the assembly job, whose
-  # cohort identity must come from the same track the lanes built. The
-  # fallback covers API dispatches that omit the input.
+  # cohort identity must come from the same track the lanes built. The fallback
+  # covers API dispatches that omit the input.
   VINYL_TRACK: ${{ inputs.track || 'release' }}
-  VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
-  VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
-  CACHETAG_SOURCE_SHA256: 9aba3effcb20cfc70b77a4729990e3cd2ae1712ad242f4e4c45a664e1949eac2
   CACHETAG_REF: v1.0.1
   CACHETAG_GIT_COMMIT: a3897aaccf1d6996c00ee14b2c6e1ddac91ac982
-  EL9_IMAGE: almalinux:9
+  CACHETAG_SOURCE_SHA256: 9aba3effcb20cfc70b77a4729990e3cd2ae1712ad242f4e4c45a664e1949eac2
 
 jobs:
-  registry-selftest:
+  structural-validation:
     name: registry selftest and validate --require-releasable
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -67,6 +79,13 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: vcache-packaging
+
+      # The cachetag configure.ac cross-check needs a cachetag checkout, and it
+      # stays cachetag-specific by design: it is the only thing tying a manifest
+      # to a real cachetag release, and cachetag is the only VMOD whose version
+      # this repository cross-checks against a sibling source tree. The other
+      # VMODs' source identity is pinned by archive digest instead, which their
+      # own source rows verify.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: boffinate/libvmod-cachetag
@@ -78,15 +97,23 @@ jobs:
           ci_verify_cachetag_release_checkout \
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
+
+      - run: scripts/ci/test-common.sh
+        working-directory: vcache-packaging
       - run: python3 tools/release_tool.py selftest
         working-directory: vcache-packaging
+      - run: python3 tools/ci_matrix.py selftest
+        working-directory: vcache-packaging
+      - run: python3 tools/ci_matrix.py check-catalog
+        working-directory: vcache-packaging
+
       # A hard gate since the first real cohort was minted on 2026-07-26. It
-      # was informational while every checked-in cohort was a `template`, and
-      # a release could not be release-ready by construction. Now it can, so a
+      # was informational while every checked-in cohort was a `template`, and a
+      # release could not be release-ready by construction. Now it can, so a
       # failure here means the registry does not describe something publishable
       # -- a pending test verdict, a missing artifact digest, a hand-written
-      # VMOD directory -- and the run must stop rather than assemble a draft
-      # the registry cannot vouch for.
+      # VMOD directory -- and the run must stop rather than assemble a draft the
+      # registry cannot vouch for.
       - name: validate --require-releasable
         run: |
           set -o pipefail
@@ -114,185 +141,462 @@ jobs:
             while read -r gap; do echo "::warning::evidence gap: $gap"; done
         working-directory: vcache-packaging
 
-  cachetag-source-archive:
-    needs: registry-selftest
+  discover-vmods:
+    name: discover selected VMODs
+    needs: structural-validation
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: list the selected VMOD manifests
+        id: discover
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          python3 tools/ci_matrix.py list-vmods --format github | tee -a "$GITHUB_OUTPUT"
+
+  discover-engines:
+    name: select the shared engine rows
+    needs: structural-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Two rows at this tier, not four: `release` is claimed only by the
+      # vinyl-release lanes. A trunk-track dispatch still resolves its own pins
+      # inside the lanes; what the tier decides is which rows exist.
+      - name: derive the engine rows from the selected package lanes
+        id: discover
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          python3 tools/ci_matrix.py engine-matrix --tier release --format github |
+            tee -a "$GITHUB_OUTPUT"
+
+  engine:
+    name: engine ${{ matrix.engine }} (${{ matrix.target }})
+    needs: [structural-validation, discover-engines]
+    if: ${{ !cancelled() && needs.discover-engines.result == 'success' && needs.discover-engines.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      # One engine row failing must not cancel the other three, and must not
+      # cancel the VMOD rows that consume the three that worked.
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-engines.outputs.matrix) }}
+    env:
+      VINYL_TRACK: ${{ matrix.vinyl_track }}
+      # The pinned trunk snapshot, only read when the row's track is `trunk`;
+      # the release track builds from the digest-pinned upstream tarball that
+      # recipes/*/pins.env names and never reads a Vinyl checkout.
+      VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
+      VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
+      # Index digest resolved 2026-07-25; must match EL9_IMAGE in
+      # recipes/el9/cohort.env, which is authoritative.
+      EL9_IMAGE: almalinux:9@sha256:d2515c769e7b73f95c4fde38c0a505336ff38f14990c0b7253b77060a049a743
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: vcache-packaging
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: boffinate/libvmod-cachetag
-          ref: ${{ env.CACHETAG_REF }}
-          path: libvmod-cachetag
-          fetch-depth: 0
-      - name: verify the cachetag release tag
-        run: |
-          . vcache-packaging/scripts/ci/lib/common.sh
-          ci_verify_cachetag_release_checkout \
-            "$GITHUB_WORKSPACE/libvmod-cachetag" \
-            "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
-      - name: checkout ../vinyl-cache (pinned commit)
+
+      # No VMOD checkout anywhere in this job. That independence is the whole
+      # point of the split: a shared engine package must not be able to fail
+      # because one VMOD's repository is unreachable.
+      - name: checkout ../vinyl-cache (pinned commit, not a GitHub remote)
+        id: vinyl
+        if: matrix.vinyl_track == 'trunk'
+        continue-on-error: true
+        shell: bash
         run: |
           set -eu
           . vcache-packaging/scripts/ci/lib/common.sh
           ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
             "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
-      - name: build docker/vinyl-cache-ubuntu-build.Dockerfile
+
+
+      # ---- Debian 13 amd64 (pbuilder), engine scope. ----
+      - name: assemble the pinned Vinyl source tree (build.sh source-engine)
+        id: deb_source
+        if: matrix.family == 'deb' && steps.vinyl.outcome != 'failure'
+        continue-on-error: true
+        run: recipes/debian-13/build.sh source-engine
+        working-directory: vcache-packaging
+
+      - name: build the pinned buildroot with mmdebstrap
+        id: deb_chroot
+        if: matrix.family == 'deb' && steps.deb_source.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/make-chroot.sh
+        working-directory: vcache-packaging
+
+      - name: build the Vinyl packages in the pinned debian:trixie container (pbuilder)
+        id: deb_build
+        if: matrix.family == 'deb' && steps.deb_chroot.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/debian-lane.sh engine
+        working-directory: vcache-packaging
+
+      - name: engine ABI and hardening assertions
+        id: deb_abi
+        if: matrix.family == 'deb' && steps.deb_build.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/assert-packages.sh engine
+        working-directory: vcache-packaging
+
+      # ---- EL9 x86_64 (Mock), engine scope. ----
+      - name: Mock build (vinyl-cache only)
+        id: el9_build
+        if: matrix.family == 'rpm' && steps.vinyl.outcome != 'failure'
+        continue-on-error: true
         run: |
-          docker build -t vinyl-cache-ubuntu-build \
-            -f docker/vinyl-cache-ubuntu-build.Dockerfile docker
-        working-directory: libvmod-cachetag
-      - name: scripts/release-source-archive.sh
-        run: |
-          bash "$GITHUB_WORKSPACE/vcache-packaging/scripts/ci/source-archive.sh" \
+          bash scripts/ci/el9/mock-build.sh \
             "$GITHUB_WORKSPACE/vinyl-cache" \
-            "$VINYL_GIT_COMMIT" \
-            "$CACHETAG_SOURCE_SHA256" \
-            "$CACHETAG_GIT_COMMIT" \
-            release
-        working-directory: libvmod-cachetag
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+            "" \
+            "$EL9_IMAGE" \
+            engine
+        working-directory: vcache-packaging
+
+      # ---- Describe the artifact, then publish it. ----
+      #
+      # The metadata is what a consumer verifies before it builds anything, so
+      # it is produced from the packages that actually exist rather than from
+      # the pins alone: ci_matrix.py hashes every file it is given and records
+      # a roll-up over the set. `engine-identity.sh` supplies the resolved
+      # version, commit, ABI and build-input identity, read out of this row's
+      # own pin file for this row's track.
+      - name: stage and describe the engine artifact
+        id: describe
+        if: steps.deb_abi.outcome == 'success' || steps.el9_build.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          staging="$GITHUB_WORKSPACE/engine-artifact"
+          mkdir -p "$staging/packages"
+          case "${{ matrix.family }}" in
+          deb)
+            # Explicit suffixes, not `vinyl-cache*`: dist/debian-13 also holds
+            # the cached upstream vinyl-cache-<version>.tgz on the release
+            # track, which is a build input rather than a produced package.
+            for pattern in .deb .ddeb .dsc .changes .buildinfo .tar.gz .tar.xz; do
+              find dist/debian-13 -maxdepth 1 -type f \
+                -name "vinyl-cache*$pattern" -exec cp -p {} "$staging/packages/" \;
+            done
+            ;;
+          rpm)
+            find dist/el9/packages -maxdepth 1 -type f \
+              -name 'vinyl-cache*.rpm' -exec cp -p {} "$staging/packages/" \;
+            ;;
+          esac
+          ls -la "$staging/packages"
+          scripts/ci/engine-identity.sh "${{ matrix.family }}" \
+            > "$staging/engine-identity.env"
+          cat "$staging/engine-identity.env"
+          python3 tools/ci_matrix.py engine-metadata \
+            --engine "${{ matrix.engine }}" \
+            --target "${{ matrix.target }}" \
+            --identity "$staging/engine-identity.env" \
+            --packages "$staging/packages" \
+            --out "$staging/engine-metadata.json"
+        working-directory: vcache-packaging
+
+      - name: upload the engine artifact
+        id: upload
+        if: steps.describe.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: release-cachetag-source-archive
-          path: |
-            libvmod-cachetag/release/dist/libvmod-cachetag-*.tar.gz
-            libvmod-cachetag/release/dist/libvmod-cachetag-*.tar.gz.sha256
-            libvmod-cachetag/release/dist/libvmod-cachetag-*.metadata.json
+          name: ${{ matrix.engine_artifact }}
+          path: engine-artifact
           if-no-files-found: error
           retention-days: 14
 
-  debian-13:
-    needs: cachetag-source-archive
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: vcache-packaging
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: boffinate/libvmod-cachetag
-          ref: ${{ env.CACHETAG_REF }}
-          path: libvmod-cachetag
-      - name: verify the cachetag release tag
-        run: |
-          . vcache-packaging/scripts/ci/lib/common.sh
-          ci_verify_cachetag_release_checkout \
-            "$GITHUB_WORKSPACE/libvmod-cachetag" \
-            "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
-      # The release track builds from the digest-pinned upstream tarball
-      # (downloaded by build.sh and verified against the pinned sha256) and
-      # never reads a Vinyl git checkout, so this step is trunk-only --
-      # mirroring ci.yml's package jobs. The source-archive job's checkout
-      # stays unconditional: the cachetag archive derivation always builds
-      # against the pinned trunk Vinyl.
-      - name: checkout ../vinyl-cache (pinned commit)
-        if: env.VINYL_TRACK == 'trunk'
+      - name: classify and record the engine result
+        id: record
+        if: always()
+        shell: bash
         run: |
           set -eu
-          . vcache-packaging/scripts/ci/lib/common.sh
-          ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
-            "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: release-cachetag-source-archive
-          path: libvmod-cachetag/release/dist
-      - run: recipes/debian-13/build.sh source
+          status=passed
+          detail=""
+          set_status() { status=$1; detail=$2; }
+          if [ "${{ steps.vinyl.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "the pinned Vinyl source was unavailable"
+          elif [ "${{ steps.deb_source.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "build.sh source-engine failed"
+          elif [ "${{ steps.deb_chroot.outcome }}" = "failure" ]; then
+            set_status failed_infrastructure "the mmdebstrap buildroot could not be built"
+          elif [ "${{ steps.deb_build.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_build.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "the Vinyl package build failed"
+          elif [ "${{ steps.deb_abi.outcome }}" = "failure" ]; then
+            set_status failed_abi_or_hardening "assert-packages.sh engine failed"
+          elif [ "${{ steps.describe.outcome }}" != "success" ]; then
+            set_status failed_infrastructure \
+              "the engine artifact could not be staged or described"
+          elif [ "${{ steps.upload.outcome }}" != "success" ]; then
+            set_status failed_infrastructure "the engine artifact upload failed"
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          python3 tools/ci_matrix.py record \
+            --out "$GITHUB_WORKSPACE/results/engine.json" \
+            --kind engine \
+            --vmod "" \
+            --engine "${{ matrix.engine }}" \
+            --target "${{ matrix.target }}" \
+            --status "$status" \
+            --stage engine \
+            --detail "$detail" \
+            --artifact "${{ matrix.engine_artifact }}"
         working-directory: vcache-packaging
-      - run: bash scripts/ci/debian13/make-chroot.sh
-        working-directory: vcache-packaging
-      - run: bash scripts/ci/debian13/debian-lane.sh
-        working-directory: vcache-packaging
-      - run: bash scripts/ci/debian13/assert-packages.sh
-        working-directory: vcache-packaging
-      - run: recipes/debian-13/build.sh lint smoke vtc-suite sums
-        working-directory: vcache-packaging
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: release-debian-13-packages
-          path: |
-            vcache-packaging/dist/debian-13/*.deb
-            vcache-packaging/dist/debian-13/*.dsc
-            vcache-packaging/dist/debian-13/*.changes
-            vcache-packaging/dist/debian-13/*.buildinfo
-            vcache-packaging/dist/debian-13/*.tar.*
-            vcache-packaging/dist/debian-13/SHA256SUMS
-            vcache-packaging/dist/debian-13/logs/**
-          if-no-files-found: error
-          retention-days: 90
 
-  el9:
-    needs: cachetag-source-archive
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # The record and the logs together, unconditionally. The record is the
+      # guaranteed evidence and always exists, so `error` still means what it
+      # says while the log globs are free to match nothing on a row that failed
+      # before it produced any. Build logs deliberately do NOT travel inside the
+      # engine artifact: that artifact is a dependency, and a consumer should
+      # download packages and metadata, not another row's logs.
+      - name: upload the engine result record and logs
+        id: upload_result
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          path: vcache-packaging
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: boffinate/libvmod-cachetag
-          ref: ${{ env.CACHETAG_REF }}
-          path: libvmod-cachetag
-      - name: verify the cachetag release tag
-        run: |
-          . vcache-packaging/scripts/ci/lib/common.sh
-          ci_verify_cachetag_release_checkout \
-            "$GITHUB_WORKSPACE/libvmod-cachetag" \
-            "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
-      # The release track builds from the digest-pinned upstream tarball
-      # (downloaded by build.sh and verified against the pinned sha256) and
-      # never reads a Vinyl git checkout, so this step is trunk-only --
-      # mirroring ci.yml's package jobs. The source-archive job's checkout
-      # stays unconditional: the cachetag archive derivation always builds
-      # against the pinned trunk Vinyl.
-      - name: checkout ../vinyl-cache (pinned commit)
-        if: env.VINYL_TRACK == 'trunk'
-        run: |
-          set -eu
-          . vcache-packaging/scripts/ci/lib/common.sh
-          ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
-            "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: release-cachetag-source-archive
-          path: libvmod-cachetag/release/dist
-      - run: |
-          bash scripts/ci/el9/mock-build.sh \
-            "$GITHUB_WORKSPACE/vinyl-cache" \
-            "$GITHUB_WORKSPACE/libvmod-cachetag" \
-            "$EL9_IMAGE"
-        working-directory: vcache-packaging
-      - run: |
-          docker run --rm \
-            -v "$PWD/recipes/el9:/recipes:ro" \
-            -v "$PWD/dist/el9:/out" \
-            -w /out \
-            "$EL9_IMAGE" \
-            bash /recipes/container/build.sh deps report lint
-          recipes/el9/build.sh --smoke-only
-          recipes/el9/build.sh --vtc-suite-only
-        working-directory: vcache-packaging
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: release-el9-packages
+          name: ${{ matrix.result_artifact }}
           path: |
-            vcache-packaging/dist/el9/packages/*.rpm
-            vcache-packaging/dist/el9/SHA256SUMS
+            results/engine.json
+            engine-artifact/engine-metadata.json
+            engine-artifact/engine-identity.env
+            vcache-packaging/dist/debian-13/logs/**
             vcache-packaging/dist/el9/logs/**
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 14
+
+      - name: fail when this engine row failed
+        if: steps.record.outputs.status != 'passed' || steps.upload_result.outcome == 'failure'
+        run: exit 1
+
+  vmods:
+    name: VMOD
+    needs: [structural-validation, discover-vmods, engine]
+    # Deliberately NOT ordinary `needs` semantics on the engine matrix: a failed
+    # engine row must not skip the VMOD invocations. Every invocation starts and
+    # each of its rows decides from its own requested artifact whether it can
+    # proceed, so a blocked row is reported as blocked rather than skipped.
+    if: ${{ !cancelled() && needs.discover-vmods.result == 'success' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.discover-vmods.outputs.matrix) }}
+    uses: ./.github/workflows/vmod-package.yml
+    with:
+      manifest: ${{ matrix.manifest }}
+      vmod_id: ${{ matrix.id }}
+      tier: release
+
+  collect:
+    name: reconcile every expected row
+    needs: [structural-validation, discover-vmods, discover-engines, engine, vmods]
+    # Runs after ordinary failures and respects an intentional cancellation.
+    # This is the job that makes a partial run legible: it reports successes
+    # even when the run is red, and it fails the run when a required row failed
+    # or produced no evidence at all.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: download every result record
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: result-*
+          path: results
+
+      # Separate directories per artifact, not one shared one: every lane
+      # writes a file literally named SHA256SUMS and a shared directory would
+      # let one row silently clobber another's.
+      - name: download every package artifact
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: packages-*
+          path: packages
+
+
+      - name: note the upstream job outcomes
+        shell: bash
+        run: |
+          set -eu
+          {
+            echo "## Upstream job outcomes"
+            echo
+            echo "| job | result |"
+            echo "| --- | --- |"
+            echo "| structural-validation | ${{ needs.structural-validation.result }} |"
+            echo "| discover-vmods | ${{ needs.discover-vmods.result }} |"
+            echo "| discover-engines | ${{ needs.discover-engines.result }} |"
+            echo "| engine (aggregate) | ${{ needs.engine.result }} |"
+            echo "| vmods (aggregate) | ${{ needs.vmods.result }} |"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: combined checksum summary
+        shell: bash
+        run: |
+          set -eu
+          {
+            echo "## Combined checksum summary"
+            echo
+            echo "Native package filenames as built, which are also the names"
+            echo "release-draft.yml publishes them under; the distro-bearing"
+            echo "release-asset name the registry generates"
+            echo "(\`libvmod-cachetag-1.0.1-1-debian-13-amd64.deb\`) is recorded in"
+            echo "\`release-manifest.json\` rather than used as a filename, because"
+            echo "renaming a .deb contradicts the .changes and .buildinfo beside it."
+            echo
+            if [ -d packages ]; then
+              find packages -name SHA256SUMS | sort | while read -r sums; do
+                echo "### $(dirname "${sums#packages/}")"
+                echo '```text'
+                cat "$sums"
+                echo '```'
+                echo
+              done
+            else
+              echo "No package artifacts were produced."
+              echo
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Last, because it is the step that fails the run. Everything the
+      # summary should show has been written by now.
+      - name: reconcile the expected ledger against the observed results
+        shell: bash
+        run: |
+          set -eu
+          python3 tools/ci_matrix.py reconcile \
+            --tier release \
+            --results "$GITHUB_WORKSPACE/results" \
+            --json "$GITHUB_WORKSPACE/reconciled.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: upload the reconciled ledger
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: release-reconciled-ledger
+          path: reconciled.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  verify-release-set:
+    name: is the required package set complete
+    needs: [structural-validation, discover-vmods, collect]
+    # After collection, and after ordinary failures: this job's whole purpose
+    # is to describe an incomplete set, so it must run when the set IS
+    # incomplete. It respects an intentional cancellation like every other
+    # failure-tolerant job here.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      complete: ${{ steps.verify.outputs.complete }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: download the reconciled ledger
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-reconciled-ledger
+          path: reconciled
+
+      # Separate directories per artifact, not one shared one: every lane
+      # writes a file literally named SHA256SUMS, and a shared directory would
+      # let one row clobber another's -- which would defeat the very check
+      # below.
+      - name: download every package artifact
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: packages-*
+          path: packages
+
+      # Reconciliation already answered "did every expected row report". This
+      # answers the different question of whether what they reported is enough
+      # to publish: a required row that failed, a passing row that published no
+      # artifact, an artifact whose SHA256SUMS does not describe the bytes
+      # beside it, or a VMOD set that disagrees with the cohort's own
+      # required_vmods.
+      #
+      # `allow_incomplete_evidence` makes it LIST rather than block. The check
+      # still runs and still names every omission; only the exit status
+      # differs, and release-manifest.sh copies the findings into the manifest
+      # and the release body. A gate that went quiet would publish something
+      # that looked whole.
+      - name: verify the release set
+        id: verify
+        shell: bash
+        run: |
+          set -eu
+          . recipes/debian-13/pins.env
+          status=0
+          python3 tools/ci_matrix.py verify-release-set \
+            --reconciled reconciled/reconciled.json \
+            --packages packages \
+            --cohort "$COHORT_ID" \
+            --json "$GITHUB_WORKSPACE/release-set.json" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            2> "$GITHUB_WORKSPACE/release-set-gaps.log" || status=$?
+          cat "$GITHUB_WORKSPACE/release-set-gaps.log"
+          if [ "$status" -eq 0 ]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "${{ inputs.allow_incomplete_evidence }}" = "true" ]; then
+            exit 0
+          fi
+          exit "$status"
+
+      - name: upload the release-set report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: release-set-verification
+          path: |
+            release-set.json
+            release-set-gaps.log
+          if-no-files-found: warn
+          retention-days: 30
 
   assemble-draft-release:
     name: assemble the internal draft GitHub Release
-    needs: [debian-13, el9]
+    needs: [collect, verify-release-set]
+    # Both gates green, or an explicit experimental dispatch that records every
+    # omission. `!cancelled()` rather than plain `needs` semantics so that the
+    # experimental path can reach this job with a red gate behind it -- the
+    # condition below, not the graph, is what decides.
+    if: >-
+      ${{ !cancelled()
+      && needs.collect.result == 'success'
+      && (needs.verify-release-set.outputs.complete == 'true'
+          || inputs.allow_incomplete_evidence) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Elevated permissions and a protected environment are confined to this
-    # one job. Configure the `release-draft` environment's protection rules
+    # Elevated permissions and a protected environment are confined to this one
+    # job. Configure the `release-draft` environment's protection rules
     # (required reviewers, or restrict to a release-owner team) in the
     # repository settings; this workflow file only names the environment.
     environment: release-draft
@@ -307,9 +611,7 @@ jobs:
       # every subcommand of that tool cross-checks cachetag.version against
       # AC_INIT in a libvmod-cachetag checkout -- a hard error, deliberately,
       # because that cross-check is the only thing tying a manifest to a real
-      # cachetag release. This job is the one that needs it and did not have
-      # it, because until the registry became the source of the release's
-      # identity, assembling a release needed no registry at all.
+      # cachetag release.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: boffinate/libvmod-cachetag
@@ -322,33 +624,33 @@ jobs:
             "$GITHUB_WORKSPACE/libvmod-cachetag" \
             "$CACHETAG_REF" "$CACHETAG_GIT_COMMIT"
 
-      # Downloaded into separate subdirectories, not one shared "assets"
-      # directory: both lanes produce a file literally named SHA256SUMS, and
-      # a shared directory would silently let the second download clobber
-      # the first. release-manifest.sh reads all three subdirectories and
-      # writes one merged, lane-qualified checksum file.
+      # By the ledger's stable artifact names, through a pattern, rather than
+      # by three hardcoded ones: the set of artifacts is a function of the
+      # catalog now, and a fourth VMOD must not need an edit here.
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: release-cachetag-source-archive
-          path: assets/source-archive
+          pattern: packages-*
+          path: assets/packages
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: release-debian-13-packages
-          path: assets/debian-13
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: release-el9-packages
-          path: assets/el9
+          pattern: vmod-source-*
+          path: assets/source
 
-      # This one script now assembles the upload directory, the merged
-      # checksum file and the manifest, so that the names in
+      - name: carry the completeness findings into the manifest
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-set-verification
+          path: assets/release-set
+
+      # This one script assembles the upload directory, the merged checksum
+      # file, the manifest and the body, so that the names in
       # RELEASE-SHA256SUMS are by construction the names the assets are
-      # published under. The workflow used to flatten the assets itself with
-      # its own copy of every glob while the script wrote lane-prefixed paths
-      # into the checksum file, which matched nothing a user could download.
+      # published under.
       - name: assemble the upload directory, RELEASE-SHA256SUMS and release-manifest.json
         env:
           RELEASE_ALLOW_INCOMPLETE_EVIDENCE: ${{ inputs.allow_incomplete_evidence && '1' || '0' }}
+          RELEASE_EVIDENCE_GAPS: ${{ github.workspace }}/assets/release-set/release-set-gaps.log
           CACHETAG_SRC: ${{ github.workspace }}/libvmod-cachetag
         run: |
           bash scripts/ci/release-manifest.sh \
