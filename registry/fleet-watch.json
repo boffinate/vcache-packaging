@@ -1,0 +1,425 @@
+{
+  "schema": "fleet-watch-roster/v1",
+  "comment": "Watch-only roster of the ACTIVE VMOD FLEET: upstream repositories from the compatibility survey whose head commit is within two years of roster generation (head_date >= 2024-07-30 per survey/data/triage.json). Anything older is assumed too old or incompatible and is deliberately not watched. Fleet rows carry no pin, never gate the trunk early-warning run, and never create CI rows; a new stable tag surfaces as an informational packaging candidate only. Maintainer-editable; policy record: docs/20260730_1635_note_publication-authority-decision.md.",
+  "criterion": "repository head commit within two years of generation (>= 2024-07-30)",
+  "generated": "2026-07-30",
+  "generated_from": "survey/data/triage.json (schema vmod-survey-triage/v1, worklist homepage commit a67cfa490e07)",
+  "rows": [
+    {
+      "id": "all_healthy",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-all_healthy.git",
+      "watch": true,
+      "vmods": [
+        "all_healthy"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "awsrest",
+      "url": "https://github.com/xcir/libvmod-awsrest.git",
+      "watch": true,
+      "vmods": [
+        "awsrest"
+      ],
+      "last_activity": "2025-08-09"
+    },
+    {
+      "id": "basicauth",
+      "url": "https://git.gnu.org.ua/vmod-basicauth.git",
+      "watch": true,
+      "vmods": [
+        "basicauth"
+      ],
+      "last_activity": "2026-03-25"
+    },
+    {
+      "id": "blobdigest",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-blobdigest.git",
+      "watch": true,
+      "vmods": [
+        "blobdigest"
+      ],
+      "last_activity": "2026-03-31"
+    },
+    {
+      "id": "blobsynth",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-blobsynth.git",
+      "watch": true,
+      "vmods": [
+        "blobsynth"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "brotli",
+      "url": "https://gitlab.com/uplex/varnish/libvfp-brotli.git",
+      "watch": true,
+      "vmods": [
+        "brotli"
+      ],
+      "last_activity": "2026-03-31"
+    },
+    {
+      "id": "cfg",
+      "url": "https://github.com/carlosabalde/libvmod-cfg.git",
+      "watch": true,
+      "vmods": [
+        "cfg"
+      ],
+      "last_activity": "2026-05-11"
+    },
+    {
+      "id": "cluster",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-cluster.git",
+      "watch": true,
+      "vmods": [
+        "cluster"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "crypto",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-crypto.git",
+      "watch": true,
+      "vmods": [
+        "crypto"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "curl",
+      "url": "https://github.com/varnish/libvmod-curl.git",
+      "watch": true,
+      "vmods": [
+        "curl"
+      ],
+      "last_activity": "2025-06-03"
+    },
+    {
+      "id": "dbrw",
+      "url": "https://git.gnu.org.ua/vmod-dbrw.git",
+      "watch": true,
+      "vmods": [
+        "dbrw"
+      ],
+      "last_activity": "2026-03-25"
+    },
+    {
+      "id": "device-detection-varnish",
+      "url": "https://github.com/51Degrees/device-detection-varnish.git",
+      "watch": true,
+      "vmods": [
+        "fiftyonedegrees"
+      ],
+      "last_activity": "2026-06-13"
+    },
+    {
+      "id": "dict",
+      "url": "https://git.gnu.org.ua/vmod-dict.git",
+      "watch": false,
+      "vmods": [
+        "dict"
+      ],
+      "last_activity": "2026-03-25",
+      "reason": "watched as the pinned packaged row dict/*"
+    },
+    {
+      "id": "dns",
+      "url": "https://github.com/kenshaw/libvmod-dns.git",
+      "watch": true,
+      "vmods": [
+        "dns"
+      ],
+      "last_activity": "2026-07-25"
+    },
+    {
+      "id": "dynamic",
+      "url": "https://github.com/nigoroll/libvmod-dynamic.git",
+      "watch": true,
+      "vmods": [
+        "dynamic"
+      ],
+      "last_activity": "2026-06-29"
+    },
+    {
+      "id": "file",
+      "url": "https://code.uplex.de/uplex-varnish/libvmod-file.git",
+      "watch": true,
+      "vmods": [
+        "file"
+      ],
+      "last_activity": "2025-09-17"
+    },
+    {
+      "id": "frozen",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-frozen.git",
+      "watch": true,
+      "vmods": [
+        "frozen"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "gcrypt",
+      "url": "https://code.uplex.de/uplex-varnish/libvmod-gcrypt.git",
+      "watch": true,
+      "vmods": [
+        "gcrypt"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "gossip",
+      "url": "https://github.com/carlosabalde/libvmod-gossip.git",
+      "watch": true,
+      "vmods": [
+        "gossip"
+      ],
+      "last_activity": "2026-05-11"
+    },
+    {
+      "id": "hoailona",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-hoailona.git",
+      "watch": true,
+      "vmods": [
+        "hoailona"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "iconv",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-iconv.git",
+      "watch": true,
+      "vmods": [
+        "iconv"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "ip2location-varnish",
+      "url": "https://github.com/ip2location/IP2Location-Varnish.git",
+      "watch": true,
+      "vmods": [
+        "ip2location"
+      ],
+      "last_activity": "2025-12-31"
+    },
+    {
+      "id": "j",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-j.git",
+      "watch": true,
+      "vmods": [
+        "j"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "pesi",
+      "url": "https://gitlab.com/uplex/varnish/libvdp-pesi.git",
+      "watch": true,
+      "vmods": [
+        "pesi"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "pipe",
+      "url": "https://gitlab.com/uplex/varnish/libvdfp-pipe.git",
+      "watch": true,
+      "vmods": [
+        "pipe"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "querystring",
+      "url": "https://git.sr.ht/~dridi/vmod-querystring",
+      "watch": true,
+      "vmods": [
+        "querystring"
+      ],
+      "last_activity": "2025-05-26"
+    },
+    {
+      "id": "re",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-re.git",
+      "watch": true,
+      "vmods": [
+        "re"
+      ],
+      "last_activity": "2026-05-28"
+    },
+    {
+      "id": "re2",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-re2.git",
+      "watch": true,
+      "vmods": [
+        "re2"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "redis",
+      "url": "https://github.com/carlosabalde/libvmod-redis.git",
+      "watch": false,
+      "vmods": [
+        "redis"
+      ],
+      "last_activity": "2026-06-03",
+      "reason": "watched as the pinned packaged row redis/*"
+    },
+    {
+      "id": "remoteip",
+      "url": "https://git.gnu.org.ua/vmod-remoteip.git",
+      "watch": true,
+      "vmods": [
+        "remoteip"
+      ],
+      "last_activity": "2026-03-25"
+    },
+    {
+      "id": "selector",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-selector.git",
+      "watch": true,
+      "vmods": [
+        "selector"
+      ],
+      "last_activity": "2026-07-05"
+    },
+    {
+      "id": "slash",
+      "url": "https://gitlab.com/uplex/varnish/slash.git",
+      "watch": true,
+      "vmods": [
+        "slash"
+      ],
+      "last_activity": "2026-07-08"
+    },
+    {
+      "id": "tbf",
+      "url": "https://git.gnu.org.ua/vmod-tbf.git",
+      "watch": true,
+      "vmods": [
+        "tbf"
+      ],
+      "last_activity": "2026-03-25"
+    },
+    {
+      "id": "tus",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-tus.git",
+      "watch": true,
+      "vmods": [
+        "tus"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "uuid",
+      "url": "https://github.com/otto-de/libvmod-uuid.git",
+      "watch": true,
+      "vmods": [
+        "uuid"
+      ],
+      "last_activity": "2026-04-24"
+    },
+    {
+      "id": "valkey",
+      "url": "https://github.com/carlosabalde/libvmod-valkey.git",
+      "watch": true,
+      "vmods": [
+        "valkey"
+      ],
+      "last_activity": "2025-08-20"
+    },
+    {
+      "id": "variable",
+      "url": "https://git.gnu.org.ua/vmod-variable.git",
+      "watch": true,
+      "vmods": [
+        "variable"
+      ],
+      "last_activity": "2026-03-25"
+    },
+    {
+      "id": "varnish-cache",
+      "url": "https://github.com/varnishcache/varnish-cache.git",
+      "watch": false,
+      "vmods": [
+        "directors",
+        "std"
+      ],
+      "last_activity": "2026-02-16",
+      "reason": "the Varnish engine tree itself (in-tree std/directors); a Varnish lane is a separate maintainer decision per SCOPE.md"
+    },
+    {
+      "id": "varnish-modules-nigoroll",
+      "url": "https://github.com/nigoroll/varnish-modules.git",
+      "watch": true,
+      "vmods": [
+        "cookie (newer versions)"
+      ],
+      "last_activity": "2026-02-14"
+    },
+    {
+      "id": "varnish-modules-varnish",
+      "url": "https://github.com/varnish/varnish-modules.git",
+      "watch": true,
+      "vmods": [
+        "cookie",
+        "saintmode",
+        "var",
+        "vsthrottle",
+        "xkey"
+      ],
+      "last_activity": "2026-07-23"
+    },
+    {
+      "id": "varnish-objvar",
+      "url": "https://gitlab.com/uplex/varnish/varnish-objvar.git",
+      "watch": true,
+      "vmods": [
+        "constant",
+        "globalvar",
+        "taskvar",
+        "topvar"
+      ],
+      "last_activity": "2026-03-30"
+    },
+    {
+      "id": "varnish-urlsort",
+      "url": "https://github.com/cyberroadie/varnish-urlsort.git",
+      "watch": true,
+      "vmods": [
+        "urlsort"
+      ],
+      "last_activity": "2026-03-22"
+    },
+    {
+      "id": "weightadjust",
+      "url": "https://gitlab.com/uplex/varnish/libvmod-weightadjust.git",
+      "watch": true,
+      "vmods": [
+        "weightadjust"
+      ],
+      "last_activity": "2025-05-23"
+    },
+    {
+      "id": "xcounter",
+      "url": "https://github.com/xcir/libvmod-xcounter.git",
+      "watch": true,
+      "vmods": [
+        "xcounter"
+      ],
+      "last_activity": "2026-03-20"
+    },
+    {
+      "id": "zipflow",
+      "url": "https://code.uplex.de/uplex-varnish/libvmod-zipflow.git",
+      "watch": true,
+      "vmods": [
+        "zipflow"
+      ],
+      "last_activity": "2026-03-30"
+    }
+  ]
+}

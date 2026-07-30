@@ -13,7 +13,10 @@ registry/cohorts/<cohort-id>.yml              one coordinated project cohort
 registry/targets/<cohort-id>/<target-id>.yml  one distro/arch build within that cohort
 registry/distro-native/<target-id>.yml        a build against a distribution's own Vinyl packages
 registry/vmods/<vmod-id>.yml                  one selected VMOD, its source channels and its CI lanes
+registry/fleet-watch.json                     the watch-only fleet roster read by tools/upstream_watch.py
 ```
+
+`fleet-watch.json` is not a manifest and mints no evidence: it lists the active third-party VMOD upstreams (survey repositories with a head commit within two years of roster generation) that the upstream watcher observes for new stable tags. Fleet rows never gate a run, never create a CI row, and never make a package claim; a new tag surfaces as an informational packaging candidate only. The file is maintainer-editable; provenance and semantics are recorded in its own header and in the [publication-authority decision note](../docs/20260730_1635_note_publication-authority-decision.md).
 
 `<target-id>` is always `<distro-id>-<arch>`, for example `debian-13-amd64` or `el9-x86_64`.
 
