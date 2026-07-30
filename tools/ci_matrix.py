@@ -354,10 +354,15 @@ ARCHIVE_URL_RE = r"^https://[^\s]+$"
 RECIPE_STRATEGIES = ["upstream", "generated"]
 REF_RE = r"^[A-Za-z0-9][A-Za-z0-9._/-]*$"
 
-# A relative glob inside a source tree, for a source-harness lane's test set.
-# Relative and forward-only: no leading slash and no `..`, so a manifest cannot
-# point the harness at anything outside the checkout it was given.
-GLOB_RE = r"^[A-Za-z0-9][A-Za-z0-9._/*?-]*$"
+# One or more space-separated relative globs inside a source tree, for a
+# source-harness lane's test set. Each word is relative and forward-only: no
+# leading slash, so a manifest cannot point the harness at anything outside the
+# checkout it was given. Multiple words exist for suites whose storage-agnostic
+# set cannot be one plain glob: cachetag keeps Fellow-only p*/x* VTCs beside
+# the c*/r*/pm* families the packaging harness can actually run, and plain
+# globs have no way to say "p but not pm". The harness expands the words with
+# ordinary shell splitting (scripts/ci/vmod/container/source-harness.sh).
+GLOB_RE = r"^[A-Za-z0-9][A-Za-z0-9._/*?-]*( [A-Za-z0-9][A-Za-z0-9._/*?-]*)*$"
 COMMIT_RE = r"^[0-9a-f]{40}$"
 SHA256_RE = r"^[0-9a-f]{64}$"
 # Two or more dot-separated numeric components. It was three exactly until

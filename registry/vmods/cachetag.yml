@@ -96,13 +96,20 @@ lanes:
   # trunk-early-warning.yml runs it, change-gated, since Step 8 Wave 3c.
   #
   # `harness.tests` is the one per-VMOD fact the generic harness cannot derive:
-  # src/vtc/*.vtc is where this VMOD keeps the suite it wants run. How to
-  # bootstrap and where the built .so lands are properties of autotools and are
-  # discovered, not declared.
+  # which of the VMOD's VTCs are runnable in this harness. The declared set is
+  # upstream's own storage-agnostic suite (the c/r/pm families its standalone
+  # check target runs), NOT src/vtc/*.vtc: the p* and x* VTCs beside them are
+  # Fellow-backed persistence and SIGKILL tests that import the slash storage
+  # VMOD via ${libvmod_slash}, which this harness deliberately does not build.
+  # Discovered live in run 30583344213 -- the first run whose VTC stage ever
+  # executed (every earlier trunk run died at the pre-v1.0.2 header break), so
+  # the bare glob's over-match was invisible until then. How to bootstrap and
+  # where the built .so lands are properties of autotools and are discovered,
+  # not declared.
   - kind: source-harness
     source: trunk
     engine: vinyl-trunk-head
     tiers:
       - trunk
     harness:
-      tests: "src/vtc/*.vtc"
+      tests: "src/vtc/cachetag_c*.vtc src/vtc/cachetag_r*.vtc src/vtc/cachetag_pm*.vtc"

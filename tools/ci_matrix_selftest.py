@@ -277,6 +277,49 @@ def test_manifest_validation() -> None:
         str(errors),
     )
 
+    # The declared test set is one or more space-separated relative globs.
+    # Multi-word sets exist for suites whose runnable subset cannot be one
+    # plain glob: cachetag's committed manifest declares the c/r/pm families
+    # and excludes the Fellow-only p*/x* VTCs, which the harness environment
+    # cannot run (discovered live in run 30583344213, the first run whose VTC
+    # stage ever executed). One acceptance and two refusals.
+    multi_glob = _manifest_text("cachetag").replace(
+        'tests: "src/vtc/*.vtc"',
+        'tests: "src/vtc/cachetag_c*.vtc src/vtc/cachetag_r*.vtc src/vtc/cachetag_pm*.vtc"',
+    )
+    errors = ci_matrix.validate_vmod_manifest(
+        yaml_subset.parse(multi_glob), "registry/vmods/cachetag.yml"
+    )
+    check(
+        "manifest: a space-separated multi-glob harness.tests is accepted",
+        not errors,
+        str(errors),
+    )
+    absolute_glob = _manifest_text("cachetag").replace(
+        'tests: "src/vtc/*.vtc"',
+        'tests: "src/vtc/cachetag_c*.vtc /etc/*.vtc"',
+    )
+    errors = ci_matrix.validate_vmod_manifest(
+        yaml_subset.parse(absolute_glob), "registry/vmods/cachetag.yml"
+    )
+    check(
+        "manifest: an absolute glob word in harness.tests is rejected",
+        bool(errors),
+        str(errors),
+    )
+    doubled_space = _manifest_text("cachetag").replace(
+        'tests: "src/vtc/*.vtc"',
+        'tests: "src/vtc/cachetag_c*.vtc  src/vtc/cachetag_r*.vtc"',
+    )
+    errors = ci_matrix.validate_vmod_manifest(
+        yaml_subset.parse(doubled_space), "registry/vmods/cachetag.yml"
+    )
+    check(
+        "manifest: a doubled space in harness.tests is rejected",
+        bool(errors),
+        str(errors),
+    )
+
     harness_with_targets = _manifest_text("cachetag").replace(
         "  - kind: source-harness\n    source: trunk\n    engine: vinyl-trunk-head\n    tiers:\n      - trunk\n",
         "  - kind: source-harness\n    source: trunk\n    engine: vinyl-trunk-head\n    tiers:\n"
