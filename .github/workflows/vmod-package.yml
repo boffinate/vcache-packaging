@@ -1424,60 +1424,104 @@ jobs:
   # ---- The trunk early-warning strategy: no package, no artifact, no
   #      publication. Step 8 Wave 3c. ----
   #
-  # The job the `trunk` tier's harness rows have been promising since Phase 1.
-  # Its content is trunk-vmod-ci.yml's, migrated: check the VMOD's default
-  # branch out, clone Vinyl trunk HEAD unpinned, run the VMOD's own documented
-  # harness. What it gains is everything that makes it a ROW rather than a
-  # standalone job -- a classified result record under the ledger's expected
-  # artifact name, the resolved commits of both sides recorded as evidence, and
-  # a place in this VMOD's summary.
+  # Build this VMOD from its own source against unpinned Vinyl trunk HEAD, and
+  # run the VTCs it declares against what that build produced. It is the
+  # tripwire: the strict VMOD ABI token is the Vinyl commit id itself, so a
+  # Vinyl core change breaks VMOD source before any cohort is minted, and this
+  # says so within days rather than at the next re-pin.
   #
-  # Deliberately unpinned on the engine side, unlike every other job in this
-  # repository. That is the point: the strict VMOD ABI token is the Vinyl commit
-  # id itself, so a Vinyl core change breaks VMOD source before any cohort is
-  # minted, and this is the tripwire that says so within days rather than at the
-  # next re-pin.
+  # GENERIC, and that is the design rather than a convenience. There is no
+  # per-VMOD harness script and no invocation of anything in another
+  # repository: the only per-VMOD input is `harness.tests` out of the manifest,
+  # and everything else the container does is autotools, discovered. At the
+  # roadmap's ~40-VMOD ambition a bespoke harness per VMOD would be forty
+  # cross-repository couplings to keep working, and each of them would build
+  # Vinyl again for itself -- throwing away the one engine build the caller
+  # already did and shares. The precedent is already in the tree: the verify
+  # container runs cachetag's own VTCs against the installed package without
+  # invoking anything from cachetag's repository.
+  #
+  # The engine arrives as a prefix tarball the caller built ONCE this run, and
+  # its identity is verified before anything is built against it -- the same
+  # rule the package rows follow for the engine packages, for the same reason:
+  # a consumer that cannot re-derive what it downloaded has to check what it
+  # was told.
   harness:
     name: ${{ inputs.vmod_id }} source harness (${{ matrix.channel }} / ${{ matrix.engine }})
     needs: plan
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.harness_count != '0' }}
     runs-on: ubuntu-latest
-    # trunk-vmod-ci.yml's budget, unchanged: this job builds Vinyl from source
-    # and then the VMOD against it, which is the slow half.
-    timeout-minutes: 45
+    # No Vinyl build here since Wave 3c's rework -- the caller does that once
+    # and shares it -- so this is a VMOD build plus a VTC suite.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.harnesses) }}
+    env:
+      # The prefix the engine was CONFIGURED for. It must match the caller's
+      # value: libtool bakes it into the .la files, pkg-config into vinylapi.pc
+      # and vmod_abi.h into the ABI string, so the tarball only works when it
+      # is unpacked at the path it was built for. Verified against the
+      # artifact's own identity file below rather than trusted.
+      VINYL_PREFIX: /opt/vinyl-trunk
     steps:
       - name: checkout vcache-packaging
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: vcache-packaging
 
-      # A generated-recipe VMOD declares no harness command anywhere, and none
-      # of them declares a trunk source channel today either -- so this is
-      # unreachable now and becomes a loud, classified refusal the moment
-      # somebody adds one. Guessing that cachetag's harness command would work
-      # for another VMOD is exactly the kind of silent wrong answer the overlay
-      # contract exists to prevent: the command belongs in the overlay, as a
-      # declared per-VMOD fact, and adding it is deliberate work.
-      - name: refuse a strategy with no documented harness
-        id: strategy
+      # Allowed to fail so the row reaches its result record: a prefix that is
+      # not there is a blocked row with a named cause, not an unclassified
+      # download error. Same treatment, and same reasoning, as a package row's
+      # engine artifact.
+      - name: download the shared Vinyl trunk prefix
+        id: engine_download
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: engine-vinyl-trunk-head-prefix
+          path: engine-prefix
+
+      - name: verify the prefix identity and unpack it
+        id: engine_verify
+        if: steps.engine_download.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
           set -eu
-          recipe='${{ needs.plan.outputs.recipe }}'
-          [ "$recipe" = upstream ] || {
-            echo "E: ${{ inputs.vmod_id }} uses recipe strategy '$recipe', which declares" >&2
-            echo "E: no source-harness command. A harness command is a per-VMOD fact and" >&2
-            echo "E: belongs in the overlay; it is never inherited from another VMOD." >&2
+          identity="$GITHUB_WORKSPACE/engine-prefix/trunk-engine-identity.env"
+          [ -f "$identity" ] || { echo "E: the artifact carries no identity file" >&2; exit 1; }
+          cat "$identity"
+          # sed, not `.`: the identity file is data from another job and
+          # sourcing data is how a quoting bug becomes an injection.
+          value() { sed -n "s/^$1=//p" "$identity" | head -1; }
+          engine=$(value engine)
+          commit=$(value vinyl_git_commit)
+          prefix=$(value vinyl_prefix)
+          [ "$engine" = vinyl-trunk-head ] ||
+            { echo "E: the artifact is for engine '$engine', not vinyl-trunk-head" >&2; exit 1; }
+          [ "$prefix" = "$VINYL_PREFIX" ] ||
+            { echo "E: built for prefix '$prefix'; this row expects $VINYL_PREFIX" >&2; exit 1; }
+          [ -n "$commit" ] ||
+            { echo "E: the artifact records no Vinyl commit" >&2; exit 1; }
+          # The caller's observation, when it passed one. A difference here is
+          # a REAL disagreement -- the engine in this artifact is not the
+          # engine the gate decided about -- unlike the harmless drift between
+          # a gate reading a ref and a job cloning it, because both sides of
+          # this comparison describe the same artifact.
+          expected='${{ inputs.vinyl_trunk_sha }}'
+          if [ -n "$expected" ] && [ "$expected" != "$commit" ]; then
+            echo "E: the prefix was built from $commit; the caller expected $expected" >&2
             exit 1
-          }
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          sudo tar -C / -xzf "$GITHUB_WORKSPACE/engine-prefix/vinyl-trunk-prefix.tar.gz"
+          sudo chmod -R a+rX "$VINYL_PREFIX"
+          ls -la "$VINYL_PREFIX"
 
       - name: checkout the VMOD's trunk branch
         id: checkout
-        if: steps.strategy.outcome == 'success'
+        if: steps.engine_verify.outcome == 'success'
         continue-on-error: true
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -1487,8 +1531,7 @@ jobs:
 
       # SCOPE.md: "Trunk compatibility jobs may follow an upstream branch
       # because detecting change is their purpose. They must record the commit
-      # they actually tested." Both sides are resolved here and both reach the
-      # result record.
+      # they actually tested." Both sides reach the result record.
       - name: resolve the VMOD commit under test
         id: vmod_commit
         if: steps.checkout.outcome == 'success'
@@ -1498,61 +1541,44 @@ jobs:
           set -eu
           commit=$(git -C "$GITHUB_WORKSPACE/vmod-source" rev-parse HEAD)
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
-          printf '%s %s -> %s\n' "${{ inputs.vmod_id }}" "${{ matrix.ref }}" "$commit"
-
-      - name: clone Vinyl Cache trunk HEAD (unpinned, by design)
-        id: vinyl
-        if: steps.vmod_commit.outcome == 'success'
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -eu
-          git clone --recurse-submodules \
-            https://code.vinyl-cache.org/vinyl-cache/vinyl-cache.git \
-            "$GITHUB_WORKSPACE/vinyl-cache"
-          head=$(git -C "$GITHUB_WORKSPACE/vinyl-cache" rev-parse HEAD)
-          echo "commit=$head" >> "$GITHUB_OUTPUT"
-          # The caller's observation, when it made one. A difference is not a
-          # failure: trunk moved between the gate reading it and this job
-          # cloning it, which is ordinary. What must not happen is the row
-          # reporting the gate's sha as the sha it tested.
-          expected='${{ inputs.vinyl_trunk_sha }}'
-          drift=""
-          if [ -n "$expected" ] && [ "$expected" != "$head" ]; then
-            drift="trunk moved after the gate observed $expected; tested $head"
-            echo "$drift"
-          fi
-          echo "drift=$drift" >> "$GITHUB_OUTPUT"
           {
             echo "## ${{ inputs.vmod_id }} against Vinyl Cache trunk HEAD"
             echo
             echo "| side | ref | commit |"
             echo "| --- | --- | --- |"
-            echo "| ${{ inputs.vmod_id }} | ${{ matrix.ref }} | ${{ steps.vmod_commit.outputs.commit }} |"
-            echo "| vinyl-cache | HEAD | $head |"
+            echo "| ${{ inputs.vmod_id }} | ${{ matrix.ref }} | $commit |"
+            echo "| vinyl-cache | HEAD | ${{ steps.engine_verify.outputs.commit }} |"
             echo
-            echo "date: $(git -C "$GITHUB_WORKSPACE/vinyl-cache" show -s --format=%cI HEAD)"
+            echo "suite: \`${{ matrix.tests }}\`"
+            echo
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: build the harness image
-        id: image
-        if: steps.vinyl.outcome == 'success'
-        continue-on-error: true
-        run: |
-          docker build -t vinyl-cache-ubuntu-build \
-            -f docker/vinyl-cache-ubuntu-build.Dockerfile docker
-        working-directory: vmod-source
-
-      # The VMOD's own documented harness, invoked exactly as its repository
-      # documents it. This workflow does not know what the harness does and is
-      # not supposed to: the VMOD owns its source-level verification, and this
-      # repository owns packaging.
-      - name: the documented source harness
+      # The generic harness. The container is the same pinned Debian image the
+      # engine was built in, so what compiles the VMOD is what compiled Vinyl.
+      - name: build and test against the trunk prefix
         id: run
-        if: steps.image.outcome == 'success'
+        if: steps.vmod_commit.outcome == 'success'
         continue-on-error: true
-        run: bash scripts/test-with-vinyl-cache.sh "$GITHUB_WORKSPACE/vinyl-cache"
-        working-directory: vmod-source
+        shell: bash
+        run: |
+          set -eu
+          . recipes/debian-13/pins.env
+          mkdir -p "$GITHUB_WORKSPACE/harness-out"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/vcache-packaging:/repo:ro" \
+            -v "$GITHUB_WORKSPACE/vmod-source:/src:ro" \
+            -v "$GITHUB_WORKSPACE/harness-out:/out" \
+            -v "$VINYL_PREFIX:$VINYL_PREFIX:ro" \
+            -e "VMOD_ID=${{ inputs.vmod_id }}" \
+            -e "VMOD_TESTS=${{ matrix.tests }}" \
+            -e "VINYL_PREFIX=$VINYL_PREFIX" \
+            "$IMAGE" \
+            bash -c 'apt-get update -qq && apt-get install -y --no-install-recommends \
+              build-essential automake autoconf autoconf-archive libtool pkg-config \
+              git ca-certificates python3 python3-docutils python3-sphinx \
+              libedit-dev libjemalloc-dev libncurses-dev libpcre2-dev libunwind-dev \
+              >/dev/null && bash /repo/scripts/ci/vmod/container/source-harness.sh'
+        working-directory: vcache-packaging
 
       - name: classify and record the harness result
         id: record
@@ -1561,25 +1587,26 @@ jobs:
         run: |
           set -eu
           status=passed
-          detail='${{ steps.vinyl.outputs.drift }}'
+          detail=""
           set_status() { status=$1; detail=$2; }
-          if [ "${{ steps.strategy.outcome }}" = "failure" ]; then
-            set_status failed_manifest_validation \
-              "recipe strategy '${{ needs.plan.outputs.recipe }}' declares no source-harness command"
+          if [ "${{ steps.engine_download.outcome }}" != "success" ]; then
+            set_status blocked_by_engine_artifact \
+              "engine-vinyl-trunk-head-prefix was not published by this run"
+          elif [ "${{ steps.engine_verify.outcome }}" != "success" ]; then
+            set_status blocked_by_engine_artifact \
+              "engine-vinyl-trunk-head-prefix does not describe the trunk engine this row expects"
           elif [ "${{ steps.checkout.outcome }}" != "success" ] \
             || [ "${{ steps.vmod_commit.outcome }}" != "success" ]; then
             set_status failed_source_checkout \
               "checkout of ${{ needs.plan.outputs.repository }}@${{ matrix.ref }} failed"
-          elif [ "${{ steps.vinyl.outcome }}" != "success" ]; then
-            set_status failed_engine_build \
-              "Vinyl trunk HEAD could not be cloned; nothing was tested against it"
-          elif [ "${{ steps.image.outcome }}" != "success" ]; then
-            set_status failed_infrastructure "the harness build image could not be built"
           elif [ "${{ steps.run.outcome }}" != "success" ]; then
-            # NOT failed_behavior. This is unpinned trunk HEAD: the finding is
-            # about a Vinyl core change, and the first place to look is Vinyl.
+            # NOT failed_behavior, and the container's four distinct exit codes
+            # all land here on purpose. Build, no module, empty suite and failing
+            # suite are one finding -- this VMOD's source does not work against
+            # today's trunk -- and the log says which. The status exists to send
+            # a reader to Vinyl rather than to the package.
             set_status failed_source_harness \
-              "the documented source harness failed against Vinyl trunk ${{ steps.vinyl.outputs.commit }}"
+              "the source harness failed against Vinyl trunk ${{ steps.engine_verify.outputs.commit }}"
           fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
           python3 tools/ci_matrix.py record \
@@ -1593,19 +1620,22 @@ jobs:
             --detail "$detail" \
             --ref "${{ matrix.ref }}" \
             --commit "${{ steps.vmod_commit.outputs.commit }}" \
-            --engine-commit "${{ steps.vinyl.outputs.commit }}"
+            --engine-commit "${{ steps.engine_verify.outputs.commit }}"
         working-directory: vcache-packaging
 
-      - name: upload the harness result record
+      - name: upload the harness result record and logs
         id: upload_result
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: ${{ matrix.result_artifact }}
-          path: results/harness-${{ matrix.channel }}.json
-          if-no-files-found: error
-          retention-days: 14
+          path: |
+            results/harness-${{ matrix.channel }}.json
+            harness-out/logs/**
+            harness-out/harness-summary.env
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: fail when this row failed
         if: steps.record.outputs.status != 'passed' || steps.upload_result.outcome == 'failure'

@@ -353,6 +353,11 @@ ARCHIVE_URL_RE = r"^https://[^\s]+$"
 #   generated  rendered by tools/vmod_recipe.py from the reviewed overlay
 RECIPE_STRATEGIES = ["upstream", "generated"]
 REF_RE = r"^[A-Za-z0-9][A-Za-z0-9._/-]*$"
+
+# A relative glob inside a source tree, for a source-harness lane's test set.
+# Relative and forward-only: no leading slash and no `..`, so a manifest cannot
+# point the harness at anything outside the checkout it was given.
+GLOB_RE = r"^[A-Za-z0-9][A-Za-z0-9._/*?-]*$"
 COMMIT_RE = r"^[0-9a-f]{40}$"
 SHA256_RE = r"^[0-9a-f]{64}$"
 # Two or more dot-separated numeric components. It was three exactly until
@@ -435,6 +440,19 @@ VMOD_SPEC = _map(
                     "engine": _enum(sorted(ENGINES)),
                     "tiers": _list(_enum(TIERS), min_len=1),
                     "targets": _list(_s(r"^[a-z][a-z0-9._-]*$"), min_len=1, optional=True),
+                    # Source-harness lanes only. The ONE thing the generic
+                    # harness cannot derive: where this VMOD keeps the VTCs it
+                    # wants run from its own source tree. Everything else the
+                    # harness needs -- how to bootstrap, where the built shared
+                    # object lands -- is discovered the way the survey sweep
+                    # discovers it across sixty repositories, because those are
+                    # properties of autotools rather than of a VMOD.
+                    #
+                    # A glob relative to the source root. Declared rather than
+                    # guessed for the same reason every other per-VMOD fact is:
+                    # guessing produces a run that tests nothing and says it
+                    # passed.
+                    "harness": _map({"tests": _s(GLOB_RE)}, optional=True),
                 }
             ),
             min_len=1,
@@ -526,6 +544,7 @@ def validate_vmod_manifest(data: dict, path: str, discovery_id: str = None) -> l
             problems.append(f"{where}: source {channel!r} is not declared in sources")
             continue
         targets = lane.get("targets")
+        harness = lane.get("harness")
         if lane["kind"] == "package":
             if not targets:
                 problems.append(f"{where}: a package lane must name at least one target")
@@ -534,11 +553,27 @@ def validate_vmod_manifest(data: dict, path: str, discovery_id: str = None) -> l
                     f"{where}: package lanes need a pinned source; sources.{channel} has no "
                     "expected_commit, version and archive_sha256"
                 )
+            if harness:
+                problems.append(
+                    f"{where}: a package lane runs no source harness and must not declare one; "
+                    "its behaviour suite is the installed-package one"
+                )
         else:
             if targets:
                 problems.append(
                     f"{where}: a {lane['kind']!r} lane produces no native package and must not "
                     "name package targets"
+                )
+            # Required, not optional-with-a-default. A harness row whose test
+            # glob matched nothing would run a build, find no cases, and have to
+            # decide between "passed" and "failed" with no information -- and
+            # every default anyone would pick here is one VMOD's layout imposed
+            # on the next one.
+            if not harness:
+                problems.append(
+                    f"{where}: a {lane['kind']!r} lane must declare harness.tests, the glob "
+                    "naming the VTCs it runs from its own source tree. There is no default: "
+                    "one VMOD's layout is not another's."
                 )
         for target in targets or []:
             if target not in TARGETS:
@@ -1014,12 +1049,22 @@ def expand(data: dict, tier: str, inject: str = "none", repo_root=None) -> dict:
         if row["kind"] != "source-harness" or not row["selected"]:
             continue
         source = data["sources"].get(row["channel"], {})
+        lane = next(
+            lane
+            for lane in data["lanes"]
+            if lane["kind"] == "source-harness"
+            and lane["source"] == row["channel"]
+            and lane["engine"] == row["engine"]
+        )
         harnesses.append(
             {
                 "channel": row["channel"],
                 "engine": row["engine"],
                 "ref": source.get("ref", ""),
                 "expected_commit": source.get("expected_commit", ""),
+                # The only per-VMOD value the generic harness reads. Everything
+                # else it does is autotools, discovered.
+                "tests": lane["harness"]["tests"],
                 "row_key": row["row_key"],
                 "result_artifact": row["result_artifact"],
             }

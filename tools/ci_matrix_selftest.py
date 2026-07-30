@@ -71,6 +71,8 @@ lanes:
     engine: vinyl-trunk-head
     tiers:
       - trunk
+    harness:
+      tests: "src/vtc/*.vtc"
 """
 
 BROKEN_MANIFEST = """schema: vmod-ci/v1
@@ -1793,6 +1795,11 @@ def test_the_harness_row_carries_what_the_job_needs(repo_root: Path) -> None:
         str(harnesses[0]),
     )
     check(
+        "harness: the row carries the declared test glob, the one per-VMOD input",
+        harnesses[0]["tests"] == "src/vtc/*.vtc",
+        str(harnesses[0]),
+    )
+    check(
         "harness: the result artifact is the one the ledger expects",
         harnesses[0]["result_artifact"] == "result-cachetag-trunk-vinyl-trunk-head",
         harnesses[0]["result_artifact"],
@@ -1838,6 +1845,58 @@ def test_the_harness_row_carries_what_the_job_needs(repo_root: Path) -> None:
     check(
         "harness: engine_commit reaches the record through the `record` command",
         "--engine-commit" in (repo_root / "tools/ci_matrix.py").read_text(encoding="utf-8"),
+    )
+
+    # A source-harness lane must declare its suite, and a package lane must not.
+    # There is no default: one VMOD's layout is not another's, and a glob that
+    # matched nothing would run a build, find no cases, and have to invent a
+    # verdict.
+    text = _manifest_text("cachetag")
+    without = text.replace('    harness:\n      tests: "src/vtc/*.vtc"\n', "")
+    errors = ci_matrix.validate_vmod_manifest(
+        yaml_subset.parse(without), "registry/vmods/cachetag.yml", discovery_id="cachetag"
+    )
+    check(
+        "harness: a source-harness lane with no declared suite is refused",
+        any("must declare harness.tests" in e for e in errors),
+        str(errors),
+    )
+    onpackage = text.replace(
+        "  - kind: package\n    source: release\n    engine: vinyl-release\n",
+        "  - kind: package\n    harness:\n      tests: \"src/vtc/*.vtc\"\n    source: release\n    engine: vinyl-release\n",
+        1,
+    )
+    errors = ci_matrix.validate_vmod_manifest(
+        yaml_subset.parse(onpackage), "registry/vmods/cachetag.yml", discovery_id="cachetag"
+    )
+    check(
+        "harness: a package lane declaring a source harness is refused",
+        any("runs no source harness" in e for e in errors),
+        str(errors),
+    )
+
+    # And the harness job itself must carry no VMOD-specific logic. The glob is
+    # the only per-VMOD value it reads, and it reads it from the matrix.
+    workflow = (repo_root / ".github/workflows/vmod-package.yml").read_text(encoding="utf-8")
+    block = workflow[workflow.index("  # ---- The trunk early-warning strategy") : workflow.index("\n  summary:")]
+    code = "\n".join(l for l in block.split("\n") if not l.lstrip().startswith("#"))
+    # The same derived vocabulary the shared VTC runner is held to (W1), reused
+    # rather than re-listed: a fixed list would check that the job does not name
+    # the VMODs somebody thought of while writing the test, which is not the
+    # property. A fourth VMOD's id is forbidden here the moment its manifest
+    # lands, with nobody having to remember.
+    from vmod_recipe_selftest import _behaviour_vocabulary
+
+    named = sorted({v for v in _behaviour_vocabulary(repo_root) if v in code})
+    check(
+        "harness: the job names no VMOD, no VMOD path and no VMOD id in its code",
+        not named,
+        f"{named} appear in the harness job's non-comment lines",
+    )
+    check(
+        "harness: it reads the suite from the matrix rather than a literal",
+        "matrix.tests" in code,
+        code[:400],
     )
 
     # And the trunk tier's shape as a whole: one harness row, and every VMOD's

@@ -309,6 +309,7 @@ It also carries its own `cachetag.version`, which is still checked against the c
 | `lanes[].engine` | wiring | the Vinyl input: `vinyl-release`, `vinyl-trunk-pinned`, `vinyl-trunk-head` |
 | `lanes[].tiers` | policy | which workflow tiers run this lane. `ci` every push and pull request; `release` the release-draft build; `transactions` a deliberate, dispatched upgrade-transaction measurement against one release cohort's packages, never scheduled; `trunk` the change-gated Vinyl trunk-HEAD early warning. Renamed from `nightly` on 2026-07-30 — see [the maintainer decisions](../docs/20260730_0826_note_step-8-maintainer-decisions.md) |
 | `lanes[].targets` | wiring | package targets, for `package` lanes only |
+| `lanes[].harness.tests` | wiring | a glob, relative to the source root, naming the VTCs a `source-harness` lane runs from the VMOD's own tree. Required on a source-harness lane and forbidden on a package lane, with no default: the trunk harness is otherwise entirely generic — how to bootstrap and where the built shared object lands are properties of autotools and are discovered — and one VMOD's test layout is not another's. Relative and forward-only, so a manifest cannot point the harness outside the checkout it was given |
 
 The lane list is explicit on purpose. Do not multiply source channels by engines by targets: every row exists because it answers a compatibility or publication question the project has chosen to support, and the expected-row ledger the CI collector reconciles against is built from exactly these rows.
 

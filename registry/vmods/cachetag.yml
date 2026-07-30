@@ -90,12 +90,19 @@ lanes:
     targets:
       - debian-13-amd64
       - el9-x86_64
-  # trunk-vmod-ci.yml's weekly early-warning job: cachetag's default branch
-  # against Vinyl trunk HEAD. It builds no native package and publishes
-  # nothing. Recorded here so the trunk source channel is visible in the
-  # catalog; that workflow migrates onto this manifest in Phase 4.
+  # The trunk early-warning row: cachetag's default branch built from source
+  # against unpinned Vinyl trunk HEAD, and its own VTCs run against what that
+  # build produced. It builds no native package and publishes nothing.
+  # trunk-early-warning.yml runs it, change-gated, since Step 8 Wave 3c.
+  #
+  # `harness.tests` is the one per-VMOD fact the generic harness cannot derive:
+  # src/vtc/*.vtc is where this VMOD keeps the suite it wants run. How to
+  # bootstrap and where the built .so lands are properties of autotools and are
+  # discovered, not declared.
   - kind: source-harness
     source: trunk
     engine: vinyl-trunk-head
     tiers:
       - trunk
+    harness:
+      tests: "src/vtc/*.vtc"

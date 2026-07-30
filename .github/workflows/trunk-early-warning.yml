@@ -27,12 +27,16 @@ name: trunk early warning
 # Vinyl trunk did not, that VMOD still runs -- that half of decision (a) is why
 # the gate is per-VMOD rather than a single boolean about the engine.
 #
-# Not here, deliberately: cross-run reuse of a trunk ENGINE artifact. The VMOD's
-# documented harness builds Vinyl itself and has no reviewed way to accept a
-# prebuilt prefix, so an engine artifact would have no consumer and building one
-# would mean building Vinyl twice. It arrives with the sibling-repository flag
-# that makes the harness able to use it; the state file already reserves a field
-# for the run id that produced it.
+# The engine is built ONCE per run, by trunk-engine below, and every VMOD's
+# harness row unpacks the same prefix. That sharing is the economics of the
+# lane: at the roadmap's ~40-VMOD ambition, a per-VMOD harness that built Vinyl
+# for itself would be forty Vinyl builds to answer one question about Vinyl.
+#
+# Not here, deliberately: CROSS-RUN reuse of that prefix. In-run sharing is what
+# pays for itself; carrying a prefix between runs is a pure optimisation of the
+# rarer "a VMOD moved but Vinyl trunk did not" case, and it is worth evaluating
+# from real run costs rather than from a guess. The state file reserves a field
+# for the run id that produced a reusable artifact and leaves it unfilled.
 
 on:
   schedule:
@@ -211,9 +215,112 @@ jobs:
           set -o pipefail
           python3 tools/ci_matrix.py list-vmods --format github | tee -a "$GITHUB_OUTPUT"
 
+  trunk-engine:
+    name: build Vinyl trunk HEAD once
+    needs: [gate, structural-validation]
+    if: ${{ needs.gate.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      commit: ${{ steps.clone.outputs.commit }}
+    env:
+      # The install prefix, and the harness rows' `VINYL_PREFIX` must equal it.
+      # libtool bakes it into the .la files, pkg-config into vinylapi.pc and
+      # vmod_abi.h into the ABI string, so this tarball works at exactly one
+      # path. The harness verifies the value out of the identity file rather
+      # than assuming the two agree.
+      VINYL_PREFIX: /opt/vinyl-trunk
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+
+      # Unpinned by design, and the only build in this repository that is. The
+      # URL is the one tools/upstream_watch.py reads, so the sha the gate
+      # observed and the sha this clones come from the same remote.
+      - name: clone Vinyl Cache trunk HEAD
+        id: clone
+        shell: bash
+        run: |
+          set -eu
+          git clone --recurse-submodules \
+            https://code.vinyl-cache.org/vinyl-cache/vinyl-cache.git \
+            "$GITHUB_WORKSPACE/vinyl-cache"
+          commit=$(git -C "$GITHUB_WORKSPACE/vinyl-cache" rev-parse HEAD)
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          # A difference from the gate's observation is ordinary -- trunk moved
+          # between reading the ref and cloning it -- and is not a failure. What
+          # matters is that everything downstream uses THIS sha, which it does:
+          # the identity file carries it and the harness rows verify against it.
+          expected='${{ needs.gate.outputs.vinyl_head_sha }}'
+          if [ -n "$expected" ] && [ "$expected" != "$commit" ]; then
+            echo "trunk moved after the gate observed $expected; building $commit"
+          fi
+          {
+            echo "## Vinyl Cache trunk HEAD"
+            echo
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| commit | \`$commit\` |"
+            echo "| gate observed | \`$expected\` |"
+            echo "| committed | $(git -C "$GITHUB_WORKSPACE/vinyl-cache" show -s --format=%cI HEAD) |"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ONE build, shared by every harness row in the run. That sharing is the
+      # economics of the whole lane: at the roadmap's ~40-VMOD ambition,
+      # building the engine per VMOD would be forty Vinyl builds to answer one
+      # question about Vinyl.
+      - name: build the trunk engine into a prefix
+        shell: bash
+        run: |
+          set -eu
+          . recipes/debian-13/pins.env
+          mkdir -p "$GITHUB_WORKSPACE/engine-out"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/vcache-packaging:/repo:ro" \
+            -v "$GITHUB_WORKSPACE/vinyl-cache:/src" \
+            -v "$GITHUB_WORKSPACE/engine-out:/out" \
+            -e "VINYL_PREFIX=$VINYL_PREFIX" \
+            -e "GITHUB_RUN_ID=$GITHUB_RUN_ID" \
+            "$IMAGE" \
+            bash /repo/scripts/ci/trunk/build-engine.sh
+        working-directory: vcache-packaging
+
+      # A build intermediate, not a durability promise -- SCOPE.md is explicit
+      # that a CI-derived archive passed between jobs is exactly that. Thirty
+      # days so a failing row can still be reproduced against the engine it
+      # actually saw, and no longer.
+      - name: upload the trunk engine prefix
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: engine-vinyl-trunk-head-prefix
+          path: |
+            engine-out/vinyl-trunk-prefix.tar.gz
+            engine-out/trunk-engine-identity.env
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: upload the engine build logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: trunk-engine-logs
+          path: engine-out/logs/**
+          if-no-files-found: warn
+          retention-days: 30
+
   vmods:
     name: VMOD
-    needs: [gate, structural-validation, discover-vmods]
+    needs: [gate, structural-validation, discover-vmods, trunk-engine]
+    # NOT ordinary `needs` semantics on trunk-engine: a failed engine build must
+    # not skip the VMOD invocations, so every harness row starts and reports
+    # `blocked_by_engine_artifact` from its own missing download. That is the
+    # same rule ci.yml applies to its engine matrix, and it is what makes a
+    # broken engine one legible finding rather than a run that silently did
+    # nothing.
     if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && needs.discover-vmods.result == 'success' }}
     strategy:
       fail-fast: false
@@ -231,7 +338,7 @@ jobs:
 
   collect:
     name: reconcile every expected row
-    needs: [gate, structural-validation, discover-vmods, vmods]
+    needs: [gate, structural-validation, discover-vmods, trunk-engine, vmods]
     if: ${{ !cancelled() && needs.gate.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -264,6 +371,7 @@ jobs:
             echo "| gate | ${{ needs.gate.result }} |"
             echo "| structural-validation | ${{ needs.structural-validation.result }} |"
             echo "| discover-vmods | ${{ needs.discover-vmods.result }} |"
+            echo "| trunk-engine | ${{ needs.trunk-engine.result }} |"
             echo "| vmods (aggregate) | ${{ needs.vmods.result }} |"
             echo
           } >> "$GITHUB_STEP_SUMMARY"
