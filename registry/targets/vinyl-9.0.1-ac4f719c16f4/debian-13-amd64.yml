@@ -935,7 +935,6 @@ vmods:
       # against the INSTALLED package. Job log of run 30491861084:
       # "VTC-SUITE SUMMARY: 2/2 passed, 0 skipped" (dict_ci.vtc, dict_cs.vtc).
       full_behavior_suite: pass
-      # Not run for the generated-VMOD rows: run 30491861084's package jobs end at
       # Measured by the deliberate release-transactions dispatch, run
       # 30532825959 (2026-07-30): 16/16 scenarios, outcome-identical to
       # cachetag's row. The identity cross-check in the same run confirmed

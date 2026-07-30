@@ -4,6 +4,10 @@ Date: 2026-07-24
 
 Related: [Debian 13 transactions note](20260724_2300_note_step-9-debian-13-transactions.md), [EL9 transactions note](20260724_2342_note_step-9-el9-transactions.md), plan section "Upgrade transaction safety" in libvmod-cachetag `docs/20260724_1526_plan_binary-packaging-and-distribution.md`.
 
+## Correction (2026-07-30)
+
+Plan-hypothesis correction 2 below — "`--allowerasing` alone is not the danger on EL9; naming a package alongside it is" — was measured on `libvmod-cachetag` only and generalized past its evidence. On EL9 (dnf 4 / libsolv 0.7.24), whether a bare `dnf upgrade --allowerasing` or `distro-sync --allowerasing` refuses the transaction or silently removes the VMOD depends on package-name collation relative to `vinyl-cache`: a name sorting after it (`vmod-dict`) is removed with exit 0, names sorting before it (`libvmod-cachetag`, `libvmod-redis`) are refused with exit 1. The refusal is a libsolv name-order tie-break, not a guarantee anything in the packaging asks for, and the removal matches the Debian lane's `apt full-upgrade` semantics. See [the root-cause note](20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md); the body below is left as written on 2026-07-24 and its EL9-half statements should be read with this correction. The per-scenario outcomes are now pinned per VMOD in `recipes/*/transactions/expected/`, so any future deviation from a recorded outcome fails the matrix loudly.
+
 ## Outcome summary
 
 Both lanes now have retained, reproducible synthetic mismatch fixtures (higher version + wrong ABI, and higher version + same ABI) and a fully executed transaction matrix — 16 apt scenarios, 17 dnf scenarios, one fresh container each, full resolver output retained under `dist/<lane>/mismatch/logs/`.

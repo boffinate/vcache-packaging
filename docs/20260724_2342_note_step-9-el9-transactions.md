@@ -2,6 +2,8 @@
 
 Date: 2026-07-24
 
+> **Correction (2026-07-30).** The matrix below was measured on `libvmod-cachetag` only, and its whole-system `--allowerasing` refusals (rows 6, 8, 12) and the "Classification" section's "the common factor is not `--allowerasing` on its own" generalize past that evidence: on dnf 4 / libsolv 0.7.24 the refusal happens only for a VMOD package name sorting before `vinyl-cache`, and `vmod-dict`, sorting after it, is silently removed with exit 0 by the same three commands. See [the root-cause note](20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md). The body is left as written.
+
 Covers the EL9 half of plan step 9's remaining work: the synthetic mismatched-candidate package fixture, and the real dnf transaction matrix run against it. The plan section this answers is "Upgrade transaction safety", and the acceptance criterion it feeds is "every documented upgrade command has a tested, documented resolver outcome, and the supported path never silently removes an imported VMOD". Debian 13 is a separate lane, worked in parallel, in disjoint paths.
 
 Everything ran in local containers on an Apple Silicon host: `almalinux:9` at `almalinux@sha256:d2515c769e7b73f95c4fde38c0a505336ff38f14990c0b7253b77060a049a743`, **aarch64**, `dnf 4.14.0`, `rpm 4.16.1.3-40.el9`. That is a process proof, not a release; authoritative x86_64 results come from CI. Nothing here is signed or published.

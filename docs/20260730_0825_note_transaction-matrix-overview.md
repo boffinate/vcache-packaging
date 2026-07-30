@@ -19,6 +19,8 @@ Two matrices, one per lane, each scenario in its own throwaway container so no o
 
 Both install a real baseline cohort from a real local repository, publish a synthetic candidate into the same repository, run exactly one transaction, and record what survived — including whether `vinyld -C` can still compile a VCL that imports the VMOD.
 
+Since 2026-07-30 the classification is also a *gate*: every scenario's outcome and package-manager exit code is pinned per VMOD in `recipes/<lane>/transactions/expected/<package>.tsv`, and the matrix fails on any difference — a changed outcome, an unpinned scenario, or a pinned scenario the run did not produce. The pins exist because a class-based gate let two VMODs diverge on the same scenario with no red anywhere (dict's silent EL9 erasure vs cachetag's refusal); a legitimate outcome change must now update the pin file in the same review.
+
 ## Why sixteen and not four
 
 Roughly five questions, multiplied by the command forms administrators and unattended tooling actually run. Taking the Debian lane, where the numbering makes it easiest to see:
@@ -48,7 +50,7 @@ The findings are recorded in [the step-9 report](20260724_2348_report_step-9-tra
 - **`apt upgrade` and `apt-get upgrade` are safe** — they hold the incompatible Vinyl back.
 - **Five Debian commands delete the VMOD**, two of which administrators type without thinking: `apt full-upgrade` and `apt install vinyl-cache=<version>`. Afterwards `vinyld -C` fails with "Could not find VMOD cachetag".
 - **On EL9, plain `dnf upgrade` refuses the whole transaction** rather than skipping the one update, because `best=True` is the default. The operational consequence is that unrelated updates in the same run fail too, until the cohort is coherent again. The plan had hypothesised a silent skip; only `--nobest` produces one.
-- **`--allowerasing` alone is not the danger; naming a package alongside it is.** A bare `dnf upgrade --allowerasing` and `distro-sync --allowerasing` did not remove the VMOD. A targeted `dnf upgrade --allowerasing vinyl-cache` and `dnf install --allowerasing <candidate>` did.
+- **Whether a bare `--allowerasing` removes the VMOD on EL9 depends on package-name collation, not on the packaging** *(corrected 2026-07-30; the original finding read "`--allowerasing` alone is not the danger; naming a package alongside it is", which was only ever true of cachetag's name)*. On dnf 4 / libsolv 0.7.24, a bare `dnf upgrade --allowerasing` or `distro-sync --allowerasing` refuses (exit 1) for a VMOD whose package name sorts before `vinyl-cache` (`libvmod-cachetag`, `libvmod-redis`) and silently removes one that sorts after it (`vmod-dict`, exit 0) — libsolv decides update rules in name order, and the refusal is a tie-break accident, not a guarantee. The removal matches what the Debian lane's `apt full-upgrade` does to every VMOD. A targeted `dnf upgrade --allowerasing vinyl-cache` and `dnf install --allowerasing <candidate>` remove the VMOD in **both** name orders. See [the root-cause note](20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md); dnf 5 (EL10, Fedora) is untested.
 - **`apt-mark hold` refuses even a direct install; an apt pin does not.** A `Pin-Priority: -1` still allows `apt install` to remove the VMOD, which makes hold the stronger procedure and the one to document.
 - **`dnf versionlock` blocks the erasing install and must be released all-or-none.** Releasing the lock on `vinyl-cache` alone makes the resolver propose removing the VMOD again.
 - **`dnf history undo last` restores the cohort**, provided the previous repository generation is still reachable — a direct argument for retaining previous cohorts rather than a nice-to-have.
@@ -62,7 +64,9 @@ The findings are recorded in [the step-9 report](20260724_2348_report_step-9-tra
 | [Debian lane note](20260724_2300_note_step-9-debian-13-transactions.md) | the apt matrix scenario by scenario, and why the fixture is a metadata repack rather than a second Vinyl build |
 | [EL9 lane note](20260724_2342_note_step-9-el9-transactions.md) | the dnf matrix, the `best=True` behaviour, versionlock and history-undo |
 | [Step 8 Wave 1 note](20260730_0748_note_step-8-wave-1-transactions-wiring.md) | how the matrix became a tier-gated stage of a package row, and the env-var contract that generalised it past cachetag |
+| [Root-cause note](20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md) | why dict's EL9 `--allowerasing` behaviour differs from cachetag's: libsolv name-order tie-breaking |
 | `recipes/debian-13/transactions.sh`, `recipes/el9/transactions.sh` | the scenario tables themselves, which are the authority |
+| `recipes/*/transactions/expected/<package>.tsv` | the pinned per-scenario outcomes each VMOD's matrix run is checked against |
 
 ## What is not covered
 
