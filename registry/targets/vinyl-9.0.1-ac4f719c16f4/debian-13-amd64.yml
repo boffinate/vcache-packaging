@@ -955,6 +955,230 @@ vmods:
   # with a required VMOD's results simply missing. Recorded from the Step 7
   # Wave 2 evidence run 30491861084 (branch step7-redis-exception, commit
   # 09d7f07, fully green, reconcile green) on 2026-07-29.
+  fixture1:
+    # A SYNTHETIC ACCEPTANCE FIXTURE entry, present only because
+    # registry/vmods/fixture1.yml declares a lane that builds a package for this
+    # cohort's engine on this target, and the validator checks the map against
+    # the catalog in both directions. The entry has to exist; its results do
+    # not, and `pending` is the honest state for lanes that have never run.
+    #
+    # This is not evidence and will never become evidence. The fixture branch is
+    # never merged, so no cohort in main ever carries it.
+    evidence: pending
+    pending_reason: "synthetic step-8 acceptance-fixture alias; its lanes exist to demonstrate failure isolation and are never released"
+    package:
+      upstream_version: "1.7"
+      revision: 1
+      source_name: vmod-fixture1
+      binary_name: vmod-fixture1
+    build:
+      profile: production
+      recipe_sha256: PLACEHOLDER
+      configure_options: PLACEHOLDER
+      cflags: PLACEHOLDER
+      ldflags: PLACEHOLDER
+      source_date_epoch: PLACEHOLDER
+      hardening_check: pending
+      build_dependencies: []
+    artifacts: []
+    tests:
+      package_lint: pending
+      installed_package_smoke: pending
+      full_behavior_suite: pending
+      upgrade_transactions: pending
+      fixture_packages: []
+  fixture2:
+    # A SYNTHETIC ACCEPTANCE FIXTURE entry, present only because
+    # registry/vmods/fixture2.yml declares a lane that builds a package for this
+    # cohort's engine on this target, and the validator checks the map against
+    # the catalog in both directions. The entry has to exist; its results do
+    # not, and `pending` is the honest state for lanes that have never run.
+    #
+    # This is not evidence and will never become evidence. The fixture branch is
+    # never merged, so no cohort in main ever carries it.
+    evidence: pending
+    pending_reason: "synthetic step-8 acceptance-fixture alias; its lanes exist to demonstrate failure isolation and are never released"
+    package:
+      upstream_version: "1.7"
+      revision: 1
+      source_name: vmod-fixture2
+      binary_name: vmod-fixture2
+    build:
+      profile: production
+      recipe_sha256: PLACEHOLDER
+      configure_options: PLACEHOLDER
+      cflags: PLACEHOLDER
+      ldflags: PLACEHOLDER
+      source_date_epoch: PLACEHOLDER
+      hardening_check: pending
+      build_dependencies: []
+    artifacts: []
+    tests:
+      package_lint: pending
+      installed_package_smoke: pending
+      full_behavior_suite: pending
+      upgrade_transactions: pending
+      fixture_packages: []
+  fixture3:
+    # A SYNTHETIC ACCEPTANCE FIXTURE entry, present only because
+    # registry/vmods/fixture3.yml declares a lane that builds a package for this
+    # cohort's engine on this target, and the validator checks the map against
+    # the catalog in both directions. The entry has to exist; its results do
+    # not, and `pending` is the honest state for lanes that have never run.
+    #
+    # This is not evidence and will never become evidence. The fixture branch is
+    # never merged, so no cohort in main ever carries it.
+    evidence: pending
+    pending_reason: "synthetic step-8 acceptance-fixture alias; its lanes exist to demonstrate failure isolation and are never released"
+    package:
+      upstream_version: "1.7"
+      revision: 1
+      source_name: vmod-fixture3
+      binary_name: vmod-fixture3
+    build:
+      profile: production
+      recipe_sha256: PLACEHOLDER
+      configure_options: PLACEHOLDER
+      cflags: PLACEHOLDER
+      ldflags: PLACEHOLDER
+      source_date_epoch: PLACEHOLDER
+      hardening_check: pending
+      build_dependencies: []
+    artifacts: []
+    tests:
+      package_lint: pending
+      installed_package_smoke: pending
+      full_behavior_suite: pending
+      upgrade_transactions: pending
+      fixture_packages: []
+  fixture4:
+    # A SYNTHETIC ACCEPTANCE FIXTURE entry, present only because
+    # registry/vmods/fixture4.yml declares a lane that builds a package for this
+    # cohort's engine on this target, and the validator checks the map against
+    # the catalog in both directions. The entry has to exist; its results do
+    # not, and `pending` is the honest state for lanes that have never run.
+    #
+    # This is not evidence and will never become evidence. The fixture branch is
+    # never merged, so no cohort in main ever carries it.
+    evidence: pending
+    pending_reason: "synthetic step-8 acceptance-fixture alias; its lanes exist to demonstrate failure isolation and are never released"
+    package:
+      upstream_version: "1.7"
+      revision: 1
+      source_name: vmod-fixture4
+      binary_name: vmod-fixture4
+    build:
+      profile: production
+      recipe_sha256: PLACEHOLDER
+      configure_options: PLACEHOLDER
+      cflags: PLACEHOLDER
+      ldflags: PLACEHOLDER
+      source_date_epoch: PLACEHOLDER
+      hardening_check: pending
+      build_dependencies: []
+    artifacts: []
+    tests:
+      package_lint: pending
+      installed_package_smoke: pending
+      full_behavior_suite: pending
+      upgrade_transactions: pending
+      fixture_packages: []
+  fixture5:
+    # A SYNTHETIC ACCEPTANCE FIXTURE entry, present only because
+    # registry/vmods/fixture5.yml declares a lane that builds a package for this
+    # cohort's engine on this target, and the validator checks the map against
+    # the catalog in both directions. The entry has to exist; its results do
+    # not, and `pending` is the honest state for lanes that have never run.
+    #
+    # This is not evidence and will never become evidence. The fixture branch is
+    # never merged, so no cohort in main ever carries it.
+    evidence: pending
+    pending_reason: "synthetic step-8 acceptance-fixture alias; its lanes exist to demonstrate failure isolation and are never released"
+    package:
+      upstream_version: "1.7"
+      revision: 1
+      source_name: vmod-fixture5
+      binary_name: vmod-fixture5
+    build:
+      profile: production
+      recipe_sha256: PLACEHOLDER
+      configure_options: PLACEHOLDER
+      cflags: PLACEHOLDER
+      ldflags: PLACEHOLDER
+      source_date_epoch: PLACEHOLDER
+      hardening_check: pending
+      build_dependencies: []
+    artifacts: []
+    tests:
+      package_lint: pending
+      installed_package_smoke: pending
+      full_behavior_suite: pending
+      upgrade_transactions: pending
+      fixture_packages: []
+  fixture6:
+    # A SYNTHETIC ACCEPTANCE FIXTURE entry, present only because
+    # registry/vmods/fixture6.yml declares a lane that builds a package for this
+    # cohort's engine on this target, and the validator checks the map against
+    # the catalog in both directions. The entry has to exist; its results do
+    # not, and `pending` is the honest state for lanes that have never run.
+    #
+    # This is not evidence and will never become evidence. The fixture branch is
+    # never merged, so no cohort in main ever carries it.
+    evidence: pending
+    pending_reason: "synthetic step-8 acceptance-fixture alias; its lanes exist to demonstrate failure isolation and are never released"
+    package:
+      upstream_version: "1.7"
+      revision: 1
+      source_name: vmod-fixture6
+      binary_name: vmod-fixture6
+    build:
+      profile: production
+      recipe_sha256: PLACEHOLDER
+      configure_options: PLACEHOLDER
+      cflags: PLACEHOLDER
+      ldflags: PLACEHOLDER
+      source_date_epoch: PLACEHOLDER
+      hardening_check: pending
+      build_dependencies: []
+    artifacts: []
+    tests:
+      package_lint: pending
+      installed_package_smoke: pending
+      full_behavior_suite: pending
+      upgrade_transactions: pending
+      fixture_packages: []
+  fixture7:
+    # A SYNTHETIC ACCEPTANCE FIXTURE entry, present only because
+    # registry/vmods/fixture7.yml declares a lane that builds a package for this
+    # cohort's engine on this target, and the validator checks the map against
+    # the catalog in both directions. The entry has to exist; its results do
+    # not, and `pending` is the honest state for lanes that have never run.
+    #
+    # This is not evidence and will never become evidence. The fixture branch is
+    # never merged, so no cohort in main ever carries it.
+    evidence: pending
+    pending_reason: "synthetic step-8 acceptance-fixture alias; its lanes exist to demonstrate failure isolation and are never released"
+    package:
+      upstream_version: "1.7"
+      revision: 1
+      source_name: vmod-fixture7
+      binary_name: vmod-fixture7
+    build:
+      profile: production
+      recipe_sha256: PLACEHOLDER
+      configure_options: PLACEHOLDER
+      cflags: PLACEHOLDER
+      ldflags: PLACEHOLDER
+      source_date_epoch: PLACEHOLDER
+      hardening_check: pending
+      build_dependencies: []
+    artifacts: []
+    tests:
+      package_lint: pending
+      installed_package_smoke: pending
+      full_behavior_suite: pending
+      upgrade_transactions: pending
+      fixture_packages: []
   redis:
     evidence: recorded
     package:

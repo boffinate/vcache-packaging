@@ -27,6 +27,38 @@ import yaml_subset  # noqa: E402
 _RESULTS: list = []
 
 
+# ---------------------------------------------------------------------------
+# BRANCH-LOCAL to `step8-fixture`. NEVER MERGE THIS BLOCK TO main.
+# ---------------------------------------------------------------------------
+#
+# The roadmap's step-8 ten-entry acceptance fixture adds seven synthetic alias
+# entries to registry/vmods/. Several assertions in this file are pinned to the
+# production catalog's exact contents, which is precisely what they are for:
+# "somebody added a VMOD without a SCOPE.md decision" is the thing they catch,
+# and on main they must keep catching it.
+#
+# They are not relaxed here. They are told which ids belong to the fixture and
+# subtract them, so on this branch each one still asserts the same property
+# about the three SELECTED VMODs. The subtraction is a fixed list of ids that
+# exists nowhere on main, so this block cannot survive a merge quietly -- it
+# would leave seven dangling names behind.
+#
+# Without it, ci.yml's structural-validation job fails, discover-vmods never
+# runs, and the acceptance dispatch this whole branch exists for never starts.
+ACCEPTANCE_FIXTURE_IDS = tuple(f"fixture{n}" for n in range(1, 8))
+
+
+def _without_fixture(items):
+    """Drop the acceptance fixture's ids, row keys and discovery entries."""
+    kept = []
+    for item in items:
+        value = item.get("id", "") if isinstance(item, dict) else str(item)
+        if set(value.split("/")) & set(ACCEPTANCE_FIXTURE_IDS):
+            continue
+        kept.append(item)
+    return kept
+
+
 def check(name: str, condition: bool, detail: str = "") -> None:
     _RESULTS.append((name, bool(condition), detail))
 
@@ -842,7 +874,7 @@ def test_injected_engine_row_has_consumers_in_both_vmods() -> None:
     # would otherwise still pass the "> 1" checks above.
     check(
         "inject-engine-row: all three selected VMODs consume it",
-        sorted(consumers) == ["cachetag", "dict", "redis"],
+        _without_fixture(sorted(consumers)) == ["cachetag", "dict", "redis"],
         str(sorted(consumers)),
     )
 
@@ -1930,7 +1962,7 @@ def test_transactions_is_the_transaction_tier(repo_root: Path) -> None:
     is a policy decision recorded in those manifests.
     """
     transactions = ci_matrix.ledger("transactions", repo_root)
-    selected = sorted(r["row_key"] for r in transactions["rows"] if r["selected"])
+    selected = sorted(_without_fixture(r["row_key"] for r in transactions["rows"] if r["selected"]))
     check(
         "transactions tier: two engine rows and the six release package rows",
         selected
@@ -1959,7 +1991,11 @@ def test_transactions_is_the_transaction_tier(repo_root: Path) -> None:
     )
     # The same rows as the release tier, because both are "the publishable rows".
     # They differ in what each row RUNS, which is the whole design.
-    release = sorted(r["row_key"] for r in ci_matrix.ledger("release", repo_root)["rows"] if r["selected"])
+    release = sorted(
+        _without_fixture(
+            r["row_key"] for r in ci_matrix.ledger("release", repo_root)["rows"] if r["selected"]
+        )
+    )
     check(
         "transactions tier: it selects exactly what the release tier selects",
         selected == release,
@@ -2051,7 +2087,7 @@ def test_source_facts_are_emitted_for_a_lane_script(repo_root: Path) -> None:
 
 def test_ledger_covers_both_vmods(repo_root: Path) -> None:
     ledger = ci_matrix.ledger("ci", repo_root)
-    keys = sorted(r["row_key"] for r in ledger["rows"] if r["selected"])
+    keys = sorted(_without_fixture(r["row_key"] for r in ledger["rows"] if r["selected"]))
     expected = sorted(
         [
             "engine/vinyl-release/debian-13-amd64",
@@ -2139,7 +2175,7 @@ def test_repo_catalog(repo_root: Path) -> None:
     # places that must be updated deliberately when one is made.
     check(
         "repo: the catalog holds exactly the selected VMODs",
-        entries
+        _without_fixture(entries)
         == [
             {"id": "cachetag", "manifest": "registry/vmods/cachetag.yml"},
             {"id": "dict", "manifest": "registry/vmods/dict.yml"},

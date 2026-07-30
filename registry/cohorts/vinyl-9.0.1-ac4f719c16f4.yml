@@ -61,6 +61,13 @@ build_profile:
 required_vmods:
   - cachetag
   - dict
+  - fixture1
+  - fixture2
+  - fixture3
+  - fixture4
+  - fixture5
+  - fixture6
+  - fixture7
   - redis
 storage_support:
   - default
