@@ -79,6 +79,11 @@ jobs:
       vinyl_head_sha: ${{ steps.watch.outputs.vinyl_head_sha }}
       changed_vmods: ${{ steps.watch.outputs.changed_vmods }}
       moved_pins: ${{ steps.watch.outputs.moved_pins }}
+      # `<vmod>:<tag>` pairs for every stable tag sorting above a pinned row.
+      # The prepare-repin job gates on this being non-empty; what it actually
+      # prepares is decided by tools/repin_prepare.py from the raw report and
+      # the registry, never from this string.
+      repin_candidates: ${{ steps.watch.outputs.repin_candidates }}
       # Whether the watcher found anything a maintainer must be told about:
       # a re-pin candidate, a moved pin, a poisoned tag, or fleet candidates.
       # Written before the step's exit status is applied, so a red gate still
@@ -120,10 +125,15 @@ jobs:
           # --issues writes the notification issues (bodies generated and
           # selftested inside the tool) from the SAME observation the gate
           # outputs come from; running the watcher twice could disagree.
+          # --report writes the whole report for the same reason: the
+          # prepare-repin job needs each candidate tag's peeled commit, which
+          # the gate strings do not carry, and it must be the commit THIS
+          # observation saw so that a tag moving afterwards is a loud stop.
           python3 tools/upstream_watch.py check \
             --state "$state" \
             --write-state "$RUNNER_TEMP/next-$STATE_FILE" \
             --issues "$RUNNER_TEMP/upstream-issues.json" \
+            --report "$RUNNER_TEMP/upstream-report.json" \
             --format github > "$RUNNER_TEMP/gate.txt" || watch_status=$?
           # `|| true` because grep exits 1 on no match, and a watcher that died
           # before printing anything would otherwise abort here under `set -e` --
@@ -154,6 +164,18 @@ jobs:
         with:
           name: upstream-watch-issues
           path: ${{ runner.temp }}/upstream-issues.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      # The raw findings, for the prepare-repin job below. It runs in a separate
+      # job because it needs `contents: write` and this job deliberately stays
+      # read-only, so the observation has to travel as an artifact.
+      - name: upload the raw watch report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: upstream-watch-report
+          path: ${{ runner.temp }}/upstream-report.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -285,6 +307,87 @@ jobs:
               gh("issue", "create", "--repo", repo, "--title", title,
                  "--label", ",".join(issue["labels"]), body=issue["body"])
           PY
+
+  # The next link in the same chain: detect -> verify -> notify -> PREPARE.
+  # When the watcher observes a new stable tag on a pinned row, this opens a
+  # branch and a pull request carrying the recorded re-pin -- tag, peeled
+  # commit, archive digest -- so the maintainer reviews a diff instead of
+  # reconstructing one. Authorized 2026-07-30; design and deferrals in
+  # docs/20260730_1812_note_auto-prepared-repin-pr.md.
+  #
+  # IT PUBLISHES NOTHING. It builds no package, merges nothing, writes no
+  # evidence file, and touches no release. The manual publication gate
+  # (docs/20260730_1635_note_publication-authority-decision.md) is untouched:
+  # what this produces is a proposal built from an observation, and the pull
+  # request says so in as many words.
+  #
+  # `needs: notify` for ordering only, so the watcher's issue exists before this
+  # tries to comment on it; `!cancelled()` because a moved pin on one row fails
+  # the gate while leaving other rows' candidates perfectly valid.
+  #
+  # Eligibility is machine-readable and lives in tools/repin_prepare.py, not
+  # here: today only patch-free, cohort-uncoupled, published-archive rows
+  # qualify, and each refusal is reported with its reason rather than skipped.
+  #
+  # CI evidence is DISPATCHED, not triggered: a pull request opened with
+  # GITHUB_TOKEN does not start `pull_request` workflows, but an explicit
+  # `gh workflow run` is exempt from that rule. No new credential -- GH_TOKEN is
+  # ${{ github.token }} and this repository stores no secrets. It does require
+  # the repository setting that allows Actions to create pull requests; without
+  # it the branch is still pushed and the failure is reported on the issue.
+  prepare-repin:
+    name: prepare re-pin branches
+    needs: [gate, notify]
+    if: ${{ !cancelled() && needs.gate.outputs.repin_candidates != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A dispatch and a scheduled run must not overlap: two runs preparing the
+    # same candidate would both see no branch and no open pull request, and the
+    # interlock -- which is a check of remote state, not a lock -- would let
+    # both through. Not `cancel-in-progress`: cancelling mid-candidate could
+    # leave a pushed branch with no pull request and no comment.
+    concurrency:
+      group: prepare-repin-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      # What the script does with each: `contents: write` pushes the
+      # auto-release branch, `pull-requests: write` opens the pull request,
+      # `actions: write` dispatches ci.yml against that branch, `issues: write`
+      # comments the outcome on the watcher's issue.
+      #
+      # Read that as what the code does, NOT as what the token could do. These
+      # are coarse GitHub scopes: `contents: write` can push to any branch
+      # including the default one and can create a published release, and
+      # `actions: write` can dispatch any workflow that accepts a dispatch.
+      # Nothing in the permission block prevents either. What constrains the
+      # behaviour is scripts/ci/prepare-repin.sh -- which only ever pushes
+      # `auto-release/*` and only ever dispatches ci.yml -- together with the
+      # selftests in tools/repin_prepare_selftest.py that assert it, and the
+      # tool's own refusal to write an evidence path. If that guarantee should
+      # be enforced rather than reviewed, a branch ruleset protecting `main`
+      # and the release tags is the mechanism, and the note recommends one.
+      contents: write
+      pull-requests: write
+      actions: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # OUTSIDE the checkout, deliberately. The script resets the working tree
+      # with `git clean -fd` before every candidate, and an untracked artifact
+      # downloaded into the workspace would be deleted by the first reset --
+      # leaving every candidate after the first to fail on a missing input.
+      - name: download the raw watch report
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: upstream-watch-report
+          path: ${{ runner.temp }}/watch-report
+
+      - name: prepare a branch and pull request per eligible candidate
+        run: scripts/ci/prepare-repin.sh "$RUNNER_TEMP/watch-report/upstream-report.json"
 
   structural-validation:
     name: structural validation and tooling selftests

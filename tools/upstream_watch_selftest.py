@@ -1077,6 +1077,7 @@ def test_github_format_carries_the_gate_outputs() -> None:
         "vinyl_head_sha",
         "changed_vmods",
         "moved_pins",
+        "repin_candidates",
         "poisoned_tags",
         "fleet_candidates",
         "notify",
@@ -1093,6 +1094,101 @@ def test_github_format_carries_the_gate_outputs() -> None:
         "github: the key becomes a legal output name",
         uw._gate_name("cachetag/trunk") == "sha_cachetag_trunk"
         and uw._gate_name(uw.VINYL_KEY) == "sha_vinyl_trunk",
+    )
+
+
+def test_github_format_carries_the_repin_candidates() -> None:
+    """The gate output the prepare-repin job keys off.
+
+    It is a GATE signal, not an instruction: whether a candidate is prepared is
+    decided by tools/repin_prepare.py from the raw report and the registry. What
+    this must get right is never sitting empty while a candidate exists, which
+    would leave the prepare job skipped on the one run that had work.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
+        healthy = run_check(state_path=state, transcript=_transcript())
+        report = run_check(state_path=state, transcript=_cachetag_with_v110("88" * 20))
+
+    def emitted(rep):
+        return dict(
+            line.split("=", 1)
+            for line in uw.render_github(rep).splitlines()
+            if "=" in line and not line.startswith("::")
+        )
+
+    check(
+        "github: a healthy run emits an empty repin_candidates",
+        emitted(healthy)["repin_candidates"] == "",
+        emitted(healthy)["repin_candidates"],
+    )
+    check(
+        "github: a candidate is emitted as vmod:tag",
+        emitted(report)["repin_candidates"] == "cachetag:v1.1.0",
+        emitted(report)["repin_candidates"],
+    )
+    check(
+        "github: notify and repin_candidates agree that there is something to do",
+        emitted(report)["notify"] == "true",
+        str(emitted(report)),
+    )
+
+
+def test_the_raw_report_can_be_written_to_a_file() -> None:
+    """--report, the seam tools/repin_prepare.py reads.
+
+    The gate step spends stdout on the key=value gate outputs, so the structured
+    findings have to reach a file from the SAME observation; a second run of the
+    watcher could see a different world.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        transcript = tmp / "transcript.json"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "schema": uw.TRANSCRIPT_SCHEMA,
+                    "remotes": _cachetag_with_v110("88" * 20),
+                }
+            ),
+            encoding="utf-8",
+        )
+        out = tmp / "report.json"
+        issues = tmp / "issues.json"
+        status = uw.main(
+            [
+                "check",
+                "--state",
+                str(_state(tmp, dict(HEALTHY_REFS))),
+                "--transcript",
+                str(transcript),
+                "--fleet",
+                str(_EMPTY_FLEET),
+                "--report",
+                str(out),
+                "--issues",
+                str(issues),
+                "--format",
+                "github",
+            ]
+        )
+        written = json.loads(out.read_text(encoding="utf-8"))
+    check("report: --report exits with the run's own status", status == 0, str(status))
+    check(
+        "report: the file is the whole upstream-watch-report/v1 document",
+        written.get("schema") == "upstream-watch-report/v1"
+        and "entries" in written
+        and "repin_candidates" in written,
+        str(sorted(written)),
+    )
+    check(
+        "report: it carries the candidate and its peeled commit, which the gate strings do not",
+        written["repin_candidates"] == [{"vmod": "cachetag", "pinned": "v1.0.1", "tag": "v1.1.0"}]
+        and any(
+            (e.get("tag_observations") or {}).get("v1.1.0", {}).get("sha") == "88" * 20
+            for e in written["entries"]
+        ),
+        json.dumps(written["repin_candidates"]),
     )
 
 
@@ -1212,6 +1308,8 @@ def main() -> int:
     test_state_failures_fail_open()
     test_an_unreachable_remote_runs_rather_than_skips()
     test_github_format_carries_the_gate_outputs()
+    test_github_format_carries_the_repin_candidates()
+    test_the_raw_report_can_be_written_to_a_file()
     test_next_state_only_records_what_was_read()
     test_the_catalog_is_the_only_source_of_urls()
     test_the_transcript_never_touches_the_network()

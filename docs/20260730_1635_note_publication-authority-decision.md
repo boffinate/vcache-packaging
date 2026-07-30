@@ -53,6 +53,8 @@ The Step 9 design was authority-agnostic and waiting on this decision. Under the
 
 An auto-prepared re-pin branch/pull request — automation opening the recorded re-pin (tag, peeled commit, archive digest) for one-click human review — is the natural next step of the detect→verify→notify chain. It publishes nothing and is consistent with this decision; it is deliberately **not** built now.
 
+> **Amendment, 2026-07-30.** The maintainer authorized this increment later the same day and it is now implemented, for patch-free pinned VMOD rows only. It still publishes nothing. Design, the machine-readable eligibility rule (and why the engine row, redis and cachetag are excluded), the dispatch-not-`pull_request` CI decision, the interlock semantics, and what remains deferred: [auto-prepared re-pin branch and pull request](20260730_1812_note_auto-prepared-repin-pr.md).
+
 ## Scope of detection widened alongside this decision: the active VMOD fleet
 
 Decided in the same conversation: detection extends beyond the three packaged VMODs to the **active VMOD fleet** from the compatibility survey (`survey/`) — upstreams whose repositories were updated within the past two years per the survey's triage data (`head_date` in `survey/data/triage.json`). Anything older is assumed too old or incompatible and is deliberately not watched. The roster is materialized as a reviewable, maintainer-editable file (`registry/fleet-watch.json`), not derived at runtime.

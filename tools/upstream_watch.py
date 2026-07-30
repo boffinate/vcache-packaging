@@ -61,12 +61,20 @@ Usage:
     python3 tools/upstream_watch.py check [--state FILE] [--format github|json|text|issues]
                                           [--vinyl-url URL] [--transcript FILE]
                                           [--fleet FILE] [--issues FILE]
+                                          [--report FILE]
     python3 tools/upstream_watch.py selftest
 
 `--issues FILE` (or `--format issues`) emits the GitHub issues the workflow's
 notify job should ensure exist: one issue per distinct upstream+tag for the
 pinned rows, one rolling digest for fleet candidates. Generating the bodies
 here keeps the notification content selftested; the workflow only creates.
+
+`--report FILE` writes the whole report as JSON alongside whatever `--format`
+prints, so one observation can feed several consumers. The prepare-repin job
+reads it through tools/repin_prepare.py, which needs each candidate tag's
+peeled commit -- a fact the gate strings do not carry. Running the watcher
+twice to get it would be two observations of a world that can move between
+them.
 
 The state file lives on an orphan branch `ci-state/trunk-watch`, created at the
 first live run of the Wave 3c workflow -- an orphan branch because this is CI
@@ -858,6 +866,13 @@ def render_github(report: dict) -> str:
         f"vinyl_head_sha={report['vinyl_head_sha']}",
         f"changed_vmods={' '.join(report['changed_vmods'])}",
         f"moved_pins={' '.join(report['moved_pins'])}",
+        # The re-pin candidates as a gate output, so the prepare-repin job can
+        # decide whether it has anything to do without downloading and parsing
+        # the report first. It is a GATE signal only: what gets prepared is
+        # decided by tools/repin_prepare.py from the raw report and the
+        # registry, never from this string.
+        "repin_candidates="
+        + " ".join(f"{c['vmod']}:{c['tag']}" for c in report["repin_candidates"]),
         "poisoned_tags=" + " ".join(f"{p['key']}:{p['tag']}" for p in report["poisoned_tags"]),
         "fleet_candidates=" + " ".join(f"{c['id']}:{c['tag']}" for c in report["fleet_candidates"]),
         # The one output the notify job gates on: is there anything a
@@ -1044,6 +1059,16 @@ def cmd_check(args) -> int:
         repo_root=args.repo_root,
         fleet_path=args.fleet,
     )
+    if args.report:
+        # The whole report, verbatim, as a file. --format json prints the same
+        # document, but the workflow's gate step already spends stdout on the
+        # key=value gate outputs, and running the watcher a second time to get
+        # the structured findings could observe a different world. Consumers
+        # that need more than the gate strings -- tools/repin_prepare.py, which
+        # needs each candidate's peeled commit -- read this.
+        Path(args.report).write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     if args.issues:
         Path(args.issues).write_text(
             json.dumps(render_issues(report), indent=2, sort_keys=True) + "\n",
@@ -1084,6 +1109,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("--repo-root", help="the checkout to read registry/vmods/ from")
     p_check.add_argument("--fleet", help="the fleet roster; defaults to registry/fleet-watch.json")
     p_check.add_argument("--issues", help="also write the notification issues as JSON here")
+    p_check.add_argument("--report", help="also write the whole report as JSON here")
     p_check.add_argument("--format", default="text", choices=["text", "json", "github", "issues"])
     p_check.set_defaults(func=cmd_check)
 

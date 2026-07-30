@@ -2429,11 +2429,15 @@ def cmd_selftest(args) -> int:
     # half of the same catalog: it reads the manifests this tool validates and
     # renders the recipes those manifests' package lanes build. The upstream
     # watcher is the third: it derives what to watch from the same catalog and
-    # the same clone-URL derivation. Running all of them from here means the CI
-    # structural-validation gate covers them without learning three commands,
-    # and a regression in any of them cannot land green because nothing invoked
-    # it. The watcher's tests are fully canned and touch no network.
+    # the same clone-URL derivation. The re-pin preparer is the fourth: it reads
+    # the watcher's report and the same manifests, and decides from them whether
+    # a candidate can be prepared at all. Running all of them from here means
+    # the CI structural-validation gate covers them without learning four
+    # commands, and a regression in any of them cannot land green because
+    # nothing invoked it. The watcher's and preparer's tests are fully canned
+    # and touch no network, and the preparer's write only to temporary trees.
     import ci_matrix_selftest
+    import repin_prepare_selftest
     import upstream_watch_selftest
     import vmod_recipe_selftest
 
@@ -2441,7 +2445,9 @@ def cmd_selftest(args) -> int:
     print()
     status = vmod_recipe_selftest.main() or status
     print()
-    return upstream_watch_selftest.main() or status
+    status = upstream_watch_selftest.main() or status
+    print()
+    return repin_prepare_selftest.main() or status
 
 
 def build_parser() -> argparse.ArgumentParser:
