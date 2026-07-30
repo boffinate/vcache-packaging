@@ -37,7 +37,11 @@ Use the structure `YYYYMMDD_HHMM_[type]_[description].md`, where `[type]` is `no
 
 ## Tracks
 
-The packaging maintains two Vinyl pin tracks, selected with the `VINYL_TRACK` environment variable (`release` | `trunk`) and defined inside each lane's pin file (`recipes/debian-13/pins.env`, `recipes/el9/cohort.env`). `release` builds from the upstream release tarball and is what users install; `trunk` builds a pinned trunk snapshot and, via the scheduled trunk-HEAD workflow, is the early-warning lane for Vinyl core changes. Since the 2026-07-28 cutover the default is `release`; the trunk legs in ci.yml's matrix and the scheduled nightly select `trunk` explicitly. Policy: `docs/20260726_1235_note_two-track-release-and-trunk.md`.
+The packaging maintains two Vinyl pin tracks, selected with the `VINYL_TRACK` environment variable (`release` | `trunk`) and defined inside each lane's pin file (`recipes/debian-13/pins.env`, `recipes/el9/cohort.env`). `release` builds from the upstream release tarball and is what users install; `trunk` builds a **pinned trunk snapshot**. Since the 2026-07-28 cutover the default is `release`, and the trunk legs of `ci.yml`'s matrix select `trunk` explicitly. Policy: `docs/20260726_1235_note_two-track-release-and-trunk.md`.
+
+Do not confuse that pinned snapshot with **Vinyl trunk HEAD**, which is a different thing with a different workflow. The pinned-snapshot package rows are event-driven and live in `ci.yml`: they move only when someone re-pins, so a schedule would re-prove what the last pull request already proved. Trunk HEAD is unpinned and is the actual early warning, run by `.github/workflows/trunk-early-warning.yml` — change-gated, Monday and Thursday, and it does nothing at all when neither Vinyl trunk nor a watched VMOD branch has moved. It runs the VMODs' own source harnesses at tier `trunk` and builds no package.
+
+Two workflows retired with it in Step 8 Wave 3c: `nightly-transactions.yml`, because **no transaction matrix runs on a schedule** any more — the `transactions` tier is a deliberate dispatch against one release cohort's published packages — and `trunk-vmod-ci.yml`, whose job became the harness job inside `vmod-package.yml`. Policy: [the 2026-07-30 maintainer decisions](docs/20260730_0826_note_step-8-maintainer-decisions.md).
 
 ## Common commands
 

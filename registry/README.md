@@ -307,7 +307,7 @@ It also carries its own `cachetag.version`, which is still checked against the c
 | `lanes[].kind` | wiring | `package` (native packages for named targets) or `source-harness` (the VMOD's own test harness, no package) |
 | `lanes[].source` | wiring | the source channel this lane builds |
 | `lanes[].engine` | wiring | the Vinyl input: `vinyl-release`, `vinyl-trunk-pinned`, `vinyl-trunk-head` |
-| `lanes[].tiers` | policy | which workflow tiers (`ci`, `nightly`, `release`, `trunk`) run this lane |
+| `lanes[].tiers` | policy | which workflow tiers run this lane. `ci` every push and pull request; `release` the release-draft build; `transactions` a deliberate, dispatched upgrade-transaction measurement against one release cohort's packages, never scheduled; `trunk` the change-gated Vinyl trunk-HEAD early warning. Renamed from `nightly` on 2026-07-30 — see [the maintainer decisions](../docs/20260730_0826_note_step-8-maintainer-decisions.md) |
 | `lanes[].targets` | wiring | package targets, for `package` lanes only |
 
 The lane list is explicit on purpose. Do not multiply source channels by engines by targets: every row exists because it answers a compatibility or publication question the project has chosen to support, and the expected-row ledger the CI collector reconciles against is built from exactly these rows.
