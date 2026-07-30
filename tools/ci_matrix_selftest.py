@@ -1934,7 +1934,9 @@ def test_the_harness_row_carries_what_the_job_needs(repo_root: Path) -> None:
     # And the trunk tier's shape as a whole: one harness row, and every VMOD's
     # invocation row, because the collector expects a record from each.
     ledger = ci_matrix.ledger("trunk", repo_root)
-    selected = sorted(r["row_key"] for r in ledger["rows"] if r["selected"])
+    selected = sorted(
+        _without_fixture(r["row_key"] for r in ledger["rows"] if r["selected"])
+    )
     check(
         "harness: the trunk tier selects three invocations and one harness row",
         selected

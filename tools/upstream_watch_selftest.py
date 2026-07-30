@@ -25,6 +25,41 @@ import upstream_watch as uw  # noqa: E402
 _RESULTS: list = []
 
 
+# ---------------------------------------------------------------------------
+# BRANCH-LOCAL to `step8-fixture`. NEVER MERGE THIS BLOCK TO main.
+# ---------------------------------------------------------------------------
+#
+# The roadmap's step-8 ten-entry acceptance fixture adds seven synthetic alias
+# entries to registry/vmods/, and this module derives what it watches from that
+# catalog -- so three assertions about the real fleet see ten entries instead of
+# three. They are not relaxed here: they are told which ids belong to the
+# fixture and subtract them, so each still asserts the same property about the
+# three SELECTED VMODs.
+#
+# The aliases clone the same URL as vmod-dict, which is why the moved-pin case
+# below sees eight moved refs rather than one. That is correct behaviour and not
+# a defect: a shared upstream moves every entry pinned to it at once.
+#
+# Without this block ci.yml's structural-validation job fails, discover-vmods
+# never runs, and the acceptance dispatch the branch exists for never starts.
+ACCEPTANCE_FIXTURE_IDS = tuple(f"fixture{n}" for n in range(1, 8))
+
+
+def _without_fixture(items):
+    """Drop the acceptance fixture's watch keys. Branch-local; see above."""
+    kept = [i for i in items if not set(str(i).split("/")) & set(ACCEPTANCE_FIXTURE_IDS)]
+    return kept
+
+
+def _map_without_fixture(mapping):
+    """The same, for a {watch key: value} mapping."""
+    return {
+        k: v
+        for k, v in mapping.items()
+        if not set(str(k).split("/")) & set(ACCEPTANCE_FIXTURE_IDS)
+    }
+
+
 def check(name: str, condition: bool, detail: str = "") -> None:
     _RESULTS.append((name, bool(condition), detail))
 
@@ -174,7 +209,7 @@ def test_healthy_fleet_with_state_does_not_run() -> None:
     # All three VMODs plus the engine, and cachetag twice (release and trunk).
     check(
         "healthy: the watch list is derived from the catalog",
-        sorted(e["key"] for e in report["entries"])
+        sorted(_without_fixture(e["key"] for e in report["entries"]))
         == ["cachetag/release", "cachetag/trunk", "dict/release", "redis/release", uw.VINYL_KEY],
         str(sorted(e["key"] for e in report["entries"])),
     )
@@ -196,7 +231,11 @@ def test_a_moved_tag_is_a_failure_and_never_a_candidate() -> None:
         state = _state(Path(tmp), {uw.VINYL_KEY: VINYL_HEAD, "cachetag/trunk": CACHETAG_MAIN})
         report = uw.check(state_path=state, transcript=moved)
     check("moved pin: the report is not ok", report["ok"] is False)
-    check("moved pin: it names the ref", report["moved_pins"] == ["dict/release"], str(report["moved_pins"]))
+    check(
+        "moved pin: it names the ref",
+        _without_fixture(report["moved_pins"]) == ["dict/release"],
+        str(report["moved_pins"]),
+    )
     check(
         "moved pin: it is NOT surfaced as a re-pin candidate",
         report["repin_candidates"] == [],
@@ -407,7 +446,8 @@ def test_the_catalog_is_the_only_source_of_urls() -> None:
     pins = {t["key"]: t.get("expected_commit") for t in targets if t["kind"] == "tag"}
     check(
         "urls: every pinned channel carries the manifest's recorded commit",
-        pins == {"cachetag/release": CACHETAG_PIN, "dict/release": DICT_PIN, "redis/release": REDIS_PIN},
+        _map_without_fixture(pins)
+        == {"cachetag/release": CACHETAG_PIN, "dict/release": DICT_PIN, "redis/release": REDIS_PIN},
         str(pins),
     )
     trunk = [t for t in targets if t["kind"] == "branch" and t["vmod"]]
