@@ -1,0 +1,31 @@
+{
+  "refs": {
+    "cachetag/release": {
+      "ref": "v1.0.1",
+      "sha": "a3897aaccf1d6996c00ee14b2c6e1ddac91ac982",
+      "url": "https://github.com/boffinate/libvmod-cachetag.git"
+    },
+    "cachetag/trunk": {
+      "ref": "main",
+      "sha": "0e23f6326f7b7770c2422a23096c3b6d0917a6bc",
+      "url": "https://github.com/boffinate/libvmod-cachetag.git"
+    },
+    "dict/release": {
+      "ref": "v1.7",
+      "sha": "784584d272894a39cf995377618aad551a196424",
+      "url": "https://git.gnu.org.ua/vmod-dict.git"
+    },
+    "redis/release": {
+      "ref": "9.0-23.1",
+      "sha": "b6ca669fc9af3399f3845d9d4930683b4e378aa8",
+      "url": "https://github.com/carlosabalde/libvmod-redis.git"
+    },
+    "vinyl-trunk": {
+      "ref": "HEAD",
+      "sha": "655c988a2f079ee458bc64f55f4548862946fe3d",
+      "url": "https://code.vinyl-cache.org/vinyl-cache/vinyl-cache.git"
+    }
+  },
+  "schema": "upstream-watch-state/v1",
+  "trunk_engine_run_id": ""
+}
