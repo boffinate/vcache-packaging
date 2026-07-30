@@ -24,6 +24,10 @@ The known coverage trade-off from Step 8 is unchanged in kind: trunk coverage ru
 
 Forced run 30584237055 (dispatched after the fix above) selected exactly the 52 declared cases — and failed 7 of them (6 `pm`, 1 `r`), each dying in VCL compilation on `import vtc;`. Root cause in `scripts/ci/vmod/container/source-harness.sh`: it ran `vinyltest -p vmod_path=<built module dirs>`, and overriding `vmod_path` **replaces** vinyld's default search path, so the engine prefix's own bundled VMODs (`vtc` for barrier orchestration, `std`, ...) stopped being importable. The engine artifact does ship them (`lib/vinyl-cache/vmods`, `libvmod_vtc` included); the harness just hid them. cachetag's own repo harness never hits this because its `vmod_path` includes both the built module and the prefix. Fixed by appending `pkg-config --variable=vmoddir vinylapi` to the composed `vmod_path`, with a loud refusal if the prefix advertises none. Like the glob over-match, this was invisible until tonight because no run had ever reached the suite.
 
+## Proof
+
+Forced run 30584875328, with both fixes: `HARNESS SUMMARY: 52/52 passed, 0 failed, 0 skipped (vinyltest exit 0)`, and every job in the run green — gate, notify (deduplicated against the open cachetag v1.0.2 issue), prepare-repin (clean ineligibility refusal), trunk engine build, harness, reconcile, advance-state. The first fully green trunk-HEAD measurement since Vinyl's header rename, and the first ever whose VTC stage ran. The un-forced dispatch alongside (run 30584205513) proved the quiet path with standing findings: `run=false`, notify deduplicates, record-observations persists the tags map, whole run green at gate cost.
+
 ## Standing consequence for future VMODs
 
 A VMOD's `harness.tests` must declare the subset of its suite runnable in a bare engine-plus-VMOD environment, not "all tests it ships". Any future VMOD whose repository carries tests requiring sibling VMODs, external services, or storage engines needs the same positive family selection — dict's ported-Autotest VTCs and redis's suite (which the packaging harness runs with its Redis servers) are unaffected.
