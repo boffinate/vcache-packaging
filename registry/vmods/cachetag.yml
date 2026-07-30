@@ -54,23 +54,31 @@ sources:
 #   vinyl-trunk-pinned the pinned trunk snapshot (VINYL_TRACK=trunk)
 #   vinyl-trunk-head   unpinned trunk HEAD, source harness only
 #
-# `tiers` lists the workflow tiers that run the lane. `nightly` arrived on both
-# package lanes with Step 8 Wave 1, which made the upgrade-transaction matrix a
-# tier-gated stage inside the package row rather than a separate graph: the
-# nightly rows now have a producer, which is what was missing when this comment
-# said claiming one would put a row in the expected ledger that nothing produces.
-# Nothing reconciles `--tier nightly` yet -- nightly-transactions.yml still runs
-# its own graph until Wave 3 migrates it onto this manifest and consumes these
-# rows -- so until then the nightly ledger describes work no scheduled workflow
-# has been pointed at.
+# `tiers` lists the workflow tiers that run the lane, and tier membership is the
+# whole of the row-selection mechanism.
+#
+# `transactions` is on the vinyl-release lane only. It is a DELIBERATE,
+# dispatched measurement of the upgrade-transaction matrix against one release
+# cohort's packages -- never scheduled, because the matrix answers a question
+# about a published upgrade path and a rebuilt or snapshot candidate is not one
+# (maintainer decisions, 2026-07-30). It was called `nightly` between Step 8
+# Wave 1 and Wave 3a, which named a cadence it was never going to have.
+#
+# The vinyl-trunk-pinned lane deliberately does NOT claim it. Three reasons, and
+# the first is the decisive one: a trunk snapshot is not a published upgrade
+# path, so a transaction verdict about it would be a measurement of something
+# nobody can install. The trunk-pinned cohort vinyl-9.0.0-4b7e68292979 already
+# carries recorded cachetag transaction evidence from Step 9. And claiming it
+# would double the cost of every deliberate dispatch for evidence nobody asked
+# for. Re-adding it at a future re-pin is a one-line edit.
 lanes:
   - kind: package
     source: release
     engine: vinyl-release
     tiers:
       - ci
-      - nightly
       - release
+      - transactions
     targets:
       - debian-13-amd64
       - el9-x86_64
@@ -79,7 +87,6 @@ lanes:
     engine: vinyl-trunk-pinned
     tiers:
       - ci
-      - nightly
     targets:
       - debian-13-amd64
       - el9-x86_64

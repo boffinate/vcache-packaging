@@ -37,14 +37,22 @@ on:
         type: string
       tier:
         description: >-
-          workflow tier: `ci`, `nightly` or `release`. `nightly` is a real tier
-          for package rows since Step 8 Wave 1 -- it adds the mismatch fixture
-          and the upgrade-transaction matrix to each row and changes nothing
-          else -- but nothing calls this workflow with it yet: the migration of
-          nightly-transactions.yml onto it is Wave 3. `trunk` is still declared
-          only: this workflow has no source-harness job, so a trunk tier would
-          expand to a harness row nothing runs, and it arrives when Phase 4
-          migrates trunk-vmod-ci.yml.
+          workflow tier: `ci`, `release`, `transactions` or `trunk`, and it is
+          the whole of what selects this VMOD's rows -- a lane lists the tiers
+          it runs in and `expand` filters on that alone.
+
+          `transactions` adds the mismatch fixture and the upgrade-transaction
+          matrix to each package row and changes nothing else. It is a
+          DELIBERATE measurement against one release cohort's packages and is
+          never scheduled: the matrix answers a question about a published
+          upgrade path, and a rebuilt or trunk-snapshot candidate is not one.
+          Renamed from `nightly` on 2026-07-30 for exactly that reason. Its
+          dispatching workflow arrives in Wave 3d; nothing calls this workflow
+          with it yet.
+
+          `trunk` is still declared only: this workflow has no source-harness
+          job, so a trunk tier would expand to a harness row nothing runs. It
+          arrives with the change-gated early-warning workflow in Wave 3c.
         required: true
         type: string
       inject:
@@ -646,17 +654,24 @@ jobs:
         run: recipes/el9/build.sh --vtc-suite-only
         working-directory: vcache-packaging
 
-      # ---- Upgrade transactions: a tier-gated stage of the row, nightly only.
-      #      Step 8 Wave 1. ----
+      # ---- Upgrade transactions: a tier-gated stage of the row, `transactions`
+      #      tier only. Step 8 Wave 1; tier renamed in Wave 3a. ----
       #
-      # The pair nightly-transactions.yml has run since step 9, unchanged, moved
-      # inside the package row. It is gated on `inputs.tier == 'nightly'` AND on
-      # the previous stage, which is the same idiom every stage above uses, so at
-      # tier `ci` both steps are SKIPPED -- and a skipped step's outcome is
-      # neither `failure` nor `success`, which is exactly what the classification
-      # chain below already knows how to read. That is what makes a `ci` row
-      # equivalent to the one this wave replaces: nothing new runs, and nothing
-      # existing was reordered.
+      # The pair the legacy nightly-transactions.yml has run since step 9,
+      # unchanged, moved inside the package row. It is gated on
+      # `inputs.tier == 'transactions'` AND on the previous stage, which is the
+      # same idiom every stage above uses, so at tier `ci` both steps are
+      # SKIPPED -- and a skipped step's outcome is neither `failure` nor
+      # `success`, which is exactly what the classification chain below already
+      # knows how to read. That is what makes a `ci` row equivalent to the one
+      # Wave 1 replaced: nothing new runs, and nothing existing was reordered.
+      # Measured, not assumed: run 30520146411.
+      #
+      # The tier literal here and ci_matrix.TIERS must never disagree. If they
+      # do, every gate is false for a tier nothing can request and the stage is
+      # silently inert forever -- a green run that measured nothing. The
+      # selftests assert every tier literal in this file is a member of TIERS
+      # for that reason, and the rename moved both in one commit.
       #
       # After the checksums rather than before them, because mismatch-fixture.sh
       # verifies the baseline debs against dist/debian-13/SHA256SUMS before it
@@ -668,30 +683,30 @@ jobs:
       # No parameters: dist/debian-13 and dist/el9 are the layout these scripts
       # default to, and cachetag's values are the defaults of every VMOD_* input
       # they gained in this wave.
-      - name: mismatch fixture (Debian, nightly)
+      - name: mismatch fixture (Debian, transactions tier)
         id: deb_fixture
-        if: matrix.family == 'deb' && inputs.tier == 'nightly' && steps.deb_sums.outcome == 'success'
+        if: matrix.family == 'deb' && inputs.tier == 'transactions' && steps.deb_sums.outcome == 'success'
         continue-on-error: true
         run: recipes/debian-13/mismatch-fixture.sh
         working-directory: vcache-packaging
 
-      - name: upgrade-transaction matrix (Debian, nightly)
+      - name: upgrade-transaction matrix (Debian, transactions tier)
         id: deb_txn
-        if: matrix.family == 'deb' && inputs.tier == 'nightly' && steps.deb_fixture.outcome == 'success'
+        if: matrix.family == 'deb' && inputs.tier == 'transactions' && steps.deb_fixture.outcome == 'success'
         continue-on-error: true
         run: recipes/debian-13/transactions.sh
         working-directory: vcache-packaging
 
-      - name: mismatch fixture (EL9, nightly)
+      - name: mismatch fixture (EL9, transactions tier)
         id: el9_fixture
-        if: matrix.family == 'rpm' && inputs.tier == 'nightly' && steps.el9_vtc.outcome == 'success'
+        if: matrix.family == 'rpm' && inputs.tier == 'transactions' && steps.el9_vtc.outcome == 'success'
         continue-on-error: true
         run: recipes/el9/mismatch-fixture.sh
         working-directory: vcache-packaging
 
-      - name: upgrade-transaction matrix (EL9, nightly)
+      - name: upgrade-transaction matrix (EL9, transactions tier)
         id: el9_txn
-        if: matrix.family == 'rpm' && inputs.tier == 'nightly' && steps.el9_fixture.outcome == 'success'
+        if: matrix.family == 'rpm' && inputs.tier == 'transactions' && steps.el9_fixture.outcome == 'success'
         continue-on-error: true
         run: recipes/el9/transactions.sh
         working-directory: vcache-packaging
@@ -802,7 +817,7 @@ jobs:
           elif [ "${{ matrix.family }}" = "rpm" ] \
             && [ "${{ steps.el9_vtc.outcome }}" != "success" ]; then
             set_status failed_infrastructure "the EL9 row did not reach its VTC suite"
-          # The nightly transaction stage. Both arms are inert at every other
+          # The transaction stage. Both arms are inert at every other
           # tier, because a skipped step's outcome is neither value tested here.
           # The fixture is classified as a transaction failure rather than as
           # infrastructure: it exists only to be the candidate the scenarios
@@ -815,19 +830,19 @@ jobs:
           elif [ "${{ steps.deb_txn.outcome }}" = "failure" ] \
             || [ "${{ steps.el9_txn.outcome }}" = "failure" ]; then
             set_status failed_transactions "the upgrade-transaction matrix failed"
-          # And the guard against an inert stage: a nightly row that reached its
+          # And the guard against an inert stage: a transactions row that reached its
           # checksums and then did not run its transactions at all has produced
           # no transaction evidence, and must not report `passed` for it. Three
           # of Wave B's ten defects were injections that reached a job nothing
           # read; a tier-gated stage has the same shape available to it.
-          elif [ "${{ inputs.tier }}" = "nightly" ] && [ "${{ matrix.family }}" = "deb" ] \
+          elif [ "${{ inputs.tier }}" = "transactions" ] && [ "${{ matrix.family }}" = "deb" ] \
             && [ "${{ steps.deb_txn.outcome }}" != "success" ]; then
             set_status failed_transactions \
-              "the nightly Debian row did not reach its transaction matrix"
-          elif [ "${{ inputs.tier }}" = "nightly" ] && [ "${{ matrix.family }}" = "rpm" ] \
+              "the transactions-tier Debian row did not reach its transaction matrix"
+          elif [ "${{ inputs.tier }}" = "transactions" ] && [ "${{ matrix.family }}" = "rpm" ] \
             && [ "${{ steps.el9_txn.outcome }}" != "success" ]; then
             set_status failed_transactions \
-              "the nightly EL9 row did not reach its transaction matrix"
+              "the transactions-tier EL9 row did not reach its transaction matrix"
           elif [ "${{ steps.deb_upload.outcome }}" = "failure" ] \
             || [ "${{ steps.el9_upload.outcome }}" = "failure" ]; then
             set_status failed_infrastructure \
@@ -1198,8 +1213,8 @@ jobs:
             -printf '%P\n' | sort | xargs -r sha256sum > SHA256SUMS
           cat SHA256SUMS
 
-      # ---- Upgrade transactions: a tier-gated stage of the row, nightly only.
-      #      Step 8 Wave 1. ----
+      # ---- Upgrade transactions: a tier-gated stage of the row, `transactions`
+      #      tier only. Step 8 Wave 1; tier renamed in Wave 3a. ----
       #
       # The same stage the upstream-recipe job gained, reaching the same scenario
       # tables through the same recipe scripts. What differs is only what a
@@ -1214,9 +1229,9 @@ jobs:
       # Gated identically to the upstream job's: at tier `ci` both steps are
       # skipped and every arm of the classification chain below reads a skipped
       # step as neither `failure` nor `success`.
-      - name: mismatch fixture (nightly)
+      - name: mismatch fixture (transactions tier)
         id: fixture
-        if: inputs.tier == 'nightly' && steps.sums.outcome == 'success'
+        if: inputs.tier == 'transactions' && steps.sums.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
@@ -1235,9 +1250,9 @@ jobs:
             --target "${{ matrix.target }}"
         working-directory: vcache-packaging
 
-      - name: upgrade-transaction matrix (nightly)
+      - name: upgrade-transaction matrix (transactions tier)
         id: transactions
-        if: inputs.tier == 'nightly' && steps.fixture.outcome == 'success'
+        if: inputs.tier == 'transactions' && steps.fixture.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
@@ -1341,7 +1356,7 @@ jobs:
             esac
           elif [ "${{ steps.sums.outcome }}" != "success" ]; then
             set_status failed_infrastructure "the row did not reach its checksums"
-          # The nightly transaction stage, classified exactly as the
+          # The transaction stage, classified exactly as the
           # upstream-recipe job classifies its own: inert at every other tier,
           # because a skipped step's outcome is neither value tested here.
           elif [ "${{ steps.fixture.outcome }}" = "failure" ]; then
@@ -1349,12 +1364,12 @@ jobs:
               "the synthetic mismatched engine candidates could not be built"
           elif [ "${{ steps.transactions.outcome }}" = "failure" ]; then
             set_status failed_transactions "the upgrade-transaction matrix failed"
-          # And the same guard against an inert stage: a nightly row that
+          # And the same guard against an inert stage: a transactions row that
           # produced no transaction evidence must not report `passed` for it.
-          elif [ "${{ inputs.tier }}" = "nightly" ] \
+          elif [ "${{ inputs.tier }}" = "transactions" ] \
             && [ "${{ steps.transactions.outcome }}" != "success" ]; then
             set_status failed_transactions \
-              "the nightly row did not reach its transaction matrix"
+              "the transactions-tier row did not reach its transaction matrix"
           elif [ "${{ steps.upload.outcome }}" = "failure" ]; then
             set_status failed_infrastructure \
               "the package artifact upload failed after a successful build"

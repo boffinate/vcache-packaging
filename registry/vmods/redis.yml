@@ -75,19 +75,21 @@ sources:
 # a numeric snapshot version. Dropping VINYL_PREREQ from the patch to buy the
 # lane would be deleting a real compatibility check to make a matrix row green.
 #
-# `nightly` arrived with Step 8 Wave 1, for the same reason as vmod-dict's: the
-# upgrade-transaction matrix became a tier-gated stage inside the package row, so
-# a generated VMOD's rows can produce the evidence its registry entries currently
-# record as not-applicable. Nothing reconciles --tier nightly until Wave 3 points
-# the scheduled workflow at it.
+# `transactions` is here for the same reason as vmod-dict's, and means the same
+# thing: a DELIBERATE, dispatched measurement of the upgrade-transaction matrix
+# against this release cohort's packages, never a scheduled one (maintainer
+# decisions, 2026-07-30). It arrived as `nightly` with Step 8 Wave 1 and was
+# renamed in Wave 3a. It is the row that will replace this VMOD's
+# upgrade_transactions: not-applicable verdicts, from a run that actually
+# executed the matrix; the dispatching workflow arrives in Wave 3d.
 lanes:
   - kind: package
     source: release
     engine: vinyl-release
     tiers:
       - ci
-      - nightly
       - release
+      - transactions
     targets:
       - debian-13-amd64
       - el9-x86_64

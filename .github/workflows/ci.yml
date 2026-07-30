@@ -1,10 +1,12 @@
 name: CI
 
-# Runs on every pull request and on push to main. Deliberately does NOT run the
-# mismatch-fixture or upgrade-transaction matrices (see
-# nightly-transactions.yml) and does NOT assemble or publish a release (see
-# release-draft.yml) -- per the plan's "Tiered CI workflow" section and "keep
-# release credentials out of pull-request workflows".
+# Runs on every pull request and on push to main. It invokes the per-VMOD
+# reusable workflow at tier `ci`, which deliberately does NOT run the
+# mismatch-fixture or upgrade-transaction matrices -- those are the
+# `transactions` tier, a deliberate dispatch against one release cohort's
+# packages and never a scheduled or per-push run -- and does NOT assemble or
+# publish a release (see release-draft.yml). Per the plan's "Tiered CI workflow"
+# section and "keep release credentials out of pull-request workflows".
 #
 # Restructured 2026-07-28 for Phases 1 and 2 of
 # docs/20260728_0833_plan_vmod-matrix-failure-isolation.md. The shape is now:

@@ -58,20 +58,22 @@ sources:
 # lane back is a manifest edit once Vinyl trunk emits a numeric snapshot
 # version -- it is not a caution, it is a defect with a known cause.
 #
-# `nightly` arrived with Step 8 Wave 1, which made the upgrade-transaction matrix
-# a tier-gated stage inside the package row. Until then a generated VMOD had no
-# transaction evidence at all and its registry entries recorded
-# upgrade_transactions as not-applicable; the row that will replace that verdict
-# is this one. Nothing reconciles --tier nightly until Wave 3 points the
-# scheduled workflow at it.
+# `transactions` is a DELIBERATE, dispatched measurement of the
+# upgrade-transaction matrix against this release cohort's packages, never a
+# scheduled one (maintainer decisions, 2026-07-30). It arrived as `nightly` with
+# Step 8 Wave 1, which made the matrix a tier-gated stage inside the package row,
+# and was renamed in Wave 3a. Until it runs, a generated VMOD has no transaction
+# evidence at all and its registry entries record upgrade_transactions as
+# not-applicable; this is the row that will replace that verdict, from a run that
+# actually executed the matrix. The dispatching workflow arrives in Wave 3d.
 lanes:
   - kind: package
     source: release
     engine: vinyl-release
     tiers:
       - ci
-      - nightly
       - release
+      - transactions
     targets:
       - debian-13-amd64
       - el9-x86_64

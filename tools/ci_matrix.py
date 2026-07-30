@@ -47,10 +47,26 @@ SCHEMA = "vmod-ci/v1"
 RESULT_SCHEMA = "vmod-ci-result/v1"
 ENGINE_SCHEMA = "engine-artifact/v1"
 
-# Workflow tiers. `ci` and `release` exist today; `nightly` and `trunk` are
-# declared so a manifest can name them, but their workflows still run their own
-# graphs until Phase 4 of the plan migrates them.
-TIERS = ["ci", "nightly", "release", "trunk"]
+# Workflow tiers. A tier is the row-selection mechanism: a lane lists the tiers
+# it runs in, and every ledger builder here filters on that and nothing else.
+#
+#   ci            every push and pull request. Build, verify, behaviour.
+#   release       the release-draft build of the publishable rows.
+#   transactions  a DELIBERATE, dispatched measurement of the upgrade-transaction
+#                 matrix against one release cohort's packages. Renamed from
+#                 `nightly` on 2026-07-30: the matrix answers a question about a
+#                 published upgrade path, so it never runs on a schedule, and a
+#                 tier named after a cadence it does not have was a standing
+#                 invitation to wire it to one. See
+#                 docs/20260730_0826_note_step-8-maintainer-decisions.md.
+#   trunk         Vinyl trunk-HEAD early warning, change-gated. Source harness
+#                 today; its scheduled workflow arrives in Wave 3c.
+#
+# Selection is by tier alone, deliberately. An engine-channel or change filter
+# would be a second axis to thread through expand, engine-matrix, ledger and
+# reconcile, and the four of them have to agree or a gated run reports rows
+# nobody asked for. Tier membership already does the job.
+TIERS = ["ci", "release", "transactions", "trunk"]
 
 # The packaging adapters a manifest may name. `cachetag` is the audited
 # upstream-owned recipe in the libvmod-cachetag repository; `autotools` is the
@@ -113,30 +129,30 @@ TARGETS = {
     },
 }
 
-# What the nightly tier adds to a package row's timeout, and only to a package
-# row's: an engine row builds the same engine at every tier.
+# What the `transactions` tier adds to a package row's timeout, and only to a
+# package row's: an engine row builds the same engine at every tier.
 #
-# A nightly row runs the synthetic mismatch fixture and the whole
+# A transactions row runs the synthetic mismatch fixture and the whole
 # upgrade-transaction matrix after everything a ci row does -- sixteen throwaway
 # scenario containers on Debian, nineteen on EL9, each installing a cohort from a
 # local repository and running one real package-manager transaction. The figure
-# is nightly-transactions.yml's own 180-minute budget for the same work, minus
-# the engine half a row no longer builds, which is the engine budget in the table
-# above. Like every other timeout here it is a "something has hung" guard rather
-# than a target, and the first migrated nightly run is what will measure the real
-# cost.
+# is the legacy nightly-transactions.yml's own 180-minute budget for the same
+# work, minus the engine half a row no longer builds, which is the engine budget
+# in the table above. Like every other timeout here it is a "something has hung"
+# guard rather than a target, and the first dispatched transactions run is what
+# will measure the real cost.
 #
 # One number rather than a per-target column because the two matrices are the
 # same size to within three containers, and a second column would be two things
 # to keep true where the evidence supports one.
-NIGHTLY_TRANSACTION_MINUTES = 110
+TRANSACTION_MATRIX_MINUTES = 110
 
 
 def target_timeout_minutes(target: str, tier: str) -> int:
     """A package row's job timeout for one target and tier."""
     minutes = TARGETS[target]["timeout_minutes"]
-    if tier == "nightly":
-        minutes += NIGHTLY_TRANSACTION_MINUTES
+    if tier == "transactions":
+        minutes += TRANSACTION_MATRIX_MINUTES
     return minutes
 
 # The failure vocabulary from the plan's "Failure reporting" section. Every
