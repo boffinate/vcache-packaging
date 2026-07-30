@@ -33,7 +33,7 @@
 # Environment:
 #   EL9_IMAGE     build image (default from cohort.env)
 #   TXN_OUT_DIR   the directory mounted at /out. It must contain packages/ (the
-#                 baseline cohort RPMs) and SHA256SUMS, and mismatch/ is written
+#                 baseline cohort RPMs and their SHA256SUMS), and mismatch/ is written
 #                 inside it. Defaults to dist/el9, the lane's own layout; the
 #                 reusable workflow points it at a staging directory, because a
 #                 generated VMOD's package lives in lane/out and the engine's in
@@ -64,8 +64,8 @@ variants=${*:-"mismatch sameabi"}
 	printf 'no baseline cohort in %s/packages; run build.sh first\n' "$out" >&2
 	exit 2
 }
-[ -f "$out/SHA256SUMS" ] || {
-	printf 'no baseline digests in %s/SHA256SUMS; run build.sh first\n' "$out" >&2
+[ -f "$out/packages/SHA256SUMS" ] || {
+	printf 'no baseline digests in %s/packages/SHA256SUMS; run build.sh first\n' "$out" >&2
 	exit 2
 }
 

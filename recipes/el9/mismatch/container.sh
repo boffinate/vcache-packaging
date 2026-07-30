@@ -46,7 +46,7 @@ for f in "$baseline_runtime" "$baseline_devel"; do
 done
 # The baseline digests are the fixture's provenance. Check them against the
 # lane's own SHA256SUMS rather than trusting whatever is in the directory now.
-( cd /out/packages && grep -E "^[0-9a-f]{64}  (vinyl-cache|vinyl-cache-devel)-" /out/SHA256SUMS \
+( cd /out/packages && grep -E "^[0-9a-f]{64}  (vinyl-cache|vinyl-cache-devel)-" /out/packages/SHA256SUMS \
 	| sha256sum -c - ) | tee "$logdir/baseline-digests.txt"
 
 say "install the build tooling"

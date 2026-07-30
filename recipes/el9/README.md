@@ -20,7 +20,7 @@ recipes/el9/transactions.sh                 # the whole upgrade-transaction matr
 recipes/el9/transactions.sh --no-prep upgrade distro-sync   # named scenarios only
 ```
 
-Output lands in `dist/el9/` (git-ignored): `packages/` holds the RPMs and SRPMs, `logs/` the build, lint, hardening and smoke transcripts, and `SHA256SUMS` the digests.
+Output lands in `dist/el9/` (git-ignored): `packages/` holds the RPMs and SRPMs beside their `SHA256SUMS` digests, and `logs/` the build, lint, hardening and smoke transcripts.
 
 Everything runs inside `almalinux:9`. The host contributes the Docker daemon, the pinned source checkouts, and nothing else — no package is installed on the host and nothing is compiled there.
 

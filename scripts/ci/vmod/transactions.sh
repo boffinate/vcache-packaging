@@ -112,9 +112,12 @@ stage_packages_rpm() {
 		case $f in *.src.rpm) continue ;; esac
 		cp -p "$f" "$TXN_OUT_DIR/packages/"
 	done
-	( cd "$TXN_OUT_DIR/packages" && sha256sum ./*.rpm | sed 's#\./##' > "$TXN_OUT_DIR/SHA256SUMS" )
+	# Beside the rpms, matching the cachetag lane's dist/el9/packages/SHA256SUMS:
+	# the fixture derivation resolves the listed names against the checksum
+	# file's own directory, `sha256sum -c` style.
+	( cd "$TXN_OUT_DIR/packages" && sha256sum ./*.rpm | sed 's#\./##' > SHA256SUMS )
 	note "staged EL9 packages in $TXN_OUT_DIR/packages"
-	cat "$TXN_OUT_DIR/SHA256SUMS"
+	cat "$TXN_OUT_DIR/packages/SHA256SUMS"
 }
 
 case $stage in

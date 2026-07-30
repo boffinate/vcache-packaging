@@ -692,7 +692,7 @@ jobs:
       # verifies the baseline debs against dist/debian-13/SHA256SUMS before it
       # derives a fixture from them, and `build.sh sums` is what writes that file.
       # The EL9 half has no equivalent constraint -- stage_report wrote
-      # dist/el9/SHA256SUMS back at the lint step -- but it sits in the same block
+      # dist/el9/packages/SHA256SUMS back at the lint step -- but it sits in the same block
       # so the row has one transaction stage rather than two placed differently.
       #
       # No parameters: dist/debian-13 and dist/el9 are the layout these scripts
@@ -768,7 +768,7 @@ jobs:
           name: ${{ matrix.packages_artifact }}
           path: |
             vcache-packaging/dist/el9/packages/*.rpm
-            vcache-packaging/dist/el9/SHA256SUMS
+            vcache-packaging/dist/el9/packages/SHA256SUMS
             vcache-packaging/dist/el9/logs/**
             vcache-packaging/dist/el9/image.txt
             vcache-packaging/dist/el9/mismatch/SHA256SUMS
@@ -1303,6 +1303,7 @@ jobs:
             lane/names.json
             lane/logs/**
             lane/txn/SHA256SUMS
+            lane/txn/packages/SHA256SUMS
             lane/txn/logs/**
             lane/txn/mismatch/PROVENANCE
             lane/txn/mismatch/SHA256SUMS

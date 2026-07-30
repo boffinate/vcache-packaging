@@ -11,7 +11,7 @@
 #     the resolver reads is package metadata: name, EVR, Provides, Requires.
 #     A second compile would change none of the things under test;
 #   * a respin is reproducible from artefacts that are already digest-pinned in
-#     dist/el9/SHA256SUMS, so the fixture's provenance is a two-line statement
+#     dist/el9/packages/SHA256SUMS, so the fixture's provenance is a two-line statement
 #     ("baseline RPM <sha256>, plus this spec") rather than a second build
 #     environment nobody recorded;
 #   * it keeps the fixture honest in the direction that matters. The candidate
@@ -48,7 +48,7 @@ License:        BSD-2-Clause
 URL:            https://vinyl-cache.org/
 
 # The payload: the baseline cohort's own binary packages, digest-pinned in
-# dist/el9/SHA256SUMS.
+# dist/el9/packages/SHA256SUMS.
 Source0:        @BASELINE_RUNTIME_RPM@
 Source1:        @BASELINE_DEVEL_RPM@
 # The sysusers.d fragment, needed by %%pre exactly as the real recipe needs it.

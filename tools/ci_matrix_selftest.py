@@ -1762,13 +1762,25 @@ def _release_set_fixture(root: Path, statuses: dict = None, drop: str = "", corr
         artifact = row["packages_artifact"]
         if artifact == drop:
             continue
-        # The generated rows upload a tree rooted at `lane`, so their checksum
-        # file is under out/; the upstream rows' is at the artifact root. Both
-        # shapes appear here on purpose: the gate must find either.
-        sub = "out" if row["vmod"] in ("dict", "redis") else ""
+        # Mirror the REAL upload layouts, per lane. An invented self-consistent
+        # layout is exactly how the EL9 defect hid from this fixture until run
+        # 30536439592: the audited EL9 row wrote SHA256SUMS at the artifact
+        # root while its rpms lived in packages/, and every fixture here kept
+        # the two together. The generated rows upload a tree rooted at `lane`
+        # with the checksum file in out/ beside the packages; the audited
+        # Debian row keeps both at the artifact root; the audited EL9 row
+        # keeps both under packages/ (dist/el9/packages). The gate must find
+        # and verify all three shapes.
+        if row["vmod"] in ("dict", "redis"):
+            sub = "out"
+        elif row["target"] == "el9-x86_64":
+            sub = "packages"
+        else:
+            sub = ""
         directory = packages / artifact / sub if sub else packages / artifact
         directory.mkdir(parents=True, exist_ok=True)
-        name = f"{row['vmod']}-{row['target']}.deb"
+        ext = "rpm" if row["target"] == "el9-x86_64" else "deb"
+        name = f"{row['vmod']}-{row['target']}.{ext}"
         payload = f"payload {row['row_key']}".encode()
         (directory / name).write_bytes(payload)
         digest = hashlib.sha256(payload).hexdigest()
@@ -1885,6 +1897,75 @@ def test_the_release_set_gate(repo_root: Path) -> None:
         and "packages-redis-release-vinyl-release-el9-x86_64" in rendered,
         rendered,
     )
+
+
+def test_el9_checksums_sit_beside_the_rpms(repo_root: Path) -> None:
+    """The audited EL9 SHA256SUMS must live where `sha256sum -c` can verify it.
+
+    recipes/el9/container/build.sh used to write /out/SHA256SUMS with bare
+    filenames while the rpms landed in /out/packages/. The completeness gate
+    resolves every listed name against the checksum file's own directory --
+    the `sha256sum -c` contract -- so each release-tier run reported nine
+    bad_checksums findings ("listed but not in the artifact") and
+    complete=true was unreachable (run 30536439592). The release-set fixture
+    could not see it because its invented layouts were all self-consistent;
+    it now mirrors the real per-lane layouts, and this test pins the two
+    remaining halves: the verifier must keep REJECTING the broken shape, and
+    the lane's writer, upload list and readers must keep AGREEING on the
+    fixed one.
+    """
+    import hashlib
+
+    # The defect's exact shape: a root-level checksum file naming bare files
+    # that live in packages/. It looks verifiable and verifies nothing.
+    art = Path(tempfile.mkdtemp()) / "artifact"
+    (art / "packages").mkdir(parents=True)
+    payload = b"rpm bytes"
+    (art / "packages" / "a.rpm").write_bytes(payload)
+    line = f"{hashlib.sha256(payload).hexdigest()}  a.rpm\n"
+    (art / "SHA256SUMS").write_text(line, encoding="utf-8")
+    problems = ci_matrix._sha256sums_problems(art)
+    check(
+        "el9 checksums: a root-level SHA256SUMS naming files in packages/ is rejected",
+        any("listed but not in the artifact" in p for p in problems),
+        str(problems),
+    )
+
+    # The same bytes and the same line, beside the rpms: clean.
+    (art / "SHA256SUMS").unlink()
+    (art / "packages" / "SHA256SUMS").write_text(line, encoding="utf-8")
+    check(
+        "el9 checksums: the same digests beside the rpms verify",
+        ci_matrix._sha256sums_problems(art) == [],
+        str(ci_matrix._sha256sums_problems(art)),
+    )
+
+    # The writer, the artifact upload list, and both readers, all read out of
+    # the files so none can drift back on its own.
+    build = (repo_root / "recipes/el9/container/build.sh").read_text(encoding="utf-8")
+    check(
+        "el9 checksums: build.sh writes SHA256SUMS beside the rpms, not at /out",
+        "/out/SHA256SUMS" not in build
+        and re.search(r"cd /out/packages && sha256sum .*\| tee SHA256SUMS", build) is not None,
+        "expected `cd /out/packages && sha256sum ... | tee SHA256SUMS` and no /out/SHA256SUMS",
+    )
+    workflow = (repo_root / ".github/workflows/vmod-package.yml").read_text(encoding="utf-8")
+    check(
+        "el9 checksums: the upload list carries dist/el9/packages/SHA256SUMS",
+        "vcache-packaging/dist/el9/packages/SHA256SUMS" in workflow
+        and "vcache-packaging/dist/el9/SHA256SUMS" not in workflow,
+        "vmod-package.yml must upload the checksum file from beside the rpms",
+    )
+    for reader, needle in (
+        ("recipes/el9/mismatch/container.sh", "/out/packages/SHA256SUMS"),
+        ("recipes/el9/mismatch-fixture.sh", "$out/packages/SHA256SUMS"),
+    ):
+        text = (repo_root / reader).read_text(encoding="utf-8")
+        check(
+            f"el9 checksums: {reader} reads the beside-the-rpms location",
+            needle in text and "/out/SHA256SUMS" not in text and "$out/SHA256SUMS" not in text,
+            f"expected {needle} and no root-level reference",
+        )
 
 
 def test_every_tier_literal_in_the_workflow_is_a_real_tier(repo_root: Path) -> None:
@@ -2997,6 +3078,7 @@ def main(repo_root: Path = None) -> int:
     test_transactions_status_has_a_producer(root)
     test_every_tier_literal_in_the_workflow_is_a_real_tier(root)
     test_the_release_set_gate(root)
+    test_el9_checksums_sit_beside_the_rpms(root)
     test_the_harness_row_carries_what_the_job_needs(root)
     test_transactions_is_the_transaction_tier(root)
     test_transactions_tier_budgets_the_matrix()

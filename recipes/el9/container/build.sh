@@ -303,7 +303,13 @@ stage_report() {
 	done | tee "$logdir/package-metadata.txt"
 
 	say "artifact digests"
-	( cd /out/packages && sha256sum ./*.rpm | sed 's#\./##' | tee /out/SHA256SUMS )
+	# Beside the rpms it describes, never at /out: `sha256sum -c` and the
+	# release completeness gate both resolve listed names against the
+	# checksum file's own directory, so a root-level SHA256SUMS naming bare
+	# files that live in packages/ describes nothing it can verify. That
+	# exact layout made complete=true unreachable on every release-tier
+	# run (nine bad_checksums findings, run 30536439592).
+	( cd /out/packages && sha256sum ./*.rpm | sed 's#\./##' | tee SHA256SUMS )
 
 	say "hardening inspection"
 	# The plan requires native hardening inspection of the production build,
