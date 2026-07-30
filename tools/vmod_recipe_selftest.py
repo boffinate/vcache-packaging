@@ -1901,6 +1901,52 @@ def test_archive_method_and_url_must_agree(root: Path) -> None:
     )
 
 
+def test_vcl_import_is_derived_from_the_payload(root: Path) -> None:
+    """`import X` resolves to libvmod_X.so, so the token is the object's stem.
+
+    Derived rather than declared, and that is the point: a second declaration
+    could disagree with the first, and the disagreement would only show up as an
+    upgrade-transaction probe that fails to compile for a VMOD that is installed
+    and working. Added Step 8 Wave 1, when the transaction matrix started
+    compiling a probe VCL importing the VMOD under test.
+    """
+    check(
+        "vcl import: dict's payload gives the token its VCL imports",
+        _model(root)["payload"]["vcl_import"] == "dict",
+        str(_model(root)["payload"]),
+    )
+    args = vr.build_parser().parse_args(
+        [
+            "lane-env",
+            "--manifest", str(root / DICT_MANIFEST),
+            "--overlay", str(root / DICT_OVERLAY),
+            "--cohort", RELEASE_COHORT,
+            "--target", "debian-13-amd64",
+        ]
+    )
+    import contextlib
+    import io
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        vr.cmd_lane_env(args)
+    emitted = dict(
+        line.split("=", 1) for line in buffer.getvalue().splitlines() if "=" in line
+    )
+    check(
+        "vcl import: lane-env carries it, and the target's own architecture",
+        emitted.get("VMOD_IMPORT") == "'dict'" and emitted.get("TARGET_ARCH") == "'amd64'",
+        f"{emitted.get('VMOD_IMPORT')!r} / {emitted.get('TARGET_ARCH')!r}",
+    )
+    overlay = _clone(_inputs(root)["overlay"])
+    overlay["payload"]["vmod_object"] = "libfoo.so"
+    _expect_error(
+        "vcl import: an object that is not libvmod_<name>.so is refused",
+        lambda: _model(root, overlay=overlay),
+        "no VCL import token can be derived",
+    )
+
+
 def main(repo_root: Path = None) -> int:
     root = Path(repo_root) if repo_root else vr.REPO_ROOT
     _RESULTS.clear()
@@ -1947,6 +1993,7 @@ def main(repo_root: Path = None) -> int:
     test_patch_reviewed_against_must_be_the_selected_commit(root)
     test_reviewed_rpmlint_overrides_are_rendered(root)
     test_behaviour_contract_reaches_the_lane(root)
+    test_vcl_import_is_derived_from_the_payload(root)
     test_archive_method_and_url_must_agree(root)
 
     failed = 0

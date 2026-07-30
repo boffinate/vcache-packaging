@@ -359,6 +359,25 @@ def load_vmod_manifest(path, discovery_id: str = None) -> dict:
 _REQUIRED_SOURCE_FIELDS = ("ref", "expected_commit", "version", "archive_sha256")
 
 
+def _vcl_import(vmod_object: str) -> str:
+    """`libvmod_dict.so` -> `dict`: the token a VCL `import` names.
+
+    The engine resolves `import X` by loading `libvmod_X.so` from vmod_path, so
+    this is a restatement of the object's own name rather than a second fact
+    about the VMOD, and it is refused rather than guessed at when the object does
+    not have that shape -- an overlay declaring one would be describing a payload
+    no VCL could import.
+    """
+    stem = vmod_object[len("libvmod_") : -len(".so")]
+    if not vmod_object.startswith("libvmod_") or not vmod_object.endswith(".so") or not stem:
+        raise GeneratorError(
+            f"payload.vmod_object {vmod_object!r} is not libvmod_<name>.so, so no VCL "
+            "import token can be derived from it. The engine resolves `import X` to "
+            "libvmod_X.so on vmod_path; an object named otherwise cannot be imported."
+        )
+    return stem
+
+
 def build_model(
     *,
     vmod_manifest: dict,
@@ -619,6 +638,14 @@ def build_model(
         },
         "payload": {
             "vmod_object": payload["vmod_object"],
+            # The VCL import token, derived and never declared. It is not a
+            # second name for the same thing that could disagree with the first:
+            # the engine's own loader resolves `import X` to `libvmod_X.so` on
+            # vmod_path, so the token IS the object's stem, and SO_RE has already
+            # constrained the shape. Consumed by the upgrade-transaction lane,
+            # which compiles a probe VCL importing the VMOD before and after each
+            # transaction; nothing rendered into a recipe reads it.
+            "vcl_import": _vcl_import(payload["vmod_object"]),
             "man_pages": list(payload["man_pages"]),
             "doc_files": list(payload["doc_files"]),
             "license_files": list(licence["files"]),
@@ -1628,6 +1655,13 @@ def cmd_lane_env(args) -> int:
         "VMOD_RPM_RELEASE": package["versions"]["rpm"]["release"],
         "VMOD_SOURCE_DATE_EPOCH": model["source"]["source_date_epoch"],
         "VMOD_OBJECT": payload["vmod_object"],
+        # The VCL import token and the target's native architecture, both for the
+        # upgrade-transaction stages: the token is what the probe VCL imports, and
+        # the architecture is what the Debian scenario driver reads out of
+        # work/target.txt in the cachetag lane, which a staging directory
+        # assembled from an engine artifact has no build tree to have written.
+        "VMOD_IMPORT": payload["vcl_import"],
+        "TARGET_ARCH": model["target"]["arch"],
         "VMOD_MAN_PAGE": payload["man_pages"][0],
         # The behaviour suite's fixture contract, for scripts/ci/lib/vtc-suite.sh.
         # Space-separated because the shared functions take word lists; the

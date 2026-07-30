@@ -37,11 +37,14 @@ on:
         type: string
       tier:
         description: >-
-          workflow tier: `ci` or `release` in Phase 1. The manifest schema also
-          accepts `nightly` and `trunk`, but this workflow has no source-harness
-          job yet, so a trunk tier would expand to a harness row nothing runs.
-          Both arrive when Phase 4 migrates nightly-transactions.yml and
-          trunk-vmod-ci.yml onto this workflow.
+          workflow tier: `ci`, `nightly` or `release`. `nightly` is a real tier
+          for package rows since Step 8 Wave 1 -- it adds the mismatch fixture
+          and the upgrade-transaction matrix to each row and changes nothing
+          else -- but nothing calls this workflow with it yet: the migration of
+          nightly-transactions.yml onto it is Wave 3. `trunk` is still declared
+          only: this workflow has no source-harness job, so a trunk tier would
+          expand to a harness row nothing runs, and it arrives when Phase 4
+          migrates trunk-vmod-ci.yml.
         required: true
         type: string
       inject:
@@ -643,6 +646,56 @@ jobs:
         run: recipes/el9/build.sh --vtc-suite-only
         working-directory: vcache-packaging
 
+      # ---- Upgrade transactions: a tier-gated stage of the row, nightly only.
+      #      Step 8 Wave 1. ----
+      #
+      # The pair nightly-transactions.yml has run since step 9, unchanged, moved
+      # inside the package row. It is gated on `inputs.tier == 'nightly'` AND on
+      # the previous stage, which is the same idiom every stage above uses, so at
+      # tier `ci` both steps are SKIPPED -- and a skipped step's outcome is
+      # neither `failure` nor `success`, which is exactly what the classification
+      # chain below already knows how to read. That is what makes a `ci` row
+      # equivalent to the one this wave replaces: nothing new runs, and nothing
+      # existing was reordered.
+      #
+      # After the checksums rather than before them, because mismatch-fixture.sh
+      # verifies the baseline debs against dist/debian-13/SHA256SUMS before it
+      # derives a fixture from them, and `build.sh sums` is what writes that file.
+      # The EL9 half has no equivalent constraint -- stage_report wrote
+      # dist/el9/SHA256SUMS back at the lint step -- but it sits in the same block
+      # so the row has one transaction stage rather than two placed differently.
+      #
+      # No parameters: dist/debian-13 and dist/el9 are the layout these scripts
+      # default to, and cachetag's values are the defaults of every VMOD_* input
+      # they gained in this wave.
+      - name: mismatch fixture (Debian, nightly)
+        id: deb_fixture
+        if: matrix.family == 'deb' && inputs.tier == 'nightly' && steps.deb_sums.outcome == 'success'
+        continue-on-error: true
+        run: recipes/debian-13/mismatch-fixture.sh
+        working-directory: vcache-packaging
+
+      - name: upgrade-transaction matrix (Debian, nightly)
+        id: deb_txn
+        if: matrix.family == 'deb' && inputs.tier == 'nightly' && steps.deb_fixture.outcome == 'success'
+        continue-on-error: true
+        run: recipes/debian-13/transactions.sh
+        working-directory: vcache-packaging
+
+      - name: mismatch fixture (EL9, nightly)
+        id: el9_fixture
+        if: matrix.family == 'rpm' && inputs.tier == 'nightly' && steps.el9_vtc.outcome == 'success'
+        continue-on-error: true
+        run: recipes/el9/mismatch-fixture.sh
+        working-directory: vcache-packaging
+
+      - name: upgrade-transaction matrix (EL9, nightly)
+        id: el9_txn
+        if: matrix.family == 'rpm' && inputs.tier == 'nightly' && steps.el9_fixture.outcome == 'success'
+        continue-on-error: true
+        run: recipes/el9/transactions.sh
+        working-directory: vcache-packaging
+
       # ---- Package evidence, then the result, then the explicit failure. ----
       #
       # The package uploads come before the classification so that a failed
@@ -671,6 +724,8 @@ jobs:
             vcache-packaging/dist/debian-13/SHA256SUMS
             vcache-packaging/dist/debian-13/logs/**
             vcache-packaging/dist/debian-13/work/target.txt
+            vcache-packaging/dist/debian-13/mismatch/PROVENANCE
+            vcache-packaging/dist/debian-13/mismatch/SHA256SUMS
           if-no-files-found: warn
           retention-days: 14
 
@@ -686,6 +741,9 @@ jobs:
             vcache-packaging/dist/el9/SHA256SUMS
             vcache-packaging/dist/el9/logs/**
             vcache-packaging/dist/el9/image.txt
+            vcache-packaging/dist/el9/mismatch/SHA256SUMS
+            vcache-packaging/dist/el9/mismatch/txn-image.txt
+            vcache-packaging/dist/el9/mismatch/logs/**
           if-no-files-found: warn
           retention-days: 14
 
@@ -744,6 +802,32 @@ jobs:
           elif [ "${{ matrix.family }}" = "rpm" ] \
             && [ "${{ steps.el9_vtc.outcome }}" != "success" ]; then
             set_status failed_infrastructure "the EL9 row did not reach its VTC suite"
+          # The nightly transaction stage. Both arms are inert at every other
+          # tier, because a skipped step's outcome is neither value tested here.
+          # The fixture is classified as a transaction failure rather than as
+          # infrastructure: it exists only to be the candidate the scenarios
+          # resolve against, so a row without one has no transaction evidence,
+          # which is precisely what failed_transactions says.
+          elif [ "${{ steps.deb_fixture.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_fixture.outcome }}" = "failure" ]; then
+            set_status failed_transactions \
+              "the synthetic mismatched engine candidates could not be built"
+          elif [ "${{ steps.deb_txn.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_txn.outcome }}" = "failure" ]; then
+            set_status failed_transactions "the upgrade-transaction matrix failed"
+          # And the guard against an inert stage: a nightly row that reached its
+          # checksums and then did not run its transactions at all has produced
+          # no transaction evidence, and must not report `passed` for it. Three
+          # of Wave B's ten defects were injections that reached a job nothing
+          # read; a tier-gated stage has the same shape available to it.
+          elif [ "${{ inputs.tier }}" = "nightly" ] && [ "${{ matrix.family }}" = "deb" ] \
+            && [ "${{ steps.deb_txn.outcome }}" != "success" ]; then
+            set_status failed_transactions \
+              "the nightly Debian row did not reach its transaction matrix"
+          elif [ "${{ inputs.tier }}" = "nightly" ] && [ "${{ matrix.family }}" = "rpm" ] \
+            && [ "${{ steps.el9_txn.outcome }}" != "success" ]; then
+            set_status failed_transactions \
+              "the nightly EL9 row did not reach its transaction matrix"
           elif [ "${{ steps.deb_upload.outcome }}" = "failure" ] \
             || [ "${{ steps.el9_upload.outcome }}" = "failure" ]; then
             set_status failed_infrastructure \
@@ -1114,6 +1198,64 @@ jobs:
             -printf '%P\n' | sort | xargs -r sha256sum > SHA256SUMS
           cat SHA256SUMS
 
+      # ---- Upgrade transactions: a tier-gated stage of the row, nightly only.
+      #      Step 8 Wave 1. ----
+      #
+      # The same stage the upstream-recipe job gained, reaching the same scenario
+      # tables through the same recipe scripts. What differs is only what a
+      # generated row cannot default: its package lives in lane/out and the
+      # engine's in lane/engine rather than in a dist/ tree, and its package name,
+      # version, VCL import token and shared object are this VMOD's rather than
+      # cachetag's. scripts/ci/vmod/transactions.sh stages the one and reads the
+      # other four out of `vmod_recipe.py lane-env`, which is the same model the
+      # recipe was rendered from and the same command run.sh uses for the verify
+      # stage -- so nothing about this VMOD is named in a workflow expression.
+      #
+      # Gated identically to the upstream job's: at tier `ci` both steps are
+      # skipped and every arm of the classification chain below reads a skipped
+      # step as neither `failure` nor `success`.
+      - name: mismatch fixture (nightly)
+        id: fixture
+        if: inputs.tier == 'nightly' && steps.sums.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          case "${{ matrix.family }}" in
+          deb) stage=fixture-deb ;;
+          rpm) stage=fixture-rpm ;;
+          *) echo "E: unknown family" >&2; exit 1 ;;
+          esac
+          sh scripts/ci/vmod/transactions.sh "$stage" \
+            --lane "$GITHUB_WORKSPACE/lane" \
+            --id "${{ inputs.vmod_id }}" \
+            --manifest "${{ inputs.manifest }}" \
+            --overlay "recipes/vmods/overlays/${{ inputs.vmod_id }}/overlay.yml" \
+            --cohort "${{ steps.engine_verify.outputs.cohort }}" \
+            --target "${{ matrix.target }}"
+        working-directory: vcache-packaging
+
+      - name: upgrade-transaction matrix (nightly)
+        id: transactions
+        if: inputs.tier == 'nightly' && steps.fixture.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          case "${{ matrix.family }}" in
+          deb) stage=matrix-deb ;;
+          rpm) stage=matrix-rpm ;;
+          *) echo "E: unknown family" >&2; exit 1 ;;
+          esac
+          sh scripts/ci/vmod/transactions.sh "$stage" \
+            --lane "$GITHUB_WORKSPACE/lane" \
+            --id "${{ inputs.vmod_id }}" \
+            --manifest "${{ inputs.manifest }}" \
+            --overlay "recipes/vmods/overlays/${{ inputs.vmod_id }}/overlay.yml" \
+            --cohort "${{ steps.engine_verify.outputs.cohort }}" \
+            --target "${{ matrix.target }}"
+        working-directory: vcache-packaging
+
       # The generation record is evidence, not a build artefact: it carries the
       # digest of every input including the generator's own source, of every
       # rendered file, and the expected package names. A row that produced a
@@ -1130,6 +1272,12 @@ jobs:
             lane/recipe/**
             lane/names.json
             lane/logs/**
+            lane/txn/SHA256SUMS
+            lane/txn/logs/**
+            lane/txn/mismatch/PROVENANCE
+            lane/txn/mismatch/SHA256SUMS
+            lane/txn/mismatch/txn-image.txt
+            lane/txn/mismatch/logs/**
           if-no-files-found: warn
           retention-days: 14
 
@@ -1193,6 +1341,20 @@ jobs:
             esac
           elif [ "${{ steps.sums.outcome }}" != "success" ]; then
             set_status failed_infrastructure "the row did not reach its checksums"
+          # The nightly transaction stage, classified exactly as the
+          # upstream-recipe job classifies its own: inert at every other tier,
+          # because a skipped step's outcome is neither value tested here.
+          elif [ "${{ steps.fixture.outcome }}" = "failure" ]; then
+            set_status failed_transactions \
+              "the synthetic mismatched engine candidates could not be built"
+          elif [ "${{ steps.transactions.outcome }}" = "failure" ]; then
+            set_status failed_transactions "the upgrade-transaction matrix failed"
+          # And the same guard against an inert stage: a nightly row that
+          # produced no transaction evidence must not report `passed` for it.
+          elif [ "${{ inputs.tier }}" = "nightly" ] \
+            && [ "${{ steps.transactions.outcome }}" != "success" ]; then
+            set_status failed_transactions \
+              "the nightly row did not reach its transaction matrix"
           elif [ "${{ steps.upload.outcome }}" = "failure" ]; then
             set_status failed_infrastructure \
               "the package artifact upload failed after a successful build"
