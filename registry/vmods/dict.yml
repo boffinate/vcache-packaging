@@ -49,8 +49,17 @@ sources:
     archive_url: https://download.gnu.org.ua/release/vmod-dict/vmod-dict-1.7.tar.gz
     archive_sha256: eb2a86a780ba9628106dbe858d17ec4589ad6dcb70c6ad53decb5d32824e098c
     publishable: true
+  # A moving branch watched by tools/upstream_watch.py, and nothing more: no
+  # lane consumes it, so it expands to no CI row and can never be built or
+  # published from. It exists so the watcher reports upstream movement here the
+  # same way it reports cachetag's `main`. The trunk-LANE exclusion below is
+  # unaffected and stands until Vinyl trunk emits a numeric version.
+  trunk:
+    ref: master
+    publishable: false
 
-# vinyl-release only, and no trunk source channel at all. vinyl-trunk-pinned is
+# vinyl-release only, and no trunk lane at all (the trunk source channel above
+# is watch-only and no lane names it). vinyl-trunk-pinned is
 # excluded because Vinyl trunk's AC_INIT still says `trunk`, so vinylapi.pc
 # carries `Version: trunk`, and acvmod.m4 splits that modversion on "." and
 # does configure-time arithmetic on the major component. See

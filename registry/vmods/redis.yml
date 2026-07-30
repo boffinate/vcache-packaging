@@ -63,8 +63,17 @@ sources:
     # difference is who produced the tarball, not how strongly it is pinned.
     archive_sha256: 9ccab93f53e8f1bc3249a1dc2f2b5e7fcc2a0c474e4f13ac870501e88171cccb
     publishable: true
+  # A moving branch watched by tools/upstream_watch.py, and nothing more: no
+  # lane consumes it, so it expands to no CI row and can never be built or
+  # published from. It exists so the watcher reports upstream movement here the
+  # same way it reports cachetag's `main`. The trunk-LANE exclusion below is
+  # unaffected and stands until Vinyl trunk emits a numeric version.
+  trunk:
+    ref: main
+    publishable: false
 
-# vinyl-release only, and no trunk source channel at all, for a reason that is
+# vinyl-release only, and no trunk lane at all (the trunk source channel above
+# is watch-only and no lane names it), for a reason that is
 # recorded rather than cautious: configure.ac calls VINYL_PREREQ([9.0], [9.1])
 # after the patch, which does NUMERIC comparison on vinylapi.pc's Version.
 # Vinyl trunk's AC_INIT still says the literal string `trunk`, so vinylapi.pc

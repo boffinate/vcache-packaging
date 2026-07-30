@@ -23,11 +23,14 @@ Three questions, per VMOD, and one more about the engine:
       "tags I have already mentioned" list that would go stale or lie.
 
   (c) has a watched trunk branch moved since the last run?
-      cachetag's `main` today. This is the change-gate signal: a VMOD whose own
-      upstream moved runs against Vinyl trunk even when Vinyl trunk itself did
-      not.
+      cachetag's `main`, dict's `master` and redis's `main` today. This is the
+      change-gate signal: a VMOD whose own upstream moved runs against Vinyl
+      trunk even when Vinyl trunk itself did not.
 
-  Plus Vinyl trunk HEAD, the other half of the gate.
+  Plus the engine itself, twice: Vinyl trunk HEAD, the other half of the gate,
+  and the pinned Vinyl release tag, which gets exactly questions (a) and (b) --
+  a moved release tag is the same loud failure a moved VMOD pin is, and tags
+  sorting above it are surfaced as re-pin candidates through the same output.
 
 Stdlib only, as AGENTS.md requires, and no HTTP at all: `git ls-remote` through
 subprocess is the whole network surface. git is present on the host and on every
@@ -79,6 +82,19 @@ VINYL_TRUNK_URL = "https://code.vinyl-cache.org/vinyl-cache/vinyl-cache.git"
 # "<vmod-id>/<channel>", which cannot collide with it: a VMOD id may not contain
 # a slash and this has no channel.
 VINYL_KEY = "vinyl-trunk"
+
+# The engine's pinned release tag, watched with the same questions (a) and (b)
+# a VMOD pin gets: a moved tag is a loud failure, tags sorting above it are
+# re-pin candidates. The pin lives in no ci_matrix manifest, so it cannot come
+# from watch_targets' catalog walk; the recorded identity is the release block
+# of recipes/debian-13/pins.env and recipes/el9/cohort.env (VINYL_GIT_COMMIT,
+# the tag is named in its comment) and registry/cohorts/vinyl-9.0.1-*.yml's
+# source.git_commit. This copy MUST move together with those on a Vinyl
+# re-pin. The selftest transcript pins the same tag and commit, so a lone edit
+# in any one place fails loudly rather than sliding past.
+VINYL_RELEASE_KEY = "vinyl-release"
+VINYL_RELEASE_TAG = "vinyl-cache-9.0.1"
+VINYL_RELEASE_COMMIT = "423648c4cb6b225b3268ffc337354ea938f5efee"
 
 # A tag carrying any of these is never a re-pin candidate, however it sorts.
 # Upstream pre-releases version above the release they precede far more often
@@ -260,7 +276,17 @@ def watch_targets(repo_root=None) -> list:
     thing that can disagree with what the lane actually clones.
     """
     targets = [
-        {"key": VINYL_KEY, "kind": "branch", "vmod": "", "ref": "HEAD", "url": None}
+        {"key": VINYL_KEY, "kind": "branch", "vmod": "", "ref": "HEAD", "url": None},
+        # The engine's release pin, against the same remote (url None resolves
+        # to --vinyl-url), so both engine rows read one listing.
+        {
+            "key": VINYL_RELEASE_KEY,
+            "kind": "tag",
+            "vmod": "",
+            "ref": VINYL_RELEASE_TAG,
+            "expected_commit": VINYL_RELEASE_COMMIT,
+            "url": None,
+        },
     ]
     datas, broken = ci_matrix.valid_manifests("ci", repo_root)
     for entry, data in datas:
@@ -371,7 +397,14 @@ def check(
                 entry["repin_candidates"] = candidates
                 for tag in candidates:
                     repin_candidates.append(
-                        {"vmod": target["vmod"], "pinned": target["ref"], "tag": tag}
+                        {
+                            # The engine rows have no VMOD; the watch key is
+                            # the honest label there ("vinyl-release publishes
+                            # ..."), and for a VMOD row the two spell the VMOD.
+                            "vmod": target["vmod"] or target["key"],
+                            "pinned": target["ref"],
+                            "tag": tag,
+                        }
                     )
         else:
             ref_name = "HEAD" if target["ref"] == "HEAD" else f"refs/heads/{target['ref']}"

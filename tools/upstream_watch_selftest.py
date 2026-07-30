@@ -39,8 +39,25 @@ CACHETAG_PIN = "a3897aaccf1d6996c00ee14b2c6e1ddac91ac982"
 DICT_PIN = "784584d272894a39cf995377618aad551a196424"
 REDIS_PIN = "b6ca669fc9af3399f3845d9d4930683b4e378aa8"
 
+# The engine's release pin, hardcoded like the VMOD pins above and for the same
+# reason: it must equal both the tool's VINYL_RELEASE_TAG/COMMIT constants and
+# the pins.env release block, so an edit to any one of them alone fails here.
+VINYL_RELEASE_TAG = "vinyl-cache-9.0.1"
+VINYL_RELEASE_PIN = "423648c4cb6b225b3268ffc337354ea938f5efee"
+
 VINYL_HEAD = "1111111111111111111111111111111111111111"
 CACHETAG_MAIN = "2222222222222222222222222222222222222222"
+DICT_MASTER = "4444444444444444444444444444444444444444"
+REDIS_MAIN = "6666666666666666666666666666666666666666"
+
+# The last-seen state of a fleet where nothing has moved: every watched branch
+# at the sha the healthy transcript publishes. Tag rows are stateless.
+HEALTHY_REFS = {
+    "vinyl-trunk": VINYL_HEAD,
+    "cachetag/trunk": CACHETAG_MAIN,
+    "dict/trunk": DICT_MASTER,
+    "redis/trunk": REDIS_MAIN,
+}
 
 
 def _listing(lines) -> str:
@@ -51,7 +68,12 @@ def _transcript(**overrides) -> dict:
     """A healthy fleet: every pin peels, no newer tags, nothing moved."""
     remotes = {
         uw.VINYL_TRUNK_URL: _listing(
-            [(VINYL_HEAD, "HEAD"), (VINYL_HEAD, "refs/heads/master")]
+            [
+                (VINYL_HEAD, "HEAD"),
+                (VINYL_HEAD, "refs/heads/master"),
+                ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", f"refs/tags/{VINYL_RELEASE_TAG}"),
+                (VINYL_RELEASE_PIN, f"refs/tags/{VINYL_RELEASE_TAG}^{{}}"),
+            ]
         ),
         CACHETAG_URL: _listing(
             [
@@ -63,14 +85,16 @@ def _transcript(**overrides) -> dict:
         ),
         DICT_URL: _listing(
             [
-                ("4444444444444444444444444444444444444444", "HEAD"),
+                (DICT_MASTER, "HEAD"),
+                (DICT_MASTER, "refs/heads/master"),
                 ("5555555555555555555555555555555555555555", "refs/tags/v1.7"),
                 (DICT_PIN, "refs/tags/v1.7^{}"),
             ]
         ),
         REDIS_URL: _listing(
             [
-                ("6666666666666666666666666666666666666666", "HEAD"),
+                (REDIS_MAIN, "HEAD"),
+                (REDIS_MAIN, "refs/heads/main"),
                 ("7777777777777777777777777777777777777777", "refs/tags/9.0-23.1"),
                 (REDIS_PIN, "refs/tags/9.0-23.1^{}"),
             ]
@@ -158,9 +182,7 @@ def test_version_ordering_covers_every_shape_in_the_fleet() -> None:
 
 def test_healthy_fleet_with_state_does_not_run() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        state = _state(
-            Path(tmp), {uw.VINYL_KEY: VINYL_HEAD, "cachetag/trunk": CACHETAG_MAIN}
-        )
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
         report = uw.check(state_path=state, transcript=_transcript())
     check("healthy: every pin still peels", report["ok"] and not report["moved_pins"], str(report["moved_pins"]))
     check("healthy: nothing moved, so the gate says do not run", report["run"] is False, str(report))
@@ -171,11 +193,21 @@ def test_healthy_fleet_with_state_does_not_run() -> None:
         report["vinyl_head_sha"] == VINYL_HEAD,
         report["vinyl_head_sha"],
     )
-    # All three VMODs plus the engine, and cachetag twice (release and trunk).
+    # All three VMODs on both channels, plus the engine twice: trunk HEAD and
+    # the pinned release tag.
     check(
         "healthy: the watch list is derived from the catalog",
         sorted(e["key"] for e in report["entries"])
-        == ["cachetag/release", "cachetag/trunk", "dict/release", "redis/release", uw.VINYL_KEY],
+        == [
+            "cachetag/release",
+            "cachetag/trunk",
+            "dict/release",
+            "dict/trunk",
+            "redis/release",
+            "redis/trunk",
+            uw.VINYL_RELEASE_KEY,
+            uw.VINYL_KEY,
+        ],
         str(sorted(e["key"] for e in report["entries"])),
     )
 
@@ -193,7 +225,7 @@ def test_a_moved_tag_is_a_failure_and_never_a_candidate() -> None:
         }
     )
     with tempfile.TemporaryDirectory() as tmp:
-        state = _state(Path(tmp), {uw.VINYL_KEY: VINYL_HEAD, "cachetag/trunk": CACHETAG_MAIN})
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
         report = uw.check(state_path=state, transcript=moved)
     check("moved pin: the report is not ok", report["ok"] is False)
     check("moved pin: it names the ref", report["moved_pins"] == ["dict/release"], str(report["moved_pins"]))
@@ -219,7 +251,7 @@ def test_a_moved_tag_is_a_failure_and_never_a_candidate() -> None:
 def test_a_missing_tag_is_the_same_failure() -> None:
     gone = _transcript(**{REDIS_URL: _listing([("66" * 20, "HEAD")])})
     with tempfile.TemporaryDirectory() as tmp:
-        state = _state(Path(tmp), {uw.VINYL_KEY: VINYL_HEAD, "cachetag/trunk": CACHETAG_MAIN})
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
         report = uw.check(state_path=state, transcript=gone)
     check("missing tag: reported as a moved pin, not as a candidate", report["moved_pins"] == ["redis/release"])
     check("missing tag: the report is not ok", report["ok"] is False)
@@ -240,7 +272,7 @@ def test_newer_tags_are_candidates_and_do_not_gate() -> None:
         }
     )
     with tempfile.TemporaryDirectory() as tmp:
-        state = _state(Path(tmp), {uw.VINYL_KEY: VINYL_HEAD, "cachetag/trunk": CACHETAG_MAIN})
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
         report = uw.check(state_path=state, transcript=newer)
     check(
         "candidates: a newer tag is surfaced against the pin it beats",
@@ -278,7 +310,7 @@ def test_a_moved_trunk_branch_gates_that_vmod() -> None:
         }
     )
     with tempfile.TemporaryDirectory() as tmp:
-        state = _state(Path(tmp), {uw.VINYL_KEY: VINYL_HEAD, "cachetag/trunk": CACHETAG_MAIN})
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
         report = uw.check(state_path=state, transcript=moved)
     check("branch: the VMOD whose branch moved is the changed one", report["changed_vmods"] == ["cachetag"])
     check("branch: Vinyl trunk did not move", report["vinyl_changed"] is False)
@@ -290,10 +322,146 @@ def test_a_moved_trunk_branch_gates_that_vmod() -> None:
     check("branch: the previous sha is reported alongside the new one", entry["previous_sha"] == CACHETAG_MAIN)
 
 
+def test_a_moved_vinyl_release_tag_is_the_same_loud_failure() -> None:
+    moved = _transcript(
+        **{
+            uw.VINYL_TRUNK_URL: _listing(
+                [
+                    (VINYL_HEAD, "HEAD"),
+                    (VINYL_HEAD, "refs/heads/master"),
+                    ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", f"refs/tags/{VINYL_RELEASE_TAG}"),
+                    ("dead" + "0" * 36, f"refs/tags/{VINYL_RELEASE_TAG}^{{}}"),
+                ]
+            )
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
+        report = uw.check(state_path=state, transcript=moved)
+    check("vinyl tag: a moved engine release tag fails the report", report["ok"] is False)
+    check(
+        "vinyl tag: moved_pins names the engine row",
+        report["moved_pins"] == [uw.VINYL_RELEASE_KEY],
+        str(report["moved_pins"]),
+    )
+    check(
+        "vinyl tag: it is NOT surfaced as a re-pin candidate",
+        report["repin_candidates"] == [],
+        str(report["repin_candidates"]),
+    )
+    entry = next(e for e in report["entries"] if e["key"] == uw.VINYL_RELEASE_KEY)
+    check(
+        "vinyl tag: the detail names both commits",
+        "not the recorded" in entry["detail"] and VINYL_RELEASE_PIN in entry["detail"],
+        entry["detail"],
+    )
+    check(
+        "vinyl tag: trunk did not move, so the gate itself is unaffected",
+        report["vinyl_changed"] is False and report["run"] is False,
+        str(report),
+    )
+
+
+def test_a_newer_vinyl_release_tag_is_a_candidate() -> None:
+    newer = _transcript(
+        **{
+            uw.VINYL_TRUNK_URL: _listing(
+                [
+                    (VINYL_HEAD, "HEAD"),
+                    (VINYL_HEAD, "refs/heads/master"),
+                    ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", f"refs/tags/{VINYL_RELEASE_TAG}"),
+                    (VINYL_RELEASE_PIN, f"refs/tags/{VINYL_RELEASE_TAG}^{{}}"),
+                    ("bb" * 20, "refs/tags/vinyl-cache-9.0.2"),
+                    ("cc" * 20, "refs/tags/vinyl-cache-9.1.0-rc1"),
+                ]
+            )
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
+        report = uw.check(state_path=state, transcript=newer)
+    check(
+        "vinyl candidates: a newer engine release surfaces against the watch key",
+        report["repin_candidates"]
+        == [{"vmod": uw.VINYL_RELEASE_KEY, "pinned": VINYL_RELEASE_TAG, "tag": "vinyl-cache-9.0.2"}],
+        str(report["repin_candidates"]),
+    )
+    check("vinyl candidates: the pin itself is untouched and still ok", report["ok"] is True)
+    check("vinyl candidates: they do not make the gate run", report["run"] is False, str(report))
+    gh = uw.render_github(report)
+    check(
+        "vinyl candidates: the github notice is labelled with the engine key",
+        "::notice title=re-pin candidate::vinyl-release publishes vinyl-cache-9.0.2" in gh
+        and "::error" not in gh,
+        gh,
+    )
+
+
+def test_moved_dict_and_redis_trunk_branches_gate_their_vmods() -> None:
+    moved = _transcript(
+        **{
+            DICT_URL: _listing(
+                [
+                    ("88" * 20, "HEAD"),
+                    ("88" * 20, "refs/heads/master"),
+                    ("5555555555555555555555555555555555555555", "refs/tags/v1.7"),
+                    (DICT_PIN, "refs/tags/v1.7^{}"),
+                ]
+            ),
+            REDIS_URL: _listing(
+                [
+                    ("99" * 20, "HEAD"),
+                    ("99" * 20, "refs/heads/main"),
+                    ("7777777777777777777777777777777777777777", "refs/tags/9.0-23.1"),
+                    (REDIS_PIN, "refs/tags/9.0-23.1^{}"),
+                ]
+            ),
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
+        report = uw.check(state_path=state, transcript=moved)
+    check(
+        "branch: dict and redis are the changed VMODs",
+        report["changed_vmods"] == ["dict", "redis"],
+        str(report["changed_vmods"]),
+    )
+    check("branch: their pins are untouched", report["ok"] is True and report["repin_candidates"] == [])
+    check("branch: the gate runs", report["run"] is True)
+    check("branch: Vinyl trunk did not move", report["vinyl_changed"] is False)
+    entry = next(e for e in report["entries"] if e["key"] == "dict/trunk")
+    check("branch: dict/trunk reports the previous sha", entry["previous_sha"] == DICT_MASTER)
+    entry = next(e for e in report["entries"] if e["key"] == "redis/trunk")
+    check("branch: redis/trunk reports the previous sha", entry["previous_sha"] == REDIS_MAIN)
+
+
+def test_a_state_predating_the_new_rows_does_not_false_alarm() -> None:
+    """Backward compatibility with state recorded before these rows existed.
+
+    The orphan-branch state file knows nothing of dict/trunk, redis/trunk or
+    the engine release row. The tag row must not false-alarm -- question (a) is
+    answered against the recorded pin, never against the state -- and the new
+    branch rows count as changed exactly once, which is the fail-open rule
+    doing its job rather than a failure.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        state = _state(Path(tmp), {uw.VINYL_KEY: VINYL_HEAD, "cachetag/trunk": CACHETAG_MAIN})
+        report = uw.check(state_path=state, transcript=_transcript())
+    check("compat: no moved pin is invented from missing state", report["ok"] is True, str(report["moved_pins"]))
+    check(
+        "compat: the unrecorded branch rows count as changed, once",
+        report["changed_vmods"] == ["dict", "redis"] and report["run"] is True,
+        str(report["changed_vmods"]),
+    )
+    check("compat: known rows are still compared, not reset", report["vinyl_changed"] is False)
+    entry = next(e for e in report["entries"] if e["key"] == uw.VINYL_RELEASE_KEY)
+    check("compat: the engine release row is simply ok", entry["status"] == "ok", str(entry))
+
+
 def test_a_moved_vinyl_trunk_gates_everything() -> None:
     moved = _transcript(**{uw.VINYL_TRUNK_URL: _listing([("ab" * 20, "HEAD")])})
     with tempfile.TemporaryDirectory() as tmp:
-        state = _state(Path(tmp), {uw.VINYL_KEY: VINYL_HEAD, "cachetag/trunk": CACHETAG_MAIN})
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
         report = uw.check(state_path=state, transcript=moved)
     check("engine: vinyl_changed is set", report["vinyl_changed"] is True)
     check("engine: the new head is reported", report["vinyl_head_sha"] == "ab" * 20)
@@ -332,7 +500,7 @@ def test_an_unreachable_remote_runs_rather_than_skips() -> None:
     broken = _transcript()
     del broken[DICT_URL]
     with tempfile.TemporaryDirectory() as tmp:
-        state = _state(Path(tmp), {uw.VINYL_KEY: VINYL_HEAD, "cachetag/trunk": CACHETAG_MAIN})
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
         report = uw.check(state_path=state, transcript=broken)
     entry = next(e for e in report["entries"] if e["key"] == "dict/release")
     check("unreachable: the entry says so", entry["status"] == "unreachable", entry["detail"])
@@ -348,7 +516,7 @@ def test_an_unreachable_remote_runs_rather_than_skips() -> None:
 
 def test_github_format_carries_the_gate_outputs() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        state = _state(Path(tmp), {uw.VINYL_KEY: VINYL_HEAD, "cachetag/trunk": CACHETAG_MAIN})
+        state = _state(Path(tmp), dict(HEALTHY_REFS))
         report = uw.check(state_path=state, transcript=_transcript())
     emitted = dict(
         line.split("=", 1)
@@ -404,16 +572,32 @@ def test_the_catalog_is_the_only_source_of_urls() -> None:
         urls == {CACHETAG_URL, DICT_URL, REDIS_URL},
         str(sorted(urls)),
     )
+    # The engine's release pin is the one tag row that does NOT come from a
+    # manifest; it carries the tool's own recorded pin, which this file also
+    # hardcodes so the two cannot drift apart silently.
     pins = {t["key"]: t.get("expected_commit") for t in targets if t["kind"] == "tag"}
     check(
         "urls: every pinned channel carries the manifest's recorded commit",
-        pins == {"cachetag/release": CACHETAG_PIN, "dict/release": DICT_PIN, "redis/release": REDIS_PIN},
+        pins
+        == {
+            "cachetag/release": CACHETAG_PIN,
+            "dict/release": DICT_PIN,
+            "redis/release": REDIS_PIN,
+            uw.VINYL_RELEASE_KEY: VINYL_RELEASE_PIN,
+        },
         str(pins),
+    )
+    vinyl_release = next(t for t in targets if t["key"] == uw.VINYL_RELEASE_KEY)
+    check(
+        "urls: the engine release row watches the recorded tag on the vinyl remote",
+        vinyl_release["ref"] == VINYL_RELEASE_TAG and vinyl_release["url"] is None,
+        str(vinyl_release),
     )
     trunk = [t for t in targets if t["kind"] == "branch" and t["vmod"]]
     check(
-        "urls: cachetag's main is the only VMOD branch watched today",
-        [t["key"] for t in trunk] == ["cachetag/trunk"] and trunk[0]["ref"] == "main",
+        "urls: every selected VMOD's trunk branch is watched",
+        [(t["key"], t["ref"]) for t in trunk]
+        == [("cachetag/trunk", "main"), ("dict/trunk", "master"), ("redis/trunk", "main")],
         str([(t["key"], t["ref"]) for t in trunk]),
     )
 
@@ -442,6 +626,10 @@ def main() -> int:
     test_a_missing_tag_is_the_same_failure()
     test_newer_tags_are_candidates_and_do_not_gate()
     test_a_moved_trunk_branch_gates_that_vmod()
+    test_a_moved_vinyl_release_tag_is_the_same_loud_failure()
+    test_a_newer_vinyl_release_tag_is_a_candidate()
+    test_moved_dict_and_redis_trunk_branches_gate_their_vmods()
+    test_a_state_predating_the_new_rows_does_not_false_alarm()
     test_a_moved_vinyl_trunk_gates_everything()
     test_state_failures_fail_open()
     test_an_unreachable_remote_runs_rather_than_skips()
