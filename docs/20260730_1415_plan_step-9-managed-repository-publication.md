@@ -10,6 +10,8 @@ This begins roadmap §9 ([outstanding-work roadmap](20260728_0916_roadmap_outsta
 
 **Authority-agnostic by construction.** Publication authority — who or what flips a release into an installable channel — is deliberately undecided; the option space is §4 of the companion [release-automation plan](20260730_1414_plan_release-automation.md). This design works under every option, and §6 below maps each option onto the channel model so one maintainer decision resolves both documents.
 
+> **Amendment, 2026-07-30.** The authority decision landed as **manual gate** ([publication-authority decision note](20260730_1635_note_publication-authority-decision.md)): automation detects, verifies pin integrity, and notifies; it publishes nothing and holds no provider token. That resolves §6's authority mapping to its option (d) row taken one step further — every channel verb (upload to candidate, promotion to stable, yank, retention pruning) is human-driven, and Step 9's channels serve deliberate releases only. Consequently §1 criterion 3 (channel-scoped tokens) drops from hard requirement to nice-to-have (still wanted, as least privilege), and Phase A no longer needs to evaluate providers "as if option (c)". This unblocks Step 9: nothing below waits on an authority model any more.
+
 ## 1. Provider evaluation criteria
 
 `SCOPE.md` names Packagecloud as an example; it is a candidate to evaluate, not a commitment. Criteria, roughly in order of how quickly a "no" disqualifies:
