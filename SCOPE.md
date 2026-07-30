@@ -2,7 +2,7 @@
 
 Status: Normative
 
-Last updated: 2026-07-28
+Last updated: 2026-07-30
 
 ## Purpose
 
@@ -25,9 +25,13 @@ The package set consists of:
 
 A repository survey, compatibility experiment, or possible future integration does not by itself add a package to the supported set.
 
+The maintainer's recorded ambition is a fleet of roughly forty selected VMODs ([2026-07-30 maintainer decisions](docs/20260730_0826_note_step-8-maintainer-decisions.md), decision g). The ambition changes no mechanism: VMODs join one at a time, each by an explicit maintainer decision recorded in this document, and each accepting the same per-VMOD evidence increment described under "Changing the scope". It exists here to explain why the cadence and freshness decisions below are shaped for a fleet rather than for three packages.
+
+Binary package naming is not yet standardised: cachetag and redis publish `libvmod-*` names while dict publishes `vmod-dict`. Choosing one form is an open maintainer decision, and packages are not renamed outside that decision. The choice is load-bearing: EL9 dnf resolver outcomes under `--allowerasing` depend on package-name collation relative to `vinyl-cache` ([root cause](docs/20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md)), so standardising will change measured transaction outcomes and must update the pinned per-scenario expectations in the same change.
+
 The project supports only the operating-system releases, architectures, Vinyl Cache releases, and Varnish Cache releases named in its current build and test matrix. There is no implied support for adjacent versions or other targets.
 
-**One engine is selected: Vinyl Cache.** Adding Varnish Cache as a second engine is a separate, explicit, future decision — expected no earlier than Step 8 of the outstanding-packaging-work roadmap — and it is not implied by any VMOD selection, including a VMOD that happens to build against both engines. `vmod-dict` builds unmodified on Varnish; that fact opens no Varnish lane. A Varnish lane means a new engine class, a new ABI-expression path, and a new transaction matrix, and it requires an amendment to this document describing that added responsibility. The technical groundwork is recorded in [`docs/20260726_0824_plan_varnish-downstream-vmod-packaging.md`](docs/20260726_0824_plan_varnish-downstream-vmod-packaging.md), which describes an unauthorized lane.
+**One engine is selected: Vinyl Cache.** Adding Varnish Cache as a second engine is a separate, explicit, future decision, and it is not implied by any VMOD selection, including a VMOD that happens to build against both engines. `vmod-dict` builds unmodified on Varnish; that fact opens no Varnish lane. The [2026-07-30 maintainer decisions](docs/20260730_0826_note_step-8-maintainer-decisions.md) (decision h) record that a Varnish-trunk early-warning lane is anticipated as the likely first Varnish step, and that it requires an amendment to this document before any engine work begins: a Varnish lane means a new engine class, a new ABI-expression path, and a new transaction matrix. The technical groundwork is recorded in [`docs/20260726_0824_plan_varnish-downstream-vmod-packaging.md`](docs/20260726_0824_plan_varnish-downstream-vmod-packaging.md), which describes an unauthorized lane.
 
 ## In scope
 
@@ -60,7 +64,8 @@ It does not mean that:
 - the package works with every release in the same major or minor series;
 - an artifact built against project-provided Vinyl Cache works with a distribution-provided Vinyl or Varnish package;
 - a previously tested result remains valid after any source, patch, build-profile, toolchain, or package revision changes;
-- the project promises indefinite artifact availability, unattended upgrades, security maintenance, or a support SLA.
+- the project promises indefinite artifact availability, unattended upgrades, security maintenance, or a support SLA;
+- an upgrade-transaction claim generalises beyond its pinned per-scenario outcomes. The evidence records the exact outcome of each scenario per package — including documented removals, such as `vmod-dict`'s adjudicated silent removal under bare `dnf upgrade --allowerasing` on EL9 — and a refusal observed for one package name does not imply refusal for another ([adjudication](docs/20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md)).
 
 When an input changes, affected package evidence must be rebuilt or reset to pending. The registry exists to prevent broader claims, not to turn the project into a distribution catalog.
 
@@ -75,6 +80,16 @@ CI may derive a deterministic archive from a source checkout and pass it to late
 The project does not normally vendor upstream source releases or preserve every source revision it has built. It does not operate a lookaside cache, source mirror, or archival store. If an upstream ref or release disappears, a failed build is an acceptable and useful signal; the normal repair is to select the intended current source, rebuild it, and move its provenance and package evidence together.
 
 Repositories controlled by the maintainer may remain mutable while they are under active development. Enabling immutable-release enforcement is a separate maintainer decision, not a prerequisite imposed by this project.
+
+## Cadence and measurement policy
+
+Recorded 2026-07-30 from the [maintainer decisions](docs/20260730_0826_note_step-8-maintainer-decisions.md); normative here.
+
+- The only scheduled workflow is the change-gated trunk early-warning lane. It runs build, verification, and behaviour tests only, builds no package, publishes nothing, and does nothing at all when neither Vinyl trunk nor a watched VMOD upstream has moved.
+- No transaction matrix runs on any schedule. Upgrade-transaction measurement is a deliberate dispatch against one release cohort's published packages, and its verdicts change only through that dispatch plus a recording commit. Each scenario's outcome is pinned per package; a measured outcome that differs from its pin fails loudly, so divergence between VMODs on the same scenario cannot pass silently.
+- Release artifacts are never rebuilt on a schedule. Once built, a release-channel artifact is untouched until a new release; the release-draft workflow's clean-room rebuild on deliberate dispatch is the one sanctioned path to new release artifacts.
+- Bleeding-edge trunk packages were considered and rejected. The trunk track exists for early warning, not delivery.
+- Upstream freshness comes from live checks of each selected upstream (`tools/upstream_watch.py`), not from point-in-time survey snapshots. A moved release tag is a loud failure, never an automatic re-pin; newer tags are surfaced to the maintainer and never acted on automatically.
 
 ## Managed package repository boundary
 
