@@ -44,6 +44,22 @@
 #   recipes/debian-13/mismatch-fixture.sh [mismatch|sameabi ...]     (default: both)
 #
 # Output: dist/debian-13/mismatch/, including SHA256SUMS.
+#
+# Environment, all defaulted so the cachetag invocation is unchanged:
+#   TXN_OUT_DIR      the directory holding the baseline cohort debs and their
+#                    SHA256SUMS, and where mismatch/ is written. Defaults to
+#                    dist/debian-13; the reusable workflow points it at a staging
+#                    directory, because a generated VMOD's package lives in
+#                    lane/out and the engine's in lane/engine.
+#   DEB_HOST_ARCH    read from $TXN_OUT_DIR/work/target.txt when unset
+#   VMOD_PACKAGE     the VMOD binary package name whose deb is part of the
+#                    baseline cohort (libvmod-cachetag)
+#   VMOD_VERSION     its Debian version (pins.env's CACHETAG_DEBIAN_VERSION)
+#
+# The fixture variants themselves are ENGINE packages and carry no VMOD name:
+# container/make-mismatch.sh repacks vinyl-cache and vinyl-cache-dev only. The
+# VMOD is named here solely so its deb is digest-verified along with them before
+# anything is derived from the directory.
 
 set -eu
 
@@ -69,6 +85,9 @@ BASE_VERSION=$VINYL_PACKAGE_VERSION
 # It is what the baseline runtime advertises as vinyld-cohort-<id>, and the
 # transformation below asserts it is present before rewriting it.
 BASE_COHORT=$COHORT_ID
+
+VMOD_PACKAGE=${VMOD_PACKAGE:-libvmod-cachetag}
+VMOD_VERSION=${VMOD_VERSION:-$CACHETAG_DEBIAN_VERSION}
 
 ###############################################################################
 # SYNTHETIC FIXTURE IDENTITY
@@ -117,7 +136,7 @@ IMAGE="$IMAGE_REF@$IMAGE_DIGEST"
 recipe_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_dir=$(CDPATH= cd -- "$recipe_dir/../.." && pwd)
 
-out_dir=$repo_dir/dist/debian-13
+out_dir=${TXN_OUT_DIR:-$repo_dir/dist/debian-13}
 log_dir=$out_dir/logs
 mismatch_dir=$out_dir/mismatch
 
@@ -127,8 +146,8 @@ die() { printf 'E: %s\n' "$*" >&2; exit 1; }
 [ -d "$out_dir" ] || die "no baseline cohort in $out_dir; run recipes/debian-13/build.sh first"
 [ -f "$out_dir/SHA256SUMS" ] || die "no $out_dir/SHA256SUMS; the baseline cohort is unusable as a fixture source"
 
-DEB_HOST_ARCH=$(sed -n 1p "$out_dir/work/target.txt" 2>/dev/null || true)
-[ -n "$DEB_HOST_ARCH" ] || die "cannot read the target architecture from $out_dir/work/target.txt"
+DEB_HOST_ARCH=${DEB_HOST_ARCH:-$(sed -n 1p "$out_dir/work/target.txt" 2>/dev/null || true)}
+[ -n "$DEB_HOST_ARCH" ] || die "no DEB_HOST_ARCH, and none in $out_dir/work/target.txt"
 
 # Both directories are created here, by the host, before any container runs.
 # container/make-mismatch.sh would create dist/debian-13/mismatch/ itself, as
@@ -144,11 +163,11 @@ mkdir -p "$log_dir" "$mismatch_dir"
 # Verify the fixture source before deriving anything from it.
 ###############################################################################
 
-note "verifying the baseline cohort debs against dist/debian-13/SHA256SUMS"
-for _pkg in vinyl-cache vinyl-cache-dev libvmod-cachetag; do
+note "verifying the baseline cohort debs against $out_dir/SHA256SUMS"
+for _pkg in vinyl-cache vinyl-cache-dev "$VMOD_PACKAGE"; do
 	case $_pkg in
-	libvmod-cachetag) _v=$CACHETAG_DEBIAN_VERSION ;;
-	*)                _v=$BASE_VERSION ;;
+	"$VMOD_PACKAGE") _v=$VMOD_VERSION ;;
+	*)               _v=$BASE_VERSION ;;
 	esac
 	_deb=${_pkg}_${_v}_${DEB_HOST_ARCH}.deb
 	[ -f "$out_dir/$_deb" ] || die "baseline deb missing: $out_dir/$_deb"
@@ -228,7 +247,7 @@ note "writing the fixture provenance manifest"
 	printf '# This manifest written: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	printf '#\n'
 	printf '# Fixture source (the retained baseline cohort, digests re-verified\n'
-	printf '# against dist/debian-13/SHA256SUMS at generation time):\n'
+	printf '# against %s/SHA256SUMS at generation time):\n' "$out_dir"
 	for _pkg in vinyl-cache vinyl-cache-dev; do
 		_deb=${_pkg}_${BASE_VERSION}_${DEB_HOST_ARCH}.deb
 		printf '#   %s  %s\n' \

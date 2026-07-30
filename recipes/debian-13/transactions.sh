@@ -24,6 +24,23 @@
 # Output: dist/debian-13/logs/transactions/<scenario>.log with the complete apt
 # output, <scenario>.result with the machine-readable classification, and
 # dist/debian-13/logs/transactions/SUMMARY.tsv.
+#
+# Environment, all defaulted so the cachetag invocation above is unchanged:
+#   TXN_OUT_DIR      the directory mounted at /out. It must contain the baseline
+#                    cohort debs at its top level, their SHA256SUMS, and is where
+#                    mismatch/ and logs/transactions/ are read and written.
+#                    Defaults to dist/debian-13, the lane's own layout; the
+#                    reusable workflow points it at a staging directory instead,
+#                    because a generated VMOD's packages live in lane/out and the
+#                    engine's in lane/engine.
+#   DEB_HOST_ARCH    read from $TXN_OUT_DIR/work/target.txt when unset
+#   VINYL_VMODDIR    read from $TXN_OUT_DIR/work/target.txt when unset
+#   VMOD_PACKAGE     the VMOD binary package name under test (libvmod-cachetag)
+#   VMOD_VERSION     its Debian version (pins.env's CACHETAG_DEBIAN_VERSION)
+#   VMOD_IMPORT      its VCL import token (cachetag)
+#   VMOD_SO          its installed shared object (libvmod_cachetag.so)
+#   VMOD_PROBE_VCL   container path of the probe VCL; empty composes a bare
+#                    `import VMOD_IMPORT` probe (see container/stage-transactions.sh)
 
 set -eu
 
@@ -37,32 +54,50 @@ set -eu
 
 BASE_ABI=$VINYL_STRICT_ABI
 BASE_VERSION=$VINYL_PACKAGE_VERSION
-CACHETAG_VERSION=$CACHETAG_DEBIAN_VERSION
+
+# Which VMOD is installed alongside the engine candidates. The scenario table
+# below acts on the ENGINE, so none of it changes per VMOD; only the assertions
+# about what survived do, and those are the four values here. The defaults are
+# libvmod-cachetag's, so this lane's own invocation is what it always was.
+VMOD_PACKAGE=${VMOD_PACKAGE:-libvmod-cachetag}
+VMOD_VERSION=${VMOD_VERSION:-$CACHETAG_DEBIAN_VERSION}
+VMOD_IMPORT=${VMOD_IMPORT:-cachetag}
+VMOD_SO=${VMOD_SO:-libvmod_cachetag.so}
+VMOD_PROBE_VCL=${VMOD_PROBE_VCL-/stage/probe-cachetag.vcl}
 
 # Scenario containers start from a derived image rather than from the pinned
 # base directly. It is the pinned base, fully dist-upgraded once, with the
 # baseline cohort's own runtime dependencies already present. That is not a
 # shortcut around the test: the relations under test are between vinyl-cache,
-# vinyl-cache-dev and libvmod-cachetag, and pre-resolving Debian's own packages
+# vinyl-cache-dev and the VMOD package, and pre-resolving Debian's own packages
 # keeps `apt upgrade` output free of unrelated base-system churn that would
 # otherwise make every scenario log ambiguous. It also avoids re-downloading
 # ~200 MB of Debian per scenario.
+#
+# The image carries the ENGINE's runtime dependencies. A VMOD whose package needs
+# a distribution library the engine does not is still installed by apt from the
+# local repository in each scenario, so the resolver sees the same relations; it
+# only costs that scenario a download.
 BASE_IMAGE_TAG=${BASE_IMAGE_TAG:-vinyl-txn-base-debian13:1}
 
 recipe_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_dir=$(CDPATH= cd -- "$recipe_dir/../.." && pwd)
 
-out_dir=$repo_dir/dist/debian-13
+out_dir=${TXN_OUT_DIR:-$repo_dir/dist/debian-13}
 log_dir=$out_dir/logs/transactions
 mismatch_dir=$out_dir/mismatch
 
 note() { printf '\n===== %s =====\n' "$*"; }
 die() { printf 'E: %s\n' "$*" >&2; exit 1; }
 
-DEB_HOST_ARCH=$(sed -n 1p "$out_dir/work/target.txt" 2>/dev/null || true)
-VINYL_VMODDIR=$(sed -n 3p "$out_dir/work/target.txt" 2>/dev/null || true)
-[ -n "$DEB_HOST_ARCH" ] || die "cannot read the target architecture from $out_dir/work/target.txt"
-[ -n "$VINYL_VMODDIR" ] || die "cannot read the VMOD directory from $out_dir/work/target.txt"
+# target.txt is build.sh's record of what the lane built for, and stays the
+# default source of both values. A staging directory assembled from an engine
+# artifact has no build tree to have written one, so either may be supplied
+# directly; nothing else about the scenarios changes.
+DEB_HOST_ARCH=${DEB_HOST_ARCH:-$(sed -n 1p "$out_dir/work/target.txt" 2>/dev/null || true)}
+VINYL_VMODDIR=${VINYL_VMODDIR:-$(sed -n 3p "$out_dir/work/target.txt" 2>/dev/null || true)}
+[ -n "$DEB_HOST_ARCH" ] || die "no DEB_HOST_ARCH, and none in $out_dir/work/target.txt"
+[ -n "$VINYL_VMODDIR" ] || die "no VINYL_VMODDIR, and none in $out_dir/work/target.txt"
 
 ###############################################################################
 # THE MATRIX
@@ -111,8 +146,8 @@ fi
 check_inputs() {
 	[ -f "$out_dir/vinyl-cache_${BASE_VERSION}_${DEB_HOST_ARCH}.deb" ] ||
 		die "baseline vinyl-cache deb missing; run recipes/debian-13/build.sh"
-	[ -f "$out_dir/libvmod-cachetag_${CACHETAG_VERSION}_${DEB_HOST_ARCH}.deb" ] ||
-		die "baseline libvmod-cachetag deb missing; run recipes/debian-13/build.sh"
+	[ -f "$out_dir/${VMOD_PACKAGE}_${VMOD_VERSION}_${DEB_HOST_ARCH}.deb" ] ||
+		die "baseline $VMOD_PACKAGE deb missing from $out_dir"
 	[ -f "$mismatch_dir/SHA256SUMS" ] ||
 		die "no fixtures; run recipes/debian-13/mismatch-fixture.sh"
 	for _v in "$MISMATCH_VERSION" "$SAMEABI_VERSION"; do
@@ -178,7 +213,11 @@ run_scenario() {
 		-e "CANDIDATE_VERSION=$_cver" \
 		-e "BASE_VERSION=$BASE_VERSION" \
 		-e "BASE_ABI=$BASE_ABI" \
-		-e "CACHETAG_VERSION=$CACHETAG_VERSION" \
+		-e "VMOD_PACKAGE=$VMOD_PACKAGE" \
+		-e "VMOD_VERSION=$VMOD_VERSION" \
+		-e "VMOD_IMPORT=$VMOD_IMPORT" \
+		-e "VMOD_SO=$VMOD_SO" \
+		-e "VMOD_PROBE_VCL=$VMOD_PROBE_VCL" \
 		-e "DEB_HOST_ARCH=$DEB_HOST_ARCH" \
 		-e "VINYL_VMODDIR=$VINYL_VMODDIR" \
 		-e "WITH_DEV=$_dev" \
@@ -190,21 +229,21 @@ run_scenario() {
 		}
 	[ -f "$log_dir/$_id.result" ] || die "scenario $_id produced no result block"
 	sed -n 's/^RESULT //p' "$log_dir/$_id.result" |
-		sed -n '/^outcome=/p;/^exit=/p;/^vinyl=/p;/^cachetag=/p;/^vcl_compile=/p;/^needs_warning=/p' |
+		sed -n '/^outcome=/p;/^exit=/p;/^vinyl=/p;/^vmod=/p;/^vcl_compile=/p;/^needs_warning=/p' |
 		sed 's/^/  /'
 }
 
 summarise() {
 	note "summary"
 	{
-		printf 'scenario\tcandidate\tcommand\texit\tvinyl\tcachetag\tvmod_so\tvcl_compile\toutcome\twarn\n'
+		printf 'scenario\tcandidate\tcommand\texit\tvinyl\tvmod\tvmod_so\tvcl_compile\toutcome\twarn\n'
 		matrix | while IFS='|' read -r id cand dev pre tx; do
 			_f=$log_dir/$id.result
 			[ -f "$_f" ] || continue
 			_get() { sed -n "s/^RESULT $1=//p" "$_f"; }
 			printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
 				"$id" "$(_get candidate)" "$(_get command)" "$(_get exit)" \
-				"$(_get vinyl)" "$(_get cachetag)" "$(_get vmod_so)" \
+				"$(_get vinyl)" "$(_get vmod)" "$(_get vmod_so)" \
 				"$(_get vcl_compile)" "$(_get outcome)" "$(_get needs_warning)"
 		done
 	} > "$log_dir/SUMMARY.tsv"
@@ -220,6 +259,9 @@ if [ "${1:-}" = "--summary" ]; then
 	summarise
 	exit 0
 fi
+
+note "VMOD under test: $VMOD_PACKAGE $VMOD_VERSION (import $VMOD_IMPORT, $VMOD_SO)"
+printf 'packages and evidence directory: %s\n' "$out_dir"
 
 check_inputs
 build_base_image

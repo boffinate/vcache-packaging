@@ -31,7 +31,17 @@
 #                                        fail unless the digests match
 #
 # Environment:
-#   EL9_IMAGE   build image (default from cohort.env)
+#   EL9_IMAGE     build image (default from cohort.env)
+#   TXN_OUT_DIR   the directory mounted at /out. It must contain packages/ (the
+#                 baseline cohort RPMs) and SHA256SUMS, and mismatch/ is written
+#                 inside it. Defaults to dist/el9, the lane's own layout; the
+#                 reusable workflow points it at a staging directory, because a
+#                 generated VMOD's package lives in lane/out and the engine's in
+#                 lane/engine.
+#
+# The fixture variants are ENGINE packages and carry no VMOD name: mismatch/
+# container.sh respins vinyl-cache and vinyl-cache-devel only, so unlike the
+# Debian lane's fixture script this one needs no VMOD parameters at all.
 
 set -eu
 
@@ -41,7 +51,7 @@ repo=$(CDPATH= cd -- "$here/../.." && pwd)
 . "$here/cohort.env"
 
 image=${EL9_IMAGE:-almalinux:9}
-out=$repo/dist/el9
+out=${TXN_OUT_DIR:-$repo/dist/el9}
 
 check_reproducible=
 case ${1:-} in

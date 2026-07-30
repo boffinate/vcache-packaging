@@ -26,6 +26,20 @@
 #
 # Prerequisites: recipes/el9/build.sh (the baseline cohort) and
 # recipes/el9/mismatch-fixture.sh (the candidate fixture) have both been run.
+#
+# Environment, all defaulted so the cachetag invocation is unchanged:
+#   TXN_OUT_DIR      the directory mounted at /out by prep.sh. It must contain
+#                    packages/ (the baseline cohort RPMs, engine and VMOD) and
+#                    mismatch/packages/ (the fixture RPMs), and is where the
+#                    repositories and logs are written. Defaults to dist/el9, the
+#                    lane's own layout; the reusable workflow points it at a
+#                    staging directory, because a generated VMOD's package lives
+#                    in lane/out and the engine's in lane/engine.
+#   VMOD_PACKAGE     the VMOD RPM name installed alongside the engine
+#                    (libvmod-cachetag)
+#   VMOD_IMPORT      its VCL import token (cachetag)
+#   VMOD_PROBE_VCL   container path of the probe VCL; empty composes a bare
+#                    `import VMOD_IMPORT` probe (see transactions/scenario.sh)
 
 set -eu
 
@@ -36,7 +50,14 @@ repo=$(CDPATH= cd -- "$here/../.." && pwd)
 
 image=${EL9_IMAGE:-almalinux:9}
 txn_image=vinyl-el9-txn-base
-out=$repo/dist/el9
+out=${TXN_OUT_DIR:-$repo/dist/el9}
+
+# Which VMOD is installed alongside the engine candidates. The scenario set is
+# about the resolver and does not vary per VMOD; only the assertions about what
+# survived do. Defaults are libvmod-cachetag's.
+VMOD_PACKAGE=${VMOD_PACKAGE:-libvmod-cachetag}
+VMOD_IMPORT=${VMOD_IMPORT:-cachetag}
+VMOD_PROBE_VCL=${VMOD_PROBE_VCL-/recipes/smoke/smoke.vcl}
 logs=$out/mismatch/logs
 repos=$out/mismatch/repos
 
@@ -83,6 +104,8 @@ mkdir -p "$logs"
 
 printf '\n########## EL9 upgrade-transaction matrix ##########\n'
 printf 'base image : %s\n' "$image"
+printf 'VMOD       : %s (import %s)\n' "$VMOD_PACKAGE" "$VMOD_IMPORT"
+printf 'packages   : %s\n' "$out"
 printf 'scenarios  : %s\n' "$scenarios"
 printf 'logs       : %s\n' "$logs"
 
@@ -136,6 +159,9 @@ for s in $scenarios; do
 	docker run --rm \
 		-e "VINYL_TRACK=$VINYL_TRACK" \
 		-e "CANDIDATE_REPO=$candidate_repo" \
+		-e "VMOD_PACKAGE=$VMOD_PACKAGE" \
+		-e "VMOD_IMPORT=$VMOD_IMPORT" \
+		-e "VMOD_PROBE_VCL=$VMOD_PROBE_VCL" \
 		-v "$here:/recipes:ro" \
 		-v "$repos:/repos:ro" \
 		"$txn_image" \

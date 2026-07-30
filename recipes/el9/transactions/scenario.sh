@@ -14,6 +14,19 @@
 # one machine-readable line beginning with SUMMARY<TAB> that the driver collects
 # into the matrix table.
 #
+# The scenarios are about the RESOLVER, so none of them names a VMOD: they act on
+# the engine candidates, and what is asserted afterwards is what happened to the
+# VMOD that was installed alongside them. Which VMOD that is arrives in the
+# environment, defaulted to libvmod-cachetag's values so this lane's own runs are
+# unchanged:
+#   VMOD_PACKAGE     the VMOD's RPM name
+#   VMOD_IMPORT      its VCL import token, used only by the composed probe below
+#   VMOD_PROBE_VCL   path, INSIDE the container, of the VCL `vinyld -C` compiles
+#                    to answer "can this Vinyl still load the VMOD its VCL
+#                    imports". Empty composes a bare `import VMOD_IMPORT` probe,
+#                    which is what a generated VMOD passes; cachetag's default is
+#                    the lane's own installed-package smoke VCL.
+#
 # Deliberately not `set -e`: half these commands are expected to fail, and their
 # exit status is a result, not an accident.
 
@@ -25,6 +38,12 @@ scenario=$1
 arch=$(uname -m)
 isa=$(rpm --eval '%{?_isa}')
 baseline_evr="$VINYL_VERSION-$VINYL_RELEASE.el9"
+
+VMOD_PACKAGE=${VMOD_PACKAGE:-libvmod-cachetag}
+VMOD_IMPORT=${VMOD_IMPORT:-cachetag}
+# `-` and not `:-`: an explicitly EMPTY path selects the composed probe and must
+# not fall back to cachetag's smoke VCL.
+VMOD_PROBE_VCL=${VMOD_PROBE_VCL-/recipes/smoke/smoke.vcl}
 
 step() { printf '\n===== %s =====\n' "$*"; }
 
@@ -44,10 +63,10 @@ run() {
 # Did the resolver's own plan say it would remove the VMOD? Checked separately
 # from the installed state, because a --assumeno run leaves the system alone and
 # the plan is then the only evidence there is.
-plan_removes_cachetag() {
+plan_removes_vmod() {
 	awk '/^(Removing|Removing dependent packages|Removing unused dependencies):/ {f=1; next}
 	     /^[A-Za-z]/ {f=0}
-	     f' "$1" | grep -q libvmod-cachetag
+	     f' "$1" | grep -q -- "$VMOD_PACKAGE"
 }
 
 # ------------------------------------------------------------ repository setup
@@ -96,17 +115,17 @@ write_repo vinyl-baseline baseline
 #   no-vmod      runtime + devel, no VMOD. The control.
 case $scenario in
 sanity-candidate-installable) baseline_set="vinyl-cache vinyl-cache-devel" ;;
-*runtime-only)                baseline_set="vinyl-cache libvmod-cachetag" ;;
-*)                            baseline_set="vinyl-cache vinyl-cache-devel libvmod-cachetag" ;;
+*runtime-only)                baseline_set="vinyl-cache $VMOD_PACKAGE" ;;
+*)                            baseline_set="vinyl-cache vinyl-cache-devel $VMOD_PACKAGE" ;;
 esac
 
 step "install the baseline cohort: $baseline_set"
 run dnf -y install $baseline_set
 [ "$last_rc" -eq 0 ] || { echo "baseline install failed; scenario aborted" >&2; exit 1; }
 
-rpm -q vinyl-cache vinyl-cache-devel libvmod-cachetag
-baseline_had_cachetag=no
-rpm -q libvmod-cachetag >/dev/null 2>&1 && baseline_had_cachetag=yes
+rpm -q vinyl-cache vinyl-cache-devel "$VMOD_PACKAGE"
+baseline_had_vmod=no
+rpm -q "$VMOD_PACKAGE" >/dev/null 2>&1 && baseline_had_vmod=yes
 printf 'installed vinyld(abi): %s\n' \
 	"$(rpm -q --provides vinyl-cache | sed -n 's/^vinyld(abi).* = //p')"
 
@@ -121,13 +140,35 @@ pkg_state() {
 }
 vinyl_state() { pkg_state vinyl-cache; }
 devel_state() { pkg_state vinyl-cache-devel; }
-cachetag_state() { rpm -q libvmod-cachetag >/dev/null 2>&1 && echo present || echo ABSENT; }
+vmod_state() { rpm -q "$VMOD_PACKAGE" >/dev/null 2>&1 && echo present || echo ABSENT; }
 
 # The failure the plan is actually worried about: a Vinyl that no longer has the
 # VMOD its VCL imports. A VCL compile is the cheapest honest test of it.
+#
+# cachetag's probe is the lane's own installed-package smoke VCL, unchanged. A
+# generated VMOD passes an empty VMOD_PROBE_VCL and gets the bare import instead:
+# compiling an import at all is what makes vinyld load the shared object and its
+# VCC-generated symbols, which is the whole of what this asks.
+probe_vcl=$VMOD_PROBE_VCL
+if [ -z "$probe_vcl" ]; then
+	probe_vcl=/tmp/probe.vcl
+	{
+		printf 'vcl 4.1;\n\nimport %s;\n\n' "$VMOD_IMPORT"
+		printf 'backend default {\n\t.host = "127.0.0.1";\n\t.port = "8080";\n}\n'
+	} > "$probe_vcl"
+elif [ ! -f "$probe_vcl" ]; then
+	# There is no `set -e` here, so this has to be explicit: a missing probe
+	# would otherwise read as a VMOD that cannot be loaded, which is the exact
+	# finding this scenario exists to report truthfully.
+	echo "E: no probe VCL at $probe_vcl" >&2
+	exit 1
+fi
+printf 'probe VCL       : %s\n' "$probe_vcl"
+sed 's/^/| /' "$probe_vcl"
+
 vcl_state() {
 	if ! command -v vinyld >/dev/null 2>&1; then echo no-vinyld; return; fi
-	if vinyld -C -f /recipes/smoke/smoke.vcl > /tmp/vcl.c 2> /tmp/vcl.err; then
+	if vinyld -C -f "$probe_vcl" > /tmp/vcl.c 2> /tmp/vcl.err; then
 		echo compiles
 	else
 		echo FAILS
@@ -138,11 +179,11 @@ report_state() {
 	step "state $*"
 	printf 'vinyl-cache       : %s\n' "$(vinyl_state)"
 	printf 'vinyl-cache-devel : %s\n' "$(devel_state)"
-	printf 'libvmod-cachetag  : %s\n' "$(cachetag_state)"
+	printf '%-18s: %s\n' "$VMOD_PACKAGE" "$(vmod_state)"
 	printf 'installed VMODs   : %s\n' \
 		"$(ls /usr/lib64/vinyl-cache/vmods/ 2>/dev/null | tr '\n' ' ')"
 	local v; v=$(vcl_state)
-	printf 'VCL with import cachetag: %s\n' "$v"
+	printf 'VCL with import %s: %s\n' "$VMOD_IMPORT" "$v"
 	if [ "$v" = FAILS ]; then
 		printf 'compile error:\n'; sed 's/^/  /' /tmp/vcl.err | head -20
 	fi
@@ -188,8 +229,8 @@ sanity-candidate-installable)
 upgrade)
 	command_run='dnf upgrade'
 	run dnf --assumeno upgrade
-	if plan_removes_cachetag "$last_out"; then
-		notes='plan proposed removing libvmod-cachetag; '
+	if plan_removes_vmod "$last_out"; then
+		notes="plan proposed removing $VMOD_PACKAGE; "
 	fi
 	run dnf -y upgrade
 	;;
@@ -220,10 +261,10 @@ upgrade-allowerasing)
 	command_run='dnf upgrade --allowerasing'
 	step "first, capture the plan without executing it"
 	run dnf --assumeno --allowerasing upgrade
-	if plan_removes_cachetag "$last_out"; then
-		notes='the --assumeno plan explicitly listed libvmod-cachetag for removal; '
+	if plan_removes_vmod "$last_out"; then
+		notes="the --assumeno plan explicitly listed $VMOD_PACKAGE for removal; "
 	else
-		notes='the --assumeno plan did NOT list libvmod-cachetag for removal; '
+		notes="the --assumeno plan did NOT list $VMOD_PACKAGE for removal; "
 	fi
 	step "now execute it"
 	run dnf -y --allowerasing upgrade
@@ -244,8 +285,8 @@ upgrade-allowerasing-runtime-only)
 	# resolver, or only because the devel package was also in the way?
 	command_run='dnf upgrade --allowerasing  [no devel installed]'
 	run dnf --assumeno --allowerasing upgrade
-	if plan_removes_cachetag "$last_out"; then
-		notes='the plan listed libvmod-cachetag for removal; '
+	if plan_removes_vmod "$last_out"; then
+		notes="the plan listed $VMOD_PACKAGE for removal; "
 	fi
 	run dnf -y --allowerasing upgrade
 	notes="${notes}ordinary production shape: runtime + VMOD only; "
@@ -257,8 +298,8 @@ upgrade-allowerasing-nobest)
 	# "my upgrade does not work" to a removed VMOD.
 	command_run='dnf upgrade --allowerasing --nobest'
 	run dnf --assumeno --allowerasing --nobest upgrade
-	if plan_removes_cachetag "$last_out"; then
-		notes='the plan listed libvmod-cachetag for removal; '
+	if plan_removes_vmod "$last_out"; then
+		notes="the plan listed $VMOD_PACKAGE for removal; "
 	fi
 	run dnf -y --allowerasing --nobest upgrade
 	;;
@@ -269,8 +310,8 @@ upgrade-targeted-allowerasing)
 	# the conflict rather than decline the job.
 	command_run='dnf upgrade --allowerasing vinyl-cache'
 	run dnf --assumeno --allowerasing upgrade vinyl-cache
-	if plan_removes_cachetag "$last_out"; then
-		notes='the plan listed libvmod-cachetag for removal; '
+	if plan_removes_vmod "$last_out"; then
+		notes="the plan listed $VMOD_PACKAGE for removal; "
 	fi
 	run dnf -y --allowerasing upgrade vinyl-cache
 	;;
@@ -284,8 +325,8 @@ distro-sync)
 distro-sync-allowerasing)
 	command_run='dnf distro-sync --allowerasing'
 	run dnf --assumeno --allowerasing distro-sync
-	if plan_removes_cachetag "$last_out"; then
-		notes='the plan listed libvmod-cachetag for removal; '
+	if plan_removes_vmod "$last_out"; then
+		notes="the plan listed $VMOD_PACKAGE for removal; "
 	fi
 	run dnf -y --allowerasing distro-sync
 	;;
@@ -298,8 +339,8 @@ install-candidate)
 install-candidate-allowerasing)
 	command_run="dnf install --allowerasing vinyl-cache-$cand_evr"
 	run dnf --assumeno --allowerasing install "vinyl-cache-$cand_evr"
-	if plan_removes_cachetag "$last_out"; then
-		notes='the plan listed libvmod-cachetag for removal; '
+	if plan_removes_vmod "$last_out"; then
+		notes="the plan listed $VMOD_PACKAGE for removal; "
 	fi
 	run dnf -y --allowerasing install "vinyl-cache-$cand_evr"
 	;;
@@ -312,7 +353,7 @@ versionlock)
 	command_run='dnf versionlock add ...; then dnf install --allowerasing <candidate>'
 	step "incident response: pin the cohort with versionlock"
 	rpm -q python3-dnf-plugin-versionlock
-	run dnf versionlock add vinyl-cache vinyl-cache-devel libvmod-cachetag
+	run dnf versionlock add vinyl-cache vinyl-cache-devel "$VMOD_PACKAGE"
 	run dnf versionlock list
 	printf '\nthe lock file itself:\n'
 	sed 's/^/  /' /etc/dnf/plugins/versionlock.list
@@ -331,10 +372,10 @@ versionlock)
 	run dnf versionlock delete vinyl-cache
 	run dnf versionlock list
 	run dnf --assumeno --allowerasing install "vinyl-cache-$cand_evr"
-	if plan_removes_cachetag "$last_out"; then
+	if plan_removes_vmod "$last_out"; then
 		notes="$notes after deleting the vinyl-cache lock the resolver proposes the erasing transaction again; "
 	else
-		notes="$notes after deleting the vinyl-cache lock the erasing transaction is still blocked (libvmod-cachetag remains locked); "
+		notes="$notes after deleting the vinyl-cache lock the erasing transaction is still blocked ($VMOD_PACKAGE remains locked); "
 	fi
 	# Re-lock, so the state this scenario leaves behind is the state an
 	# operator following the procedure would actually be in.
@@ -357,8 +398,8 @@ same-abi)
 same-abi-targeted-allowerasing)
 	command_run='dnf upgrade --allowerasing vinyl-cache  [SAME ABI string]'
 	run dnf --assumeno --allowerasing upgrade vinyl-cache
-	if plan_removes_cachetag "$last_out"; then
-		notes='the plan listed libvmod-cachetag for removal; '
+	if plan_removes_vmod "$last_out"; then
+		notes="the plan listed $VMOD_PACKAGE for removal; "
 	fi
 	run dnf -y --allowerasing upgrade vinyl-cache
 	notes="${notes}same-ABI candidate, targeted erasing upgrade; "
@@ -367,8 +408,8 @@ same-abi-targeted-allowerasing)
 same-abi-install-allowerasing)
 	command_run="dnf install --allowerasing vinyl-cache-$cand_evr  [SAME ABI string]"
 	run dnf --assumeno --allowerasing install "vinyl-cache-$cand_evr"
-	if plan_removes_cachetag "$last_out"; then
-		notes='the plan listed libvmod-cachetag for removal; '
+	if plan_removes_vmod "$last_out"; then
+		notes="the plan listed $VMOD_PACKAGE for removal; "
 	fi
 	run dnf -y --allowerasing install "vinyl-cache-$cand_evr"
 	notes="${notes}same-ABI candidate, erasing install; "
@@ -383,7 +424,7 @@ history-undo)
 	key_rc=$last_rc
 	outcome_override="erasing install removed the VMOD; history undo restored the cohort"
 	report_state "after the erasing install"
-	if [ "$(cachetag_state)" != ABSENT ]; then
+	if [ "$(vmod_state)" != ABSENT ]; then
 		outcome_override="the erasing install changed nothing, so the undo proved nothing"
 
 		notes='the erasing install did not remove the VMOD, so there was nothing to undo; '
@@ -402,10 +443,10 @@ esac
 
 report_state "after the transaction"
 
-v=$(vinyl_state); d=$(devel_state); c=$(cachetag_state); vcl=$(vcl_state)
+v=$(vinyl_state); d=$(devel_state); c=$(vmod_state); vcl=$(vcl_state)
 
-if [ "$baseline_had_cachetag" = no ]; then
-	# The control scenario. cachetag was never installed here, so its
+if [ "$baseline_had_vmod" = no ]; then
+	# The control scenario. The VMOD was never installed here, so its
 	# absence afterwards is not a removal and means nothing.
 	case "$v" in
 	"$cand_evr")     outcome="upgraded Vinyl (no VMOD installed)" ;;
@@ -429,7 +470,7 @@ else
 		fi ;;
 	"$baseline_evr:ABSENT")    outcome="VMOD REMOVED without upgrading Vinyl" ;;
 	absent:*)                  outcome="removed Vinyl itself" ;;
-	*)                         outcome="unclassified: vinyl=$v cachetag=$c" ;;
+	*)                         outcome="unclassified: vinyl=$v vmod=$c" ;;
 	esac
 
 	if [ "$c" = ABSENT ] || [ "$vcl" = FAILS ]; then
@@ -448,7 +489,7 @@ printf 'command    : %s\n' "$command_run"
 printf 'dnf exit   : %s\n' "$rc"
 printf 'vinyl      : %s -> %s\n' "$baseline_evr" "$v"
 printf 'devel      : %s\n' "$d"
-printf 'cachetag   : %s\n' "$c"
+printf 'vmod       : %s\n' "$c"
 printf 'VCL import : %s\n' "$vcl"
 printf 'outcome    : %s\n' "$outcome"
 printf 'class      : %s\n' "$warning"
