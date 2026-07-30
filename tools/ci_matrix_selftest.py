@@ -1759,6 +1759,104 @@ def test_every_tier_literal_in_the_workflow_is_a_real_tier(repo_root: Path) -> N
     )
 
 
+def test_the_harness_row_carries_what_the_job_needs(repo_root: Path) -> None:
+    """The trunk tier's harness rows, and the status only they can emit. (Wave 3c)
+
+    The harness job checks a VMOD's default branch out and runs its documented
+    source harness against unpinned Vinyl trunk HEAD, so the matrix entry has to
+    carry the ref -- it used to carry only the row key, which named the work
+    without saying what to check out.
+
+    Added to the MATRIX and not to the ledger row, deliberately: the ledger is
+    reconciliation input keyed by row key, and widening its harness row would
+    move the bytes of every tier's ledger for a value only the running job
+    reads.
+    """
+    data = yaml_subset.parse(_manifest_text("cachetag"))
+    trunk = ci_matrix.expand(data, "trunk")
+    harnesses = trunk["harnesses"]["include"]
+    check(
+        "harness: the trunk tier expands to exactly one harness row and no package rows",
+        (trunk["harness_count"], trunk["target_count"], trunk["source_count"]) == (1, 0, 0),
+        str((trunk["harness_count"], trunk["target_count"], trunk["source_count"])),
+    )
+    check(
+        "harness: the row carries the branch to check out and the engine it tests against",
+        harnesses[0]["ref"] == "main"
+        and harnesses[0]["channel"] == "trunk"
+        and harnesses[0]["engine"] == "vinyl-trunk-head",
+        str(harnesses[0]),
+    )
+    check(
+        "harness: a moving branch has no expected commit, and says so with an empty string",
+        harnesses[0]["expected_commit"] == "",
+        str(harnesses[0]),
+    )
+    check(
+        "harness: the result artifact is the one the ledger expects",
+        harnesses[0]["result_artifact"] == "result-cachetag-trunk-vinyl-trunk-head",
+        harnesses[0]["result_artifact"],
+    )
+
+    # The ledger's own harness row must NOT have grown the field, or every
+    # tier's ledger bytes would have moved.
+    row = next(
+        r for r in ci_matrix.ledger("trunk", repo_root)["rows"] if r["kind"] == "source-harness"
+    )
+    check(
+        "harness: the ledger row is unchanged; the ref lives in the matrix only",
+        "ref" not in row and row["result_artifact"] == "result-cachetag-trunk-vinyl-trunk-head",
+        str(sorted(row)),
+    )
+
+    check(
+        "harness: failed_source_harness exists and is a failure",
+        "failed_source_harness" in ci_matrix.STATUSES
+        and "failed_source_harness" not in ci_matrix.OK_STATUSES,
+    )
+    record = ci_matrix.make_record(
+        kind="source-harness",
+        vmod="cachetag",
+        channel="trunk",
+        engine="vinyl-trunk-head",
+        status="failed_source_harness",
+        stage="harness",
+        source={"ref": "main", "commit": "a" * 40, "engine_commit": "b" * 40},
+    )
+    check(
+        "harness: a record carrying it is keyed to the harness row",
+        record["row_key"] == "harness/cachetag/trunk/vinyl-trunk-head",
+        record["row_key"],
+    )
+    check(
+        "harness: the record identifies BOTH sides -- the VMOD commit and the engine commit",
+        record["source"]["commit"] == "a" * 40 and record["source"]["engine_commit"] == "b" * 40,
+        str(record["source"]),
+    )
+    # SCOPE.md requires a trunk job to record the commit it actually tested, and
+    # the state the scheduled workflow advances is read back out of this field.
+    check(
+        "harness: engine_commit reaches the record through the `record` command",
+        "--engine-commit" in (repo_root / "tools/ci_matrix.py").read_text(encoding="utf-8"),
+    )
+
+    # And the trunk tier's shape as a whole: one harness row, and every VMOD's
+    # invocation row, because the collector expects a record from each.
+    ledger = ci_matrix.ledger("trunk", repo_root)
+    selected = sorted(r["row_key"] for r in ledger["rows"] if r["selected"])
+    check(
+        "harness: the trunk tier selects three invocations and one harness row",
+        selected
+        == [
+            "harness/cachetag/trunk/vinyl-trunk-head",
+            "vmod/cachetag",
+            "vmod/dict",
+            "vmod/redis",
+        ],
+        str(selected),
+    )
+
+
 def test_transactions_is_the_transaction_tier(repo_root: Path) -> None:
     """What the `transactions` tier selects, and what it deliberately does not.
 
@@ -2268,11 +2366,11 @@ PIN_FIELDS = {
     "CACHETAG_VERSION": "version",
 }
 
-# The lane pin files and the two workflows that still carry their own copies of
-# the cachetag source pins, and exactly which pins each one must carry. ci.yml
-# and vmod-package.yml are absent because they read the manifest now;
-# nightly-transactions.yml and release-draft.yml migrate in Phase 4 and this
-# guard retires with them.
+# The lane pin files and the one workflow that still carries its own copy of the
+# cachetag source pins, and exactly which pins each one must carry. ci.yml,
+# vmod-package.yml and trunk-early-warning.yml are absent because they read the
+# manifest; release-draft.yml migrates in Wave 3e and this guard retires with
+# it. nightly-transactions.yml left the table in Wave 3c, with the file.
 #
 # The expected list is per file, not "at least one pin somewhere": a rename
 # that this table does not know about must fail loudly rather than quietly
@@ -2287,11 +2385,6 @@ PIN_SOURCES = [
         "recipes/el9/cohort.env",
         "env",
         ["CACHETAG_VERSION", "CACHETAG_GIT_COMMIT", "CACHETAG_SHA256"],
-    ),
-    (
-        ".github/workflows/nightly-transactions.yml",
-        "yaml",
-        ["CACHETAG_REF", "CACHETAG_GIT_COMMIT", "CACHETAG_SOURCE_SHA256"],
     ),
     (
         ".github/workflows/release-draft.yml",
@@ -2424,6 +2517,7 @@ def main(repo_root: Path = None) -> int:
     test_recipe_generation_status_is_in_the_vocabulary()
     test_transactions_status_has_a_producer(root)
     test_every_tier_literal_in_the_workflow_is_a_real_tier(root)
+    test_the_harness_row_carries_what_the_job_needs(root)
     test_transactions_is_the_transaction_tier(root)
     test_transactions_tier_budgets_the_matrix()
     test_source_facts_are_emitted_for_a_lane_script(root)

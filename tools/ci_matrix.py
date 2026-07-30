@@ -180,6 +180,15 @@ STATUSES = [
     "failed_lint",
     "failed_install_or_smoke",
     "failed_behavior",
+    # Source-harness rows only, and deliberately NOT failed_behavior. A harness
+    # row compiles and tests a VMOD's own source against UNPINNED Vinyl trunk
+    # HEAD, which is a moving target nobody has agreed to support yet: a failure
+    # there is early-warning signal about a Vinyl core change, and the correct
+    # response is usually to look at Vinyl. failed_behavior means "the packaged
+    # VMOD misbehaved against the engine it was built for", which is a statement
+    # about the package. Reusing it here would blame the package for tomorrow's
+    # engine, and the summary would send a reader to the wrong repository.
+    "failed_source_harness",
     "failed_transactions",
     "missing_result_record",
     "failed_infrastructure",
@@ -990,16 +999,31 @@ def expand(data: dict, tier: str, inject: str = "none", repo_root=None) -> dict:
             }
         )
 
-    harnesses = [
-        {
-            "channel": row["channel"],
-            "engine": row["engine"],
-            "row_key": row["row_key"],
-            "result_artifact": row["result_artifact"],
-        }
-        for row in rows
-        if row["kind"] == "source-harness" and row["selected"]
-    ]
+    # The harness rows carry the ref they test, read from the source channel the
+    # lane names. Deliberately added to the MATRIX entry and not to the ledger
+    # row: the ledger is reconciliation input and its harness row is identified
+    # by its key, so widening it would move every tier's ledger bytes for a
+    # value only the running job needs.
+    #
+    # `expected_commit` is empty for a moving branch, which is what a trunk
+    # channel is. The job resolves the commit it actually tested and records it,
+    # because SCOPE.md requires a trunk job to record the commit it tested
+    # rather than the ref it asked for.
+    harnesses = []
+    for row in rows:
+        if row["kind"] != "source-harness" or not row["selected"]:
+            continue
+        source = data["sources"].get(row["channel"], {})
+        harnesses.append(
+            {
+                "channel": row["channel"],
+                "engine": row["engine"],
+                "ref": source.get("ref", ""),
+                "expected_commit": source.get("expected_commit", ""),
+                "row_key": row["row_key"],
+                "result_artifact": row["result_artifact"],
+            }
+        )
 
     return {
         "vmod": vmod,
@@ -1896,6 +1920,13 @@ def cmd_record(args) -> int:
         ("commit", args.commit),
         ("version", args.version),
         ("archive_sha256", args.digest),
+        # Source-harness rows: the ENGINE commit the row actually tested
+        # against. It belongs in the identity block because what a harness row
+        # tests is the pair -- this VMOD's source against that Vinyl commit --
+        # and neither half alone identifies the run. The trunk workflow's
+        # state-advance job reads it from here rather than parsing prose out of
+        # the detail, so the sha it records is the sha that was tested.
+        ("engine_commit", args.engine_commit),
     ):
         if value:
             source[key] = value
@@ -2135,6 +2166,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_rec.add_argument("--artifact", action="append", default=[])
     p_rec.add_argument("--ref", default="")
     p_rec.add_argument("--commit", default="")
+    p_rec.add_argument("--engine-commit", default="")
     p_rec.add_argument("--version", default="")
     p_rec.add_argument("--digest", default="")
     p_rec.set_defaults(func=cmd_record)
