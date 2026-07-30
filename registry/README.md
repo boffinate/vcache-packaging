@@ -230,6 +230,7 @@ Keyed by the VMOD id, which is the catalog file-name stem in `registry/vmods/`.
 | `build.build_dependencies` | recorded output | exactly resolved buildroot packages; `[]` until recorded |
 | `artifacts` | recorded output | `{filename, sha256}` per produced artifact; a releasable VMOD needs at least one |
 | `tests` | evidence | `package_lint`, `installed_package_smoke`, `full_behavior_suite`, `upgrade_transactions` |
+| `tests.fixture_packages` | recorded output | the fixture packages the behaviour suite actually ran against, as `{name, version}` pairs read from the run's `lane/logs/fixture-packages.tsv` — a record, not a verdict, recorded the same way `build.build_dependencies` records the buildroot. `[]` when the suite needs no fixture server, which is the common case; `libvmod-redis`'s suite needs a Redis server and the two targets ship materially different ones, which is why "the full behaviour suite passed" would otherwise mean two different things silently |
 
 **Which ids must appear is not a schema question.** It is decided by `registry/vmods/` and the lanes that select this cohort's engine input and this target, and the validator checks the map against the catalog **in both directions**:
 

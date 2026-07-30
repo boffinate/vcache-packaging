@@ -9,17 +9,6 @@
 # DEBIAN_SNAPSHOT=20260701T000000Z recorded in recipes/debian-13/pins.env.
 # Minted 2026-07-28 with the vinyl-9.0.1 release cohort; evidence below is
 # from the same run as the trunk cohort's, lane track `release`.
-# Debian 13 (trixie) amd64, project-cohort lane -- candidate.
-#
-# Every recorded output below comes from the pbuilder clean-room lane in CI
-# (.github/workflows/ci.yml, job "Debian 13 amd64 (pbuilder)", track `release`,
-# run 30352844760 -- the first fully green run containing every step-2
-# correctness fix), never from a laptop build. The buildroot is doubly
-# pinned: the toolchain container by image digest, and the chroot mmdebstrap
-# builds from the snapshot.debian.org mirror snapshot
-# DEBIAN_SNAPSHOT=20260701T000000Z recorded in recipes/debian-13/pins.env.
-# Minted 2026-07-28 with the vinyl-9.0.1 release cohort; evidence below is
-# from the same run as the trunk cohort's, lane track `release`.
 schema: cachetag-target/v2
 status: candidate
 lane: cohort

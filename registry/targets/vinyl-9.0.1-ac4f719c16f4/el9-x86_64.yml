@@ -15,23 +15,6 @@
 #
 # Minted 2026-07-28 with the vinyl-9.0.1 release cohort; evidence below is
 # from the same run as the trunk cohort's, lane track `release`.
-# EL9-compatible x86_64, project-cohort lane -- candidate.
-#
-# target.distro is the EL family rather than one rebuild vendor; the exact
-# builder image is recorded below by digest. Every recorded output comes from
-# the Mock clean-room lane in CI (.github/workflows/ci.yml, job "EL9 x86_64
-# (Mock)", track `release`, run 30352844760 -- the first fully green run
-# containing every step-2 correctness fix), never from a laptop build.
-#
-# Unlike the Debian lane, this buildroot is not pinned: Mock resolves from
-# AlmaLinux's and EPEL's live mirrors, which publish no snapshot service. The
-# plan's reproducibility rule offers "pin buildroot repositories OR record
-# exact resolved package versions", and this lane takes the second option --
-# hence build_dependencies below, and logs/buildroot-packages.tsv in the
-# run's artifacts, which also records which repository served each package.
-#
-# Minted 2026-07-28 with the vinyl-9.0.1 release cohort; evidence below is
-# from the same run as the trunk cohort's, lane track `release`.
 schema: cachetag-target/v2
 status: candidate
 lane: cohort
