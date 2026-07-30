@@ -474,6 +474,8 @@ Module map:
 | `release_tool.py` | command line entry point |
 | `ci_matrix.py` | VMOD catalog, lane expansion, shared engine rows and artifact metadata, expected-row ledger, result reconciliation |
 | `ci_matrix_selftest.py` | its tests, including the multi-VMOD isolation fixture |
+| `upstream_watch.py` | live upstream freshness: pinned tags still peel, newer tags surfaced as re-pin candidates, watched trunk branches compared against a last-seen state. `git ls-remote` only, no HTTP |
+| `upstream_watch_selftest.py` | its tests, every remote listing canned so nothing touches the network |
 | `selftest.py` | tests, including the hand-computed digest vectors |
 
 ## Deliberately not here yet

@@ -12,7 +12,7 @@ This is a packaging and compatibility-testing project with a narrow publication 
 
 - `registry/` — compatibility manifests (`cohorts/`, `targets/`, `distro-native/`, `vmods/`) and their normative schema description in `registry/README.md`.
 - `recipes/vmods/` — the reviewed inputs that third-party VMOD packaging recipes are *generated* from: `templates/` (the generic Debian and RPM recipes), `adapters/` (what is true of every VMOD built the same way), `overlays/<id>/` (what is true of one VMOD), `licenses/` (reviewed `debian/copyright` stanzas). Nothing in there is a recipe, and no generated recipe is committed. Its own `README.md` is normative for the layout. Cachetag is not generated: it keeps its audited recipe in its own repository, and that recipe is the policy reference for these templates.
-- `tools/` — Python 3 standard-library tooling that validates the manifests and generates native package version metadata. Entry point `tools/release_tool.py`; `tools/vmod_recipe.py` renders the generated VMOD recipes, and `tools/ci_matrix.py` owns the VMOD catalog and the CI ledger.
+- `tools/` — Python 3 standard-library tooling that validates the manifests and generates native package version metadata. Entry point `tools/release_tool.py`; `tools/vmod_recipe.py` renders the generated VMOD recipes, `tools/ci_matrix.py` owns the VMOD catalog and the CI ledger, and `tools/upstream_watch.py` answers whether any selected upstream has moved.
 - `upstream/` — legacy audited packaging-recipe input with a `PROVENANCE.md` recording source, commit, and audit verdict. It is not a general store for upstream release archives. Vendored content is not modified in place without recording why.
 - `docs/` — design notes and session records.
 - `../libvmod-cachetag` is the expected sibling cachetag checkout. The manifests cross-check `cachetag.version` against its `configure.ac`.
@@ -63,7 +63,17 @@ python3 tools/ci_matrix.py ledger --tier ci
 python3 tools/ci_matrix.py selftest
 ```
 
-`ci_matrix.py selftest` also runs the recipe generator's tests, so the CI structural-validation gate covers both. Generated VMOD recipes (host-safe, stdlib only, builds nothing):
+`ci_matrix.py selftest` also runs the recipe generator's and the upstream watcher's tests, so the CI structural-validation gate covers all three.
+
+Live upstream freshness (host-safe: `git ls-remote` only, no HTTP, no install, builds nothing):
+
+```sh
+python3 tools/upstream_watch.py check --format text
+python3 tools/upstream_watch.py check --state ci-state.json --format github
+python3 tools/upstream_watch.py selftest
+```
+
+It answers three questions per VMOD — does the pinned tag still peel to the recorded commit (a moved tag is a loud failure, never a re-pin candidate), are there tags sorting above the pin (surfaced to the maintainer, never acted on), and has a watched trunk branch moved — plus Vinyl trunk HEAD. It replaces the survey JSON as the freshness signal per the [2026-07-30 maintainer decisions](docs/20260730_0826_note_step-8-maintainer-decisions.md). Generated VMOD recipes (host-safe, stdlib only, builds nothing):
 
 ```sh
 python3 tools/vmod_recipe.py generate --manifest registry/vmods/<id>.yml \

@@ -2009,18 +2009,23 @@ def cmd_reconcile(args) -> int:
 
 
 def cmd_selftest(args) -> int:
-    # Both VMOD-side tools' tests run here. The recipe generator is the second
+    # Every VMOD-side tool's tests run here. The recipe generator is the second
     # half of the same catalog: it reads the manifests this tool validates and
-    # renders the recipes those manifests' package lanes build. Running its
-    # tests from here means the CI structural-validation gate covers them
-    # without learning a third command, and a generator regression cannot land
-    # green because nothing invoked it.
+    # renders the recipes those manifests' package lanes build. The upstream
+    # watcher is the third: it derives what to watch from the same catalog and
+    # the same clone-URL derivation. Running all of them from here means the CI
+    # structural-validation gate covers them without learning three commands,
+    # and a regression in any of them cannot land green because nothing invoked
+    # it. The watcher's tests are fully canned and touch no network.
     import ci_matrix_selftest
+    import upstream_watch_selftest
     import vmod_recipe_selftest
 
     status = ci_matrix_selftest.main()
     print()
-    return vmod_recipe_selftest.main() or status
+    status = vmod_recipe_selftest.main() or status
+    print()
+    return upstream_watch_selftest.main() or status
 
 
 def build_parser() -> argparse.ArgumentParser:
