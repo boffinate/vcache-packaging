@@ -20,6 +20,10 @@ The trunk lane declared `harness.tests: "src/vtc/*.vtc"`. cachetag's `src/vtc/` 
 
 The known coverage trade-off from Step 8 is unchanged in kind: trunk coverage runs the declared VTCs, not `make check`, so cachetag's C unit test and its Fellow-backed suites live outside this lane. What changed is that the declaration now states the runnable set truthfully instead of over-claiming and failing.
 
+## Second finding, same first-execution class: the engine's bundled VMODs were unreachable
+
+Forced run 30584237055 (dispatched after the fix above) selected exactly the 52 declared cases — and failed 7 of them (6 `pm`, 1 `r`), each dying in VCL compilation on `import vtc;`. Root cause in `scripts/ci/vmod/container/source-harness.sh`: it ran `vinyltest -p vmod_path=<built module dirs>`, and overriding `vmod_path` **replaces** vinyld's default search path, so the engine prefix's own bundled VMODs (`vtc` for barrier orchestration, `std`, ...) stopped being importable. The engine artifact does ship them (`lib/vinyl-cache/vmods`, `libvmod_vtc` included); the harness just hid them. cachetag's own repo harness never hits this because its `vmod_path` includes both the built module and the prefix. Fixed by appending `pkg-config --variable=vmoddir vinylapi` to the composed `vmod_path`, with a loud refusal if the prefix advertises none. Like the glob over-match, this was invisible until tonight because no run had ever reached the suite.
+
 ## Standing consequence for future VMODs
 
 A VMOD's `harness.tests` must declare the subset of its suite runnable in a bare engine-plus-VMOD environment, not "all tests it ships". Any future VMOD whose repository carries tests requiring sibling VMODs, external services, or storage engines needs the same positive family selection — dict's ported-Autotest VTCs and redis's suite (which the packaging harness runs with its Redis servers) are unaffected.

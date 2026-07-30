@@ -121,6 +121,14 @@ printf '%s\n' "$sos"
 vmod_path=$(printf '%s\n' "$sos" | while IFS= read -r so; do
 	(cd "$(dirname "$so")" && pwd)
 done | sort -u | paste -sd: -)
+# Plus the engine's own bundled VMOD directory: overriding vmod_path REPLACES
+# vinyld's default search path, so without this a VTC's `import vtc` (barrier
+# orchestration) or `import std` cannot resolve. Discovered in run 30584237055,
+# the first run that reached the suite: every barrier-using case died in VCL
+# compilation on `import vtc` while the rest of the families passed.
+engine_vmoddir=$(pkg-config --variable=vmoddir vinylapi)
+[ -n "$engine_vmoddir" ] || die "vinylapi.pc advertises no vmoddir" 13
+vmod_path="$vmod_path:$engine_vmoddir"
 printf 'vmod_path    : %s\n' "$vmod_path"
 
 note "the declared VTC suite: $VMOD_TESTS"
