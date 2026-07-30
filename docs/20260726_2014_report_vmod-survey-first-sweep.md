@@ -2,7 +2,7 @@
 
 Date: 2026-07-26
 
-Plan: [20260726_1858_plan_vmod-survey.md](20260726_1858_plan_vmod-survey.md). Tooling and harness: `survey/`. Full matrix: `survey/results/REPORT.md` (regenerable; results directories are gitignored, the data snapshots in `survey/data/` are committed).
+Plan: [20260726_1858_plan_vmod-survey.md](archive/20260726_1858_plan_vmod-survey.md). Tooling and harness: `survey/`. Full matrix: `survey/results/REPORT.md` (regenerable; results directories are gitignored, the data snapshots in `survey/data/` are committed).
 
 ## What ran
 

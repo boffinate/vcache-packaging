@@ -2,13 +2,13 @@
 
 Date: 2026-07-29
 
-Status: **Implemented; proven locally as far as an arm64 host allows.** The generator, the catalog, the lane wiring and the fixture contract are complete and green on the host-safe battery. The patch, the bootstrap, the build and the full 20-VTC behaviour suite were proven in `debian:13` and `almalinux:9` containers against a real Vinyl Cache 9.0.1. No package was built, because the lane images are digest-pinned to x86_64 and this host is arm64 — the same limitation the [Wave 0 note](20260729_1021_note_step-7-wave-0-lane-consolidation.md) records. Wave 2 is the live run.
+Status: **Implemented; proven locally as far as an arm64 host allows.** The generator, the catalog, the lane wiring and the fixture contract are complete and green on the host-safe battery. The patch, the bootstrap, the build and the full 20-VTC behaviour suite were proven in `debian:13` and `almalinux:9` containers against a real Vinyl Cache 9.0.1. No package was built, because the lane images are digest-pinned to x86_64 and this host is arm64 — the same limitation the [Wave 0 note](archive/20260729_1021_note_step-7-wave-0-lane-consolidation.md) records. Wave 2 is the live run.
 
 Branch: `step7-redis-exception`, off `main` at `b0cccce`.
 
 Related:
 
-- [Wave 0: lane consolidation](20260729_1021_note_step-7-wave-0-lane-consolidation.md) — the fixture-contract seam this closes, and the rpmlint asymmetry it left standing with a reason
+- [Wave 0: lane consolidation](archive/20260729_1021_note_step-7-wave-0-lane-consolidation.md) — the fixture-contract seam this closes, and the rpmlint asymmetry it left standing with a reason
 - [Roadmap Step 7](20260728_0916_roadmap_outstanding-packaging-work.md) — "a third VMOD only to exercise ONE useful variation"
 - [Recipe-generation plan](20260728_0908_plan_vmod-packager-patterns-and-recipe-generation.md) — Phase 3 and verification case 10
 

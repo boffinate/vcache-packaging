@@ -63,7 +63,7 @@ The findings are recorded in [the step-9 report](20260724_2348_report_step-9-tra
 | [Step 9 report](20260724_2348_report_step-9-transaction-safety.md) | the findings, the corrections to the plan's hypotheses, and the incident-response verdicts |
 | [Debian lane note](20260724_2300_note_step-9-debian-13-transactions.md) | the apt matrix scenario by scenario, and why the fixture is a metadata repack rather than a second Vinyl build |
 | [EL9 lane note](20260724_2342_note_step-9-el9-transactions.md) | the dnf matrix, the `best=True` behaviour, versionlock and history-undo |
-| [Step 8 Wave 1 note](20260730_0748_note_step-8-wave-1-transactions-wiring.md) | how the matrix became a tier-gated stage of a package row, and the env-var contract that generalised it past cachetag |
+| [Step 8 Wave 1 note](archive/20260730_0748_note_step-8-wave-1-transactions-wiring.md) | how the matrix became a tier-gated stage of a package row, and the env-var contract that generalised it past cachetag |
 | [Root-cause note](20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md) | why dict's EL9 `--allowerasing` behaviour differs from cachetag's: libsolv name-order tie-breaking |
 | `recipes/debian-13/transactions.sh`, `recipes/el9/transactions.sh` | the scenario tables themselves, which are the authority |
 | `recipes/*/transactions/expected/<package>.tsv` | the pinned per-scenario outcomes each VMOD's matrix run is checked against |

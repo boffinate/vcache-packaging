@@ -6,7 +6,7 @@ Status: Complete for apt on Debian 13. Sixteen transactions run, each in its own
 
 Implements the Debian half of the remaining work in implementation step 9 of [the accepted binary packaging and distribution plan](../../libvmod-cachetag/docs/20260724_1526_plan_binary-packaging-and-distribution.md), specifically the "Upgrade transaction safety" section and the Phase 3 acceptance criterion that *every documented upgrade command has a tested, documented resolver outcome, and the supported path never silently removes an imported VMOD*.
 
-The baseline cohort is the one built earlier today and described in [the steps 7–8 lane note](20260724_2231_note_step-7-8-debian-13-lane.md): `vinyl-cache 9.0.0~git20260613.a909548147-1` providing `vinyld-abi-a90954814766d933a75d4c808c449cb9bc0ae3d3`, and `libvmod-cachetag 1.0.0-1` depending on exactly that virtual package.
+The baseline cohort is the one built earlier today and described in [the steps 7–8 lane note](archive/20260724_2231_note_step-7-8-debian-13-lane.md): `vinyl-cache 9.0.0~git20260613.a909548147-1` providing `vinyld-abi-a90954814766d933a75d4c808c449cb9bc0ae3d3`, and `libvmod-cachetag 1.0.0-1` depending on exactly that virtual package.
 
 ## Headline result
 

@@ -4,7 +4,7 @@ Date: 2026-07-30
 
 Status: **Decision record.** Decision owner: the repository maintainer. Taken on 2026-07-30, after Step 8 Wave 2's live proofs and **before** Wave 3 is implemented, because it changes what Wave 3 builds.
 
-Related: [Step 8 Wave 1](20260730_0748_note_step-8-wave-1-transactions-wiring.md), [Step 8 Wave 2 live proof](20260730_0824_report_step-8-wave-2-live-proof.md), [failure-isolation plan](20260728_0833_plan_vmod-matrix-failure-isolation.md) Phase 4, [roadmap step 8](20260728_0916_roadmap_outstanding-packaging-work.md), [SCOPE.md](../SCOPE.md).
+Related: [Step 8 Wave 1](archive/20260730_0748_note_step-8-wave-1-transactions-wiring.md), [Step 8 Wave 2 live proof](20260730_0824_report_step-8-wave-2-live-proof.md), [failure-isolation plan](20260728_0833_plan_vmod-matrix-failure-isolation.md) Phase 4, [roadmap step 8](20260728_0916_roadmap_outstanding-packaging-work.md), [SCOPE.md](../SCOPE.md).
 
 Wave 1 wired the upgrade-transaction matrix into the package rows as a tier-gated stage and left the migration of `nightly-transactions.yml` to Wave 3. These decisions reshape that migration. The stage itself is unaffected: what changes is **who dispatches it and how often**, not what it does.
 

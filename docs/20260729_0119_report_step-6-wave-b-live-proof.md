@@ -8,8 +8,8 @@ Branch: `step6-second-vmod`
 
 Related:
 
-- [Wave A3: workflow wiring](20260728_2352_note_step-6-wave-a3-workflow-wiring.md) — the wiring under test, and the record of Wave B runs 1-3 with defects B1-B6
-- [Wave A2: CI integration](20260728_2334_note_step-6-wave-a2-ci-integration.md) — the schema, ledger, evidence model and lane scripts
+- [Wave A3: workflow wiring](archive/20260728_2352_note_step-6-wave-a3-workflow-wiring.md) — the wiring under test, and the record of Wave B runs 1-3 with defects B1-B6
+- [Wave A2: CI integration](archive/20260728_2334_note_step-6-wave-a2-ci-integration.md) — the schema, ledger, evidence model and lane scripts
 - [Wave A1: the recipe generator](20260728_2216_note_step-6-wave-a1-recipe-generator.md)
 - [VMOD matrix failure isolation](20260728_0833_plan_vmod-matrix-failure-isolation.md), Phase 3
 - [vmod-packager patterns and recipe generation](20260728_0908_plan_vmod-packager-patterns-and-recipe-generation.md), the twelve verification cases
@@ -901,7 +901,7 @@ Wave B took ten defects to reach a green baseline and a green releasable gate. *
 | B9 | Debian uniqueness check | counted the tree the hardening stage had extracted; the RPM script had pruned it since it was written | run 30412067149 |
 | B10 | `release_tool` self-test | asserted dict's evidence was `pending`, so recording it raised `KeyError` rather than failing | run 30416252749 |
 
-Three of them — B3, B6 and B9 — are the same class: a lesson one backend's script had learned and the other had not. That class was closed by sweeping the two allowlists side by side after B6 and the two verify scripts side by side after B9, rather than by patching whichever one failed. It is the measured cost of the deliberate lane duplication the [Wave A2 Q2 ruling](20260728_2334_note_step-6-wave-a2-ci-integration.md) accepted, and it is higher than "some duplicated lines": every non-obvious thing the cachetag scripts had learned had to be rediscovered, sometimes by failing.
+Three of them — B3, B6 and B9 — are the same class: a lesson one backend's script had learned and the other had not. That class was closed by sweeping the two allowlists side by side after B6 and the two verify scripts side by side after B9, rather than by patching whichever one failed. It is the measured cost of the deliberate lane duplication the [Wave A2 Q2 ruling](archive/20260728_2334_note_step-6-wave-a2-ci-integration.md) accepted, and it is higher than "some duplicated lines": every non-obvious thing the cachetag scripts had learned had to be rediscovered, sometimes by failing.
 
 
 ## Where Wave B stands

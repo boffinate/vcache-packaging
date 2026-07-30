@@ -2,7 +2,7 @@
 
 Date: 2026-07-30
 
-This note answers adjudication item 1 of [the divergence note](20260730_1139_note_step-8-dict-el9-allowerasing-divergence.md): reproduce the divergence in isolation and identify what flips libsolv's decision. It records cause only. **The verdict is still `pending`**: dict's EL9 `upgrade_transactions` entry has not been edited, and adjudication items 2 (per-scenario outcome pinning) and 3 (the verdict itself) remain with the maintainer.
+This note answers adjudication item 1 of [the divergence note](archive/20260730_1139_note_step-8-dict-el9-allowerasing-divergence.md): reproduce the divergence in isolation and identify what flips libsolv's decision. It records cause only. **The verdict is still `pending`**: dict's EL9 `upgrade_transactions` entry has not been edited, and adjudication items 2 (per-scenario outcome pinning) and 3 (the verdict itself) remain with the maintainer.
 
 ## The cause
 

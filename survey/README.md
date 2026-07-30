@@ -1,6 +1,8 @@
 # Third-party VMOD compatibility survey
 
-Automated survey of the VMODs listed in the vinyl-cache.org directory: does each one build against, and load into, Varnish Cache 9 and Vinyl Cache 9? Design record: [`docs/20260726_1858_plan_vmod-survey.md`](../docs/20260726_1858_plan_vmod-survey.md).
+Automated survey of the VMODs listed in the vinyl-cache.org directory: does each one build against, and load into, Varnish Cache 9 and Vinyl Cache 9? Design record: [`docs/archive/20260726_1858_plan_vmod-survey.md`](../docs/archive/20260726_1858_plan_vmod-survey.md).
+
+Status (2026-07-30): the survey is no longer the freshness signal — live upstream checks are `tools/upstream_watch.py`, per the [2026-07-30 maintainer decisions](../docs/20260730_0826_note_step-8-maintainer-decisions.md). This directory remains in place as the provenance and regeneration input for the watch-only fleet roster (`registry/fleet-watch.json` is generated from `survey/data/triage.json`) and as the candidate pool for future VMOD selection.
 
 A survey pass is not a support claim. No registry manifest is minted here; the results feed the decision of which VMODs get real packaging lanes per the downstream VMOD plan.
 

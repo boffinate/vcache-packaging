@@ -2,7 +2,7 @@
 
 Date: 2026-07-30
 
-Decision owner: repository maintainer. This note records the two decisions that close adjudication items 2 and 3 of [the divergence note](20260730_1139_note_step-8-dict-el9-allowerasing-divergence.md), on the cause established by [the root-cause note](20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md). It resolves open item 1 of [the Step 8 closing report](20260730_1232_report_step-8-closing.md). The evidence of record is run [30532825959](https://github.com/boffinate/vcache-packaging/actions/runs/30532825959), the deliberate release-transactions dispatch for cohort `vinyl-9.0.1-ac4f719c16f4`.
+Decision owner: repository maintainer. This note records the two decisions that close adjudication items 2 and 3 of [the divergence note](archive/20260730_1139_note_step-8-dict-el9-allowerasing-divergence.md), on the cause established by [the root-cause note](20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md). It resolves open item 1 of [the Step 8 closing report](20260730_1232_report_step-8-closing.md). The evidence of record is run [30532825959](https://github.com/boffinate/vcache-packaging/actions/runs/30532825959), the deliberate release-transactions dispatch for cohort `vinyl-9.0.1-ac4f719c16f4`.
 
 ## Decision 1: dict's EL9 `upgrade_transactions` verdict is `pass`, with the exception documented
 

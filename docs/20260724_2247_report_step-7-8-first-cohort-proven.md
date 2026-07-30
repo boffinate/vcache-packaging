@@ -2,7 +2,7 @@
 
 Date: 2026-07-24
 
-Related plan: libvmod-cachetag `docs/20260724_1526_plan_binary-packaging-and-distribution.md` (implementation-order steps 7–9). Lane detail: [Debian 13 note](20260724_2231_note_step-7-8-debian-13-lane.md), [EL9 note](20260724_2240_note_step-7-8-el9-lane.md), [step-7a scaffold note](20260724_2138_note_step-7a-repo-scaffold-and-registry-move.md).
+Related plan: libvmod-cachetag `docs/20260724_1526_plan_binary-packaging-and-distribution.md` (implementation-order steps 7–9). Lane detail: [Debian 13 note](archive/20260724_2231_note_step-7-8-debian-13-lane.md), [EL9 note](archive/20260724_2240_note_step-7-8-el9-lane.md), [step-7a scaffold note](archive/20260724_2138_note_step-7a-repo-scaffold-and-registry-move.md).
 
 ## What was proven
 

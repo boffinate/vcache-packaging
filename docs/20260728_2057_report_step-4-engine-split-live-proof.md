@@ -4,7 +4,7 @@ Date: 2026-07-28
 
 Status: Complete. The plan's verification case 6, and the package-equivalence contract in [the roadmap](20260728_0916_roadmap_outstanding-packaging-work.md) Step 4.
 
-Companion to [the Phase 2 implementation note](20260728_1936_note_step-4-engine-split.md), which describes what was built. This one records what happened when it ran.
+Companion to [the Phase 2 implementation note](archive/20260728_1936_note_step-4-engine-split.md), which describes what was built. This one records what happened when it ran.
 
 Branch `step4-engine-split`, pushed to origin at `79c91ed`. Not merged, no PR opened.
 

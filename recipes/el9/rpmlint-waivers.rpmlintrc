@@ -1,7 +1,7 @@
 # Reviewed rpmlint waivers for the EL9 lane's gating pass.
 #
 # This is the in-tree port of the "Waived, with reasons" table first recorded
-# in docs/20260724_2240_note_step-7-8-el9-lane.md. Format: rpmlint 1.11 (EL9
+# in docs/archive/20260724_2240_note_step-7-8-el9-lane.md. Format: rpmlint 1.11 (EL9
 # AppStream) reads this as a Python configuration file -- the old pre-2.x
 # format, not TOML -- and each addFilter() argument is a regular expression
 # matched against the formatted output line

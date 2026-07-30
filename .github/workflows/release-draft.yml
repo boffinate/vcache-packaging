@@ -1,6 +1,6 @@
 name: Release draft assembly
 
-# Design notes: docs/20260725_1740_note_step-10-ci-design.md. Manual-trigger
+# Design notes: docs/archive/20260725_1740_note_step-10-ci-design.md. Manual-trigger
 # only: this is the plan's release workflow steps 1-12 ("Upload every asset to
 # an internal draft GitHub Release for final validation"), NOT step 14
 # ("publish it as a GitHub pre-release"). Publishing the pre-release stays a

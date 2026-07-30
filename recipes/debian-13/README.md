@@ -86,7 +86,7 @@ It exists because the ABI provide is a hash of the upstream commit and therefore
 
 ## Relationship to the vendored upstream material
 
-`vinyl/debian/` is derived from `upstream/pkg-vinyl-cache/debian/` (vendored at commit `27c91305023b4c4dae09f903644774fb9dbd8fcb`, read-only). The audit findings and the list of what was modernised are in `../../docs/20260724_2231_note_step-7-8-debian-13-lane.md`.
+`vinyl/debian/` is derived from `upstream/pkg-vinyl-cache/debian/` (vendored at commit `27c91305023b4c4dae09f903644774fb9dbd8fcb`, read-only). The audit findings and the list of what was modernised are in `../../docs/archive/20260724_2231_note_step-7-8-debian-13-lane.md`.
 
 ## Deferred
 

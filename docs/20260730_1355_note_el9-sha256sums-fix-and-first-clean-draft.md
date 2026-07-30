@@ -30,4 +30,4 @@ The draft was a proof, not a release: it was deleted after evidence capture. Dra
 
 ## What this changes
 
-Open item 3 of the closing report is closed: main can now produce `complete=true`, and a release-tier draft no longer needs `allow_incomplete_evidence`. Open item 4 (the roughly-20-versus-57 asset-count expectation) remains open; this run reproduced 57, consistent with Proof A's sidecar accounting. — Resolved 2026-07-30: the 20 is now scoped to the fixture tree and the live 57-asset arithmetic recorded in [the 3e note](20260730_1107_note_step-8-wave-3e-release-draft.md) as amended.
+Open item 3 of the closing report is closed: main can now produce `complete=true`, and a release-tier draft no longer needs `allow_incomplete_evidence`. Open item 4 (the roughly-20-versus-57 asset-count expectation) remains open; this run reproduced 57, consistent with Proof A's sidecar accounting. — Resolved 2026-07-30: the 20 is now scoped to the fixture tree and the live 57-asset arithmetic recorded in [the 3e note](archive/20260730_1107_note_step-8-wave-3e-release-draft.md) as amended.

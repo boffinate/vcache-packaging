@@ -4,7 +4,7 @@ Date: 2026-07-28
 
 Status: Complete. Item 7 of [the failure-isolation plan](20260728_0833_plan_vmod-matrix-failure-isolation.md) and the package-equivalence contract in [the roadmap](20260728_0916_roadmap_outstanding-packaging-work.md) Step 3.
 
-Companion to [the Phase 1 implementation note](20260728_1704_note_step-3-failure-isolation-phase-1.md), which describes what was built. This one records what happened when it ran.
+Companion to [the Phase 1 implementation note](archive/20260728_1704_note_step-3-failure-isolation-phase-1.md), which describes what was built. This one records what happened when it ran.
 
 Branch `step3-failure-isolation-phase1`, pushed to origin at `5211827`. Not merged, no PR opened.
 

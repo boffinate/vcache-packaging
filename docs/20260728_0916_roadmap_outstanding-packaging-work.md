@@ -4,6 +4,8 @@ Date: 2026-07-28
 
 Status: Proposed
 
+> **Status update, 2026-07-30 (docs curation):** Steps 1–8 are complete — see the [step-8 closing report](20260730_1232_report_step-8-closing.md) for the final state and the per-step live-proof reports for the evidence trail. Step 9 (managed repository publication) is active under [its plan](20260730_1415_plan_step-9-managed-repository-publication.md), alongside the [release-automation plan](20260730_1414_plan_release-automation.md). The body below is unedited; wave-level notes it links to have moved to `docs/archive/`.
+
 Decision owner: repository maintainer
 
 ## Context
@@ -12,8 +14,8 @@ The current baseline is not yet cleanly evidenced: the branch is ahead of remote
 
 This roadmap orders the remaining work described by:
 
-- [The cachetag nightly failure note](20260728_0743_note-nightly-cachetag-ref-failure.md)
-- [The cohort and pre-release note](20260726_0827_note_step-10-cohort-mint-and-pre-release.md)
+- [The cachetag nightly failure note](archive/20260728_0743_note-nightly-cachetag-ref-failure.md)
+- [The cohort and pre-release note](archive/20260726_0827_note_step-10-cohort-mint-and-pre-release.md)
 - [The release/trunk two-track note](20260726_1235_note_two-track-release-and-trunk.md)
 - [The VMOD survey report](20260726_2014_report_vmod-survey-first-sweep.md)
 - [The Varnish downstream packaging plan](20260726_0824_plan_varnish-downstream-vmod-packaging.md)

@@ -10,7 +10,7 @@
 # /var/lock/sbuild inside the chroot, no resolv.conf (docker keeps it outside
 # the image), no build-essential, and a rootfs whose ownership and member
 # naming sbuild's unshare backend would not accept. The full elimination
-# table is in docs/20260725_1655_note_step-10-ci-first-run-findings.md.
+# table is in docs/archive/20260725_1655_note_step-10-ci-first-run-findings.md.
 #
 # mmdebstrap builds a real buildd chroot in one step instead, and pins it
 # harder than the image did: the packages come from the snapshot.debian.org

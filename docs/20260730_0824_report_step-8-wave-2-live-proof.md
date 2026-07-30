@@ -2,7 +2,7 @@
 
 Date: 2026-07-30
 
-Wave 1 ended with a list of things only a live run could prove ([the Wave 1 note](20260730_0748_note_step-8-wave-1-transactions-wiring.md), "What Wave 2/3 must prove live"). Two of them are proved here, and the roadmap's step-8 acceptance gate is met verbatim. Both runs came back the shape they were designed to come back; neither found a defect, which is worth stating plainly rather than implying by omission.
+Wave 1 ended with a list of things only a live run could prove ([the Wave 1 note](archive/20260730_0748_note_step-8-wave-1-transactions-wiring.md), "What Wave 2/3 must prove live"). Two of them are proved here, and the roadmap's step-8 acceptance gate is met verbatim. Both runs came back the shape they were designed to come back; neither found a defect, which is worth stating plainly rather than implying by omission.
 
 ## The run inventory
 

@@ -8,7 +8,7 @@ Related:
 
 - [VMOD matrix failure-isolation plan](20260728_0833_plan_vmod-matrix-failure-isolation.md)
 - [Varnish Cache downstream VMOD packaging plan](20260726_0824_plan_varnish-downstream-vmod-packaging.md)
-- [Third-party VMOD compatibility survey](20260726_1858_plan_vmod-survey.md)
+- [Third-party VMOD compatibility survey](archive/20260726_1858_plan_vmod-survey.md)
 - [First survey report](20260726_2014_report_vmod-survey-first-sweep.md)
 - [`SCOPE.md`](../SCOPE.md)
 - [`xcir/vmod-packager`](https://github.com/xcir/vmod-packager), inspected at commit [`252e0b0871eb9f7d6848ad92811288c821ca8cff`](https://github.com/xcir/vmod-packager/commit/252e0b0871eb9f7d6848ad92811288c821ca8cff)
