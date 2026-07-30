@@ -1,0 +1,115 @@
+vtest "vmod-dict case-insensitive lookup, against the INSTALLED package"
+
+# Ported from upstream tests/ci.at (vmod-dict v1.7), which drives this through
+# GNU Autotest and ACVMOD_AT_VTEST. Three bindings were changed and nothing
+# else:
+#
+#   import dict from "$abs_top_builddir/src/.libs/libvmod_dict.so";
+#       becomes a plain `import dict;` resolved through -p vmod_path, so the
+#       subject is the .so the package installed rather than one in a build
+#       tree. That substitution is the whole point of this suite.
+#
+#   dict.load("${vmod_topsrc}/tests/num.dict");
+#       becomes ${dictdir}/num.dict, a macro the harness defines. The fixture
+#       is still upstream's own tests/num.dict, extracted verbatim from the
+#       pinned release archive -- it is not copied into this repository,
+#       because a second copy is a second thing to drift.
+#
+#   varnish v1 -vcl+backend { ... }
+#       becomes `vinyl v1`. The engine under test is Vinyl Cache, and its
+#       packaged vinyltest driver registers its server command as `vinyl`;
+#       `varnish` is not a command it knows, so vtest2 falls through to
+#       autoloading libvtest_ext_varnish.so, which these packages do not ship,
+#       and the test dies with `Unknown command: "varnish"` before running a
+#       single request. Found by Wave B run 30410876882, the first time this
+#       suite ever ran. It is a binding to the driver, exactly like the two
+#       above, and not a change to what is asserted.
+#
+# The mixed-case request URLs are upstream's too, character for character:
+# they are what makes this a case-insensitivity test rather than a second
+# copy of the case-sensitive one. Every expected value is upstream's. They
+# are the oracle: do not "fix" one to make a run pass.
+
+server s1 {
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+} -start
+
+vinyl v1 -vcl+backend {
+	import std;
+	import dict;
+
+	sub vcl_init {
+		dict.ci(true);
+		dict.collisions(0);
+		dict.load("${dictdir}/num.dict");
+	}
+	sub vcl_recv {
+		set req.http.X-result = dict.lookup(regsub(req.url, "^/(.*)", "\1"));
+		return (hash);
+	}
+	sub vcl_deliver {
+		set resp.http.X-result = req.http.X-result;
+	}
+} -start
+
+client c1 {
+	txreq -url "/oNe"
+	rxresp
+	expect resp.http.X-result == "en"
+	txreq -url "/TWO"
+	rxresp
+	expect resp.http.X-result == "to"
+	txreq -url "/THREE"
+	rxresp
+	expect resp.http.X-result == "tre"
+	txreq -url "/FOUR"
+	rxresp
+	expect resp.http.X-result == "fire"
+	txreq -url "/FIVE"
+	rxresp
+	expect resp.http.X-result == "fem"
+	txreq -url "/SIX"
+	rxresp
+	expect resp.http.X-result == "seks"
+	txreq -url "/SEVEN"
+	rxresp
+	expect resp.http.X-result == "sju"
+	txreq -url "/EIGHT"
+	rxresp
+	expect resp.http.X-result == "aatte"
+	txreq -url "/nINe"
+	rxresp
+	expect resp.http.X-result == "ni"
+	txreq -url "/Ten"
+	rxresp
+	expect resp.http.X-result == "ti"
+	txreq -url "/ELeVEN"
+	rxresp
+	expect resp.http.X-result == "elleve"
+	txreq -url "/twELve"
+	rxresp
+	expect resp.http.X-result == "tolv"
+} -run

@@ -1,0 +1,112 @@
+vtest "vmod-dict case-sensitive lookup, against the INSTALLED package"
+
+# Ported from upstream tests/cs.at (vmod-dict v1.7), which drives this through
+# GNU Autotest and ACVMOD_AT_VTEST. Three bindings were changed and nothing
+# else:
+#
+#   import dict from "$abs_top_builddir/src/.libs/libvmod_dict.so";
+#       becomes a plain `import dict;` resolved through -p vmod_path, so the
+#       subject is the .so the package installed rather than one in a build
+#       tree. That substitution is the whole point of this suite.
+#
+#   dict.load("${vmod_topsrc}/tests/num.dict");
+#       becomes ${dictdir}/num.dict, a macro the harness defines. The fixture
+#       is still upstream's own tests/num.dict, extracted verbatim from the
+#       pinned release archive -- it is not copied into this repository,
+#       because a second copy is a second thing to drift.
+#
+#   varnish v1 -vcl+backend { ... }
+#       becomes `vinyl v1`. The engine under test is Vinyl Cache, and its
+#       packaged vinyltest driver registers its server command as `vinyl`;
+#       `varnish` is not a command it knows, so vtest2 falls through to
+#       autoloading libvtest_ext_varnish.so, which these packages do not ship,
+#       and the test dies with `Unknown command: "varnish"` before running a
+#       single request. Found by Wave B run 30410876882, the first time this
+#       suite ever ran. It is a binding to the driver, exactly like the two
+#       above, and not a change to what is asserted.
+#
+# Every expected value below is upstream's. They are the oracle: do not
+# "fix" one to make a run pass.
+
+server s1 {
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+	rxreq
+	txresp
+} -start
+
+vinyl v1 -vcl+backend {
+	import std;
+	import dict;
+
+	sub vcl_init {
+		dict.collisions(0);
+		dict.load("${dictdir}/num.dict");
+	}
+	sub vcl_recv {
+		set req.http.X-result = dict.lookup(regsub(req.url, "^/(.*)", "\1"));
+		return (hash);
+	}
+	sub vcl_deliver {
+		set resp.http.X-result = req.http.X-result;
+	}
+} -start
+
+client c1 {
+	txreq -url "/one"
+	rxresp
+	expect resp.http.X-result == "en"
+	txreq -url "/two"
+	rxresp
+	expect resp.http.X-result == "to"
+	txreq -url "/three"
+	rxresp
+	expect resp.http.X-result == "tre"
+	txreq -url "/four"
+	rxresp
+	expect resp.http.X-result == "fire"
+	txreq -url "/five"
+	rxresp
+	expect resp.http.X-result == "fem"
+	txreq -url "/six"
+	rxresp
+	expect resp.http.X-result == "seks"
+	txreq -url "/seven"
+	rxresp
+	expect resp.http.X-result == "sju"
+	txreq -url "/eight"
+	rxresp
+	expect resp.http.X-result == "aatte"
+	txreq -url "/nine"
+	rxresp
+	expect resp.http.X-result == "ni"
+	txreq -url "/ten"
+	rxresp
+	expect resp.http.X-result == "ti"
+	txreq -url "/eleven"
+	rxresp
+	expect resp.http.X-result == "elleve"
+	txreq -url "/twelve"
+	rxresp
+	expect resp.http.X-result == "tolv"
+} -run

@@ -1,0 +1,51 @@
+# fixture1: a SYNTHETIC ACCEPTANCE FIXTURE entry. NOT a selected package.
+#
+# One of the seven aliases that take the catalog to ten entries for the
+# roadmap's step-8 acceptance run: "one entry must fail source verification,
+# nine must reach their final test stage, the summary must reconcile all ten
+# entries, and the workflow must fail without cancelling the nine independent
+# entries". The fixture demonstrates the GRAPH; the roadmap's own risk list says
+# treating it as production-package selection would confuse a graph acceptance
+# test with evidence of real package diversity.
+#
+# SCOPE.md selects three VMODs and this file does not change that. It lives on
+# the throwaway `step8-fixture` branch, is never merged to main, and nothing
+# built from it is ever published.
+#
+# It is a clone of dict.yml: the same pinned upstream source, the same reviewed
+# overlay data, a distinct id and distinct package names. Cloning a REAL source
+# is deliberate -- an alias pointing at a stub would demonstrate that a stub
+# builds, which is not the property under test.
+schema: vmod-ci/v1
+id: fixture1
+
+source_host: git
+clone_url: https://git.gnu.org.ua/vmod-dict.git
+
+# Required, so this entry's failure reddens the run. That is the acceptance
+# criterion: the workflow must FAIL while the other nine entries complete.
+required: true
+adapter: autotools
+recipe: generated
+
+sources:
+  release:
+    ref: v1.7
+    expected_commit: 784584d272894a39cf995377618aad551a196424
+    version: "1.7"
+    archive_url: https://download.gnu.org.ua/release/vmod-dict/vmod-dict-1.7.tar.gz
+    archive_sha256: eb2a86a780ba9628106dbe858d17ec4589ad6dcb70c6ad53decb5d32824e098c
+    publishable: true
+
+# tier `ci` ONLY. No alias may appear as a SELECTED nightly, release or trunk
+# row: those tiers describe work this project actually does, and a fixture row
+# in one of them would put a package nobody selected into a release ledger.
+lanes:
+  - kind: package
+    source: release
+    engine: vinyl-release
+    tiers:
+      - ci
+    targets:
+      - debian-13-amd64
+      - el9-x86_64
