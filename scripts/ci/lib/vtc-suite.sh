@@ -132,6 +132,14 @@ vtc_run_suite() {
 
 	: >/tmp/vtc.log
 	_vtc_status=0
+	# Which cases latched a non-zero exit, on the driver path. Wave 2's tier
+	# rename run 30524142812 attempt 1 failed with "vinyltest reported failures"
+	# while every one of the twenty cases logged a pass: one runner invocation
+	# exited non-zero after its own tests were done -- fixture teardown, most
+	# likely -- and the message named nothing, so the only way to find the case
+	# was to read the whole log. Recording the name costs a string append and
+	# turns a re-read into a glance.
+	_vtc_failed=""
 	if [ "$_vtc_driver" = none ]; then
 		# shellcheck disable=SC2046,SC2086 # the ledger and the -D flags are deliberate word lists
 		vinyltest -v -k -j1 -t 60 \
@@ -154,14 +162,31 @@ vtc_run_suite() {
 				-p debug=+vclrel \
 				$_vtc_dflags \
 				"$_vtc_case" 2>&1 | tee -a /tmp/vtc.log || _vtc_one=$?
-			[ "$_vtc_one" -eq 0 ] || _vtc_status=$_vtc_one
+			[ "$_vtc_one" -eq 0 ] || {
+				_vtc_status=$_vtc_one
+				_vtc_failed="$_vtc_failed $(basename "$_vtc_case")(exit $_vtc_one)"
+			}
 		done </tmp/vtc-ledger
 	fi
 
 	_vtc_passed=$(grep -c 'TEST .* passed' /tmp/vtc.log || true)
 	_vtc_skipped=$(grep -c 'TEST .* skipped' /tmp/vtc.log || true)
 	[ "$_vtc_status" -eq 0 ] || {
-		printf 'FAIL: vinyltest reported failures\n' >&2
+		# The case list is empty on the `none` driver path, where one vinyltest
+		# invocation covers the whole ledger and there is no per-case status to
+		# latch -- the log is the only breakdown there, and saying so is more
+		# use than an empty parenthesis.
+		if [ -n "$_vtc_failed" ]; then
+			printf 'FAIL: vinyltest reported failures (exit latched by:%s)\n' \
+				"$_vtc_failed" >&2
+		else
+			printf 'FAIL: vinyltest reported failures (single invocation over the whole ledger; see the log)\n' >&2
+		fi
+		printf 'passed %s of %s cases, %s skipped -- a full pass count here means the\n' \
+			"$(grep -c 'TEST .* passed' /tmp/vtc.log || true)" \
+			"$_vtc_count" \
+			"$(grep -c 'TEST .* skipped' /tmp/vtc.log || true)" >&2
+		printf 'exit status came from something other than a failing test.\n' >&2
 		return 1
 	}
 	# One pass line per ledger entry. On the driver path this is also what
