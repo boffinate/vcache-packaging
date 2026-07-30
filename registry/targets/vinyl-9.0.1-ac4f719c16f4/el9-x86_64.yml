@@ -1368,13 +1368,22 @@ vmods:
       # "VTC-SUITE SUMMARY: 2/2 passed, 0 skipped" (dict_ci.vtc, dict_cs.vtc).
       full_behavior_suite: pass
       # Not run for the generated-VMOD rows: run 30491861084's package jobs end at
-      # the verify container and its checksums, and nightly-transactions.yml
-      # exercises the engine cohort's own packages only -- wiring the
-      # generated VMODs into it is Step 8 (Wave B report, 20260729_0119).
-      # Recorded not-applicable rather than restating the revision-1 pass:
-      # that came from a one-off container matrix whose packages no longer
-      # exist, and nothing in run 30491861084 reproduces it.
-      upgrade_transactions: not-applicable
+      # Measured by the deliberate release-transactions dispatch, run
+      # 30532825959 (2026-07-30), and deliberately left PENDING by maintainer
+      # decision: 16 of 19 scenarios are outcome-identical to cachetag's row,
+      # but upgrade-allowerasing, upgrade-allowerasing-runtime-only and
+      # distro-sync-allowerasing REMOVE vmod-dict (dnf exit 0) where the
+      # identical scenarios REFUSE for cachetag and redis, despite identical
+      # generated Requires stanzas (abi, vrt, cohort). That contradicts the
+      # Step 9 finding that bare --allowerasing is safe on EL9
+      # (docs/20260724_2348) for this one VMOD, and recording pass would bake
+      # the divergence in before it is understood. Pending blocks dict's
+      # releasability until the dnf/libsolv divergence is adjudicated
+      # (docs/20260730_1139_note_step-8-dict-el9-allowerasing-divergence.md).
+      # Evidence:
+      # packages-dict-release-vinyl-release-el9-x86_64,
+      # txn/mismatch/logs/summary.tsv.
+      upgrade_transactions: pending
       # dict's suite needs no fixture server: the overlay declares no
       # behaviour packages for either family, and the lane installed none.
       fixture_packages: []
@@ -1895,13 +1904,15 @@ vmods:
       # the distribution package recorded in fixture_packages below. Job log
       # of run 30491861084: "VTC-SUITE SUMMARY: 20/20 passed, 0 skipped".
       full_behavior_suite: pass
-      # Not run for the generated-VMOD rows: run 30491861084's package jobs end at
-      # the verify container and its checksums, and nightly-transactions.yml
-      # exercises the engine cohort's own packages only -- wiring the
-      # generated VMODs into it is Step 8 (Wave B report, 20260729_0119).
-      # No upgrade-transaction matrix has ever run for redis, so there is
-      # nothing older to restate either.
-      upgrade_transactions: not-applicable
+      # Measured by the deliberate release-transactions dispatch, run
+      # 30532825959 (2026-07-30): 19/19 scenarios, outcome-identical to
+      # cachetag's row -- redis's first-ever transaction matrix, including
+      # the three --allowerasing scenarios that diverge for dict. The
+      # identity cross-check in the same run confirmed the packages'
+      # recorded identity (EL9 whole-RPM digests exempt per the equivalence
+      # contract). Evidence: packages-redis-release-vinyl-release-el9-x86_64,
+      # txn/mismatch/logs/summary.tsv.
+      upgrade_transactions: pass
       # logs/fixture-packages.tsv of run 30491861084: the distribution's own
       # Redis, installed by the verify container because the overlay declares
       # it -- upstream's runner.sh launches real servers from this package

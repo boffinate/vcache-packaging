@@ -936,13 +936,13 @@ vmods:
       # "VTC-SUITE SUMMARY: 2/2 passed, 0 skipped" (dict_ci.vtc, dict_cs.vtc).
       full_behavior_suite: pass
       # Not run for the generated-VMOD rows: run 30491861084's package jobs end at
-      # the verify container and its checksums, and nightly-transactions.yml
-      # exercises the engine cohort's own packages only -- wiring the
-      # generated VMODs into it is Step 8 (Wave B report, 20260729_0119).
-      # Recorded not-applicable rather than restating the revision-1 pass:
-      # that came from a one-off container matrix whose packages no longer
-      # exist, and nothing in run 30491861084 reproduces it.
-      upgrade_transactions: not-applicable
+      # Measured by the deliberate release-transactions dispatch, run
+      # 30532825959 (2026-07-30): 16/16 scenarios, outcome-identical to
+      # cachetag's row. The identity cross-check in the same run confirmed
+      # the packages byte-match the artifacts recorded here. Evidence:
+      # packages-dict-release-vinyl-release-debian-13-amd64,
+      # txn/logs/transactions/SUMMARY.tsv.
+      upgrade_transactions: pass
       # dict's suite needs no fixture server: the overlay declares no
       # behaviour packages for either family, and the lane installed none.
       fixture_packages: []
@@ -1410,13 +1410,14 @@ vmods:
       # the distribution packages recorded in fixture_packages below. Job log
       # of run 30491861084: "VTC-SUITE SUMMARY: 20/20 passed, 0 skipped".
       full_behavior_suite: pass
-      # Not run for the generated-VMOD rows: run 30491861084's package jobs end at
-      # the verify container and its checksums, and nightly-transactions.yml
-      # exercises the engine cohort's own packages only -- wiring the
-      # generated VMODs into it is Step 8 (Wave B report, 20260729_0119).
-      # No upgrade-transaction matrix has ever run for redis, so there is
-      # nothing older to restate either.
-      upgrade_transactions: not-applicable
+      # Measured by the deliberate release-transactions dispatch, run
+      # 30532825959 (2026-07-30): 16/16 scenarios, outcome-identical to
+      # cachetag's row -- redis's first-ever transaction matrix. The identity
+      # cross-check in the same run confirmed the packages byte-match the
+      # artifacts recorded here. Evidence:
+      # packages-redis-release-vinyl-release-debian-13-amd64,
+      # txn/logs/transactions/SUMMARY.tsv.
+      upgrade_transactions: pass
       # logs/fixture-packages.tsv of run 30491861084: the distribution's own
       # Redis, installed by the verify container because the overlay declares
       # it -- upstream's runner.sh launches real servers from these packages
