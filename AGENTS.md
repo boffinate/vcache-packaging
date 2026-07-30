@@ -77,7 +77,7 @@ python3 tools/upstream_watch.py check --state ci-state.json --format github
 python3 tools/upstream_watch.py selftest
 ```
 
-It answers three questions per VMOD — does the pinned tag still peel to the recorded commit (a moved tag is a loud failure, never a re-pin candidate), are there tags sorting above the pin (surfaced to the maintainer, never acted on), and has a watched trunk branch moved — plus Vinyl trunk HEAD. It replaces the survey JSON as the freshness signal per the [2026-07-30 maintainer decisions](docs/20260730_0826_note_step-8-maintainer-decisions.md). Generated VMOD recipes (host-safe, stdlib only, builds nothing):
+It answers three questions per VMOD — does the pinned tag still peel to the recorded commit (a moved tag is a loud failure, never a re-pin candidate), are there tags sorting above the pin (surfaced to the maintainer, never acted on), and has a watched trunk branch moved — plus Vinyl trunk HEAD. It also watches the Vinyl release tag itself under the same moved-tag rule, and the watched trunk branches cover cachetag, dict, and redis. It replaces the survey JSON as the freshness signal per the [2026-07-30 maintainer decisions](docs/20260730_0826_note_step-8-maintainer-decisions.md). Generated VMOD recipes (host-safe, stdlib only, builds nothing):
 
 ```sh
 python3 tools/vmod_recipe.py generate --manifest registry/vmods/<id>.yml \

@@ -107,7 +107,9 @@ and the body carries a `## Package families` section with a table per family:
 Source: `vmod-dict-1.7.tar.gz` (sha256 `f871e232…`)
 ```
 
-Twenty assets in the upload directory: six native packages, three debug packages, three `.dsc`, three `.debian.tar.xz`, three source archives, plus `RELEASE-SHA256SUMS` and `release-manifest.json`. No `scripts/`, no `logs/`.
+Twenty assets in the **fixture run's** upload directory: six native packages, three debug packages, three `.dsc`, three `.debian.tar.xz`, three source archives, plus `RELEASE-SHA256SUMS` and `release-manifest.json`. No `scripts/`, no `logs/`.
+
+*Reconciled 2026-07-30: that count is fixture-scoped, not a live-run prediction.* The first complete live draft (run 30541746563) has **57** assets, across four families rather than three — cachetag 15 (13 standard + `.metadata.json` + `.tar.gz.sha256`), dict 13, redis 13, and the vinyl-cache engine 14 (the standard shape plus the `-devel` rpm and `-dev` deb, minus a separate upstream tarball) — plus the same 2 top-level files (`RELEASE-SHA256SUMS`, `release-manifest.json`). The standard 13 per VMOD is EL9 ×4 (`.el9.x86_64.rpm`, `.el9.src.rpm`, `-debuginfo`, `-debugsource`) + Debian ×8 (`_amd64.deb`, `-dbgsym_amd64.deb`, `.dsc`, `.debian.tar.xz`, `_amd64.buildinfo`, `_amd64.changes`, `_source.changes`, `.orig.tar.gz`) + 1 upstream source tarball. The behaviour producing this is `scripts/ci/release-manifest.sh:246-277`: the `publish_from` glob, the per-family loop (engine directory included), and the opportunistic sidecar copy.
 
 ## The fixture rig
 
@@ -128,7 +130,7 @@ Twenty assets in the upload directory: six native packages, three debug packages
 | `release_tool.py selftest` | 172/172 |
 | `release_tool.py validate` / `--require-releasable` | both green |
 | `ledger --tier ci` / `release` / `transactions` / `trunk` vs `fead175` | **byte-identical, all four** |
-| `release-manifest.sh` against the fixture tree | renders three families, 20 assets, no evidence files published |
+| `release-manifest.sh` against the fixture tree | renders three families, 20 assets (fixture-scoped — a complete live draft has 57; see the asset accounting above), no evidence files published |
 | `release-manifest.sh` against the real registry with fixture bytes | refuses on the pinned source digest, as designed |
 | `bash -n` on `release-manifest.sh` and `verify-recorded-digests.sh` | clean |
 | every `run:` block of `release-draft.yml`, extracted and `bash -n` | 15 blocks, 0 errors; zero `inject` references |

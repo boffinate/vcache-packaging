@@ -50,9 +50,9 @@ on:
           dispatching workflow arrives in Wave 3d; nothing calls this workflow
           with it yet.
 
-          `trunk` is still declared only: this workflow has no source-harness
-          job, so a trunk tier would expand to a harness row nothing runs. It
-          arrives with the change-gated early-warning workflow in Wave 3c.
+          `trunk` expands to source-harness rows run by this workflow's own
+          harness job (landed in Wave 3c); the change-gated early-warning
+          workflow is its dispatcher.
         required: true
         type: string
       inject:
