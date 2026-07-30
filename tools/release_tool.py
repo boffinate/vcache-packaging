@@ -227,6 +227,83 @@ def cmd_release_notes(args) -> int:
     return 0
 
 
+def cmd_recorded_evidence(args) -> int:
+    """What the registry RECORDS for one cohort and target, per VMOD.
+
+    `metadata` generates: it computes the names and versions a build should
+    produce. This reports: it prints the package identity and artifact digests
+    already written down as the evidence of record. The two answer opposite
+    questions, and the identity cross-check needs the second -- "does what this
+    run built match what we published" cannot be asked of a generator.
+
+    Read-only, and deliberately without a comparison of its own. Whoever is
+    checking supplies the observed side; this supplies exactly the recorded one,
+    so there is one place that knows how the evidence is shaped.
+    """
+    root = Path(args.repo_root).resolve()
+    cohort_path = _cohort_path(root, args.cohort)
+    cohort = manifest.load_cohort(cohort_path)
+    target_path = root / "registry" / "targets" / cohort["cohort"] / f"{args.target}.yml"
+    target = manifest.load_target(target_path)
+    errors = manifest.validate_cohort(
+        cohort, str(cohort_path), _expected_version(args, root), repo_root=root
+    )
+    errors += manifest.validate_target(
+        target,
+        str(target_path),
+        cohort=cohort,
+        cohort_status=cohort["status"],
+        repo_root=root,
+    )
+    if errors:
+        for error in errors:
+            print(f"ERROR    {error}", file=sys.stderr)
+        return 1
+
+    vmods = {}
+    for vmod_id, entry in sorted(target["vmods"].items()):
+        if args.vmod and vmod_id != args.vmod:
+            continue
+        vmods[vmod_id] = {
+            "evidence": entry["evidence"],
+            "package": {
+                "upstream_version": entry["package"]["upstream_version"],
+                "revision": entry["package"]["revision"],
+                "source_name": entry["package"]["source_name"],
+                "binary_name": entry["package"]["binary_name"],
+            },
+            # Recorded artifacts, keyed by filename. A `pending` entry has an
+            # empty list, which is the honest answer and not an error: a build
+            # that has not happened recorded no digests.
+            "artifacts": {a["filename"]: a["sha256"] for a in entry["artifacts"]},
+        }
+    if args.vmod and not vmods:
+        print(
+            f"ERROR    {target_path} records no evidence for VMOD {args.vmod!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    report = {
+        "schema": "cohort-recorded-evidence/v1",
+        "cohort": cohort["cohort"],
+        "target": target["target"]["id"],
+        "package_format": target["target"]["package_format"],
+        "status": target["status"],
+        "vinyl_packages": dict(target["vinyl_packages"]),
+        "vmods": vmods,
+    }
+    if args.format == "json":
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        # `<sha256>  <filename>`: the sha256sum(1) format, so the output can be
+        # fed straight to `sha256sum -c` beside the built files.
+        for vmod_id in sorted(vmods):
+            for filename in sorted(vmods[vmod_id]["artifacts"]):
+                print(f"{vmods[vmod_id]['artifacts'][filename]}  {filename}")
+    return 0
+
+
 def cmd_selftest(args) -> int:
     import selftest
 
@@ -309,6 +386,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_notes.add_argument("--cohort", required=True, help="cohort id or path to a cohort manifest")
     p_notes.add_argument("--format", choices=["json", "body"], default="json")
     p_notes.set_defaults(func=cmd_release_notes)
+
+    p_rec = sub.add_parser(
+        "recorded-evidence",
+        help="print the package identity and artifact digests the registry RECORDS",
+    )
+    p_rec.add_argument("--cohort", required=True, help="cohort id or path to a cohort manifest")
+    p_rec.add_argument("--target", required=True, help="target id, for example debian-13-amd64")
+    p_rec.add_argument(
+        "--vmod",
+        default="",
+        help="one entry of the target's vmods map (default: every entry)",
+    )
+    p_rec.add_argument(
+        "--format",
+        choices=["json", "sha256sums"],
+        default="json",
+        help="sha256sums emits `<digest>  <filename>` lines, for `sha256sum -c`",
+    )
+    p_rec.set_defaults(func=cmd_recorded_evidence)
 
     p_self = sub.add_parser("selftest", help="run the release tooling tests")
     p_self.set_defaults(func=cmd_selftest)

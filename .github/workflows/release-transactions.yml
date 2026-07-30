@@ -1,0 +1,470 @@
+name: release transactions
+
+# The deliberate upgrade-transaction measurement, against ONE release cohort's
+# published packages. Policy source:
+# docs/20260730_0826_note_step-8-maintainer-decisions.md.
+#
+# workflow_dispatch ONLY, and the absence of a cron here is the policy rather
+# than an omission. The transaction matrix answers a question about a PUBLISHED
+# upgrade path -- what apt and dnf do when they are offered a newer Vinyl that
+# would break the VMODs already installed against the old one -- and neither a
+# trunk snapshot nor a package rebuilt this morning is a published upgrade path.
+# Once release artifacts are built they are untouched until there is a new
+# release, so a schedule would either re-measure the same packages forever or
+# rebuild the ones the evidence describes. Both are worse than dispatching this
+# when there is a reason to.
+#
+# It is also the most expensive thing this project runs: sixteen throwaway
+# scenario containers per Debian row and nineteen per EL9 row, six rows, each
+# installing a cohort from a local repository and running one real
+# package-manager transaction. That cost is affordable a few times a year and
+# not affordable nightly, which is the same conclusion from the other side.
+#
+# The graph is ci.yml's, at --tier transactions throughout. The rows are
+# identical to the release tier's -- the tier decides what each row RUNS, not
+# which rows there are -- so what this adds over a `ci` run is the mismatch
+# fixture and the transaction matrix inside each package row, which Wave 1 put
+# there as a tier-gated stage.
+#
+# It does NOT flip a verdict. The identity cross-check at the end says whether
+# the run measured the packages the registry describes; recording the result is
+# a separate, human-reviewed commit that names this run's id.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cohort:
+        description: >-
+          the release cohort whose recorded packages this run must reproduce.
+          The identity cross-check refuses the run when the engine resolves to
+          anything else, because a transaction verdict recorded against packages
+          the release does not contain looks like a measurement and is not one.
+        required: true
+        type: string
+        default: vinyl-9.0.1-ac4f719c16f4
+
+# No injection input, deliberately. The injections exist to prove failure
+# ISOLATION in the graph, which ci.yml and the ten-entry fixture already do.
+# Here they would only produce a deliberately broken measurement of a real
+# release cohort, which is the one thing this workflow must never produce.
+permissions:
+  contents: read
+
+jobs:
+  structural-validation:
+    name: structural validation and tooling selftests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: scripts/ci/test-common.sh
+        run: scripts/ci/test-common.sh
+
+      - name: tools/release_tool.py selftest
+        run: python3 tools/release_tool.py selftest
+
+      - name: tools/ci_matrix.py selftest
+        run: python3 tools/ci_matrix.py selftest
+
+      - name: registry schemas, identities and wiring (no VMOD source needed)
+        run: python3 tools/release_tool.py --no-cachetag-cross-check validate
+
+      # Stronger than ci.yml's gate, and the right place for it: this run exists
+      # to measure a cohort whose evidence is complete. A cohort carrying a
+      # pending VMOD has nothing to cross-check against.
+      - name: the tree is releasable
+        run: python3 tools/release_tool.py --no-cachetag-cross-check validate --require-releasable
+
+      - name: VMOD catalog structure
+        run: python3 tools/ci_matrix.py check-catalog
+
+  discover-vmods:
+    name: discover selected VMODs
+    needs: structural-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: list the selected VMOD manifests
+        id: discover
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          python3 tools/ci_matrix.py list-vmods --format github | tee -a "$GITHUB_OUTPUT"
+
+  discover-engines:
+    name: select the shared engine rows
+    needs: structural-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # Two rows, not four: `transactions` is claimed only by the vinyl-release
+      # lanes. cachetag's vinyl-trunk-pinned lane dropped the claim in Wave 3a,
+      # because a trunk snapshot is not a published upgrade path.
+      - name: derive the engine rows from the selected package lanes
+        id: discover
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          python3 tools/ci_matrix.py engine-matrix --tier transactions --format github |
+            tee -a "$GITHUB_OUTPUT"
+
+  engine:
+    name: engine ${{ matrix.engine }} (${{ matrix.target }})
+    needs: [structural-validation, discover-engines]
+    if: ${{ !cancelled() && needs.discover-engines.result == 'success' && needs.discover-engines.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-engines.outputs.matrix) }}
+    env:
+      VINYL_TRACK: ${{ matrix.vinyl_track }}
+      VINYL_GIT_COMMIT: 25761f8505817ac50df994270bfe75b60073e33e
+      VINYL_VTEST2_COMMIT: db5ccb4a078da40b3ec1ca3c18bf498bb1520888
+      EL9_IMAGE: almalinux:9@sha256:d2515c769e7b73f95c4fde38c0a505336ff38f14990c0b7253b77060a049a743
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: vcache-packaging
+
+      # The release track builds from the digest-pinned upstream tarball and
+      # never reads a Vinyl checkout. At this tier every row IS the release
+      # track -- `transactions` is claimed only by the vinyl-release lanes --
+      # so this guard is never true here. It is kept so the job stays the job
+      # ci.yml runs rather than a second, subtly different one.
+      - name: checkout ../vinyl-cache (pinned commit, not a GitHub remote)
+        id: vinyl
+        if: matrix.vinyl_track == 'trunk'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          . vcache-packaging/scripts/ci/lib/common.sh
+          ci_checkout_vinyl_cache "$GITHUB_WORKSPACE/vinyl-cache" \
+            "$VINYL_GIT_COMMIT" "$VINYL_VTEST2_COMMIT"
+
+      # ---- Debian 13 amd64 (pbuilder), engine scope. ----
+      - name: assemble the pinned Vinyl source tree (build.sh source-engine)
+        id: deb_source
+        if: matrix.family == 'deb' && steps.vinyl.outcome != 'failure'
+        continue-on-error: true
+        run: recipes/debian-13/build.sh source-engine
+        working-directory: vcache-packaging
+
+      - name: build the pinned buildroot with mmdebstrap
+        id: deb_chroot
+        if: matrix.family == 'deb' && steps.deb_source.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/make-chroot.sh
+        working-directory: vcache-packaging
+
+      - name: build the Vinyl packages in the pinned debian:trixie container (pbuilder)
+        id: deb_build
+        if: matrix.family == 'deb' && steps.deb_chroot.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/debian-lane.sh engine
+        working-directory: vcache-packaging
+
+      - name: engine ABI and hardening assertions
+        id: deb_abi
+        if: matrix.family == 'deb' && steps.deb_build.outcome == 'success'
+        continue-on-error: true
+        run: bash scripts/ci/debian13/assert-packages.sh engine
+        working-directory: vcache-packaging
+
+      # ---- EL9 x86_64 (Mock), engine scope. ----
+      - name: Mock build (vinyl-cache only)
+        id: el9_build
+        if: matrix.family == 'rpm' && steps.vinyl.outcome != 'failure'
+        continue-on-error: true
+        run: |
+          bash scripts/ci/el9/mock-build.sh \
+            "$GITHUB_WORKSPACE/vinyl-cache" \
+            "" \
+            "$EL9_IMAGE" \
+            engine
+        working-directory: vcache-packaging
+
+      - name: stage and describe the engine artifact
+        id: describe
+        if: steps.deb_abi.outcome == 'success' || steps.el9_build.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          staging="$GITHUB_WORKSPACE/engine-artifact"
+          mkdir -p "$staging/packages"
+          case "${{ matrix.family }}" in
+          deb)
+            # Explicit suffixes, not `vinyl-cache*`: dist/debian-13 also holds
+            # the cached upstream vinyl-cache-<version>.tgz on the release
+            # track, which is a build input rather than a produced package.
+            for pattern in .deb .ddeb .dsc .changes .buildinfo .tar.gz .tar.xz; do
+              find dist/debian-13 -maxdepth 1 -type f \
+                -name "vinyl-cache*$pattern" -exec cp -p {} "$staging/packages/" \;
+            done
+            ;;
+          rpm)
+            find dist/el9/packages -maxdepth 1 -type f \
+              -name 'vinyl-cache*.rpm' -exec cp -p {} "$staging/packages/" \;
+            ;;
+          esac
+          ls -la "$staging/packages"
+          scripts/ci/engine-identity.sh "${{ matrix.family }}" \
+            > "$staging/engine-identity.env"
+          cat "$staging/engine-identity.env"
+          python3 tools/ci_matrix.py engine-metadata \
+            --engine "${{ matrix.engine }}" \
+            --target "${{ matrix.target }}" \
+            --identity "$staging/engine-identity.env" \
+            --packages "$staging/packages" \
+            --out "$staging/engine-metadata.json"
+        working-directory: vcache-packaging
+
+      - name: upload the engine artifact
+        id: upload
+        if: steps.describe.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.engine_artifact }}
+          path: engine-artifact
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: classify and record the engine result
+        id: record
+        if: always()
+        shell: bash
+        run: |
+          set -eu
+          status=passed
+          detail=""
+          set_status() { status=$1; detail=$2; }
+          if [ "${{ steps.vinyl.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "the pinned Vinyl source was unavailable"
+          elif [ "${{ steps.deb_source.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "build.sh source-engine failed"
+          elif [ "${{ steps.deb_chroot.outcome }}" = "failure" ]; then
+            set_status failed_infrastructure "the mmdebstrap buildroot could not be built"
+          elif [ "${{ steps.deb_build.outcome }}" = "failure" ] \
+            || [ "${{ steps.el9_build.outcome }}" = "failure" ]; then
+            set_status failed_engine_build "the Vinyl package build failed"
+          elif [ "${{ steps.deb_abi.outcome }}" = "failure" ]; then
+            set_status failed_abi_or_hardening "assert-packages.sh engine failed"
+          elif [ "${{ steps.describe.outcome }}" != "success" ]; then
+            set_status failed_infrastructure \
+              "the engine artifact could not be staged or described"
+          elif [ "${{ steps.upload.outcome }}" != "success" ]; then
+            set_status failed_infrastructure "the engine artifact upload failed"
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          python3 tools/ci_matrix.py record \
+            --out "$GITHUB_WORKSPACE/results/engine.json" \
+            --kind engine \
+            --vmod "" \
+            --engine "${{ matrix.engine }}" \
+            --target "${{ matrix.target }}" \
+            --status "$status" \
+            --stage engine \
+            --detail "$detail" \
+            --artifact "${{ matrix.engine_artifact }}"
+        working-directory: vcache-packaging
+
+      - name: upload the engine result record and logs
+        id: upload_result
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.result_artifact }}
+          path: |
+            results/engine.json
+            engine-artifact/engine-metadata.json
+            engine-artifact/engine-identity.env
+            vcache-packaging/dist/debian-13/logs/**
+            vcache-packaging/dist/el9/logs/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: fail when this engine row failed
+        if: steps.record.outputs.status != 'passed' || steps.upload_result.outcome == 'failure'
+        run: exit 1
+
+  vmods:
+    name: VMOD
+    needs: [structural-validation, discover-vmods, engine]
+    # Not ordinary `needs` semantics on the engine matrix, for the reason
+    # ci.yml gives: a failed engine row must not skip the VMOD invocations, so
+    # each row decides from its own requested artifact whether it can proceed.
+    if: ${{ !cancelled() && needs.discover-vmods.result == 'success' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.discover-vmods.outputs.matrix) }}
+    uses: ./.github/workflows/vmod-package.yml
+    with:
+      manifest: ${{ matrix.manifest }}
+      vmod_id: ${{ matrix.id }}
+      # The whole point of this workflow. At this tier the Wave 1 transaction
+      # stages fire inside each package row: the synthetic mismatch fixture,
+      # then the matrix.
+      tier: transactions
+
+  collect:
+    name: reconcile every expected row
+    needs: [structural-validation, discover-vmods, discover-engines, engine, vmods]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: download every result record
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: result-*
+          path: results
+
+      - name: note the upstream job outcomes
+        shell: bash
+        run: |
+          set -eu
+          {
+            echo "## Upstream job outcomes"
+            echo
+            echo "| job | result |"
+            echo "| --- | --- |"
+            echo "| structural-validation | ${{ needs.structural-validation.result }} |"
+            echo "| discover-vmods | ${{ needs.discover-vmods.result }} |"
+            echo "| discover-engines | ${{ needs.discover-engines.result }} |"
+            echo "| engine (aggregate) | ${{ needs.engine.result }} |"
+            echo "| vmods (aggregate) | ${{ needs.vmods.result }} |"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: reconcile the expected ledger against the observed results
+        shell: bash
+        run: |
+          set -eu
+          python3 tools/ci_matrix.py reconcile \
+            --tier transactions \
+            --results "$GITHUB_WORKSPACE/results" \
+            --json "$GITHUB_WORKSPACE/reconciled.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: upload the reconciled ledger
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: transactions-reconciled-ledger
+          path: reconciled.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  identity-crosscheck:
+    name: did this run build the recorded packages
+    needs: [collect]
+    # After a GREEN collection only. A run whose rows failed has not produced a
+    # coherent set of packages to compare, and cross-checking a partial one
+    # would answer a question nobody asked.
+    if: ${{ !cancelled() && needs.collect.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # Separate directories per artifact: every lane writes a file literally
+      # named SHA256SUMS, and a shared directory would let one row clobber
+      # another's.
+      - name: download every package artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: packages-*
+          path: packages
+
+      - name: download the engine artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: engine-*
+          path: engine
+
+      # The identity of the ENGINE the rows actually consumed, taken from the
+      # artifact they verified rather than re-derived here. Every package row
+      # already compared this file against its own pin file before building, so
+      # a disagreement would have failed the row; reading it again is how this
+      # job learns which cohort the run belongs to without becoming a second
+      # reader of the pin files.
+      - name: the cohort this run's engine resolves to
+        id: engine_identity
+        shell: bash
+        run: |
+          set -eu
+          identity=$(find engine -name engine-identity.env | sort | head -1)
+          [ -n "$identity" ] || { echo "E: the run published no engine identity" >&2; exit 1; }
+          echo "path=$identity" >> "$GITHUB_OUTPUT"
+          cat "$identity"
+
+      - name: Debian -- versions, revisions and recorded digests
+        shell: bash
+        run: |
+          set -eu
+          sh scripts/ci/verify-recorded-digests.sh \
+            --cohort "${{ inputs.cohort }}" \
+            --target debian-13-amd64 \
+            --identity "${{ steps.engine_identity.outputs.path }}" \
+            --packages packages
+
+      - name: EL9 -- versions and revisions
+        shell: bash
+        run: |
+          set -eu
+          sh scripts/ci/verify-recorded-digests.sh \
+            --cohort "${{ inputs.cohort }}" \
+            --target el9-x86_64 \
+            --identity "${{ steps.engine_identity.outputs.path }}" \
+            --packages packages
+
+      # What a human needs in front of them before writing the verdict-flip
+      # commit. This workflow does not write it: recording evidence is a
+      # reviewed act, and a workflow that could record its own result would be
+      # able to record a result nobody looked at.
+      - name: what a reviewer needs to see
+        if: always()
+        shell: bash
+        run: |
+          set -eu
+          {
+            echo "## Transaction evidence, run ${GITHUB_RUN_ID}"
+            echo
+            echo "Cohort: \`${{ inputs.cohort }}\`"
+            echo
+            echo "The per-scenario tables are in each row's package artifact:"
+            echo "\`logs/transactions/SUMMARY.tsv\` (Debian) and"
+            echo "\`mismatch/logs/summary.tsv\` (EL9), plus one log per scenario."
+            echo
+            echo "This workflow records NOTHING. Flipping an \`upgrade_transactions\`"
+            echo "verdict is a separate, human-reviewed commit that cites this run id,"
+            echo "and it may only be written when the cross-check above passed."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"

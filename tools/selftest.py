@@ -994,6 +994,96 @@ def test_required_vmods_matches_the_catalog(repo_root: Path) -> None:
     )
 
 
+def test_recorded_evidence_reports_what_the_registry_holds(repo_root: Path) -> None:
+    """`recorded-evidence` reports; `metadata` generates. (Wave 3d)
+
+    The identity cross-check needs the second question -- "does what this run
+    built match what we published" -- and a generator cannot answer it: it
+    computes what a build SHOULD produce, which is the same answer whatever the
+    run did. So the recorded artifact digests needed a reader, and this is the
+    smallest one: it copies the evidence out and compares nothing, so there is
+    exactly one place that knows how the evidence is shaped.
+    """
+    import io
+    import contextlib
+    import json as _json
+
+    import release_tool
+
+    args = release_tool.build_parser().parse_args(
+        [
+            "--repo-root", str(repo_root),
+            "recorded-evidence",
+            "--cohort", "vinyl-9.0.1-ac4f719c16f4",
+            "--target", "debian-13-amd64",
+        ]
+    )
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        rc = release_tool.cmd_recorded_evidence(args)
+    check("recorded-evidence: it reads the release cohort's Debian target", rc == 0)
+    report = _json.loads(buffer.getvalue())
+    check(
+        "recorded-evidence: it names the cohort, the target and the format",
+        report["cohort"] == "vinyl-9.0.1-ac4f719c16f4"
+        and report["target"] == "debian-13-amd64"
+        and report["package_format"] == "deb",
+        str({k: report[k] for k in ("cohort", "target", "package_format")}),
+    )
+    check(
+        "recorded-evidence: every selected VMOD is present",
+        sorted(report["vmods"]) == ["cachetag", "dict", "redis"],
+        str(sorted(report["vmods"])),
+    )
+    # The three package identities the cross-check asserts against. Read out of
+    # the manifests rather than restated, so a deliberate revision bump moves
+    # this test's expectation with the evidence.
+    target = manifest.load_target(
+        repo_root / "registry/targets/vinyl-9.0.1-ac4f719c16f4/debian-13-amd64.yml"
+    )
+    for vmod_id, entry in sorted(target["vmods"].items()):
+        got = report["vmods"][vmod_id]["package"]
+        check(
+            f"recorded-evidence: {vmod_id}'s version and revision are the recorded ones",
+            got["upstream_version"] == entry["package"]["upstream_version"]
+            and got["revision"] == entry["package"]["revision"],
+            str(got),
+        )
+        check(
+            f"recorded-evidence: {vmod_id}'s artifact digests are copied verbatim",
+            report["vmods"][vmod_id]["artifacts"]
+            == {a["filename"]: a["sha256"] for a in entry["artifacts"]},
+            str(report["vmods"][vmod_id]["artifacts"]),
+        )
+    # The sha256sums rendering is what makes the output usable beside the built
+    # files, so its shape is asserted rather than assumed.
+    args.format = "sha256sums"
+    args.vmod = "dict"
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        release_tool.cmd_recorded_evidence(args)
+    lines = [l for l in buffer.getvalue().splitlines() if l.strip()]
+    check(
+        "recorded-evidence: --format sha256sums emits `<digest>  <filename>`",
+        lines
+        and all(
+            len(l.split("  ", 1)) == 2 and len(l.split("  ", 1)[0]) == 64 for l in lines
+        ),
+        str(lines[:2]),
+    )
+    check(
+        "recorded-evidence: --vmod narrows to one entry",
+        all("dict" in l for l in lines),
+        str(lines),
+    )
+    # A VMOD nobody recorded here must be an error rather than an empty report:
+    # silence would read as "nothing to check" to the cross-check.
+    args.vmod = "nosuchvmod"
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = release_tool.cmd_recorded_evidence(args)
+    check("recorded-evidence: an unknown VMOD is an error, not an empty report", rc == 1)
+
+
 def test_per_vmod_evidence(repo_root: Path) -> None:
     """The v2 map, and the exit-gate check it exists to make mechanical."""
     path = repo_root / "registry" / "targets" / "vinyl-9.0.1-ac4f719c16f4" / "debian-13-amd64.yml"
@@ -1490,6 +1580,7 @@ def main(repo_root: Path = None, cachetag_src=None) -> int:
     test_repo_cachetag_cross_check(root, src)
     test_required_vmods_matches_the_catalog(root)
     test_per_vmod_evidence(root)
+    test_recorded_evidence_reports_what_the_registry_holds(root)
     test_fixture_packages_are_required_when_the_overlay_declares_them(root)
     test_recipe_sha256_binds_the_package_to_the_generated_recipe(root)
     test_metadata_is_byte_neutral_across_the_v2_migration(root)
