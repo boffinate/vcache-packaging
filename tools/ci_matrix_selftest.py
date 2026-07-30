@@ -1726,6 +1726,167 @@ def test_transactions_status_has_a_producer(repo_root: Path) -> None:
     )
 
 
+def _release_set_fixture(root: Path, statuses: dict = None, drop: str = "", corrupt: str = ""):
+    """A reconciled release ledger plus a matching packages tree. (Wave 3e)
+
+    Built from the real ledger rather than from a hand-written one, so the
+    artifact names the gate looks for are the names the ledger actually
+    produces -- which is the property that would silently rot if this fixture
+    invented them.
+    """
+    import hashlib
+
+    statuses = statuses or {}
+    ledger = ci_matrix.ledger("release", root)
+    records = []
+    for row in ledger["rows"]:
+        if not row["selected"]:
+            continue
+        records.append(
+            ci_matrix.make_record(
+                kind=row["kind"],
+                vmod=row["vmod"],
+                status=statuses.get(row["row_key"], "passed"),
+                channel=row.get("channel", ""),
+                engine=row.get("engine", ""),
+                target=row.get("target", ""),
+            )
+        )
+    observed = {r["row_key"]: r for r in records}
+    reconciled = ci_matrix.reconcile(ledger, observed)
+
+    packages = Path(tempfile.mkdtemp()) / "packages"
+    for row in ledger["rows"]:
+        if not row["selected"] or row["kind"] != "package-target":
+            continue
+        artifact = row["packages_artifact"]
+        if artifact == drop:
+            continue
+        # The generated rows upload a tree rooted at `lane`, so their checksum
+        # file is under out/; the upstream rows' is at the artifact root. Both
+        # shapes appear here on purpose: the gate must find either.
+        sub = "out" if row["vmod"] in ("dict", "redis") else ""
+        directory = packages / artifact / sub if sub else packages / artifact
+        directory.mkdir(parents=True, exist_ok=True)
+        name = f"{row['vmod']}-{row['target']}.deb"
+        payload = f"payload {row['row_key']}".encode()
+        (directory / name).write_bytes(payload)
+        digest = hashlib.sha256(payload).hexdigest()
+        (directory / "SHA256SUMS").write_text(f"{digest}  {name}\n", encoding="utf-8")
+        if artifact == corrupt:
+            (directory / name).write_bytes(b"tampered")
+    return reconciled, packages
+
+
+def test_the_release_set_gate(repo_root: Path) -> None:
+    """Publication must not proceed on a partial required set. (Wave 3e)
+
+    The plan's rule: "release assembly must not publish a partial required
+    package set merely because the other nine succeeded". Reconciliation
+    answers "did every expected row report"; this answers the different
+    question of whether what they reported is enough to publish, which needs
+    the artifacts themselves and the cohort's own required list.
+    """
+    required = ["cachetag", "dict", "redis"]
+
+    reconciled, packages = _release_set_fixture(repo_root)
+    report = ci_matrix.verify_release_set(reconciled, packages, required)
+    check(
+        "release set: a complete run passes",
+        report["complete"] and not report["problems"],
+        str(report["problems"]),
+    )
+    check(
+        "release set: it reports what it required and what was built",
+        report["required_vmods"] == required
+        and report["built_vmods"] == required
+        and report["package_rows"] == 6,
+        str({k: report[k] for k in ("required_vmods", "built_vmods", "package_rows")}),
+    )
+
+    # A row that published nothing. This is the negative proof the live run
+    # cannot easily stage: an artifact simply absent from a green run.
+    reconciled, packages = _release_set_fixture(
+        repo_root, drop="packages-redis-release-vinyl-release-el9-x86_64"
+    )
+    report = ci_matrix.verify_release_set(reconciled, packages, required)
+    check(
+        "release set: a missing package artifact blocks publication",
+        not report["complete"]
+        and [p["kind"] for p in report["problems"]] == ["missing_artifact"]
+        and report["problems"][0]["vmod"] == "redis",
+        str(report["problems"]),
+    )
+
+    # An artifact whose checksum file does not describe the bytes beside it.
+    reconciled, packages = _release_set_fixture(
+        repo_root, corrupt="packages-dict-release-vinyl-release-debian-13-amd64"
+    )
+    report = ci_matrix.verify_release_set(reconciled, packages, required)
+    check(
+        "release set: an artifact whose SHA256SUMS does not match blocks publication",
+        not report["complete"]
+        and [p["kind"] for p in report["problems"]] == ["bad_checksums"],
+        str(report["problems"]),
+    )
+
+    # A required VMOD the run did not build at all, and one it built that the
+    # cohort does not require. Both directions, for the reason the per-target
+    # evidence map is checked both ways: one is an incomplete release and the
+    # other is a package nobody selected.
+    reconciled, packages = _release_set_fixture(repo_root)
+    report = ci_matrix.verify_release_set(reconciled, packages, required + ["absent"])
+    check(
+        "release set: a required VMOD with no package row blocks publication",
+        not report["complete"]
+        and any(
+            p["kind"] == "required_mismatch" and p["vmod"] == "absent"
+            for p in report["problems"]
+        ),
+        str(report["problems"]),
+    )
+    report = ci_matrix.verify_release_set(reconciled, packages, ["cachetag", "dict"])
+    check(
+        "release set: a built VMOD the cohort does not require blocks publication too",
+        not report["complete"]
+        and any(
+            p["kind"] == "required_mismatch" and p["vmod"] == "redis"
+            for p in report["problems"]
+        ),
+        str(report["problems"]),
+    )
+
+    # A failed required row, which reconciliation would also catch -- asserted
+    # here because this gate must not depend on the caller having noticed.
+    reconciled, packages = _release_set_fixture(
+        repo_root,
+        statuses={"target/dict/release/vinyl-release/el9-x86_64": "failed_lint"},
+    )
+    report = ci_matrix.verify_release_set(reconciled, packages, required)
+    check(
+        "release set: a failed required row blocks publication",
+        not report["complete"]
+        and any(p["kind"] == "row_failed" and p["vmod"] == "dict" for p in report["problems"]),
+        str(report["problems"]),
+    )
+
+    # --allow-incomplete LISTS rather than skips: the report still says
+    # incomplete and still names every omission, and only the exit status
+    # differs. A gate that went quiet would publish something that looked whole.
+    reconciled, packages = _release_set_fixture(
+        repo_root, drop="packages-redis-release-vinyl-release-el9-x86_64"
+    )
+    report = ci_matrix.verify_release_set(reconciled, packages, required)
+    rendered = ci_matrix.render_release_set(report)
+    check(
+        "release set: allow-incomplete still records the omission in the report",
+        not report["complete"]
+        and "missing_artifact" in rendered
+        and "packages-redis-release-vinyl-release-el9-x86_64" in rendered,
+        rendered,
+    )
+
+
 def test_every_tier_literal_in_the_workflow_is_a_real_tier(repo_root: Path) -> None:
     """The workflow's tier gates and TIERS must never disagree. (Wave 3a)
 
@@ -2576,6 +2737,7 @@ def main(repo_root: Path = None) -> int:
     test_recipe_generation_status_is_in_the_vocabulary()
     test_transactions_status_has_a_producer(root)
     test_every_tier_literal_in_the_workflow_is_a_real_tier(root)
+    test_the_release_set_gate(root)
     test_the_harness_row_carries_what_the_job_needs(root)
     test_transactions_is_the_transaction_tier(root)
     test_transactions_tier_budgets_the_matrix()

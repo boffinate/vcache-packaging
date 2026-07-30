@@ -8,27 +8,30 @@
 # ... which cannot be checked in ahead of the run" -- this script is that
 # assembly step.
 #
-# Until 2026-07-26 it could not do that: no cohort manifest had status
-# `candidate`, so it fell back to the literal pinned values in the lane
-# drivers under a "cohort_status": "unassigned-process-proof" label. The first
-# real cohort has now been minted, so every identity below comes from the
-# registry via tools/release_tool.py, and the lane pins are checked against it
-# rather than copied.
+# ONE FAMILY BLOCK PER REQUIRED VMOD since Step 8 Wave 3e. It was cachetag-only
+# from the beginning, because for most of this project's life cachetag was the
+# only VMOD; the cohort now requires three, and a release that described one of
+# them would be a release whose own manifest disagreed with the registry about
+# what it contains. The VMOD list comes from the cohort's `required_vmods`, so
+# a fourth VMOD needs no edit here.
 #
 # Usage: release-manifest.sh ASSETS_DIR RUN_ID RUN_URL [UPLOAD_DIR]
 #
-# ASSETS_DIR must contain the three subdirectories release-draft.yml downloads
-# its artifacts into: source-archive/, debian-13/, el9/. They are separate
-# directories because both lanes produce a file literally named SHA256SUMS and
-# a shared download directory would let the second clobber the first.
+# ASSETS_DIR is the isolated graph's download layout:
+#
+#   packages/<packages-artifact>/...   one per selected package row
+#   source/<vmod-source-artifact>/...  one per VMOD source channel
+#
+# Artifact names are the ledger's, so this script and the workflow cannot
+# disagree about what to look for. Separate directories per artifact because
+# every lane writes a file literally named SHA256SUMS and a shared directory
+# would let one row clobber another's.
 #
 # UPLOAD_DIR (default ASSETS_DIR/../upload) receives every file that becomes a
 # release asset, flat. Assembling it here rather than in the workflow keeps the
 # checksum file honest: RELEASE-SHA256SUMS lists the names the assets are
 # actually published under, so `sha256sum -c` works in a directory of
-# downloaded release assets. The workflow used to flatten the assets itself,
-# with its own copy of each glob, while this script wrote lane-prefixed paths
-# into the checksum file that matched nothing a user could download.
+# downloaded release assets.
 
 set -euo pipefail
 
@@ -44,9 +47,11 @@ repo=$(CDPATH= cd -- "$here/../.." && pwd)
 assets=$(CDPATH= cd -- "$assets" && pwd)
 [ -n "$upload" ] || upload=$(dirname -- "$assets")/upload
 
-[ -d "$assets/source-archive" ] || die "missing $assets/source-archive"
-[ -d "$assets/debian-13" ] || die "missing $assets/debian-13"
-[ -d "$assets/el9" ] || die "missing $assets/el9"
+[ -d "$assets/packages" ] || die "missing $assets/packages"
+[ -d "$assets/source" ] || die "missing $assets/source"
+
+cachetag_src=${CACHETAG_SRC:-$repo/../libvmod-cachetag}
+release_tool() { python3 "$repo/tools/release_tool.py" --cachetag-src "$cachetag_src" "$@"; }
 
 ###############################################################################
 note "cohort identity"
@@ -73,32 +78,86 @@ metadata; a release assembled from two different cohorts is not a cohort."
 
 printf 'cohort: %s\n' "$COHORT_ID"
 
-# Every generated name below comes from the registry, not from this script.
+# WHICH VMODs this release describes, from the cohort manifest rather than from
+# a list here. registry/README.md makes required_vmods the cohort's own
+# statement of what it must contain, cross-checked against the catalog in both
+# directions, so it is the one authority that cannot disagree with what CI
+# built.
+vmods=$(python3 - "$repo/registry/cohorts/$COHORT_ID.yml" <<'PY'
+import sys
+sys.path.insert(0, __import__("os").path.join(__import__("os").path.dirname(sys.argv[1]), "..", "..", "tools"))
+import yaml_subset
+print(" ".join(yaml_subset.parse_file(sys.argv[1])["required_vmods"]))
+PY
+)
+[ -n "$vmods" ] || die "cohort $COHORT_ID declares no required_vmods"
+printf 'required VMODs: %s\n' "$vmods"
+
+###############################################################################
+note "per-VMOD generated names"
+###############################################################################
+# Every generated name comes from the registry, never from this script.
 # `metadata` refuses to run against a template manifest without
-# --allow-template, so this also proves a real cohort manifest backs the id
-# the lanes just built with.
-metadata_for() {
-	python3 "$repo/tools/release_tool.py" \
-		--cachetag-src "${CACHETAG_SRC:-$repo/../libvmod-cachetag}" \
-		metadata --cohort "$COHORT_ID" --target "$1" --format shell
-}
+# --allow-template, so this also proves a real cohort manifest backs the id the
+# lanes just built with.
+#
+# `metadata --vmod` is the authority for NAMES and VERSIONS: it is the one
+# generator of them, and registry/README.md is explicit that a recipe
+# disagreeing with it is a bug in the recipe. It is not the authority for
+# recorded digests -- those describe a previous run and this release is a fresh
+# build, so every digest below is computed from the bytes just built.
+#
+# The pinned SOURCE ARCHIVE digest comes from `ci_matrix.py source-facts`,
+# which reads the VMOD manifest: that is the one place a source archive's
+# identity is pinned, for all three VMODs, and it replaces the single
+# CACHETAG_SOURCE_SHA256 the cachetag-only script asserted against.
+meta_get() { printf '%s\n' "$2" | sed -n "s/^CACHETAG_$1='\(.*\)'\$/\1/p"; }
 
-deb_meta=$(metadata_for debian-13-amd64) ||
-	die "no registry target manifest for $COHORT_ID/debian-13-amd64"
-rpm_meta=$(metadata_for el9-x86_64) ||
-	die "no registry target manifest for $COHORT_ID/el9-x86_64"
+# Per-VMOD facts, keyed by name. Plain variables through `eval` rather than an
+# associative array: bash 3.2 has no `declare -A`, and that is the bash on a
+# maintainer's macOS host, so a script only verifiable on a runner would be a
+# script nobody checks before dispatching it. Every key component is a VMOD id
+# (^[a-z][a-z0-9]*$) or a fixed word, so nothing here is attacker-shaped.
+vset() { eval "_v_$1=\$2"; }
+vget() { eval "printf '%s' \"\${_v_$1:-}\""; }
 
-deb_native=$(printf '%s\n' "$deb_meta" | sed -n "s/^CACHETAG_ARTIFACTS_NATIVE_FILENAME='\(.*\)'$/\1/p")
-deb_asset=$(printf '%s\n' "$deb_meta" | sed -n "s/^CACHETAG_ARTIFACTS_RELEASE_ASSET_FILENAME='\(.*\)'$/\1/p")
-rpm_native=$(printf '%s\n' "$rpm_meta" | sed -n "s/^CACHETAG_ARTIFACTS_NATIVE_FILENAME='\(.*\)'$/\1/p")
-rpm_asset=$(printf '%s\n' "$rpm_meta" | sed -n "s/^CACHETAG_ARTIFACTS_RELEASE_ASSET_FILENAME='\(.*\)'$/\1/p")
-source_archive=$(printf '%s\n' "$deb_meta" | sed -n "s/^CACHETAG_SOURCE_ARCHIVE='\(.*\)'$/\1/p")
-deb_depends=$(printf '%s\n' "$deb_meta" | sed -n "s/^CACHETAG_ABI_DEB_DEPENDS='\(.*\)'$/\1/p")
-rpm_cohort_provide=$(printf '%s\n' "$rpm_meta" | sed -n "s/^CACHETAG_ABI_RPM_COHORT_PROVIDE='\(.*\)'$/\1/p")
-deb_cohort_provide=$(printf '%s\n' "$deb_meta" | sed -n "s/^CACHETAG_ABI_COHORT_PROVIDE='\(.*\)'$/\1/p")
+for vmod in $vmods; do
+	facts=$(python3 "$repo/tools/ci_matrix.py" source-facts \
+		--manifest "$repo/registry/vmods/$vmod.yml" --id "$vmod" \
+		--channel release --format shell) ||
+		die "no source facts for $vmod"
+	vset "srcsha_$vmod" "$(printf '%s\n' "$facts" |
+		sed -n "s/^VMOD_SOURCE_ARCHIVE_SHA256='\(.*\)'\$/\1/p")"
+	[ -n "$(vget "srcsha_$vmod")" ] || die "$vmod records no release archive digest"
 
-for v in deb_native deb_asset rpm_native rpm_asset source_archive; do
-	eval "[ -n \"\$$v\" ]" || die "release_tool.py metadata did not yield $v"
+	for target in debian-13-amd64 el9-x86_64; do
+		m=$(release_tool metadata --cohort "$COHORT_ID" --target "$target" \
+			--vmod "$vmod" --format shell) ||
+			die "no registry evidence for $vmod on $COHORT_ID/$target"
+		case $target in
+		debian-13-amd64) fam=deb ;;
+		el9-x86_64) fam=rpm ;;
+		esac
+		vset "native_${vmod}_$fam" "$(meta_get ARTIFACTS_NATIVE_FILENAME "$m")"
+		vset "asset_${vmod}_$fam" "$(meta_get ARTIFACTS_RELEASE_ASSET_FILENAME "$m")"
+		[ -n "$(vget "native_${vmod}_$fam")" ] ||
+			die "release_tool.py metadata yielded no native filename for $vmod/$target"
+		case $target in
+		debian-13-amd64)
+			vset "srcarchive_$vmod" "$(meta_get SOURCE_ARCHIVE "$m")"
+			vset "upstream_$vmod" "$(meta_get VERSIONS_DEBIAN_UPSTREAM_VERSION "$m")"
+			vset "revision_$vmod" "$(meta_get PACKAGE_REVISION "$m")"
+			vset "debdepends_$vmod" "$(meta_get ABI_DEB_DEPENDS "$m")"
+			vset "debcohort_$vmod" "$(meta_get ABI_COHORT_PROVIDE "$m")"
+			;;
+		el9-x86_64)
+			vset "rpmcohort_$vmod" "$(meta_get ABI_RPM_COHORT_PROVIDE "$m")"
+			;;
+		esac
+	done
+	printf '%-10s %s  |  %s  |  %s\n' "$vmod" \
+		"$(vget "native_${vmod}_deb")" "$(vget "native_${vmod}_rpm")" \
+		"$(vget "srcarchive_$vmod")"
 done
 
 ###############################################################################
@@ -109,13 +168,9 @@ note "upstream release-note references"
 # the release body and the machine-readable manifest cannot diverge. Empty is
 # a legitimate state (a trunk snapshot has no upstream release statement) and
 # renders as an empty array and no body section, not an error.
-release_notes_json=$(python3 "$repo/tools/release_tool.py" \
-	--cachetag-src "${CACHETAG_SRC:-$repo/../libvmod-cachetag}" \
-	release-notes --cohort "$COHORT_ID" --format json) ||
+release_notes_json=$(release_tool release-notes --cohort "$COHORT_ID" --format json) ||
 	die "release_tool.py release-notes failed for $COHORT_ID"
-release_notes_body=$(python3 "$repo/tools/release_tool.py" \
-	--cachetag-src "${CACHETAG_SRC:-$repo/../libvmod-cachetag}" \
-	release-notes --cohort "$COHORT_ID" --format body) ||
+release_notes_body=$(release_tool release-notes --cohort "$COHORT_ID" --format body) ||
 	die "release_tool.py release-notes --format body failed for $COHORT_ID"
 printf '%s\n' "$release_notes_json"
 
@@ -131,10 +186,15 @@ note "release-readiness gate"
 # experimental pre-release -- but it does not make the shortfall disappear:
 # every failing check is copied verbatim into release-manifest.json as
 # evidence_gaps, so the published artefact says what it is missing.
+#
+# Since Wave 3e the completeness GATE (ci_matrix.py verify-release-set) runs in
+# the workflow before this script, over the reconciled ledger and the
+# downloaded artifacts. The two are different questions and both belong: that
+# one asks whether the RUN produced a complete set, this one asks whether the
+# REGISTRY describes a releasable one. RELEASE_EVIDENCE_GAPS carries the first
+# one's findings in, so a single evidence_gaps array covers both.
 gaps=""
-if python3 "$repo/tools/release_tool.py" \
-	--cachetag-src "${CACHETAG_SRC:-$repo/../libvmod-cachetag}" \
-	validate --require-releasable > "$assets/validate-releasable.log" 2>&1
+if release_tool validate --require-releasable > "$assets/validate-releasable.log" 2>&1
 then
 	printf 'OK: the registry reports cohort %s releasable\n' "$COHORT_ID"
 else
@@ -150,42 +210,73 @@ experimental pre-release, which records every gap in release-manifest.json."
 		"$(printf '%s\n' "$gaps" | wc -l | tr -d ' ')"
 fi
 
+# Omissions the completeness gate found, passed in by the workflow so they land
+# in the same array. Listed, never silently dropped: an experimental release
+# says what it is missing or it is not honest about being experimental.
+if [ -n "${RELEASE_EVIDENCE_GAPS:-}" ] && [ -f "$RELEASE_EVIDENCE_GAPS" ]; then
+	set_gaps=$(sed -n 's/^ERROR *//p' "$RELEASE_EVIDENCE_GAPS")
+	if [ -n "$set_gaps" ]; then
+		printf '\nW: %d release-set omission(s) recorded from the completeness gate\n' \
+			"$(printf '%s\n' "$set_gaps" | wc -l | tr -d ' ')"
+		gaps=$(printf '%s\n%s' "${gaps}" "$set_gaps" | sed '/^$/d')
+	fi
+fi
+
 ###############################################################################
 note "assembling $upload"
 ###############################################################################
 rm -rf "$upload"
 mkdir -p "$upload"
 
-# The per-artifact selection mirrors each lane job's upload-artifact globs.
-# Lane SHA256SUMS files are deliberately excluded: the merged
-# RELEASE-SHA256SUMS written below is the release asset, and two files with
-# the same name cannot both be published anyway.
-# The canonical archive by name, never a glob: release-source-archive.sh also
-# leaves libvmod-cachetag-X.Y.Z.dist-raw.tar.gz beside it, which is the
-# pre-canonicalisation intermediate and must not be published as if it were
-# the release source.
-[ -f "$assets/source-archive/$source_archive" ] ||
-	die "no $source_archive in $assets/source-archive"
-cp -p "$assets/source-archive/$source_archive" "$upload/"
-for extra in "$assets/source-archive/$source_archive.sha256" \
-	"$assets"/source-archive/*.metadata.json; do
-	case "$extra" in *dist-raw*) continue ;; esac
-	[ -e "$extra" ] && cp -p "$extra" "$upload/"
-done
-cp -p "$assets"/debian-13/*.deb "$upload/"
-cp -p "$assets"/debian-13/*.dsc "$assets"/debian-13/*.changes \
-	"$assets"/debian-13/*.buildinfo "$assets"/debian-13/*.tar.* "$upload/"
-cp -p "$assets"/el9/packages/*.rpm "$upload/"
+# Two classes of file, and the distinction is the point.
+#
+# MANDATORY: everything the registry NAMES for this cohort -- the native
+# package on each target and the upstream source archive. If one is absent the
+# release is missing something the registry says it contains, and that is a
+# stop.
+#
+# INCIDENTAL: the debug package, the source package, the .changes and the
+# .buildinfo. They are published because they are useful, they are discovered
+# rather than named, and a lane that did not produce one is not a failure --
+# the RPM lane produces no .buildinfo at all.
+#
+# Nothing else travels. The generated lanes' artifacts also carry the verify
+# scripts, the ported VTCs, the rendered recipe and the transaction logs; those
+# are evidence, they stay in the run's artifacts, and they are not release
+# assets.
+publish_from() {
+	_dir=$1
+	[ -d "$_dir" ] || return 0
+	find "$_dir" -type f \
+		\( -name '*.deb' -o -name '*.ddeb' -o -name '*.rpm' -o -name '*.dsc' \
+		-o -name '*.changes' -o -name '*.buildinfo' -o -name '*.orig.tar.gz' \
+		-o -name '*.debian.tar.xz' \) \
+		! -path '*/logs/*' ! -path '*/txn/*' ! -path '*/mismatch/*' \
+		! -path '*/recipe/*' ! -path '*/tests/*' ! -path '*/scripts/*' \
+		-exec cp -p {} "$upload/" \;
+}
 
-# The native names are kept as the published names, deliberately, even though
-# registry/README.md also generates a distro-bearing release-asset name
-# (libvmod-cachetag-1.0.1-1-debian-13-amd64.deb). Renaming the .deb would break
-# the .changes and .buildinfo files published beside it, which reference the
-# native filename and its digest, and dpkg/apt tooling expects that name. The
-# generated asset name is recorded in release-manifest.json instead, so it is
-# still published, as data rather than as a filename that contradicts its own
-# metadata. Both native names already carry the architecture, and the RPM
-# carries the dist tag, so nothing is ambiguous in a flat release.
+for dir in "$assets"/packages/*/; do
+	[ -d "$dir" ] || continue
+	printf 'publishing from %s\n' "$(basename "$dir")"
+	publish_from "$dir"
+done
+
+# The upstream source archives, by name and never by glob: the cachetag
+# derivation also leaves libvmod-cachetag-X.Y.Z.dist-raw.tar.gz beside the real
+# one, which is the pre-canonicalisation intermediate and must not be published
+# as if it were the release source.
+for vmod in $vmods; do
+	archive=$(vget "srcarchive_$vmod")
+	found=$(find "$assets/source" -type f -name "$archive" | head -1)
+	[ -n "$found" ] || die "no $archive in $assets/source (the $vmod source artifact)"
+	cp -p "$found" "$upload/"
+	for extra in "$(dirname "$found")/$archive.sha256" "$(dirname "$found")"/*.metadata.json; do
+		case "$extra" in *dist-raw*) continue ;; esac
+		[ -e "$extra" ] && cp -p "$extra" "$upload/"
+	done
+done
+
 ###############################################################################
 note "renaming assets GitHub would rename anyway"
 ###############################################################################
@@ -194,9 +285,7 @@ note "renaming assets GitHub would rename anyway"
 # deliberately, because ~ sorts below a future real 9.0.0 in both dpkg and rpm
 # -- so every Vinyl asset was published as ...9.0.0.git..., while
 # RELEASE-SHA256SUMS named it ...9.0.0~git.... `sha256sum -c` then failed on
-# every one of them, which is the same defect as the lane-prefixed paths this
-# script was already fixing, arriving from a different direction (observed on
-# draft-20260726T074622Z).
+# every one of them (observed on draft-20260726T074622Z).
 #
 # So rename here, before the checksums are computed, and let the checksum file
 # describe what is actually downloadable. The package version inside the
@@ -210,31 +299,37 @@ for f in "$upload"/*; do
 		mv "$f" "$upload/$safe"
 	fi
 done
-# The cachetag names carry no tilde, so these are unchanged by the rename and
-# release-manifest.json's filenames stay true. Assert rather than assume.
-for n in "$deb_native" "$rpm_native" "$source_archive"; do
-	safe=$(printf '%s' "$n" | tr -c 'A-Za-z0-9._-' '.')
-	[ "$n" = "$safe" ] || die \
-		"$n would be renamed to $safe on upload, so release-manifest.json would
+
+###############################################################################
+note "the registry-named files must all be here"
+###############################################################################
+# Every VMOD's native package on both targets, and its source archive. Asserted
+# after the rename, so a name the rename would have moved is caught rather than
+# silently recorded as something that is not published.
+for vmod in $vmods; do
+	for name in "$(vget "native_${vmod}_deb")" "$(vget "native_${vmod}_rpm")" \
+		"$(vget "srcarchive_$vmod")"; do
+		safe=$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '.')
+		[ "$name" = "$safe" ] || die \
+			"$name would be renamed to $safe on upload, so release-manifest.json would
 name a file that is not published. Teach the manifest the published name."
+		[ -f "$upload/$name" ] || die "$vmod: the release is missing $name"
+	done
+	# The archive digest is pinned; the release must not publish a different
+	# one. Do NOT update a pin to make this pass: the archive is a function of
+	# the pinned source, so a mismatch means the release is about to publish
+	# something other than what the packages were built from.
+	got=$(sha256_file "$upload/$(vget "srcarchive_$vmod")")
+	[ "$got" = "$(vget "srcsha_$vmod")" ] || die \
+		"$(vget "srcarchive_$vmod") sha256 $got does not match the pinned $(vget "srcsha_$vmod")"
+	printf 'OK: %-10s %s matches its pinned digest\n' "$vmod" "$(vget "srcarchive_$vmod")"
 done
 
-[ -f "$upload/$deb_native" ] || die "the Debian lane produced no $deb_native"
-[ -f "$upload/$rpm_native" ] || die "the EL9 lane produced no $rpm_native"
-[ -f "$upload/$source_archive" ] || die "no $source_archive in the source-archive artifact"
-
-# The archive digest is pinned; the release must not publish a different one.
-got_archive_sha=$(sha256_file "$upload/$source_archive")
-[ "$got_archive_sha" = "$CACHETAG_SOURCE_SHA256" ] || die \
-	"$source_archive sha256 $got_archive_sha does not match the pinned
-CACHETAG_SOURCE_SHA256 $CACHETAG_SOURCE_SHA256. Do NOT update the pin to make
-this pass: the archive is a function of the pinned cachetag commit, so a
-mismatch means the release is about to publish something other than what the
-packages were built from."
-printf 'OK: %s matches the pinned digest\n' "$source_archive"
-
-deb_sha=$(sha256_file "$upload/$deb_native")
-rpm_sha=$(sha256_file "$upload/$rpm_native")
+# The cachetag lane pin is asserted against the manifest as well, which is the
+# guard that caught the four-copies problem in 2026-07-25 and is cheap to keep.
+[ "$(vget srcsha_cachetag)" = "$CACHETAG_SOURCE_SHA256" ] || die \
+	"registry/vmods/cachetag.yml and recipes/debian-13/pins.env disagree about the
+cachetag source digest: '$(vget srcsha_cachetag)' vs '$CACHETAG_SOURCE_SHA256'."
 
 ###############################################################################
 note "writing $upload/RELEASE-SHA256SUMS"
@@ -242,8 +337,8 @@ note "writing $upload/RELEASE-SHA256SUMS"
 # Names exactly as published, so `sha256sum -c RELEASE-SHA256SUMS` works in a
 # directory of downloaded assets.
 {
-	printf '# libvmod-cachetag %s, cohort %s\n' "$CACHETAG_VERSION" "$COHORT_ID"
-	printf '# Both lanes plus the source archive, all from one CI run: %s\n' "$run_url"
+	printf '# Cohort %s: %s\n' "$COHORT_ID" "$vmods"
+	printf '# Every family and both targets, all from one CI run: %s\n' "$run_url"
 	printf '# Filenames are the published release-asset names.\n'
 	printf '#\n'
 	(
@@ -260,9 +355,9 @@ cat "$assets/RELEASE-SHA256SUMS"
 ###############################################################################
 note "writing $upload/release-manifest.json"
 ###############################################################################
-# JSON-escape and wrap the gap lines as an array. They come from the
-# validator, so they contain no control characters; quotes and backslashes are
-# escaped anyway rather than assumed absent.
+# JSON-escape and wrap the gap lines as an array. They come from the validator
+# and the completeness gate, so they contain no control characters; quotes and
+# backslashes are escaped anyway rather than assumed absent.
 if [ -n "$gaps" ]; then
 	gaps_json=$(printf '%s\n' "$gaps" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
 		-e 's/^/    "/' -e 's/$/",/' | sed '$ s/,$//')
@@ -271,20 +366,54 @@ else
 	gaps_json=""
 fi
 
+# One block per required VMOD, each with both targets. Built by iteration so a
+# fourth VMOD appears without an edit; the trailing comma is trimmed by the
+# same `sed` idiom the gaps array uses.
+vmods_json=$(
+	for vmod in $vmods; do
+		deb=$(vget "native_${vmod}_deb")
+		rpm=$(vget "native_${vmod}_rpm")
+		cat <<VMODJSON
+    {
+      "vmod": "$vmod",
+      "upstream_version": "$(vget "upstream_$vmod")",
+      "package_revision": "$(vget "revision_$vmod")",
+      "source_archive": "$(vget "srcarchive_$vmod")",
+      "source_archive_sha256": "$(vget "srcsha_$vmod")",
+      "abi": {
+        "deb_cohort_provide": "$(vget "debcohort_$vmod")",
+        "rpm_cohort_provide": "$(vget "rpmcohort_$vmod")",
+        "deb_depends": "$(vget "debdepends_$vmod")"
+      },
+      "targets": [
+        {
+          "target": "debian-13-amd64",
+          "package_format": "deb",
+          "filename": "$deb",
+          "sha256": "$(sha256_file "$upload/$deb")",
+          "release_asset_filename": "$(vget "asset_${vmod}_deb")"
+        },
+        {
+          "target": "el9-x86_64",
+          "package_format": "rpm",
+          "filename": "$rpm",
+          "sha256": "$(sha256_file "$upload/$rpm")",
+          "release_asset_filename": "$(vget "asset_${vmod}_rpm")"
+        }
+      ]
+    },
+VMODJSON
+	done | sed '$ s/,$//'
+)
+
 cat > "$assets/release-manifest.json" <<JSON
 {
-  "schema": "vcache-packaging-release-manifest/v1",
-  "note": "Assembled by scripts/ci/release-manifest.sh from the registry manifests plus this run's facts. Package filenames are the native ones, which are also the published asset names; release_asset_filename is the distro-bearing name registry/README.md generates, recorded here rather than used as a filename because renaming a .deb would contradict the .changes and .buildinfo published beside it.",
+  "schema": "vcache-packaging-release-manifest/v2",
+  "note": "Assembled by scripts/ci/release-manifest.sh from the registry manifests plus this run's facts. One block per VMOD the cohort requires. Package filenames are the native ones, which are also the published asset names; release_asset_filename is the distro-bearing name registry/README.md generates, recorded here rather than used as a filename because renaming a .deb would contradict the .changes and .buildinfo published beside it.",
   "cohort": "$COHORT_ID",
   "cohort_status": "candidate",
   "channel": "pre-release",
   "evidence_gaps": [$gaps_json],
-  "cachetag": {
-    "version": "$CACHETAG_VERSION",
-    "git_commit": "$CACHETAG_GIT_COMMIT",
-    "source_archive": "$source_archive",
-    "source_archive_sha256": "$CACHETAG_SOURCE_SHA256"
-  },
   "vinyl": {
     "git_commit": "$VINYL_GIT_COMMIT",
     "upstream_version": "$VINYL_UPSTREAM_VERSION",
@@ -294,27 +423,9 @@ cat > "$assets/release-manifest.json" <<JSON
     "source_sha256": "$VINYL_SOURCE_SHA256"
   },
   "upstream_release_notes": $release_notes_json,
-  "abi": {
-    "deb_cohort_provide": "$deb_cohort_provide",
-    "rpm_cohort_provide": "$rpm_cohort_provide",
-    "deb_depends": "$deb_depends"
-  },
   "storage_support": ["default"],
-  "targets": [
-    {
-      "target": "debian-13-amd64",
-      "package_format": "deb",
-      "filename": "$deb_native",
-      "sha256": "$deb_sha",
-      "release_asset_filename": "$deb_asset"
-    },
-    {
-      "target": "el9-x86_64",
-      "package_format": "rpm",
-      "filename": "$rpm_native",
-      "sha256": "$rpm_sha",
-      "release_asset_filename": "$rpm_asset"
-    }
+  "vmods": [
+$vmods_json
   ],
   "ci": {
     "workflow": "release-draft.yml",
@@ -336,22 +447,35 @@ note "writing $assets/release-body.md"
 # The complete release body, generated here from the registry and this run's
 # facts: the draft (and the pre-release a human flips it to) carries no
 # hand-written content, so publishing is a flip, not a writing task. Upstream
-# content is referenced, never restated -- the section below is links to
-# upstream's own release statements from vinyl.release_notes, rendered from
-# the same field release-manifest.json records. Written beside the upload
-# directory, not inside it: the body is release metadata, not a release asset.
+# content is referenced, never restated. Written beside the upload directory,
+# not inside it: the body is release metadata, not a release asset.
 body=$assets/release-body.md
 {
-	printf 'Internal draft assembled by release-draft.yml run %s (%s): cohort %s, libvmod-cachetag %s.\n' \
-		"$run_id" "$run_url" "$COHORT_ID" "$CACHETAG_VERSION"
+	printf 'Internal draft assembled by release-draft.yml run %s (%s): cohort %s.\n' \
+		"$run_id" "$run_url" "$COHORT_ID"
 	printf '\nNOT a public pre-release. A human or orchestrator publishes the real pre-release from a validated draft, per the step-10 gate decision. Every line of this body is generated by scripts/ci/release-manifest.sh from the registry manifests.\n'
+	printf '\n## Package families\n'
+	for vmod in $vmods; do
+		printf '\n### %s %s-%s\n\n' \
+			"$vmod" "$(vget "upstream_$vmod")" "$(vget "revision_$vmod")"
+		printf '| target | package | sha256 |\n'
+		printf '| --- | --- | --- |\n'
+		for pair in "debian-13-amd64 deb" "el9-x86_64 rpm"; do
+			set -- $pair
+			n=$(vget "native_${vmod}_$2")
+			printf '| %s | `%s` | `%s` |\n' "$1" "$n" "$(sha256_file "$upload/$n")"
+		done
+		printf '\nSource: `%s` (sha256 `%s`)\n' \
+			"$(vget "srcarchive_$vmod")" "$(vget "srcsha_$vmod")"
+	done
 	if [ -n "$release_notes_body" ]; then
 		printf '\n## Upstream release notes\n\n'
 		printf '%s\n' "$release_notes_body" | sed 's/^/- /'
 	fi
-	printf '\nVerify downloaded assets with RELEASE-SHA256SUMS. The machine-readable release identity, evidence status, and per-target artifact record is release-manifest.json.\n'
+	printf '\nVerify downloaded assets with RELEASE-SHA256SUMS. The machine-readable release identity, evidence status, and per-VMOD artifact record is release-manifest.json.\n'
 	if [ -n "$gaps" ]; then
 		printf '\n## Evidence gaps\n\n'
+		printf 'This draft is explicitly experimental. It is missing:\n\n'
 		printf '%s\n' "$gaps" | sed 's/^/- /'
 	fi
 } > "$body"
