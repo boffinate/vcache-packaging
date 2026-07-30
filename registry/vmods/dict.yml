@@ -57,12 +57,20 @@ sources:
 # docs/20260728_2127_note_step-5-second-vmod-selection.md, ruling 4. Adding the
 # lane back is a manifest edit once Vinyl trunk emits a numeric snapshot
 # version -- it is not a caution, it is a defect with a known cause.
+#
+# `nightly` arrived with Step 8 Wave 1, which made the upgrade-transaction matrix
+# a tier-gated stage inside the package row. Until then a generated VMOD had no
+# transaction evidence at all and its registry entries recorded
+# upgrade_transactions as not-applicable; the row that will replace that verdict
+# is this one. Nothing reconciles --tier nightly until Wave 3 points the
+# scheduled workflow at it.
 lanes:
   - kind: package
     source: release
     engine: vinyl-release
     tiers:
       - ci
+      - nightly
       - release
     targets:
       - debian-13-amd64

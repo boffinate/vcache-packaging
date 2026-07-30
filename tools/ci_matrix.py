@@ -113,6 +113,32 @@ TARGETS = {
     },
 }
 
+# What the nightly tier adds to a package row's timeout, and only to a package
+# row's: an engine row builds the same engine at every tier.
+#
+# A nightly row runs the synthetic mismatch fixture and the whole
+# upgrade-transaction matrix after everything a ci row does -- sixteen throwaway
+# scenario containers on Debian, nineteen on EL9, each installing a cohort from a
+# local repository and running one real package-manager transaction. The figure
+# is nightly-transactions.yml's own 180-minute budget for the same work, minus
+# the engine half a row no longer builds, which is the engine budget in the table
+# above. Like every other timeout here it is a "something has hung" guard rather
+# than a target, and the first migrated nightly run is what will measure the real
+# cost.
+#
+# One number rather than a per-target column because the two matrices are the
+# same size to within three containers, and a second column would be two things
+# to keep true where the evidence supports one.
+NIGHTLY_TRANSACTION_MINUTES = 110
+
+
+def target_timeout_minutes(target: str, tier: str) -> int:
+    """A package row's job timeout for one target and tier."""
+    minutes = TARGETS[target]["timeout_minutes"]
+    if tier == "nightly":
+        minutes += NIGHTLY_TRANSACTION_MINUTES
+    return minutes
+
 # The failure vocabulary from the plan's "Failure reporting" section. Every
 # result record must carry one of these; an unknown status is a hard error
 # rather than a free-text field, so the collector can never be handed a
@@ -908,7 +934,7 @@ def expand(data: dict, tier: str, inject: str = "none", repo_root=None) -> dict:
                 "vinyl_track": row["vinyl_track"],
                 "target": row["target"],
                 "family": row["family"],
-                "timeout_minutes": TARGETS[row["target"]]["timeout_minutes"],
+                "timeout_minutes": target_timeout_minutes(row["target"], tier),
                 "ref": row["ref"],
                 "expected_commit": row["expected_commit"],
                 "version": row["version"],

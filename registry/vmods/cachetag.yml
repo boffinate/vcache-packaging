@@ -54,16 +54,22 @@ sources:
 #   vinyl-trunk-pinned the pinned trunk snapshot (VINYL_TRACK=trunk)
 #   vinyl-trunk-head   unpinned trunk HEAD, source harness only
 #
-# `tiers` lists the workflow tiers that run the lane today. nightly is absent on
-# purpose: nightly-transactions.yml still runs its own graph and migrates in
-# Phase 4 of the plan, so claiming a nightly row here would put a row in the
-# expected ledger that nothing produces.
+# `tiers` lists the workflow tiers that run the lane. `nightly` arrived on both
+# package lanes with Step 8 Wave 1, which made the upgrade-transaction matrix a
+# tier-gated stage inside the package row rather than a separate graph: the
+# nightly rows now have a producer, which is what was missing when this comment
+# said claiming one would put a row in the expected ledger that nothing produces.
+# Nothing reconciles `--tier nightly` yet -- nightly-transactions.yml still runs
+# its own graph until Wave 3 migrates it onto this manifest and consumes these
+# rows -- so until then the nightly ledger describes work no scheduled workflow
+# has been pointed at.
 lanes:
   - kind: package
     source: release
     engine: vinyl-release
     tiers:
       - ci
+      - nightly
       - release
     targets:
       - debian-13-amd64
@@ -73,6 +79,7 @@ lanes:
     engine: vinyl-trunk-pinned
     tiers:
       - ci
+      - nightly
     targets:
       - debian-13-amd64
       - el9-x86_64

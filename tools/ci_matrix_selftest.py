@@ -411,7 +411,7 @@ def test_expansion() -> None:
 
     nightly = ci_matrix.expand(data, "nightly")
     check(
-        "expand nightly: no rows, because no lane claims that tier yet",
+        "expand nightly: no rows, because THIS fixture's lanes claim no nightly tier",
         (nightly["target_count"], nightly["source_count"], nightly["harness_count"]) == (0, 0, 0),
         str(nightly),
     )
@@ -1648,6 +1648,179 @@ def test_recipe_generation_status_is_in_the_vocabulary() -> None:
     )
 
 
+def test_transactions_status_has_a_producer(repo_root: Path) -> None:
+    """failed_transactions stopped being a status nothing could emit (Step 8 W1).
+
+    It has been in the vocabulary since Phase 1 because the plan's failure list
+    names it, but until the upgrade-transaction matrix became a stage inside the
+    package row there was no job that could ever write it -- which is the same
+    latent lie the verify-stage mapping exists to avoid.
+
+    Three properties, all read out of the workflow rather than restated: the
+    stage is tier-gated so it cannot change a `ci` row, it is allowed to fail so
+    the row still reaches its result record, and every one of its steps is read
+    by a classification arm. That last one is the anti-inertness property: three
+    of Wave B's ten defects were a flag reaching a job nothing read, and a
+    tier-gated stage nothing classifies has exactly that shape.
+    """
+    check(
+        "transactions: failed_transactions exists and is a failure",
+        "failed_transactions" in ci_matrix.STATUSES
+        and "failed_transactions" not in ci_matrix.OK_STATUSES,
+    )
+    record = ci_matrix.make_record(
+        kind="package-target",
+        vmod="redis",
+        channel="release",
+        engine="vinyl-release",
+        target="el9-x86_64",
+        status="failed_transactions",
+        stage="rpm",
+        detail="the upgrade-transaction matrix failed",
+    )
+    check(
+        "transactions: a record carrying it is well formed and keyed to its row",
+        record["row_key"] == "target/redis/release/vinyl-release/el9-x86_64"
+        and record["status"] == "failed_transactions",
+        str(record),
+    )
+
+    workflow = (repo_root / ".github/workflows/vmod-package.yml").read_text(encoding="utf-8")
+    # One block per step, split on the step's own `- name:` marker so an `if:`
+    # is read against the step it belongs to and not a neighbour's.
+    blocks = re.split(r"\n      - (?=name:|uses:)", workflow)
+    by_id = {}
+    for block in blocks:
+        found = re.search(r"^        id: (\w+)$", block, re.M)
+        if found:
+            by_id[found.group(1)] = block
+
+    # The upstream-recipe job names its steps per family; the generated one has
+    # a single pair, because its two families differ only in a stage argument.
+    for step_id in ("deb_fixture", "deb_txn", "el9_fixture", "el9_txn", "fixture", "transactions"):
+        block = by_id.get(step_id, "")
+        check(
+            f"transactions: the {step_id} step is gated on tier nightly",
+            "inputs.tier == 'nightly'" in block,
+            block[:200],
+        )
+        check(
+            f"transactions: the {step_id} step may fail and still reach the record",
+            "continue-on-error: true" in block,
+            block[:200],
+        )
+        check(
+            f"transactions: a classification arm reads steps.{step_id}.outcome",
+            f"steps.{step_id}.outcome" in by_id.get("record", "") + by_id.get("record_2", "")
+            or workflow.count(f"steps.{step_id}.outcome") > 1,
+            step_id,
+        )
+
+    check(
+        "transactions: both package-target jobs can emit the status",
+        workflow.count("set_status failed_transactions") >= 2,
+        str(workflow.count("set_status failed_transactions")),
+    )
+
+
+def test_nightly_is_the_transaction_tier(repo_root: Path) -> None:
+    """The nightly ledger is the ci ledger plus a transaction stage per row.
+
+    Same rows, same engine rows, same artifact names: Step 8 Wave 1 added a
+    tier-gated stage INSIDE the package rows rather than a second graph, so the
+    two tiers expand to the same shape and differ only in what each row runs.
+    Asserted against the checked-in catalog, because "which lanes claim nightly"
+    is a policy decision recorded in those manifests.
+    """
+    nightly = ci_matrix.ledger("nightly", repo_root)
+    ci = ci_matrix.ledger("ci", repo_root)
+    selected = sorted(r["row_key"] for r in nightly["rows"] if r["selected"])
+    check(
+        "nightly: the four engine rows and every package row of all three VMODs",
+        selected
+        == [
+            "engine/vinyl-release/debian-13-amd64",
+            "engine/vinyl-release/el9-x86_64",
+            "engine/vinyl-trunk-pinned/debian-13-amd64",
+            "engine/vinyl-trunk-pinned/el9-x86_64",
+            "source/cachetag/release",
+            "source/dict/release",
+            "source/redis/release",
+            "target/cachetag/release/vinyl-release/debian-13-amd64",
+            "target/cachetag/release/vinyl-release/el9-x86_64",
+            "target/cachetag/release/vinyl-trunk-pinned/debian-13-amd64",
+            "target/cachetag/release/vinyl-trunk-pinned/el9-x86_64",
+            "target/dict/release/vinyl-release/debian-13-amd64",
+            "target/dict/release/vinyl-release/el9-x86_64",
+            "target/redis/release/vinyl-release/debian-13-amd64",
+            "target/redis/release/vinyl-release/el9-x86_64",
+            "vmod/cachetag",
+            "vmod/dict",
+            "vmod/redis",
+        ],
+        str(selected),
+    )
+    check(
+        "nightly: it selects exactly what ci selects, because it is the same rows",
+        selected == sorted(r["row_key"] for r in ci["rows"] if r["selected"]),
+        str(selected),
+    )
+
+
+def test_nightly_budgets_the_transaction_matrix() -> None:
+    """The nightly bump lands on package rows and on nothing else.
+
+    A nightly row runs sixteen or nineteen throwaway scenario containers after
+    everything a ci row does, so the ci budget would kill it. An ENGINE row
+    builds the same engine at every tier and must not move: it is shared, and
+    inflating its guard would delay every consumer's failure report.
+    """
+    data = yaml_subset.parse(_manifest_text("cachetag"))
+    ci = ci_matrix.expand(data, "ci")
+    ci_budgets = {row["target"]: row["timeout_minutes"] for row in ci["targets"]["include"]}
+    check(
+        "nightly budget: ci is unchanged, and is the table's own figure",
+        ci_budgets
+        == {
+            "debian-13-amd64": ci_matrix.TARGETS["debian-13-amd64"]["timeout_minutes"],
+            "el9-x86_64": ci_matrix.TARGETS["el9-x86_64"]["timeout_minutes"],
+        },
+        str(ci_budgets),
+    )
+    for tier in ("release", "trunk"):
+        other = {
+            row["target"]: row["timeout_minutes"]
+            for row in ci_matrix.expand(data, tier)["targets"]["include"]
+        }
+        check(
+            f"nightly budget: the {tier} tier is unchanged too",
+            all(other[t] == ci_budgets[t] for t in other),
+            str(other),
+        )
+
+    # The fixture manifest claims no nightly tier, so the bump is asserted
+    # through the function the expansion calls rather than through an expansion
+    # with no rows in it.
+    for target in ci_matrix.TARGETS:
+        check(
+            f"nightly budget: {target} gains the transaction budget at nightly",
+            ci_matrix.target_timeout_minutes(target, "nightly")
+            == ci_matrix.TARGETS[target]["timeout_minutes"]
+            + ci_matrix.NIGHTLY_TRANSACTION_MINUTES,
+            target,
+        )
+    engines = ci_matrix.engine_matrix("nightly", repo_root=ci_matrix.REPO_ROOT)["include"]
+    check(
+        "nightly budget: an engine row keeps the engine budget at every tier",
+        engines
+        and all(
+            row["timeout_minutes"] == ci_matrix.TARGETS[row["target"]]["engine_timeout_minutes"]
+            for row in engines
+        ),
+        str([(r["target"], r["timeout_minutes"]) for r in engines]),
+    )
+
+
 def test_source_facts_are_emitted_for_a_lane_script(repo_root: Path) -> None:
     facts = ci_matrix.source_facts(_load(repo_root, "dict"), "release")
     check(
@@ -2197,6 +2370,9 @@ def main(repo_root: Path = None) -> int:
     test_scoped_manifest_injection_leaves_the_other_vmod_intact(root)
     test_verify_stage_classification_covers_every_stage(root)
     test_recipe_generation_status_is_in_the_vocabulary()
+    test_transactions_status_has_a_producer(root)
+    test_nightly_is_the_transaction_tier(root)
+    test_nightly_budgets_the_transaction_matrix()
     test_source_facts_are_emitted_for_a_lane_script(root)
     test_ledger_covers_both_vmods(root)
     test_patch_omission_refuses_a_patchless_vmod(root)

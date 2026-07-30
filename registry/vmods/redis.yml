@@ -74,12 +74,19 @@ sources:
 # fix: adding the lane back is a one-line manifest edit once Vinyl trunk emits
 # a numeric snapshot version. Dropping VINYL_PREREQ from the patch to buy the
 # lane would be deleting a real compatibility check to make a matrix row green.
+#
+# `nightly` arrived with Step 8 Wave 1, for the same reason as vmod-dict's: the
+# upgrade-transaction matrix became a tier-gated stage inside the package row, so
+# a generated VMOD's rows can produce the evidence its registry entries currently
+# record as not-applicable. Nothing reconciles --tier nightly until Wave 3 points
+# the scheduled workflow at it.
 lanes:
   - kind: package
     source: release
     engine: vinyl-release
     tiers:
       - ci
+      - nightly
       - release
     targets:
       - debian-13-amd64
