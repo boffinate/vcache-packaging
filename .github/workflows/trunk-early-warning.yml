@@ -54,8 +54,10 @@ on:
         type: boolean
         default: false
 
-# Read-only by default. Exactly one job below elevates, and only to write the
-# state file to its own orphan branch.
+# Read-only by default. Three jobs below elevate, each to the minimum it
+# needs: advance-state and record-observations write the state file to its own
+# orphan branch (contents: write), and notify opens maintainer-facing issues
+# (issues: write).
 permissions:
   contents: read
 
@@ -77,6 +79,11 @@ jobs:
       vinyl_head_sha: ${{ steps.watch.outputs.vinyl_head_sha }}
       changed_vmods: ${{ steps.watch.outputs.changed_vmods }}
       moved_pins: ${{ steps.watch.outputs.moved_pins }}
+      # Whether the watcher found anything a maintainer must be told about:
+      # a re-pin candidate, a moved pin, a poisoned tag, or fleet candidates.
+      # Written before the step's exit status is applied, so a red gate still
+      # reports it and the notify job still runs.
+      notify: ${{ steps.watch.outputs.notify }}
     steps:
       - name: checkout vcache-packaging
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -110,9 +117,13 @@ jobs:
           # annotations as ::notice/::warning/::error. Only the former belong in
           # $GITHUB_OUTPUT; the latter have to reach the log to be rendered, so
           # the stream is split rather than teed wholesale.
+          # --issues writes the notification issues (bodies generated and
+          # selftested inside the tool) from the SAME observation the gate
+          # outputs come from; running the watcher twice could disagree.
           python3 tools/upstream_watch.py check \
             --state "$state" \
             --write-state "$RUNNER_TEMP/next-$STATE_FILE" \
+            --issues "$RUNNER_TEMP/upstream-issues.json" \
             --format github > "$RUNNER_TEMP/gate.txt" || watch_status=$?
           # `|| true` because grep exits 1 on no match, and a watcher that died
           # before printing anything would otherwise abort here under `set -e` --
@@ -132,6 +143,17 @@ jobs:
         with:
           name: trunk-watch-observed-state
           path: ${{ runner.temp }}/next-${{ env.STATE_FILE }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      # The notify job runs in a separate job because it needs `issues: write`
+      # and this job deliberately stays read-only.
+      - name: upload the notification issues
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: upstream-watch-issues
+          path: ${{ runner.temp }}/upstream-issues.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -161,6 +183,108 @@ jobs:
               echo "Nothing moved since the last run. No VMOD work was started."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The piece that makes the manual publication gate work: a re-pin candidate,
+  # a moved pin, a poisoned tag, or fleet candidates must reach the maintainer
+  # as a durable GitHub issue, not sit in a green run's log. (A moved pin also
+  # fails the gate red, which emails; the issue is the durable, resumable
+  # record.) Policy: docs/20260730_1635_note_publication-authority-decision.md.
+  #
+  # Dedupe, by exact issue title under the upstream-watch label:
+  #   * pinned rows get one issue per distinct upstream+tag. An existing OPEN
+  #     issue means already reported: skip. An existing CLOSED issue means the
+  #     maintainer has seen and handled it: skip, never reopen.
+  #   * fleet candidates collapse into ONE rolling digest issue. While it is
+  #     open, each run with new candidates comments on it; if it was closed, a
+  #     later run with new candidates opens a fresh one. The watcher state
+  #     records every announced tag, so a tag is announced at most once and a
+  #     repeat run with nothing new produces no digest at all.
+  notify:
+    name: notify the maintainer
+    needs: gate
+    # `!cancelled()`: a moved pin fails the gate job, and that is precisely a
+    # run whose findings must not be lost.
+    if: ${{ !cancelled() && needs.gate.outputs.notify == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: download the notification issues
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: upstream-watch-issues
+          path: issues
+
+      - name: ensure the label exists
+        shell: bash
+        run: |
+          set -eu
+          # Idempotent: creating an existing label fails, and that failure is
+          # fine. Anything else surfaces on the next step's listing call.
+          gh label create upstream-watch \
+            --repo "$GITHUB_REPOSITORY" \
+            --description "opened by tools/upstream_watch.py via trunk-early-warning" \
+            --color D93F0B 2>/dev/null || true
+
+      - name: open, comment, or skip
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          # One listing call, then exact-title matching locally: cheaper and
+          # more precise than a search query per issue.
+          gh issue list --repo "$GITHUB_REPOSITORY" --state all \
+            --label upstream-watch --limit 500 \
+            --json number,title,state > "$RUNNER_TEMP/existing.json"
+          python3 - "$GITHUB_WORKSPACE/issues/upstream-issues.json" \
+                    "$RUNNER_TEMP/existing.json" <<'PY'
+          import json, pathlib, subprocess, sys, tempfile
+
+          issues = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          existing = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+          by_title = {}
+          for row in existing:
+              by_title.setdefault(row["title"], []).append(row)
+
+          def gh(*args, body):
+              with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
+                  fh.write(body)
+                  path = fh.name
+              subprocess.run(
+                  ["gh", *args, "--body-file", path], check=True
+              )
+
+          import os
+          repo = os.environ["GITHUB_REPOSITORY"]
+          for issue in issues:
+              title = issue["title"]
+              found = by_title.get(title, [])
+              open_ones = [r for r in found if r["state"].lower() == "open"]
+              if issue["kind"] == "fleet_digest":
+                  # The rolling digest: comment while open, recreate if the
+                  # last one was closed. The state file guarantees the body
+                  # only ever carries tags not announced before.
+                  if open_ones:
+                      print(f"comment: {title} (#{open_ones[0]['number']})")
+                      gh("issue", "comment", str(open_ones[0]["number"]),
+                         "--repo", repo, body=issue["body"])
+                  else:
+                      print(f"create: {title}")
+                      gh("issue", "create", "--repo", repo, "--title", title,
+                         "--label", ",".join(issue["labels"]), body=issue["body"])
+                  continue
+              if found:
+                  # Open = already reported; closed = seen and handled. Either
+                  # way this exact upstream+tag never spawns a second issue.
+                  print(f"skip ({found[0]['state'].lower()}): {title}")
+                  continue
+              print(f"create: {title}")
+              gh("issue", "create", "--repo", repo, "--title", title,
+                 "--label", ",".join(issue["labels"]), body=issue["body"])
+          PY
 
   structural-validation:
     name: structural validation and tooling selftests
@@ -535,14 +659,20 @@ jobs:
           Not packaging history, which is why this is an orphan branch: it shares no
           commit with `main` and nothing merges it.
 
-          `trunk-watch-state.json` is `upstream-watch-state/v1`: the last-seen commit of
-          every watched ref, where "last seen" means **tested**, not merely observed. The
-          `trunk_engine_run_id` field is reserved for the run that produced a reusable
-          trunk engine artifact, and is unfilled until the sibling repository's harness
-          can accept a prebuilt prefix.
+          `trunk-watch-state.json` is `upstream-watch-state/v1`. `refs` is the last-seen
+          commit of every watched ref, where "last seen" means **tested**, not merely
+          observed. `tags` is observation memory: first-seen commits and poison flags for
+          the pinned rows' stable-family tags, and the announced tag set per fleet
+          upstream; it advances on every run, tested or not, because a tag observation is
+          a fact about the remote, not a claim about testing. The `trunk_engine_run_id`
+          field is reserved for the run that produced a reusable trunk engine artifact,
+          and is unfilled until the sibling repository's harness can accept a prebuilt
+          prefix.
 
-          Do not edit by hand. Deleting the branch is safe: the watcher fails open, and
-          the next run tests everything.
+          Do not edit by hand. Deleting the branch is safe but is a deliberate act: the
+          watcher fails open and the next run tests everything, fleet upstreams reseed
+          silently, and the poisoned-tag memory is forgotten -- which is the one
+          documented way, short of a re-pin, to clear a poison marker.
           EOF
           git add -A "$STATE_FILE" README.md
           if git diff --cached --quiet; then
@@ -555,3 +685,88 @@ jobs:
           the shas recorded here describe commits that were actually tested."
           git push origin "HEAD:$STATE_BRANCH"
           echo "state branch $STATE_BRANCH updated"
+
+  # Tag observations must persist even on runs that test nothing: fleet
+  # seeding, the announced-tag record behind the digest's once-only rule, and
+  # the poisoned-tag memory are all facts about what the watcher OBSERVED, and
+  # most runs end at the gate with run=false, where advance-state never
+  # executes. Without this job those facts would evaporate every quiet run --
+  # fleet upstreams would reseed forever and a poison marker would never
+  # survive a tag returning to its original value.
+  #
+  # It advances ONLY the `tags` map. The `refs` map keeps its tested-not-
+  # observed meaning and is written exclusively by advance-state; committing
+  # observed refs from here would mark untested trunk commits as covered.
+  # The two jobs cannot race: this one runs precisely when advance-state was
+  # skipped (gate red, run=false, or incomplete evidence).
+  record-observations:
+    name: record tag observations
+    needs: [gate, collect, advance-state]
+    if: ${{ !cancelled() && needs.advance-state.result == 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: download the gate's observation
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: trunk-watch-observed-state
+          path: observed
+
+      - name: merge the tags map into the state branch
+        shell: bash
+        run: |
+          set -eu
+          obs="$GITHUB_WORKSPACE/observed/next-$STATE_FILE"
+          if [ ! -f "$obs" ]; then
+            echo "no observed state was produced this run; nothing to record"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin "$STATE_BRANCH" >/dev/null 2>&1; then
+            git fetch --depth 1 origin "$STATE_BRANCH"
+            git checkout -B "$STATE_BRANCH" FETCH_HEAD
+          else
+            git checkout --orphan "$STATE_BRANCH"
+          fi
+          git rm -rf --quiet . >/dev/null 2>&1 || true
+          git checkout "$STATE_BRANCH" -- . 2>/dev/null || true
+          python3 - "$obs" "$STATE_FILE" <<'PY'
+          import json, pathlib, sys
+
+          observed, out = (pathlib.Path(p) for p in sys.argv[1:3])
+          tags = json.loads(observed.read_text(encoding="utf-8")).get("tags", {})
+          if out.is_file():
+              state = json.loads(out.read_text(encoding="utf-8"))
+          else:
+              # First-ever write: refs stays EMPTY, not the observation --
+              # an empty refs map fails open exactly like a missing state
+              # file, so the next run still tests everything.
+              state = {
+                  "schema": "upstream-watch-state/v1",
+                  "refs": {},
+                  "tags": {},
+                  "trunk_engine_run_id": "",
+              }
+          state["tags"] = tags
+          out.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(f"tags map: {sum(len(v) for v in tags.values())} records across {len(tags)} keys")
+          PY
+          git add "$STATE_FILE"
+          if git diff --cached --quiet; then
+            echo "tag observations unchanged; nothing to commit"
+            exit 0
+          fi
+          git commit -m "trunk-watch: tag observations after run ${GITHUB_RUN_ID}
+
+          Only the tags map advances here: a tag observation is a fact about the
+          remote. The refs map keeps its tested-not-observed meaning and is written
+          only by the advance-state job."
+          git push origin "HEAD:$STATE_BRANCH"
+          echo "tag observations recorded on $STATE_BRANCH"
