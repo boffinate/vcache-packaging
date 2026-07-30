@@ -1,0 +1,449 @@
+name: trunk early warning
+
+# The scheduled workflow, and the ONLY scheduled workflow that runs any VMOD
+# work. Policy source: docs/20260730_0826_note_step-8-maintainer-decisions.md.
+#
+# It follows Vinyl trunk HEAD, unpinned, so that a Vinyl core change that breaks
+# a VMOD's source surfaces within days rather than at the next re-pin. The
+# strict VMOD ABI token is the Vinyl commit id itself, so this is breakage that
+# exists before any cohort is minted. It builds nothing installable and
+# publishes nothing.
+#
+# Three things it deliberately does NOT do:
+#
+#   * it does not run the upgrade-transaction matrix. That is the `transactions`
+#     tier, dispatched deliberately against one release cohort's published
+#     packages; a trunk snapshot is not a published upgrade path (decision b).
+#   * it does not rebuild release-channel rows. Once release artifacts are
+#     built they are untouched until there is a new release (decision c).
+#   * it does not run the PINNED-trunk package rows. Those live in ci.yml and
+#     are event-driven: they move only when someone re-pins, so scheduling them
+#     would re-prove on Thursday exactly what the pull request proved on Monday.
+#
+# The cost control is the gate, not the cadence. Every few days rather than
+# nightly (decision a), and change-gated on both sides: nothing runs when Vinyl
+# trunk HEAD has not moved and no watched VMOD branch has moved, which is most
+# runs and costs about one job-minute. When a VMOD's own upstream moved but
+# Vinyl trunk did not, that VMOD still runs -- that half of decision (a) is why
+# the gate is per-VMOD rather than a single boolean about the engine.
+#
+# Not here, deliberately: cross-run reuse of a trunk ENGINE artifact. The VMOD's
+# documented harness builds Vinyl itself and has no reviewed way to accept a
+# prebuilt prefix, so an engine artifact would have no consumer and building one
+# would mean building Vinyl twice. It arrives with the sibling-repository flag
+# that makes the harness able to use it; the state file already reserves a field
+# for the run id that produced it.
+
+on:
+  schedule:
+    # Monday and Thursday, 03:17 UTC. Twice a week is "every few days"; the
+    # minute is off the hour because the hour is when everyone else's cron runs.
+    - cron: "17 3 * * 1,4"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: >-
+          run every row regardless of what moved. The gate still reads and
+          reports every observed sha, so a forced run advances the state exactly
+          as a gated one does -- it skips the decision, not the observation.
+        required: false
+        type: boolean
+        default: false
+
+# Read-only by default. Exactly one job below elevates, and only to write the
+# state file to its own orphan branch.
+permissions:
+  contents: read
+
+env:
+  # The orphan branch the last-seen state lives on. Orphan because this is CI
+  # bookkeeping with no business in the history of the packaging tree: it shares
+  # no commit with main and nothing merges it.
+  STATE_BRANCH: ci-state/trunk-watch
+  STATE_FILE: trunk-watch-state.json
+
+jobs:
+  gate:
+    name: has anything moved
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      vinyl_changed: ${{ steps.watch.outputs.vinyl_changed }}
+      vinyl_head_sha: ${{ steps.watch.outputs.vinyl_head_sha }}
+      changed_vmods: ${{ steps.watch.outputs.changed_vmods }}
+      moved_pins: ${{ steps.watch.outputs.moved_pins }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # Fetching one ref that may not exist yet. `continue-on-error` rather than
+      # a conditional, because "the branch is not there" and "the fetch failed"
+      # are the same thing to this job: both mean there is no last-seen state,
+      # and the watcher's fail-open rule then treats everything as changed. A
+      # freshness gate that skips work because it could not find out whether the
+      # work was needed fails silently, which is the failure that matters.
+      - name: fetch the last-seen state
+        id: fetch
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          git fetch --depth 1 origin "$STATE_BRANCH:refs/remotes/origin/$STATE_BRANCH"
+          git show "origin/$STATE_BRANCH:$STATE_FILE" > "$RUNNER_TEMP/$STATE_FILE"
+          echo "--- last-seen state ---"
+          cat "$RUNNER_TEMP/$STATE_FILE"
+
+      - name: read every watched upstream
+        id: watch
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          state="$RUNNER_TEMP/$STATE_FILE"
+          [ -f "$state" ] || echo "no state file was fetched; every ref counts as changed"
+          # --format github prints the gate outputs as key=value and its
+          # annotations as ::notice/::warning/::error. Only the former belong in
+          # $GITHUB_OUTPUT; the latter have to reach the log to be rendered, so
+          # the stream is split rather than teed wholesale.
+          python3 tools/upstream_watch.py check \
+            --state "$state" \
+            --write-state "$RUNNER_TEMP/next-$STATE_FILE" \
+            --format github > "$RUNNER_TEMP/gate.txt" || watch_status=$?
+          # `|| true` because grep exits 1 on no match, and a watcher that died
+          # before printing anything would otherwise abort here under `set -e` --
+          # losing the real exit status two lines below, which is the one that
+          # says what went wrong.
+          grep -v '^::' "$RUNNER_TEMP/gate.txt" >> "$GITHUB_OUTPUT" || true
+          cat "$RUNNER_TEMP/gate.txt"
+          # A moved pin is a hard failure of the watcher and must stop the run:
+          # the recorded identity and what upstream publishes under that name
+          # have diverged, and nothing should be built from it until somebody
+          # has established which moved.
+          exit "${watch_status:-0}"
+
+      - name: upload the observed state
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: trunk-watch-observed-state
+          path: ${{ runner.temp }}/next-${{ env.STATE_FILE }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: decide
+        id: decide
+        shell: bash
+        run: |
+          set -eu
+          run='${{ steps.watch.outputs.run }}'
+          if [ '${{ inputs.force }}' = 'true' ]; then
+            run=true
+            echo "forced by dispatch; the observation still stands and is still recorded"
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Trunk early-warning gate"
+            echo
+            echo "| signal | value |"
+            echo "| --- | --- |"
+            echo "| vinyl trunk changed | ${{ steps.watch.outputs.vinyl_changed }} |"
+            echo "| vinyl trunk HEAD | \`${{ steps.watch.outputs.vinyl_head_sha }}\` |"
+            echo "| changed VMODs | ${{ steps.watch.outputs.changed_vmods }} |"
+            echo "| forced | ${{ inputs.force }} |"
+            echo "| **run** | **$run** |"
+            echo
+            if [ "$run" != true ]; then
+              echo "Nothing moved since the last run. No VMOD work was started."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  structural-validation:
+    name: structural validation and tooling selftests
+    needs: gate
+    if: ${{ needs.gate.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: scripts/ci/test-common.sh
+        run: scripts/ci/test-common.sh
+
+      - name: tools/release_tool.py selftest
+        run: python3 tools/release_tool.py selftest
+
+      - name: tools/ci_matrix.py selftest
+        run: python3 tools/ci_matrix.py selftest
+
+      - name: registry schemas, identities and wiring (no VMOD source needed)
+        run: python3 tools/release_tool.py --no-cachetag-cross-check validate
+
+      - name: VMOD catalog structure
+        run: python3 tools/ci_matrix.py check-catalog
+
+  discover-vmods:
+    name: discover selected VMODs
+    needs: [gate, structural-validation]
+    if: ${{ needs.gate.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # EVERY discovered VMOD, not only the changed ones, and that is not a
+      # missed optimisation. The trunk ledger has a selected invocation row for
+      # each of the three, so the collector expects a result record from each;
+      # dropping a VMOD from the matrix would make its invocation row
+      # missing_result_record and turn every gated run red. What the gate saves
+      # is the expensive half -- a VMOD with no trunk lane expands to zero
+      # harness rows and its invocation job is a manifest parse.
+      - name: list the selected VMOD manifests
+        id: discover
+        shell: bash
+        run: |
+          set -eu
+          set -o pipefail
+          python3 tools/ci_matrix.py list-vmods --format github | tee -a "$GITHUB_OUTPUT"
+
+  vmods:
+    name: VMOD
+    needs: [gate, structural-validation, discover-vmods]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && needs.discover-vmods.result == 'success' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.discover-vmods.outputs.matrix) }}
+    uses: ./.github/workflows/vmod-package.yml
+    with:
+      manifest: ${{ matrix.manifest }}
+      vmod_id: ${{ matrix.id }}
+      tier: trunk
+      # The gate's observation, passed through so the harness row can say
+      # whether trunk moved underneath it. The row still tests, and records,
+      # whatever it actually resolved.
+      vinyl_trunk_sha: ${{ needs.gate.outputs.vinyl_head_sha }}
+
+  collect:
+    name: reconcile every expected row
+    needs: [gate, structural-validation, discover-vmods, vmods]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      # Whether every expected row produced evidence, however that evidence
+      # reads. The state-advance job below gates on this rather than on the
+      # reconciliation passing, and re-parsing the JSON there would be a second
+      # reader that could disagree with this one.
+      complete: ${{ steps.reconcile.outputs.complete }}
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: download every result record
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: result-*
+          path: results
+
+      - name: note the upstream job outcomes
+        shell: bash
+        run: |
+          set -eu
+          {
+            echo "## Upstream job outcomes"
+            echo
+            echo "| job | result |"
+            echo "| --- | --- |"
+            echo "| gate | ${{ needs.gate.result }} |"
+            echo "| structural-validation | ${{ needs.structural-validation.result }} |"
+            echo "| discover-vmods | ${{ needs.discover-vmods.result }} |"
+            echo "| vmods (aggregate) | ${{ needs.vmods.result }} |"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # `complete` is written before the reconciliation's own exit status is
+      # allowed to fail the job, because a red trunk row is a LEARNED FACT and
+      # the state must still advance on it. What must never advance the state is
+      # incomplete evidence: a row that produced nothing tells us nothing about
+      # the sha, and recording it as seen would mean never testing that sha.
+      - name: reconcile the expected ledger against the observed results
+        id: reconcile
+        shell: bash
+        run: |
+          set -eu
+          status=0
+          python3 tools/ci_matrix.py reconcile \
+            --tier trunk \
+            --results "$GITHUB_WORKSPACE/results" \
+            --json "$GITHUB_WORKSPACE/reconciled.json" \
+            --summary "$GITHUB_STEP_SUMMARY" || status=$?
+          missing=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["counts"]["missing"])' \
+            "$GITHUB_WORKSPACE/reconciled.json")
+          echo "missing rows: $missing"
+          if [ "$missing" = 0 ]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$status"
+
+      - name: upload the reconciled ledger
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: trunk-reconciled-ledger
+          path: reconciled.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  advance-state:
+    name: record what was tested
+    needs: [gate, collect]
+    # `!cancelled()` and NOT `success()`: the state advances on a red run too.
+    #
+    # A harness row that failed against a Vinyl trunk commit is a learned fact
+    # about that commit, and re-testing a known-red sha every cadence re-pays
+    # the full cost -- forty-five minutes of building Vinyl -- to learn the same
+    # thing again. The next real movement is what should trigger the next run.
+    #
+    # What blocks the advance is INCOMPLETE evidence: if any expected row
+    # produced no result record at all, we do not know what happened at that
+    # sha, and recording it as seen would mean never finding out.
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && needs.collect.outputs.complete == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The one elevation in this workflow, confined to the one job that needs it
+    # and used only to write one file to one orphan branch.
+    permissions:
+      contents: write
+    steps:
+      - name: checkout vcache-packaging
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: download the gate's observation
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: trunk-watch-observed-state
+          path: observed
+
+      - name: download every result record
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: result-*
+          path: results
+
+      # The gate observed a Vinyl sha; the harness rows TESTED one, and between
+      # the two the branch may have moved. What goes into the state is what was
+      # tested, or the next run would treat an untested commit as covered.
+      - name: build the state from what was tested
+        shell: bash
+        run: |
+          set -eu
+          python3 - "$GITHUB_WORKSPACE/observed/next-$STATE_FILE" \
+                    "$GITHUB_WORKSPACE/results" \
+                    "$GITHUB_WORKSPACE/$STATE_FILE" <<'PY'
+          import json, pathlib, sys
+
+          observed, results, out = (pathlib.Path(p) for p in sys.argv[1:4])
+          state = json.loads(observed.read_text(encoding="utf-8"))
+
+          # Every harness record in the run. Each clones Vinyl trunk itself, so
+          # in the ordinary case they all resolve the same commit and that is the
+          # tested sha. If two disagree, trunk moved mid-run and no single commit
+          # was covered by every row -- so the engine entry is left alone and the
+          # next run tests a coherent one. Advancing to either would claim
+          # coverage the run does not have.
+          tested = []
+          for path in sorted(results.rglob("*.json")):
+              try:
+                  record = json.loads(path.read_text(encoding="utf-8"))
+              except ValueError:
+                  continue
+              if record.get("kind") != "source-harness":
+                  continue
+              commit = (record.get("source") or {}).get("engine_commit")
+              if commit:
+                  tested.append((record["row_key"], commit))
+
+          print("harness rows and the Vinyl commit each tested:")
+          for row_key, commit in tested:
+              print(f"  {row_key}  {commit}")
+
+          shas = {commit for _, commit in tested}
+          if len(shas) > 1:
+              print("W: harness rows tested different Vinyl commits; trunk moved mid-run.")
+              print("W: not advancing the engine entry, so the next run re-tests coherently.")
+          elif shas:
+              entry = state["refs"].setdefault("vinyl-trunk", {})
+              if entry.get("sha") != next(iter(shas)):
+                  print(f"engine entry: {entry.get('sha')} -> {next(iter(shas))} (tested, not observed)")
+              entry["sha"] = next(iter(shas))
+          else:
+              print("W: no harness row recorded a tested engine commit; leaving the observation.")
+
+          out.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print()
+          print(out.read_text(encoding="utf-8"))
+          PY
+
+      - name: commit it to the state branch
+        shell: bash
+        run: |
+          set -eu
+          # The workspace checkout, not a fresh clone: actions/checkout has
+          # already persisted this job's credentials here, and this job is the
+          # one with `contents: write`. A second clone would need the token in a
+          # URL, which is a secret in a command line for no benefit.
+          cp "$GITHUB_WORKSPACE/$STATE_FILE" "$RUNNER_TEMP/state-to-commit.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin "$STATE_BRANCH" >/dev/null 2>&1; then
+            git fetch --depth 1 origin "$STATE_BRANCH"
+            git checkout -B "$STATE_BRANCH" FETCH_HEAD
+          else
+            # First run. An ORPHAN branch: it shares no commit with main,
+            # because nothing here is packaging history and a machine-written
+            # state file in `git log` of the tree would be noise forever.
+            git checkout --orphan "$STATE_BRANCH"
+          fi
+          # Whatever the previous branch left in the index, tracked-file-wise.
+          # On the orphan path that is the whole packaging tree, which does not
+          # belong on this branch; on the update path it is the two files below,
+          # and re-adding them is idempotent.
+          git rm -rf --quiet . >/dev/null 2>&1 || true
+          cp "$RUNNER_TEMP/state-to-commit.json" "$STATE_FILE"
+          cat > README.md <<'EOF'
+          # trunk-watch state
+
+          Machine-written CI bookkeeping for `.github/workflows/trunk-early-warning.yml`.
+          Not packaging history, which is why this is an orphan branch: it shares no
+          commit with `main` and nothing merges it.
+
+          `trunk-watch-state.json` is `upstream-watch-state/v1`: the last-seen commit of
+          every watched ref, where "last seen" means **tested**, not merely observed. The
+          `trunk_engine_run_id` field is reserved for the run that produced a reusable
+          trunk engine artifact, and is unfilled until the sibling repository's harness
+          can accept a prebuilt prefix.
+
+          Do not edit by hand. Deleting the branch is safe: the watcher fails open, and
+          the next run tests everything.
+          EOF
+          git add -A "$STATE_FILE" README.md
+          if git diff --cached --quiet; then
+            echo "state unchanged; nothing to commit"
+            exit 0
+          fi
+          git commit -m "trunk-watch: state after run ${GITHUB_RUN_ID}
+
+          Reconciliation was complete, so every expected row produced evidence and
+          the shas recorded here describe commits that were actually tested."
+          git push origin "HEAD:$STATE_BRANCH"
+          echo "state branch $STATE_BRANCH updated"
