@@ -2699,6 +2699,265 @@ def test_pins_do_not_drift_from_the_manifest(repo_root: Path) -> None:
             )
 
 
+# --- pinned per-scenario transaction outcomes -------------------------------
+
+EL9_SUMMARY_ROW = "{s}\tdnf something\t{rc}\tEVR\tpresent\tcompiles\t{outcome}\tsafe"
+DEB_SUMMARY_HEADER = (
+    "scenario\tcandidate\tcommand\texit\tvinyl\tvmod\tvmod_so\tvcl_compile\toutcome\twarn"
+)
+DEB_SUMMARY_ROW = "{s}\tmismatch\tapt something\t{rc}\tv->v\tkept\tpresent\tok\t{outcome}\tno"
+
+
+def test_transaction_pin_gate() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        expected = root / "libvmod-example.tsv"
+        expected.write_text(
+            "# comment line\n"
+            "\n"
+            "upgrade\t1\tREFUSED the transaction, nothing changed\n"
+            "upgrade-allowerasing\t1\tREFUSED the transaction, nothing changed\n",
+            encoding="utf-8",
+        )
+        pins = ci_matrix.load_transaction_pins(expected)
+        check(
+            "txn pins: comments and blanks are ignored, two scenarios pinned",
+            sorted(pins) == ["upgrade", "upgrade-allowerasing"],
+            str(sorted(pins)),
+        )
+
+        matching = "\n".join(
+            [
+                EL9_SUMMARY_ROW.format(
+                    s="upgrade", rc="1", outcome="REFUSED the transaction, nothing changed"
+                ),
+                EL9_SUMMARY_ROW.format(
+                    s="upgrade-allowerasing",
+                    rc="1",
+                    outcome="REFUSED the transaction, nothing changed",
+                ),
+            ]
+        )
+        check(
+            "txn pins: a matching run has no problems",
+            ci_matrix.check_transaction_pins(matching, pins, "el9") == [],
+            str(ci_matrix.check_transaction_pins(matching, pins, "el9")),
+        )
+
+        diverged = "\n".join(
+            [
+                EL9_SUMMARY_ROW.format(
+                    s="upgrade", rc="1", outcome="REFUSED the transaction, nothing changed"
+                ),
+                EL9_SUMMARY_ROW.format(
+                    s="upgrade-allowerasing", rc="0", outcome="UPGRADED VINYL AND REMOVED THE VMOD"
+                ),
+            ]
+        )
+        problems = ci_matrix.check_transaction_pins(diverged, pins, "el9")
+        check(
+            "txn pins: a measured outcome that differs from its pin is a loud failure",
+            len(problems) == 1
+            and "upgrade-allowerasing" in problems[0]
+            and "UPGRADED VINYL AND REMOVED THE VMOD" in problems[0]
+            and "pinned" in problems[0],
+            str(problems),
+        )
+
+        exit_only = "\n".join(
+            [
+                EL9_SUMMARY_ROW.format(
+                    s="upgrade", rc="0", outcome="REFUSED the transaction, nothing changed"
+                ),
+                EL9_SUMMARY_ROW.format(
+                    s="upgrade-allowerasing",
+                    rc="1",
+                    outcome="REFUSED the transaction, nothing changed",
+                ),
+            ]
+        )
+        problems = ci_matrix.check_transaction_pins(exit_only, pins, "el9")
+        check(
+            "txn pins: an exit-code difference alone is a failure too",
+            len(problems) == 1 and problems[0].startswith("upgrade:"),
+            str(problems),
+        )
+
+        unpinned = matching + "\n" + EL9_SUMMARY_ROW.format(
+            s="upgrade-nobest", rc="0", outcome="skipped the update, nothing changed"
+        )
+        problems = ci_matrix.check_transaction_pins(unpinned, pins, "el9")
+        check(
+            "txn pins: a measured scenario without a pin is a failure, never a skip",
+            len(problems) == 1 and "measured but not pinned" in problems[0],
+            str(problems),
+        )
+
+        partial = EL9_SUMMARY_ROW.format(
+            s="upgrade", rc="1", outcome="REFUSED the transaction, nothing changed"
+        )
+        problems = ci_matrix.check_transaction_pins(partial, pins, "el9")
+        check(
+            "txn pins: a pinned scenario the run did not produce is a failure",
+            len(problems) == 1 and "missing from the run" in problems[0],
+            str(problems),
+        )
+        check(
+            "txn pins: --subset permits an incomplete named-scenarios run",
+            ci_matrix.check_transaction_pins(partial, pins, "el9", subset=True) == [],
+            str(ci_matrix.check_transaction_pins(partial, pins, "el9", subset=True)),
+        )
+
+        deb_pins = ci_matrix.load_transaction_pins(
+            _write(root / "deb.tsv", "s02-apt-upgrade-mismatch\t0\tHELD-BACK\n")
+        )
+        deb_summary = "\n".join(
+            [
+                DEB_SUMMARY_HEADER,
+                DEB_SUMMARY_ROW.format(s="s02-apt-upgrade-mismatch", rc="0", outcome="HELD-BACK"),
+            ]
+        )
+        check(
+            "txn pins: the Debian table's header row and column layout are understood",
+            ci_matrix.check_transaction_pins(deb_summary, deb_pins, "debian") == [],
+            str(ci_matrix.check_transaction_pins(deb_summary, deb_pins, "debian")),
+        )
+
+        for name, text, fragment in [
+            ("a malformed row", "upgrade\t1\n", "3 tab-separated fields"),
+            ("a non-numeric exit", "upgrade\tone\tREFUSED\n", "not a number"),
+            ("a duplicate scenario", "upgrade\t1\tA\nupgrade\t1\tB\n", "pinned twice"),
+            ("an empty file", "# nothing\n", "no pinned scenarios"),
+        ]:
+            try:
+                ci_matrix.load_transaction_pins(_write(root / "bad.tsv", text))
+                check(f"txn pins: {name} in the pin file is rejected", False, "no error")
+            except ValueError as exc:
+                check(f"txn pins: {name} in the pin file is rejected", fragment in str(exc), str(exc))
+        try:
+            ci_matrix.load_transaction_pins(root / "absent.tsv")
+            check("txn pins: a missing pin file is rejected", False, "no error")
+        except ValueError as exc:
+            check(
+                "txn pins: a missing pin file is rejected",
+                "must declare its per-scenario outcomes" in str(exc),
+                str(exc),
+            )
+
+        summary_path = _write(root / "summary.tsv", matching + "\n")
+        status = ci_matrix.main(
+            [
+                "check-transaction-pins",
+                "--summary",
+                str(summary_path),
+                "--expected",
+                str(expected),
+                "--format",
+                "el9",
+            ]
+        )
+        check("txn pins CLI: a matching summary exits 0", status == 0, str(status))
+        summary_path = _write(root / "summary.tsv", diverged + "\n")
+        status = ci_matrix.main(
+            [
+                "check-transaction-pins",
+                "--summary",
+                str(summary_path),
+                "--expected",
+                str(expected),
+                "--format",
+                "el9",
+            ]
+        )
+        check("txn pins CLI: a diverging summary exits non-zero", status == 1, str(status))
+
+
+def _write(path: Path, text: str) -> Path:
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_repo_transaction_pins(repo_root: Path) -> None:
+    """The checked-in pin files cover each lane's scenario set exactly.
+
+    The pins are per-VMOD, reviewed data; the scenario tables in the two
+    transactions.sh drivers are the authority for what runs. This guard makes
+    a drift between them -- a scenario added without pins, a stale pin for a
+    scenario that no longer exists, a package whose pins are missing -- a host
+    selftest failure rather than a red discovered only when the matrix is
+    dispatched. It also encodes the 2026-07-30 adjudication: dict's EL9 pins
+    differ from cachetag's on exactly the three whole-system --allowerasing
+    scenarios, and nowhere else.
+    """
+    el9_text = (repo_root / "recipes" / "el9" / "transactions.sh").read_text(encoding="utf-8")
+    match = re.search(r'all_scenarios="([^"]+)"', el9_text)
+    el9_scenarios = sorted(match.group(1).split()) if match else []
+    deb_text = (repo_root / "recipes" / "debian-13" / "transactions.sh").read_text(encoding="utf-8")
+    deb_scenarios = sorted(re.findall(r"^\s*(s\d{2}-[a-z0-9-]+)\|", deb_text, re.M))
+    check(
+        "repo txn pins: both scenario tables parsed from the drivers",
+        len(el9_scenarios) == 19 and len(deb_scenarios) == 16,
+        f"el9={len(el9_scenarios)} debian={len(deb_scenarios)}",
+    )
+
+    packages = ["libvmod-cachetag", "libvmod-redis", "vmod-dict"]
+    lane_pins = {}
+    for lane, scenarios in [("el9", el9_scenarios), ("debian-13", deb_scenarios)]:
+        expected_dir = repo_root / "recipes" / lane / "transactions" / "expected"
+        listed = sorted(p.name for p in expected_dir.glob("*.tsv"))
+        check(
+            f"repo txn pins: {lane} pins exactly the selected packages",
+            listed == [f"{name}.tsv" for name in packages],
+            str(listed),
+        )
+        for name in packages:
+            pins = ci_matrix.load_transaction_pins(expected_dir / f"{name}.tsv")
+            lane_pins[(lane, name)] = pins
+            check(
+                f"repo txn pins: {lane}/{name} covers the scenario set exactly",
+                sorted(pins) == scenarios,
+                f"pinned {sorted(pins)} vs lane {scenarios}",
+            )
+
+    for driver, flag in [("el9", "--format el9"), ("debian-13", "--format debian")]:
+        text = (repo_root / "recipes" / driver / "transactions.sh").read_text(encoding="utf-8")
+        check(
+            f"repo txn pins: the {driver} driver invokes the gate",
+            "check-transaction-pins" in text and flag in text,
+            "check-transaction-pins invocation not found",
+        )
+
+    divergent = sorted(
+        s
+        for s in lane_pins[("el9", "libvmod-cachetag")]
+        if lane_pins[("el9", "vmod-dict")][s] != lane_pins[("el9", "libvmod-cachetag")][s]
+    )
+    check(
+        "repo txn pins: dict's EL9 exception is exactly the three adjudicated scenarios",
+        divergent
+        == ["distro-sync-allowerasing", "upgrade-allowerasing", "upgrade-allowerasing-runtime-only"],
+        str(divergent),
+    )
+    for s in divergent:
+        pin = lane_pins[("el9", "vmod-dict")][s]
+        check(
+            f"repo txn pins: dict's {s} pin records the adjudicated erasure",
+            pin == {"exit": "0", "outcome": "UPGRADED VINYL AND REMOVED THE VMOD"},
+            str(pin),
+        )
+    check(
+        "repo txn pins: redis's EL9 pins are outcome-identical to cachetag's",
+        lane_pins[("el9", "libvmod-redis")] == lane_pins[("el9", "libvmod-cachetag")],
+        "diverged",
+    )
+    check(
+        "repo txn pins: the Debian pins are outcome-identical across all three VMODs",
+        lane_pins[("debian-13", "vmod-dict")] == lane_pins[("debian-13", "libvmod-cachetag")]
+        and lane_pins[("debian-13", "libvmod-redis")] == lane_pins[("debian-13", "libvmod-cachetag")],
+        "diverged",
+    )
+
+
 def main(repo_root: Path = None) -> int:
     root = Path(repo_root) if repo_root else ci_matrix.REPO_ROOT
     _RESULTS.clear()
@@ -2747,6 +3006,8 @@ def main(repo_root: Path = None) -> int:
     test_repo_catalog(root)
     test_pin_parsing()
     test_pins_do_not_drift_from_the_manifest(root)
+    test_transaction_pin_gate()
+    test_repo_transaction_pins(root)
 
     failed = 0
     for name, ok, detail in _RESULTS:

@@ -280,3 +280,22 @@ matrix | while IFS='|' read -r id cand dev pre tx; do
 done
 
 summarise
+
+# ------------------------------------------------ pinned per-scenario outcomes
+#
+# Classification alone is not a gate: on EL9 it scored one VMOD's silent
+# erasure and another's refusal of the identical scenario as the same accepted
+# class, and the divergence produced no red anywhere
+# (docs/20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md). Every
+# scenario's outcome and apt exit code is therefore pinned per VMOD in
+# transactions/expected/<package>.tsv, symmetrically with the EL9 lane, and
+# any difference -- a mismatch, an unpinned scenario, a pin the run did not
+# produce -- fails the matrix. A legitimate outcome change must update the pin
+# file in the same review.
+note "pinned per-scenario expectations"
+subset=
+[ "$wanted" = all ] || subset=--subset
+python3 "$repo_dir/tools/ci_matrix.py" check-transaction-pins \
+	--summary "$log_dir/SUMMARY.tsv" \
+	--expected "$recipe_dir/transactions/expected/$VMOD_PACKAGE.tsv" \
+	--format debian $subset

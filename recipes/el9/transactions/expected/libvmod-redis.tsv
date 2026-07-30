@@ -1,0 +1,33 @@
+# Pinned per-scenario outcomes for libvmod-redis on EL9, checked by
+# `ci_matrix.py check-transaction-pins --format el9` at the end of
+# recipes/el9/transactions.sh. Columns: scenario, expected dnf exit, expected
+# outcome, exactly as transactions/scenario.sh classifies and summary.tsv
+# records them.
+#
+# Pinned from the deliberate release-transactions dispatch, run 30532825959
+# (2026-07-30, cohort vinyl-9.0.1-ac4f719c16f4): redis's first-ever matrix,
+# 19/19 scenarios outcome-identical to libvmod-cachetag's row.
+#
+# The whole-system --allowerasing refusals hold because libvmod-redis sorts
+# before vinyl-cache -- libsolv name-order tie-breaking, not a packaging
+# guarantee (docs/20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md).
+# A package rename moves these pins, and must move them in the same review.
+sanity-candidate-installable	0	upgraded Vinyl (no VMOD installed)
+upgrade	1	REFUSED the transaction, nothing changed
+upgrade-best	1	REFUSED the transaction, nothing changed
+upgrade-nobest	0	skipped the update, nothing changed
+upgrade-skip-broken	1	REFUSED the transaction, nothing changed
+upgrade-allowerasing	1	REFUSED the transaction, nothing changed
+upgrade-runtime-only	1	REFUSED the transaction, nothing changed
+upgrade-allowerasing-runtime-only	1	REFUSED the transaction, nothing changed
+upgrade-allowerasing-nobest	0	skipped the update, nothing changed
+upgrade-targeted-allowerasing	0	UPGRADED VINYL AND REMOVED THE VMOD
+distro-sync	1	REFUSED the transaction, nothing changed
+distro-sync-allowerasing	1	REFUSED the transaction, nothing changed
+install-candidate	1	REFUSED the transaction, nothing changed
+install-candidate-allowerasing	0	UPGRADED VINYL AND REMOVED THE VMOD
+versionlock	1	versionlock BLOCKED the erasing transaction, nothing changed
+history-undo	0	erasing install removed the VMOD; history undo restored the cohort
+same-abi	1	REFUSED the transaction, nothing changed
+same-abi-targeted-allowerasing	0	UPGRADED VINYL AND REMOVED THE VMOD
+same-abi-install-allowerasing	0	UPGRADED VINYL AND REMOVED THE VMOD

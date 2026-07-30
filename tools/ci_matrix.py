@@ -2297,6 +2297,133 @@ def cmd_reconcile(args) -> int:
     return 1
 
 
+# --------------------------------------------------------------------------
+# Pinned per-scenario transaction outcomes.
+#
+# The transaction matrices classify what each package-manager scenario did, but
+# a classification is not an expectation: the class-based gate scored dict's
+# silent EL9 erasure and cachetag's refusal of the identical scenario as the
+# same accepted outcome, so two VMODs diverging on one scenario produced no red
+# anywhere (docs/20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md).
+# Each VMOD therefore pins the exact expected outcome and package-manager exit
+# code per scenario in recipes/<lane>/transactions/expected/<package>.tsv, and
+# the lane drivers fail loudly on any difference -- a mismatch, an unpinned
+# scenario in the run, or a pinned scenario the run did not produce. A
+# legitimate outcome change (a renamed package, a resolver fix, a new dnf) must
+# update the pin file in the same review, which is the point: the change is
+# then a diff somebody approves, never a reclassification nobody sees.
+#
+# The column layout is each lane's own summary table, unchanged; this reader
+# adapts to the lane rather than making the lanes emit a second format.
+TXN_SUMMARY_FORMATS = {
+    # recipes/el9/transactions.sh summary.tsv: no header row;
+    # scenario, command, dnf exit, vinyl, vmod, VCL, outcome, class.
+    "el9": {"scenario": 0, "exit": 2, "outcome": 6, "min_columns": 8},
+    # recipes/debian-13/transactions.sh SUMMARY.tsv: header row;
+    # scenario, candidate, command, exit, vinyl, vmod, vmod_so, vcl_compile,
+    # outcome, warn.
+    "debian": {"scenario": 0, "exit": 3, "outcome": 8, "min_columns": 10},
+}
+
+
+def load_transaction_pins(path: Path) -> dict:
+    """Read one expected-outcomes file: scenario TAB exit TAB outcome."""
+    if not path.is_file():
+        raise ValueError(
+            f"no pinned expectations at {path}: every VMOD that runs the "
+            "transaction matrix must declare its per-scenario outcomes"
+        )
+    pins = {}
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        fields = line.split("\t")
+        if len(fields) != 3:
+            raise ValueError(f"{path}:{lineno}: expected 3 tab-separated fields, got {len(fields)}")
+        scenario, expected_exit, outcome = (field.strip() for field in fields)
+        if not scenario or not outcome:
+            raise ValueError(f"{path}:{lineno}: empty scenario or outcome")
+        if not expected_exit.isdigit():
+            raise ValueError(f"{path}:{lineno}: exit code {expected_exit!r} is not a number")
+        if scenario in pins:
+            raise ValueError(f"{path}:{lineno}: scenario {scenario} pinned twice")
+        pins[scenario] = {"exit": expected_exit, "outcome": outcome}
+    if not pins:
+        raise ValueError(f"{path}: no pinned scenarios at all")
+    return pins
+
+
+def check_transaction_pins(summary_text: str, pins: dict, fmt: str, subset: bool = False) -> list:
+    """Compare a lane's summary table against the pinned expectations.
+
+    Returns a list of problem strings; empty means every measured scenario
+    matched its pin and (unless ``subset``) every pin was measured.
+    """
+    spec = TXN_SUMMARY_FORMATS[fmt]
+    problems = []
+    seen = set()
+    for line in summary_text.splitlines():
+        if not line.strip():
+            continue
+        fields = line.split("\t")
+        if fields[0] == "scenario":  # the Debian table's header row
+            continue
+        if len(fields) < spec["min_columns"]:
+            problems.append(
+                f"malformed summary row ({len(fields)} of {spec['min_columns']} columns): {line!r}"
+            )
+            continue
+        scenario = fields[spec["scenario"]]
+        measured_exit = fields[spec["exit"]]
+        measured_outcome = fields[spec["outcome"]]
+        if scenario in seen:
+            problems.append(f"{scenario}: measured twice in one summary")
+            continue
+        seen.add(scenario)
+        pin = pins.get(scenario)
+        if pin is None:
+            problems.append(
+                f"{scenario}: measured but not pinned -- no scenario may run without a "
+                f"declared expected outcome (measured exit {measured_exit}, "
+                f"outcome {measured_outcome!r})"
+            )
+            continue
+        if measured_exit != pin["exit"] or measured_outcome != pin["outcome"]:
+            problems.append(
+                f"{scenario}: measured exit {measured_exit}, outcome {measured_outcome!r}; "
+                f"pinned exit {pin['exit']}, outcome {pin['outcome']!r}"
+            )
+    if not subset:
+        for scenario in pins:
+            if scenario not in seen:
+                problems.append(f"{scenario}: pinned but missing from the run's summary")
+    return problems
+
+
+def cmd_check_transaction_pins(args) -> int:
+    pins = load_transaction_pins(Path(args.expected))
+    summary_path = Path(args.summary)
+    if not summary_path.is_file():
+        print(f"ERROR    no summary table at {summary_path}", file=sys.stderr)
+        return 2
+    problems = check_transaction_pins(
+        summary_path.read_text(encoding="utf-8"), pins, args.format, subset=args.subset
+    )
+    if problems:
+        for problem in problems:
+            print(f"ERROR    {problem}", file=sys.stderr)
+        print(
+            "\nA measured outcome that differs from its pin is a finding, never a "
+            "formatting problem: either the resolver's behaviour changed, or the pin "
+            f"in {args.expected} is due a reviewed update.",
+            file=sys.stderr,
+        )
+        return 1
+    scope = "a subset of" if args.subset else "all"
+    print(f"OK: {scope} the pinned scenarios matched ({len(pins)} pinned) [{args.expected}]")
+    return 0
+
+
 def cmd_selftest(args) -> int:
     # Every VMOD-side tool's tests run here. The recipe generator is the second
     # half of the same catalog: it reads the manifests this tool validates and
@@ -2460,6 +2587,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_set.add_argument("--summary", help="append the rendered report to this file")
     p_set.add_argument("--json", help="write the machine-readable report here")
     p_set.set_defaults(func=cmd_verify_release_set)
+
+    p_pin = sub.add_parser(
+        "check-transaction-pins",
+        help="compare a transaction matrix's summary against the VMOD's pinned outcomes",
+    )
+    p_pin.add_argument("--summary", required=True, help="the lane's summary TSV")
+    p_pin.add_argument(
+        "--expected", required=True, help="recipes/<lane>/transactions/expected/<package>.tsv"
+    )
+    p_pin.add_argument("--format", required=True, choices=sorted(TXN_SUMMARY_FORMATS))
+    p_pin.add_argument(
+        "--subset",
+        action="store_true",
+        help="a named-scenarios run: pins without a measured row are not an error",
+    )
+    p_pin.set_defaults(func=cmd_check_transaction_pins)
 
     p_self = sub.add_parser("selftest", help="run this tool's own tests")
     p_self.set_defaults(func=cmd_selftest)

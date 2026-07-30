@@ -1,0 +1,27 @@
+# Pinned per-scenario outcomes for libvmod-cachetag on Debian 13, checked by
+# `ci_matrix.py check-transaction-pins --format debian` at the end of
+# recipes/debian-13/transactions.sh. Columns: scenario, expected apt exit,
+# expected outcome, exactly as container/stage-transactions.sh classifies and
+# SUMMARY.tsv records them.
+#
+# Pinned from the deliberate release-transactions dispatch, run 30532825959
+# (2026-07-30, cohort vinyl-9.0.1-ac4f719c16f4), which is scenario-outcome
+# equivalent to the step-9 matrix (docs/20260724_2300) plus the same-ABI
+# deltas the cohort provide introduced (docs/20260725_1725: s12 HELD-BACK,
+# s13/s14 REMOVED-VMOD).
+s01-control-apt-upgrade	0	NO-OP
+s02-apt-upgrade-mismatch	0	HELD-BACK
+s03-apt-full-upgrade-mismatch-prompt	1	REFUSED
+s04-apt-full-upgrade-mismatch-yes	0	REMOVED-VMOD
+s05-apt-install-candidate-prompt	1	REFUSED
+s06-apt-install-candidate-yes	0	REMOVED-VMOD
+s07-apt-mark-hold-full-upgrade	0	HELD-BACK
+s08-apt-pin-full-upgrade	0	HELD-BACK
+s09-apt-get-upgrade-mismatch	0	HELD-BACK
+s10-apt-get-dist-upgrade-mismatch	0	REMOVED-VMOD
+s11-dev-installed-full-upgrade	0	REMOVED-VMOD
+s12-sameabi-apt-upgrade	0	HELD-BACK
+s13-sameabi-full-upgrade	0	REMOVED-VMOD
+s14-sameabi-install-candidate	0	REMOVED-VMOD
+s15-hold-vs-direct-install	100	REFUSED
+s16-pin-vs-direct-install	0	REMOVED-VMOD

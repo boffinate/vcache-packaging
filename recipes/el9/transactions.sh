@@ -192,4 +192,23 @@ else
 	printf '  none\n'
 fi
 
+# ------------------------------------------------ pinned per-scenario outcomes
+#
+# Classification alone is not a gate: it scored dict's silent erasure and
+# cachetag's refusal of the identical scenario as the same accepted class, so
+# the two VMODs diverging produced no red anywhere
+# (docs/20260730_1231_note_step-8-dict-el9-allowerasing-root-cause.md). Every
+# scenario's outcome and dnf exit code is therefore pinned per VMOD in
+# transactions/expected/<package>.tsv, and any difference -- a mismatch, an
+# unpinned scenario, a pin the run did not produce -- fails the matrix. A
+# legitimate outcome change (a package rename, a resolver fix) must update the
+# pin file in the same review.
+printf '\n########## pinned per-scenario expectations ##########\n'
+subset=
+[ "$scenarios" = "$all_scenarios" ] || subset=--subset
+python3 "$repo/tools/ci_matrix.py" check-transaction-pins \
+	--summary "$summary" \
+	--expected "$here/transactions/expected/$VMOD_PACKAGE.tsv" \
+	--format el9 $subset || status=1
+
 exit "$status"
