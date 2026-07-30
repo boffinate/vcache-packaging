@@ -65,7 +65,9 @@ bad() { printf 'DRIFT: %s\n' "$*" >&2; fail=1; }
 ok() { printf 'OK: %s\n' "$*"; }
 
 recorded=$(mktemp)
-python3 "$repo/tools/release_tool.py" recorded-evidence \
+# --no-cachetag-cross-check: this job has no libvmod-cachetag checkout, and the
+# configure.ac cross-check already ran in this same run's per-VMOD plan job.
+python3 "$repo/tools/release_tool.py" --no-cachetag-cross-check recorded-evidence \
 	--cohort "$cohort" --target "$target" --format json > "$recorded"
 
 note "1 -- the engine identity resolves to $cohort"

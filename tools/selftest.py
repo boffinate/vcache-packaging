@@ -1013,6 +1013,11 @@ def test_recorded_evidence_reports_what_the_registry_holds(repo_root: Path) -> N
     args = release_tool.build_parser().parse_args(
         [
             "--repo-root", str(repo_root),
+            # Hermetic: the reader must not require a sibling libvmod-cachetag
+            # checkout, which CI runners and fresh clones do not have. The
+            # configure.ac cross-check has its own coverage; this test is about
+            # the shape of the recorded evidence.
+            "--no-cachetag-cross-check",
             "recorded-evidence",
             "--cohort", "vinyl-9.0.1-ac4f719c16f4",
             "--target", "debian-13-amd64",
