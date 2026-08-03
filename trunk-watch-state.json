@@ -7,7 +7,7 @@
     },
     "cachetag/trunk": {
       "ref": "main",
-      "sha": "d453872347e718a478e677aa551be2d4ae389916",
+      "sha": "ad0bc17951b16b2805e984444f2de8df6c95342a",
       "url": "https://github.com/boffinate/libvmod-cachetag.git"
     },
     "dict/release": {
