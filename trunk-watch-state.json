@@ -37,7 +37,7 @@
     },
     "vinyl-trunk": {
       "ref": "HEAD",
-      "sha": "655c988a2f079ee458bc64f55f4548862946fe3d",
+      "sha": "1e5a59d3ae1ac42d5d5775166857cc9187a2d892",
       "url": "https://code.vinyl-cache.org/vinyl-cache/vinyl-cache.git"
     }
   },
