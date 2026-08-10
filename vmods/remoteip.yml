@@ -1,0 +1,27 @@
+# vmod-remoteip (schema vmod/1, DESIGN.md).
+schema: vmod/1
+id: remoteip
+upstream:
+  git: https://git.gnu.org.ua/vmod-remoteip.git
+sources:
+  head: master
+  default:
+    ref: v2.5
+    version: "2.5"
+package:
+  summary: Client IP address lookup VMOD for Vinyl Cache
+  description:
+    - vmod-remoteip determines the actual client IP address for a
+    - connection from a comma-delimited proxy header such as
+    - X-Forwarded-For, in the way mod_remoteip does for Apache. It scans
+    - the address list of that header from right to left against a
+    - trusted-IP ACL, stopping at the first address the ACL does not
+    - contain.
+  license: GPL-3.0-or-later
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils

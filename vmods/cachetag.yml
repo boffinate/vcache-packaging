@@ -1,0 +1,27 @@
+# libvmod-cachetag (schema vmod/1, DESIGN.md).
+schema: vmod/1
+id: cachetag
+upstream:
+  git: https://github.com/boffinate/libvmod-cachetag.git
+sources:
+  head: main
+  default:
+    ref: v1.0.1
+    version: "1.0.1"
+package:
+  summary: Tag-based cache invalidation VMOD for Vinyl Cache
+  description:
+    - Cachetag adds tag-based invalidation to Vinyl Cache, running on the
+    - in-memory storage engines and on Fellow persistent storage. Backends
+    - label responses with tags such as product:123, and one purge then
+    - invalidates every cached object carrying the tag, without tracking
+    - down each URL. At scale it is designed to be significantly more
+    - memory efficient than the bundled xkey.
+  license: MPL-2.0
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils

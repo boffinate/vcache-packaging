@@ -1,0 +1,140 @@
+name: release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  expand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      engines: ${{ steps.expand.outputs.engines }}
+      vmods: ${{ steps.expand.outputs.vmods }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: expand
+        run: python3 tools/matrix.py expand --lane release --mode package --format github >> "$GITHUB_OUTPUT"
+
+  engine:
+    needs: expand
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.expand.outputs.engines) }}
+    name: engine ${{ matrix.engine }} on ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      # Exits non-zero only on infra_failed; a classified build failure is a
+      # red cell in the result JSON, not a red job.
+      - run: scripts/build-engine.sh "${{ matrix.engine }}" "${{ matrix.target }}" work
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.engine }}-${{ matrix.target }}
+          path: |
+            work/**
+            !work/results/**
+          if-no-files-found: ignore
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-engine-${{ matrix.engine }}-${{ matrix.target }}
+          path: work/results/
+
+  vmod:
+    needs: [expand, engine]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.expand.outputs.vmods) }}
+    name: ${{ matrix.row }} vs ${{ matrix.engine }} (${{ matrix.mode }}, ${{ matrix.target }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-${{ matrix.engine }}-${{ matrix.target }}
+          path: work/engine
+      - run: scripts/build-vmod.sh "${{ matrix.row }}" "${{ matrix.engine }}" "${{ matrix.target }}" "${{ matrix.mode }}" work
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.row }}-${{ matrix.engine }}-${{ matrix.target }}
+          path: work/packages/
+          if-no-files-found: ignore
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.row }}-${{ matrix.engine }}-${{ matrix.target }}-${{ matrix.mode }}
+          path: work/results/
+
+  release:
+    needs: [expand, engine, vmod]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: results-*
+          merge-multiple: true
+          path: results
+      # No merge-multiple here: each artifact lands in its own subdirectory of
+      # pkgdl/, so packages can be included or omitted per cell result below.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: engine-*
+          path: pkgdl
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: pkgdl
+      - name: collect green packages and write the release body
+        run: |
+          set -eu
+          python3 - <<'EOF'
+          import glob, json, os, shutil
+          os.makedirs("dist", exist_ok=True)
+          included, failed = set(), []
+          for path in sorted(glob.glob("results/**/*.json", recursive=True)):
+              with open(path) as f:
+                  cell = json.load(f)
+              row, engine, target = cell["row"], cell["engine"], cell["target"]
+              if cell["status"] != "pass":
+                  failed.append(f"{row} on {engine} / {target}: {cell['status']}")
+                  continue
+              # Engine rows carry their packages inside the engine artifact;
+              # VMOD rows upload a dedicated packages artifact.
+              sub = f"engine-{engine}-{target}" if row == engine else f"packages-{row}-{engine}-{target}"
+              for ext in ("deb", "rpm"):
+                  for pkg in glob.glob(f"pkgdl/{sub}/**/*.{ext}", recursive=True):
+                      shutil.copy(pkg, "dist/")
+                      included.add(os.path.basename(pkg))
+          with open("body.md", "w") as f:
+              f.write("Packages built from the pinned release catalog. "
+                      "Every .deb/.rpm below passed its build-and-load check.\n\n")
+              f.write("## Included\n\n")
+              f.write("".join(f"- `{name}`\n" for name in sorted(included)) or "- nothing\n")
+              if failed:
+                  f.write("\n## Failed packaging (omitted)\n\n")
+                  f.write("".join(f"- {line}\n" for line in sorted(failed)))
+          EOF
+          (cd dist && sha256sum -- * > SHA256SUMS)
+      - name: create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          tag="v-release-$(date -u +%Y%m%d)-$(printf %.7s "$GITHUB_SHA")"
+          gh release create "$tag" dist/* \
+            --target "$GITHUB_SHA" --title "$tag" --notes-file body.md

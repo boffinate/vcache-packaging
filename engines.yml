@@ -1,0 +1,51 @@
+# Hand-maintained engine catalog (schema engines/1, DESIGN.md).
+# Release pins were transcribed once from v1: vinyl-9.0.1 from
+# recipes/debian-13/pins.env (release block), varnish-9.0.3 from
+# survey/harness/pins.env. Trunk rows carry no pin: the branch HEAD is built
+# as it stands and the cell result records the commit.
+schema: engines/1
+engines:
+  - id: vinyl-9.0.1
+    family: vinyl
+    series: vinyl-9.0
+    kind: release
+    source:
+      tarball_url: https://vinyl-cache.org/downloads/vinyl-cache-9.0.1.tgz
+      sha256: "2e8ec67cd213ea6864c763939d64912025557342fad2a5ffda6c7c5b59bdeb17"
+    packages: "true"
+    targets:
+      - debian-13-amd64
+      - el9-x86_64
+  - id: varnish-9.0.3
+    family: varnish
+    series: varnish-9.0
+    kind: release
+    source:
+      tarball_url: https://github.com/varnish/varnish/releases/download/varnish-9.0.3/varnish-9.0.3.tar.gz
+      sha256: "2aac11dd95329b0cea148d478168b3ccc6fe45fab38160c440159386403b69fd"
+    packages: "false"
+    targets:
+      - debian-13-amd64
+  # Vinyl upstream's default branch is main (origin/HEAD of the same remote
+  # v1's watcher and trunk workflow cloned).
+  - id: vinyl-trunk
+    family: vinyl
+    series: vinyl-trunk
+    kind: trunk
+    source:
+      git_url: https://code.vinyl-cache.org/vinyl-cache/vinyl-cache.git
+      branch: main
+    packages: "false"
+    targets:
+      - debian-13-amd64
+  # Varnish upstream's default branch is master.
+  - id: varnish-trunk
+    family: varnish
+    series: varnish-trunk
+    kind: trunk
+    source:
+      git_url: https://github.com/varnishcache/varnish-cache.git
+      branch: master
+    packages: "false"
+    targets:
+      - debian-13-amd64

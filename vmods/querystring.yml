@@ -1,0 +1,31 @@
+# vmod-querystring (schema vmod/1, DESIGN.md).
+#
+# EXPECTED RED on vinyl columns: upstream's build system addresses the engine
+# by its Varnish names (VARNISH_PREREQ and friends), and v1 needed a reviewed
+# build-system patch to configure against Vinyl. v2 carries no patches
+# (SCOPE.md), so vinyl cells fail at configure and varnish cells pass.
+schema: vmod/1
+id: querystring
+upstream:
+  git: https://git.sr.ht/~dridi/vmod-querystring
+sources:
+  head: master
+  default:
+    ref: vmod-querystring-2.0.4
+    version: "2.0.4"
+package:
+  summary: Query-string filtering VMOD for Vinyl Cache
+  description:
+    - vmod-querystring gives fine-grained control over a URL query-string
+    - in VCL. It can remove the query-string outright, clean it, sort its
+    - parameters, or filter it down to a chosen subset by name, glob or
+    - regular expression, which improves cache hit ratio for requests that
+    - differ only in irrelevant parameters such as tracking tags.
+  license: GPL-3.0-or-later
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils

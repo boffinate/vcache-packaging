@@ -1,0 +1,139 @@
+name: trunk
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 5 * * 1,4" # Monday and Thursday, unconditional (no change-gating)
+
+permissions:
+  contents: read
+
+jobs:
+  expand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      engines: ${{ steps.expand.outputs.engines }}
+      vmods: ${{ steps.expand.outputs.vmods }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: expand
+        run: python3 tools/matrix.py expand --lane trunk --mode compat --format github >> "$GITHUB_OUTPUT"
+
+  engine:
+    needs: expand
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.expand.outputs.engines) }}
+    name: engine ${{ matrix.engine }} on ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      # Exits non-zero only on infra_failed; a classified build failure is a
+      # red cell in the result JSON, not a red job.
+      - run: scripts/build-engine.sh "${{ matrix.engine }}" "${{ matrix.target }}" work
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.engine }}-${{ matrix.target }}
+          path: |
+            work/**
+            !work/results/**
+          if-no-files-found: ignore
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-engine-${{ matrix.engine }}-${{ matrix.target }}
+          path: work/results/
+
+  vmod:
+    needs: [expand, engine]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.expand.outputs.vmods) }}
+    name: ${{ matrix.row }} vs ${{ matrix.engine }} (${{ matrix.mode }}, ${{ matrix.target }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-${{ matrix.engine }}-${{ matrix.target }}
+          path: work/engine
+      - run: scripts/build-vmod.sh "${{ matrix.row }}" "${{ matrix.engine }}" "${{ matrix.target }}" "${{ matrix.mode }}" work
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.row }}-${{ matrix.engine }}-${{ matrix.target }}-${{ matrix.mode }}
+          path: work/results/
+
+  publish:
+    needs: [expand, engine, vmod]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Shared with matrix.yml: both push ci-state/matrix and deploy the same
+    # Pages site, so their publishes must never race.
+    concurrency:
+      group: matrix-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: results-*
+          merge-multiple: true
+          path: results
+      # A second checkout in its own directory so switching to the orphan
+      # state branch never touches the tree matrix.py runs from.
+      - uses: actions/checkout@v4
+        with:
+          path: state
+          fetch-depth: 1
+      - name: switch the scratch tree to the state branch
+        working-directory: state
+        run: |
+          set -eu
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin ci-state/matrix >/dev/null 2>&1; then
+            git fetch --depth 1 origin ci-state/matrix
+            git checkout -B ci-state/matrix FETCH_HEAD
+          else
+            git checkout --orphan ci-state/matrix
+            git rm -rf --quiet . >/dev/null 2>&1 || true
+          fi
+      - run: python3 repo/tools/matrix.py merge --results-dir results --state-file state/matrix-state.json
+      - name: commit and push the state branch
+        working-directory: state
+        run: |
+          set -eu
+          git add -A
+          if git diff --cached --quiet; then
+            echo "state unchanged; nothing to commit"
+          else
+            git commit -m "matrix state after run ${GITHUB_RUN_ID}"
+            git push origin HEAD:ci-state/matrix
+          fi
+      - run: |
+          mkdir -p site
+          python3 repo/tools/matrix.py render --state-file state/matrix-state.json --out site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v5

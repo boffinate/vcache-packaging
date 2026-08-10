@@ -32,7 +32,7 @@ work/                    # gitignored scratch (container mounts, results, artifa
 
 ## Catalog schemas
 
-Parsed with `tools/yaml_subset.py`: mappings, lists, scalars-as-strings only. Unknown keys are validation errors.
+Parsed with `tools/yaml_subset.py`: mappings, block sequences, scalars-as-strings only — no flow `[a, b]` lists, no `|` block scalars, no anchors. Mapping keys may contain lowercase letters, digits, `_`, `-`, and `.` (series names like `vinyl-9.0` must be expressible as `by_series` keys). Multi-line prose (`description`) is a list of plain scalar lines. Unknown keys are validation errors. The inline examples below use flow-list shorthand for brevity only; the real files use block sequences throughout.
 
 ### engines.yml
 
@@ -52,7 +52,7 @@ engines:
     targets: [debian-13-amd64, el9-x86_64]
 ```
 
-Rules: `kind: release` requires `tarball_url` + `sha256`; `kind: trunk` requires `git_url` + `branch` and forces `packages: "false"`. `packages: "true"` requires `kind: release` and `family: vinyl` (Varnish is matrix-only for now — reversible decision, see Decisions). Compat columns are tested on the first listed target only; package engines build on every listed target.
+Rules: `kind: release` requires `tarball_url` + `sha256`; `kind: trunk` requires `git_url` + `branch` and forces `packages: "false"`. Trunk engines carry a self-named `series` (`vinyl-trunk`); the resolution rule never consults `series` for trunk engines. `packages: "true"` requires `kind: release` and `family: vinyl` (Varnish is matrix-only for now — reversible decision, see Decisions). Compat columns are tested on the first listed target only; package engines build on every listed target.
 
 Initial contents: `vinyl-9.0.1` (release, packages, both targets — pin from v1 `recipes/debian-13/pins.env`), `varnish-9.0.3` (release, matrix-only, debian target — pin from v1 `survey/harness/pins.env`), `vinyl-trunk` and `varnish-trunk` (trunk, matrix-only — git URLs/branches from v1 `tools/upstream_watch.py` constants).
 
@@ -75,8 +75,8 @@ sources:
       version: "2.0"
 package:
   summary: "one line"
-  description: |
-    A few sentences.
+  description:          # list of lines, joined when rendered
+    - "A few sentences."
   license: GPL-3.0-or-later    # SPDX, single expression; informational
   build_deps:
     debian: [python3-docutils]  # beyond the implied engine -dev + autotools set
@@ -97,7 +97,7 @@ One JSON file per (vmod|engine-itself, engine, target), written by the build scr
  "status": "pass", "detail": "", "run_url": "", "finished_at": "2026-08-10T00:00:00Z"}
 ```
 
-`row` is a VMOD id, or `engine` for the engine's own build row. `mode` is `compat` or `package`.
+`row` is a VMOD id, or the engine's own id for the engine's build row. `mode` is `compat`, `package`, or `engine` (engine rows only). Result files are named `<row>--<engine>--<target>--<mode>.json` — globally unique, because CI flattens every job's results into one directory.
 
 **Statuses** (the full vocabulary — keep it this small):
 `pass`, `configure_failed`, `build_failed`, `load_failed`, `package_failed`, `install_failed`, `infra_failed`.
@@ -120,7 +120,7 @@ matrix.py render --state-file FILE --out index.html
 matrix.py selftest
 ```
 
-`expand` emits rows `{row, engine, target, mode}` — the GitHub Actions job matrix. `env` is the **only** way shell/CI gets version strings; nothing like v1's hand-mirrored `pins.env` exists. `merge` rule: newest `finished_at` per (row, engine, target, mode) wins.
+`expand` emits rows `{row, engine, target, mode}` — the GitHub Actions job matrix. `--format github` prints exactly two `key=<single-line-json>` lines for `$GITHUB_OUTPUT`: `engines=[...]` (unique engine×target pairs) and `vmods=[...]` (VMOD rows only, engine rows excluded). `env` is the **only** way shell/CI gets version strings; nothing like v1's hand-mirrored `pins.env` exists. `merge` rule: newest `finished_at` per (row, engine, target, mode) wins; globs `*.json` recursively; a state file full of red cells is still a successful merge/render.
 
 ## tools/recipe.py
 

@@ -1,0 +1,41 @@
+# libvmod-redis (schema vmod/1, DESIGN.md).
+#
+# EXPECTED RED on vinyl columns: upstream's build system addresses the engine
+# by its Varnish names (m4_ifndef([VARNISH_PREREQ]) fires first), and v1
+# needed a reviewed build-system patch to configure against Vinyl. v2 carries
+# no patches (SCOPE.md), so vinyl cells fail at configure and varnish cells
+# pass.
+schema: vmod/1
+id: redis
+upstream:
+  git: https://github.com/carlosabalde/libvmod-redis.git
+sources:
+  head: main
+  default:
+    ref: "9.0-23.1"
+    version: "23.1"
+package:
+  summary: Redis client VMOD for Vinyl Cache
+  description:
+    - libvmod-redis lets VCL execute commands against one or more Redis
+    - servers. It supports standalone servers, replicated pairs with
+    - automatic role discovery, Redis Cluster with MOVED and ASK
+    - redirection, Sentinel-driven fail-over, and TLS. Connections are
+    - pooled per worker thread or shared across them, with configurable
+    - timeouts, retries, and per-server sickness tracking.
+  license: BSD-2-Clause AND BSD-3-Clause AND LicenseRef-Public-Domain
+  build_deps:
+    debian:
+      - libhiredis-dev
+      - libev-dev
+      - libssl-dev
+      - autoconf-archive
+      - python3
+      - python3-docutils
+    rpm:
+      - hiredis-devel
+      - libev-devel
+      - openssl-devel
+      - autoconf-archive
+      - python3
+      - python3-docutils

@@ -1,0 +1,36 @@
+# libvmod-selector (schema vmod/1, DESIGN.md).
+#
+# EXPECTED RED on vinyl columns: upstream's build system addresses the engine
+# by its Varnish names (VARNISH_PREREQ, VARNISH_VMODS, VARNISH_COUNTERS), and
+# v1 needed a reviewed build-system patch to configure against Vinyl. v2
+# carries no patches (SCOPE.md), so vinyl cells fail at configure and varnish
+# cells pass.
+schema: vmod/1
+id: selector
+upstream:
+  git: https://gitlab.com/uplex/varnish/libvmod-selector.git
+sources:
+  head: master
+  default:
+    ref: v2.6.0
+    version: "2.6.0"
+package:
+  summary: Fixed-string and pattern matching VMOD for Vinyl Cache
+  description:
+    - libvmod-selector builds sets of fixed strings, regular expressions
+    - and integer or boolean values, and matches a subject string or number
+    - against a set to associate it with a backend, a subroutine, or any of
+    - the other data a set element may carry. Sets are built once from VCL
+    - and queried repeatedly, with matching time proportional to the length
+    - of the subject rather than the size of the set, using a compressed
+    - radix trie.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - autoconf-archive
+      - python3
+      - python3-docutils
+    rpm:
+      - autoconf-archive
+      - python3
+      - python3-docutils

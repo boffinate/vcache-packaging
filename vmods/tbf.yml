@@ -1,0 +1,24 @@
+# vmod-tbf (schema vmod/1, DESIGN.md).
+schema: vmod/1
+id: tbf
+upstream:
+  git: https://git.gnu.org.ua/vmod-tbf.git
+sources:
+  head: master
+  default:
+    ref: v2.8
+    version: "2.8"
+package:
+  summary: Token bucket rate-limiting VMOD for Vinyl Cache
+  description:
+    - vmod-tbf implements token bucket filtering, request-rate limiting
+    - keyed by an arbitrary string, plus the small utility functions that
+    - rate-limiting VCL logic typically needs alongside it. Bucket state
+    - can be dumped to disk and reloaded across restarts, and idle buckets
+    - are garbage collected.
+  license: GPL-3.0-or-later
+  build_deps:
+    debian:
+      - python3
+    rpm:
+      - python3
