@@ -1,0 +1,168 @@
+# Design
+
+Status: Normative for the initial build. Contracts here (schemas, CLI surfaces, script interfaces, statuses) are what the components are written against. Change the contract here first, then the code.
+
+This is a clean-room successor to `../vcache-packaging` (referred to as **v1** below). v1 remains readable as a reference; nothing in v1 is imported wholesale without being listed in the port map at the bottom.
+
+## Repository layout
+
+```
+SCOPE.md  DESIGN.md  README.md
+engines.yml              # hand-maintained: every engine version we test/package
+vmods/<id>.yml           # hand-maintained: one file per selected VMOD
+packaging/
+  debian/                # one generic Debian recipe template set (*.in)
+  rpm/                   # one generic RPM spec template (*.in)
+tools/
+  yaml_subset.py         # strict stdlib YAML-subset parser (ported from v1)
+  matrix.py              # the one CLI: validate / expand / env / merge / render / selftest
+  recipe.py              # renders debian/ + spec from templates + catalog (library + CLI)
+  selftest.py            # tests for all of the above (run by matrix.py selftest)
+scripts/
+  build-engine.sh        # build one engine (id, target) in a container
+  build-vmod.sh          # build one VMOD against one engine (compat and/or package mode)
+  lib.sh                 # shared shell helpers (container run, result emission)
+.github/workflows/
+  ci.yml                 # PR/push: host-safe validation + selftests only
+  matrix.yml             # dispatch + weekly: full release-engine matrix -> Pages
+  trunk.yml              # schedule Mon/Thu: trunk columns -> Pages
+  release.yml            # dispatch: build packages, create GitHub Release
+work/                    # gitignored scratch (container mounts, results, artifacts)
+```
+
+## Catalog schemas
+
+Parsed with `tools/yaml_subset.py`: mappings, lists, scalars-as-strings only. Unknown keys are validation errors.
+
+### engines.yml
+
+```yaml
+schema: engines/1
+engines:
+  - id: vinyl-9.0.1            # unique, becomes a matrix column
+    family: vinyl              # vinyl | varnish
+    series: vinyl-9.0          # what vmods/*.yml by_series keys refer to
+    kind: release              # release | trunk
+    source:
+      tarball_url: https://...  # release: pinned tarball
+      sha256: "..."             # release: tarball digest
+      git_url: https://...      # trunk: repository
+      branch: trunk             # trunk: branch to build HEAD of
+    packages: "true"           # "true": we ship packages built against it
+    targets: [debian-13-amd64, el9-x86_64]
+```
+
+Rules: `kind: release` requires `tarball_url` + `sha256`; `kind: trunk` requires `git_url` + `branch` and forces `packages: "false"`. `packages: "true"` requires `kind: release` and `family: vinyl` (Varnish is matrix-only for now — reversible decision, see Decisions). Compat columns are tested on the first listed target only; package engines build on every listed target.
+
+Initial contents: `vinyl-9.0.1` (release, packages, both targets — pin from v1 `recipes/debian-13/pins.env`), `varnish-9.0.3` (release, matrix-only, debian target — pin from v1 `survey/harness/pins.env`), `vinyl-trunk` and `varnish-trunk` (trunk, matrix-only — git URLs/branches from v1 `tools/upstream_watch.py` constants).
+
+### vmods/<id>.yml
+
+```yaml
+schema: vmod/1
+id: dict
+upstream:
+  git: https://git.gnu.org.ua/vmod-dict.git
+  homepage: https://...        # optional
+sources:
+  head: master                 # branch built for trunk-engine columns
+  default:
+    ref: v1.7                  # tag or branch built for release-engine columns
+    version: "1.7"             # upstream version string for the package
+  by_series:                   # optional overrides, keyed by engines.yml series
+    varnish-10:
+      ref: v2.0
+      version: "2.0"
+package:
+  summary: "one line"
+  description: |
+    A few sentences.
+  license: GPL-3.0-or-later    # SPDX, single expression; informational
+  build_deps:
+    debian: [python3-docutils]  # beyond the implied engine -dev + autotools set
+    rpm: [python3-docutils]
+```
+
+**Source resolution rule** (the one rule, used everywhere): for engine E, a VMOD builds `sources.head` if `E.kind == trunk`, else `sources.by_series[E.series]` if present, else `sources.default`. There is no "skip": every VMOD gets a cell for every engine column, and an incompatible pairing simply fails and renders red.
+
+No pinned commits or archive digests for VMODs. The ref is the pin; trunk cells record the commit they actually built in the cell result. (Engine release tarballs keep a sha256 because packages are built from them.)
+
+## Cell results
+
+One JSON file per (vmod|engine-itself, engine, target), written by the build scripts, merged by `matrix.py merge`:
+
+```json
+{"schema": "cell/1", "row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64",
+ "mode": "compat", "ref": "v1.7", "commit": "<resolved sha or empty>",
+ "status": "pass", "detail": "", "run_url": "", "finished_at": "2026-08-10T00:00:00Z"}
+```
+
+`row` is a VMOD id, or `engine` for the engine's own build row. `mode` is `compat` or `package`.
+
+**Statuses** (the full vocabulary — keep it this small):
+`pass`, `configure_failed`, `build_failed`, `load_failed`, `package_failed`, `install_failed`, `infra_failed`.
+
+The first three come from compat mode (autotools configure, make, then a `vcl.load`-style check compiling a minimal VCL that imports the VMOD against the built engine). `package_failed`/`install_failed` come from package mode (recipe build, then install-and-load in a fresh container). `infra_failed` means the harness itself broke and is the **only** status that fails a CI job.
+
+## The matrix page
+
+Rows: engines' own build row first, then one row per VMOD (catalog order). Columns: engines in `engines.yml` order (release engines, then trunk engines). Cell colour by worst status across that cell's targets/modes; green `pass`, red any `*_failed` except infra, grey `infra_failed` or no data. Tooltip carries per-target/mode detail, ref, commit, timestamps, link to the producing run. Rendering ports v1 `tools/status_page.py`'s bones (state-file merge, self-contained HTML, light/dark) with the new axes. State lives in `matrix-state.json` on orphan branch `ci-state/matrix`; Pages deploys from `matrix.yml` and `trunk.yml` on main only, shared concurrency group.
+
+## tools/matrix.py CLI contract
+
+```
+matrix.py validate                                      # catalog well-formed; exit 1 on error
+matrix.py expand --lane release|trunk [--mode compat|package|all] --format github|json
+matrix.py resolve --vmod ID --engine ID                 # print resolved ref+version JSON
+matrix.py env --engine ID [--vmod ID] [--target ID]     # sh-sourceable pins for scripts
+matrix.py merge --results-dir DIR --state-file FILE     # fold cell JSONs into state
+matrix.py render --state-file FILE --out index.html
+matrix.py selftest
+```
+
+`expand` emits rows `{row, engine, target, mode}` — the GitHub Actions job matrix. `env` is the **only** way shell/CI gets version strings; nothing like v1's hand-mirrored `pins.env` exists. `merge` rule: newest `finished_at` per (row, engine, target, mode) wins.
+
+## tools/recipe.py
+
+Renders a Debian source dir and an RPM spec from `packaging/` templates plus one VMOD's catalog entry and one engine's `env` values. Package naming (uniform, all VMODs including cachetag): Debian binary `vinyl-vmod-<id>`, RPM `vinyl-vmod-<id>`. Version: `<upstream_version>-1~vinyl<engine_version>` style Debian revision / `Release: 1.vinyl<engine_version>` RPM. ABI coherence is expressed as an exact-version dependency on the engine runtime package (`Depends: vinyl-cache (= <engine pkg version>)` / `Requires: vinyl-cache = <ver>`). `debian/copyright` is generated minimal: SPDX id + pointer to upstream license file. No lintian/rpmlint gating.
+
+## Script contracts
+
+```
+scripts/build-engine.sh <engine-id> <target> <workdir>
+scripts/build-vmod.sh   <vmod-id> <engine-id> <target> <mode> <workdir>
+```
+
+Both run everything inside containers (`debian:13` for debian-13-amd64 compat+package, `almalinux:9` for el9 package builds), pull pins via `matrix.py env`, and always write a cell result JSON into `<workdir>/results/` — including on failure, classifying the failure honestly. Engine build produces, per target: a relocatable prefix tarball (for compat mode consumers) and, if `packages: "true"`, the engine .deb/.rpm set (adapted from v1's engine build + v1 `upstream/pkg-vinyl-cache` derivation, simplified — plain `dpkg-buildpackage`/`rpmbuild` in a container, no pbuilder/mock/sbuild). VMOD compat mode: untar engine prefix, autotools build against it, minimal-VCL load check. VMOD package mode: install engine packages, render recipe via `recipe.py`, build, then fresh-container install + load check. Exit code 0 unless infra_failed.
+
+## Workflows
+
+- `ci.yml` — PR + push to main: `matrix.py validate` + `matrix.py selftest`. Fast, host-safe, no containers.
+- `matrix.yml` — workflow_dispatch + weekly: expand release lane → engine jobs (upload prefix/package artifacts) → VMOD jobs (fail-fast off, never red on cell failure) → merge → render → commit state to `ci-state/matrix` → deploy Pages. Main-branch runs only publish.
+- `trunk.yml` — cron Mon/Thu + dispatch: same shape for trunk engines, compat mode only. **No change-gating, no issue filing, no re-pin PRs** — it just runs; the matrix page is the notification surface.
+- `release.yml` — workflow_dispatch only: build vinyl release engine packages + all VMOD packages on all package targets, collect green results, `gh release create` (not draft) with .deb/.rpm/SHA256SUMS and a body generated from the merged results. A VMOD whose package build fails is simply omitted from the release and listed as such in the body.
+
+## Decisions (all reversible; no users yet)
+
+1. **Package naming**: uniform `vinyl-vmod-<id>` for every VMOD on both package formats, including cachetag. Rationale: one code path, obvious provenance, no collision with distro `libvmod-*`. cachetag's own repo keeps its own audited `libvmod-cachetag` recipe for its own releases; this project does not consume it.
+2. **Varnish is matrix-only**: we test compat against Varnish releases/trunk but package only against Vinyl. Flipping `packages` on a varnish engine later is the designed path.
+3. **Publication**: GitHub Releases now; managed APT/RPM repo later as a thin publish script.
+4. **No change-gating on trunk runs**: two scheduled runs a week, unconditional. Cost is a handful of container builds; the v1 watcher/gate machinery is not ported.
+5. **No VMOD commit pins**: the hand-written ref is the pin. Moved-tag paranoia, archive digests per VMOD, and poisoned-tag tracking are not ported.
+6. **Exact-version engine dependency** for VMOD packages (not ABI-hash ranges): honest and simple at this quality bar.
+7. **Container images pinned by tag** (`debian:13`, `almalinux:9`), not digest; the cell result records what actually ran.
+
+## Port map (the only v1/survey content that comes across)
+
+| From (v1 repo / survey) | To | What survives |
+|---|---|---|
+| `tools/yaml_subset.py` | `tools/yaml_subset.py` | verbatim, minus anything unused |
+| `tools/status_page.py` | render half of `tools/matrix.py` | state merge + HTML/CSS/JS bones; new axes |
+| `registry/vmods/*.yml` (7 files) | `vmods/*.yml` | ids, upstream URLs, head branches, release refs/versions |
+| `recipes/debian-13/pins.env`, `survey/harness/pins.env`, `tools/upstream_watch.py` constants | `engines.yml` | the four engine pins, transcribed once |
+| `recipes/vmods/templates/` | `packaging/` | template idea, heavily slimmed |
+| `scripts/ci/trunk/build-engine.sh`, `survey/harness/*` | `scripts/build-engine.sh` | engine configure/build/prefix commands |
+| v1 engine package recipes (`recipes/debian-13/vinyl/`, `recipes/el9/*.spec.in`) | `scripts/build-engine.sh` + `packaging/` | debian/rules + spec content, simplified to plain dpkg-buildpackage/rpmbuild |
+| `tools/metadata.py` ABI/version expressions | `tools/recipe.py` | the dependency-expression idea only |
+
+Everything else in v1 — cohort/target registries, `ci_matrix.py`, `repin_prepare.py`, `upstream_watch.py`, fleet-watch, injections, transaction machinery, overlays' patches/tests/copyright stanzas, `upstream/` vendoring, 4,600 lines of workflow — is deliberately not ported.
