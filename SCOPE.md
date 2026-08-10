@@ -24,4 +24,6 @@ Distribution-quality packaging (copyright audits, lintian/rpmlint gates, hardeni
 
 ## Publication
 
-Packages are published as GitHub Release assets with checksums. A managed APT/RPM repository service (e.g. Packagecloud) may later serve the same packages; wiring that up is in scope when the maintainer decides to, and remains a thin publish step, not a platform.
+Packages are published as GitHub Release assets with checksums. The supported way to install them is `apt install ./*.deb` / `dnf install ./*.rpm`, **not** `dpkg -i` / `rpm -i`: a VMOD package pins the engine by exact version, and only the solver enforces that pin. `dpkg -i` will happily install a newer engine over an ABI-pinned VMOD, silently and with exit 0 (see DESIGN.md decision 10).
+
+A managed APT/RPM repository service (e.g. Packagecloud) may later serve the same packages; wiring that up is in scope when the maintainer decides to, and remains a thin publish step, not a platform. Note that it is partly a safety decision and not only a convenience one — a repository makes the package manager's solver the enforcement point for engine/VMOD coherence instead of the user's hands.

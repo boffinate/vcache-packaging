@@ -43,6 +43,8 @@ Local runs write under `work/` (gitignored). CI artifact/layout contracts (resul
 - Docker on this host reuses a cached image tag's platform: a stale amd64 `debian:13` makes "native" runs silently Rosetta-emulated even with no `--platform` flag. `docker pull debian:13` refreshes the tag to arm64. Check the built artifacts (`_arm64.deb` vs `_amd64.deb`) when timing looks wrong.
 - varnish-modules: nine VMODs, one autotools tree, `-Werror`, no subset build possible. Tag `0.28.0` targets Varnish 9 (branch `9.0` ≈ same). Its 59-test `make check` passed in 24 s against varnish-9.0.3. Debian ships it as one package; so do we (one catalog entry, `package.modules` lists the nine import names). Upstream removed `cookie` (now bundled with the engine).
 - cachetag's own `packaging/` tree is a 14-token template whose deps need `vinyld-abi-<hash>`/`vinyld-vrt`/`vinyld-cohort-<id>` engine Provides that v2's engine lacks — that's why decision 8 keeps the uniform generated recipe. Its `make dist` tarball is NOT byte-identical to v1's pinned deterministic archive.
+- **dpkg does not enforce a `=` dep in the direction you want.** It validates only the incoming package's own dependencies, never an already-configured reverse-dependency: `dpkg -i` of a newer engine over an exact-pinned VMOD succeeds silently, exit 0, `dpkg --audit` clean, mismatched `.so` left loadable. apt/dnf get it right in every case (kept-back, or removal on `full-upgrade`). Hence `apt install ./*.deb` is the supported install path for Release assets. Proven in `work/abi-upgrade-proof/` (decision 10).
+- The real backstop against loading an ABI-mismatched VMOD is the engine, not packaging: a `$ABI strict` VMOD embeds the engine's exact ABI marker (`"Vinyl Cache <ver> <git-hash>"`) and `lib/libvcc/vcc_vmod.c` refuses it with `Incompatible VMOD` at VCL compile, exit 2, no crash.
 
 ## State as of 2026-08-10 (end of the build session)
 
@@ -50,4 +52,6 @@ Proven by real local container runs: vinyl-9.0.1 engine (prefix + debs, native a
 
 Not yet proven anywhere: the EL9/RPM container path (written + unit-tested only), all four workflows in actual GitHub CI (repo never pushed — pushing, enabling Pages, and the first `matrix.yml` dispatch are the next milestone), the trunk lane, `release.yml`, and package mode for any VMOD other than dict.
 
-Open maintainer conversations, deliberately unsettled: whether v2's engine packages should grow ABI/cohort-style Provides (see DESIGN.md decision 8 — the maintainer explicitly wants this discussed); a managed APT/RPM repo (Packagecloud-style) as a thin publish step.
+Settled since: the ABI/cohort Provides question is closed as *no change* (DESIGN.md decision 10), backed by a container proof of apt/dpkg upgrade behaviour in `work/abi-upgrade-proof/`. The generated VMOD RPM now arch-qualifies its engine dep (`Requires: vinyl-cache%{?_isa} = <ver>`) to match the engine spec's own `-devel` subpackage.
+
+Open maintainer conversations, deliberately unsettled: a managed APT/RPM repo (Packagecloud-style) as a thin publish step — now understood as partly an ABI-safety decision, since a repo makes the solver rather than the user the enforcement point (SCOPE.md).
