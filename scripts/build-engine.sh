@@ -51,6 +51,7 @@ deb)
     build-essential automake autoconf autoconf-archive libtool pkg-config \
     git ca-certificates curl python3 python3-docutils python3-sphinx \
     libedit-dev libjemalloc-dev libncurses-dev libpcre2-dev libunwind-dev \
+    libssl-dev \
     debhelper
   ;;
 rpm)
@@ -59,7 +60,7 @@ rpm)
   dnf -y -q install gcc make automake autoconf autoconf-archive libtool \
     pkgconf-pkg-config git-core ca-certificates curl python3 python3-docutils \
     python3-sphinx libedit-devel jemalloc-devel ncurses-devel pcre2-devel \
-    libunwind-devel diffutils rpm-build
+    libunwind-devel openssl-devel diffutils rpm-build
   ;;
 esac
 

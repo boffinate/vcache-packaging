@@ -59,18 +59,24 @@ if [ "$MODE" = compat ]; then
   cat >> "$INNER" <<'EOF'
 
 step deps
+# The engine prefix ships vinyld/varnishd but not their shared-library
+# dependencies; install the same library set build-engine.sh builds against
+# so the daemon can run for the load check.
 case "$PKGFMT" in
 deb)
   apt-get update -qq
   apt-get install -y --no-install-recommends \
     build-essential automake autoconf autoconf-archive libtool pkg-config \
-    git ca-certificates python3 python3-docutils ${VMOD_BUILD_DEPS:-}
+    git ca-certificates python3 python3-docutils \
+    libedit-dev libjemalloc-dev libncurses-dev libpcre2-dev libunwind-dev \
+    ${VMOD_BUILD_DEPS:-}
   ;;
 rpm)
   dnf -y -q install dnf-plugins-core epel-release
   dnf config-manager --set-enabled crb
   dnf -y -q install gcc make automake autoconf autoconf-archive libtool \
     pkgconf-pkg-config git-core python3 python3-docutils diffutils \
+    libedit-devel jemalloc-devel ncurses-devel pcre2-devel libunwind-devel \
     ${VMOD_BUILD_DEPS:-}
   ;;
 esac
@@ -99,6 +105,8 @@ git clone "${VMOD_GIT:?}" "$SRC"
 step checkout
 git -C "$SRC" checkout --detach "$VMOD_REF" 2>/dev/null \
   || git -C "$SRC" checkout --detach "origin/$VMOD_REF"
+# Build-system boilerplate may live in submodules (vmod-dict's acvmod).
+git -C "$SRC" submodule update --init --recursive
 git -C "$SRC" rev-parse HEAD > "/work/tmp/$TAG.commit"
 
 step bootstrap
@@ -195,6 +203,8 @@ git clone "${VMOD_GIT:?}" "$SRC"
 step checkout
 git -C "$SRC" checkout --detach "$VMOD_REF" 2>/dev/null \
   || git -C "$SRC" checkout --detach "origin/$VMOD_REF"
+# Build-system boilerplate may live in submodules (vmod-dict's acvmod).
+git -C "$SRC" submodule update --init --recursive
 git -C "$SRC" rev-parse HEAD > "/work/tmp/$TAG.commit"
 
 step pkg-build
