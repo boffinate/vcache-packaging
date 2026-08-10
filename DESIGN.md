@@ -81,7 +81,11 @@ package:
   build_deps:
     debian: [python3-docutils]  # beyond the implied engine -dev + autotools set
     rpm: [python3-docutils]
+  modules: [accept, bodyaccess]  # optional: VCL import names the package ships; default [<id>]
+tests: make-check       # optional: run upstream's own `make check` in compat mode; absent = no suite
 ```
+
+`package.modules` exists for multi-VMOD repositories (varnish-modules ships nine `.so` from one tree; upstream cannot build a subset, and Debian itself ships it as one package — so it is ONE catalog entry, one matrix row, one package). Module names must match `[a-z][a-z0-9_]*`. `tests: make-check` runs upstream's suite from upstream's tree — we still carry no tests; a VMOD whose suite needs fixtures we won't provide simply doesn't set it.
 
 **Source resolution rule** (the one rule, used everywhere): for engine E, a VMOD builds `sources.head` if `E.kind == trunk`, else `sources.by_series[E.series]` if present, else `sources.default`. There is no "skip": every VMOD gets a cell for every engine column, and an incompatible pairing simply fails and renders red.
 
@@ -100,9 +104,9 @@ One JSON file per (vmod|engine-itself, engine, target), written by the build scr
 `row` is a VMOD id, or the engine's own id for the engine's build row. `mode` is `compat`, `package`, or `engine` (engine rows only). Result files are named `<row>--<engine>--<target>--<mode>.json` — globally unique, because CI flattens every job's results into one directory.
 
 **Statuses** (the full vocabulary — keep it this small):
-`pass`, `configure_failed`, `build_failed`, `load_failed`, `package_failed`, `install_failed`, `infra_failed`.
+`pass`, `configure_failed`, `build_failed`, `load_failed`, `test_failed`, `package_failed`, `install_failed`, `infra_failed`.
 
-The first three come from compat mode (autotools configure, make, then a `vcl.load`-style check compiling a minimal VCL that imports the VMOD against the built engine). `package_failed`/`install_failed` come from package mode (recipe build, then install-and-load in a fresh container). `infra_failed` means the harness itself broke and is the **only** status that fails a CI job.
+The first four come from compat mode (autotools configure, make, a `vcl.load`-style check compiling a minimal VCL that imports every built `.so` against the built engine, then — only when the manifest says `tests: make-check` — upstream's own `make check`, retried once whole on failure to absorb known VTC load-flakes, `test_failed` with the failing test names in `detail` if it fails twice). `package_failed`/`install_failed` come from package mode (recipe build, then install-and-load in a fresh container; the installed load check compiles one VCL importing every name in `package.modules`). `infra_failed` means the harness itself broke and is the **only** status that fails a CI job.
 
 ## The matrix page
 
@@ -151,6 +155,8 @@ Both run everything inside containers (`debian:13` for debian-13-amd64 compat+pa
 5. **No VMOD commit pins**: the hand-written ref is the pin. Moved-tag paranoia, archive digests per VMOD, and poisoned-tag tracking are not ported.
 6. **Exact-version engine dependency** for VMOD packages (not ABI-hash ranges): honest and simple at this quality bar.
 7. **Container images pinned by tag** (`debian:13`, `almalinux:9`), not digest; the cell result records what actually ran.
+8. **cachetag uses the uniform generated recipe, not its own packaging** (2026-08-10). Its `packaging/` tree is a 14-token template whose dependency model needs `vinyld-abi-<hash>`/`vinyld-vrt`/`vinyld-cohort-<id>` engine Provides that v2's engine deliberately lacks; its distro-native variant is semantically what our generated recipe already emits. Its VTC suite runs anyway via `tests: make-check` — proven 52/53 against our vinyl-9.0.1 prefix (the one failure being the documented pm00007 load-flake, hence the retry-once policy). Whether v2's engine packages should grow ABI/cohort Provides is an open maintainer conversation, deliberately not settled here.
+9. **varnish-modules is one catalog entry** (2026-08-10): one row, one package with all nine `.so`, matching both upstream's all-or-nothing build and Debian's own packaging of it. Expected red on vinyl columns at configure (`varnishapi.pc` absent) until upstream or a fork accommodates vinyl — that red is the matrix doing its job.
 
 ## Port map (the only v1/survey content that comes across)
 

@@ -121,6 +121,30 @@ FIXTURE_DICT = textwrap.dedent(
 )
 
 
+FIXTURE_MULTI = textwrap.dedent(
+    """\
+    schema: vmod/1
+    id: multi
+    upstream:
+      git: https://example.org/vmod-multi.git
+    sources:
+      head: master
+      default:
+        ref: v0.1
+        version: "0.1"
+    package:
+      summary: Multi-module VMOD
+      description:
+        - Ships two modules from one source tree.
+      license: BSD-2-Clause
+      modules:
+        - alpha
+        - beta_2
+    tests: make-check
+    """
+)
+
+
 def write_fixture(root: Path, engines: str = FIXTURE_ENGINES, vmods: dict = None) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     if engines is not None:
@@ -301,6 +325,41 @@ def catalog_rejects_unknown_by_series_and_mismatched_id():
                              "does not match the filename stem", "id/filename mismatch")
 
 
+@test
+def catalog_tests_and_modules_fields():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = write_fixture(Path(tmp), vmods={"dict": FIXTURE_DICT, "multi": FIXTURE_MULTI})
+        catalog = matrix.load_catalog(root)
+        eq(catalog["vmods"]["multi"].get("tests"), "make-check", "tests field carried through")
+        eq(matrix.vmod_modules(catalog["vmods"]["multi"]), ["alpha", "beta_2"], "explicit modules")
+        eq(matrix.vmod_modules(catalog["vmods"]["dict"]), ["dict"], "modules default to [id]")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_MULTI, "tests: make-check", "tests: pytest")
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"multi": vmod}),
+                             "tests must be one of", "bad tests value")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_MULTI, "    - beta_2\n", "    - Beta-2\n")
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"multi": vmod}),
+                             "not a valid module name", "bad module name")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_MULTI, "  modules:\n    - alpha\n    - beta_2\n",
+                            "  modules: []\n")
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"multi": vmod}),
+                             "non-empty list", "empty modules list")
+    # Hyphens stay legal in VMOD ids (varnish-modules), but such an id cannot
+    # be the module-name default, so package.modules becomes required.
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_MULTI, "id: multi\n", "id: multi-mod\n")
+        catalog = matrix.load_catalog(write_fixture(Path(tmp), vmods={"multi-mod": vmod}))
+        eq(matrix.vmod_modules(catalog["vmods"]["multi-mod"]), ["alpha", "beta_2"],
+           "hyphenated id validates with explicit modules")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_MULTI, "id: multi\n", "id: multi-mod\n")
+        vmod = must_replace(vmod, "  modules:\n    - alpha\n    - beta_2\n", "")
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"multi-mod": vmod}),
+                             "package.modules is required", "hyphenated id without modules")
+
+
 # ---------------------------------------------------------------------------
 # Resolution and versions
 # ---------------------------------------------------------------------------
@@ -429,6 +488,24 @@ def env_output_is_sh_sourceable():
         ok("not a target of engine" in err, "target error message")
 
 
+@test
+def env_emits_tests_and_modules():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = str(write_fixture(Path(tmp), vmods={"dict": FIXTURE_DICT, "multi": FIXTURE_MULTI}))
+        code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "multi",
+                                "--target", "debian-13-amd64", "--root", root])
+        eq(code, 0, "env exit code with tests+modules")
+        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        eq(values["VMOD_TESTS"], "'make-check'", "VMOD_TESTS from the manifest")
+        eq(values["VMOD_MODULES"], "'alpha beta_2'", "VMOD_MODULES space-separated")
+        code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "dict",
+                                "--target", "debian-13-amd64", "--root", root])
+        eq(code, 0, "env exit code without tests/modules")
+        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        eq(values["VMOD_TESTS"], "''", "no tests declared -> empty VMOD_TESTS")
+        eq(values["VMOD_MODULES"], "'dict'", "VMOD_MODULES defaults to the id")
+
+
 # ---------------------------------------------------------------------------
 # merge
 # ---------------------------------------------------------------------------
@@ -528,6 +605,32 @@ def render_smoke():
         eq(grid["rows"][0], "(engine)", "engine row renders first")
         eq(grid["columns"], ["vinyl-9.0.1", "varnish-9.0.3", "vinyl-trunk"], "column order from catalog")
         ok(grid["counts"]["MISSING"] > 0, "cells without data count as missing")
+
+
+@test
+def test_failed_cell_merges_and_renders_red():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        root = write_fixture(tmp / "repo")
+        results = tmp / "results"
+        results.mkdir()
+        cell = make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "test_failed",
+                         "2026-08-09T00:00:00Z", detail="FAIL: tests/x01.vtc FAIL: tests/x02.vtc")
+        (results / "c.json").write_text(json.dumps(cell))
+        state_file = tmp / "state.json"
+        code, _, _ = run_cli(["merge", "--results-dir", str(results), "--state-file", str(state_file)])
+        eq(code, 0, "a test_failed cell passes merge")
+        grid = matrix.build_grid(json.loads(state_file.read_text()), matrix.load_catalog(root))
+        cell_view = grid["cells"][("dict", "vinyl-9.0.1")]
+        eq(cell_view["bucket"], "FAIL", "test_failed renders red, not infra")
+        eq(cell_view["text"], "test", "test_failed short label")
+        out_file = tmp / "index.html"
+        code, _, _ = run_cli(["render", "--state-file", str(state_file), "--out", str(out_file),
+                              "--root", str(root), "--generated-at", "2026-08-10T00:00:00Z"])
+        eq(code, 0, "render exit code with a test_failed cell")
+        html_text = out_file.read_text()
+        ok('class="cell FAIL"' in html_text, "test_failed cell gets the FAIL class")
+        ok("FAIL: tests/x01.vtc" in html_text, "failing test names survive into the tooltip")
 
 
 # ---------------------------------------------------------------------------

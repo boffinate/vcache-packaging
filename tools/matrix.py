@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import html as _html
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,10 +48,16 @@ STATUSES = (
     "configure_failed",
     "build_failed",
     "load_failed",
+    "test_failed",
     "package_failed",
     "install_failed",
     "infra_failed",
 )
+# The one legal value of a vmod manifest's optional top-level 'tests' key.
+TESTS_VALUES = ("make-check",)
+# VCL import names (package.modules entries). VMOD ids may contain hyphens
+# (varnish-modules); module names may not.
+MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 class CatalogError(Exception):
@@ -180,7 +187,7 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
             errors.append(str(exc))
             continue
         _expect_keys(doc, {"schema", "id", "upstream", "sources", "package"},
-                     {"schema", "id", "upstream", "sources", "package"}, ctx, errors)
+                     {"schema", "id", "upstream", "sources", "package", "tests"}, ctx, errors)
         if doc.get("schema") != VMOD_SCHEMA:
             errors.append(f"{ctx}: schema must be {VMOD_SCHEMA!r}, got {doc.get('schema')!r}")
         vid = _str_value(doc, "id", ctx, errors)
@@ -216,12 +223,14 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
                             errors.append(f"{sctx}: must be a mapping")
                         else:
                             _check_source_entry(entry, sctx, errors)
+        if "tests" in doc and doc.get("tests") not in TESTS_VALUES:
+            errors.append(f"{ctx}: tests must be one of {TESTS_VALUES}, got {doc.get('tests')!r}")
         package = doc.get("package")
         if not isinstance(package, dict):
             errors.append(f"{ctx}: 'package' must be a mapping")
         else:
             _expect_keys(package, {"summary", "description", "license"},
-                         {"summary", "description", "license", "build_deps"}, f"{ctx}: package", errors)
+                         {"summary", "description", "license", "build_deps", "modules"}, f"{ctx}: package", errors)
             _str_value(package, "summary", f"{ctx}: package", errors)
             _str_value(package, "license", f"{ctx}: package", errors)
             if "description" in package:
@@ -235,6 +244,20 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
                     for eco in ("debian", "rpm"):
                         if eco in build_deps:
                             _str_list(build_deps[eco], f"{ctx}: package.build_deps.{eco}", errors)
+            modules = package.get("modules")
+            if modules is not None:
+                names = _str_list(modules, f"{ctx}: package.modules", errors)
+                for i, name in enumerate(names):
+                    if not MODULE_NAME_RE.match(name):
+                        errors.append(
+                            f"{ctx}: package.modules[{i}]: {name!r} is not a valid module name"
+                            " (must match [a-z][a-z0-9_]*)"
+                        )
+            elif vid and not MODULE_NAME_RE.match(vid):
+                errors.append(
+                    f"{ctx}: package.modules is required because id {vid!r} is not a valid"
+                    " module name to default to"
+                )
         if vid:
             vmods[vid] = doc
     return vmods
@@ -302,6 +325,12 @@ def engine_package_version(engine: dict) -> dict:
 
 def vmod_package_name(vmod_id: str) -> str:
     return f"vinyl-vmod-{vmod_id}"
+
+
+def vmod_modules(vmod: dict) -> list:
+    """The VCL import names the VMOD ships: ``package.modules``, defaulting to
+    ``[<id>]`` when absent (DESIGN.md)."""
+    return vmod["package"].get("modules") or [vmod["id"]]
 
 
 def vmod_package_version(upstream_version: str, engine: dict) -> dict:
@@ -445,6 +474,8 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("VMOD_REF", resolved["ref"]),
             ("VMOD_VERSION", resolved["version"]),
             ("VMOD_BUILD_DEPS", " ".join(deps)),
+            ("VMOD_MODULES", " ".join(vmod_modules(vmod))),
+            ("VMOD_TESTS", vmod.get("tests", "")),
             ("VMOD_PACKAGE_NAME", vmod_package_name(vmod["id"])),
         ]
         if resolved["version"]:
@@ -526,6 +557,7 @@ _SHORT_STATUS = {
     "configure_failed": "configure",
     "build_failed": "build",
     "load_failed": "load",
+    "test_failed": "test",
     "package_failed": "package",
     "install_failed": "install",
     "infra_failed": "infra",

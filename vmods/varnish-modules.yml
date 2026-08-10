@@ -1,0 +1,45 @@
+# varnish-modules (schema vmod/1, DESIGN.md).
+#
+# One catalog entry for the whole collection (DESIGN.md decision 9): upstream
+# builds all nine modules or none, and Debian itself ships them as one
+# package, so this is one row and one package carrying nine .so.
+#
+# EXPECTED RED on vinyl columns: upstream's configure looks for varnishapi.pc
+# only, so vinyl cells fail at configure until upstream or a fork supports
+# Vinyl. That red is the matrix doing its job.
+schema: vmod/1
+id: varnish-modules
+upstream:
+  git: https://github.com/varnish/varnish-modules.git
+sources:
+  head: master
+  default:
+    ref: 0.28.0
+    version: "0.28.0"
+package:
+  summary: Collection of nine core VMODs maintained by the Varnish project
+  description:
+    - varnish-modules bundles nine VMODs maintained by the Varnish project
+    - in a single source tree and a single package. It ships accept for
+    - allow-list header filtering, bodyaccess for request-body inspection,
+    - header for multi-value header manipulation, saintmode for marking
+    - backends sick per object, str for string utilities, tcp for TCP
+    - socket tuning, var for typed VCL variables, vsthrottle for request
+    - throttling, and xkey for secondary-key cache invalidation.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - python3-docutils
+    rpm:
+      - python3-docutils
+  modules:
+    - accept
+    - bodyaccess
+    - header
+    - saintmode
+    - str
+    - tcp
+    - var
+    - vsthrottle
+    - xkey
+tests: make-check

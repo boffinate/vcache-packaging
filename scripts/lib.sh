@@ -60,16 +60,19 @@ EOF
 # Steps whose failure means the harness/plumbing broke are infra_failed
 # (deps, fetch, clone, unpack-engine, engine-install, recipe, prefix-tar,
 # collect); everything else is an honest red (DESIGN.md status vocabulary).
-# A digest mismatch and a bad ref are real failures, not infra.
+# A digest mismatch and a bad ref are real failures, not infra. 'check' is
+# the VMOD make-check step (upstream's own suite); the engine's daemon smoke
+# test is the separate 'daemon' step.
 status_for_step() {
   case "$1" in
-    digest|checkout|check|modules) echo build_failed ;;
-    bootstrap|configure)           echo configure_failed ;;
-    make)                          echo build_failed ;;
-    load)                          echo load_failed ;;
-    pkg-build)                     echo package_failed ;;
-    pkg-install|pkg-load)          echo install_failed ;;
-    *)                             echo infra_failed ;;
+    digest|checkout|daemon|modules) echo build_failed ;;
+    bootstrap|configure)            echo configure_failed ;;
+    make)                           echo build_failed ;;
+    load)                           echo load_failed ;;
+    check)                          echo test_failed ;;
+    pkg-build)                      echo package_failed ;;
+    pkg-install|pkg-load)           echo install_failed ;;
+    *)                              echo infra_failed ;;
   esac
 }
 

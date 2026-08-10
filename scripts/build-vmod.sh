@@ -4,12 +4,15 @@
 # Build one VMOD against one engine on one target (DESIGN.md "Script
 # contracts"). mode:
 #   compat  - untar the engine prefix, autotools-build the resolved ref
-#             against it, then compile a minimal VCL importing each built
-#             module with the engine daemon (vinyld/varnishd -C).
+#             against it, compile a minimal VCL importing each built module
+#             with the engine daemon (vinyld/varnishd -C), then run
+#             upstream's own `make check` when the manifest declares
+#             tests: make-check (retried once; twice -> test_failed).
 #   package - install the engine .deb/.rpm set, build the generated recipe
 #             (tools/recipe.py), then install engine + VMOD packages in a
-#             fresh container and run the same import check. Installable
-#             packages land under <workdir>/packages/.
+#             fresh container and run an import check covering every name
+#             in package.modules. Installable packages land under
+#             <workdir>/packages/.
 # Engine artifacts are found under <workdir>/engine/artifacts/ (CI re-roots
 # the downloaded engine artifact there) or <workdir>/artifacts/ (local runs
 # sharing one workdir). Writes one cell result; exit 0 unless infra_failed.
@@ -145,6 +148,26 @@ for so in $SOS; do
   fi
   echo "loaded $mod OK"
 done
+
+step check
+# Upstream's own suite, only when the manifest says so (tests: make-check).
+# Retried once whole on failure to absorb known VTC load-flakes (DESIGN.md);
+# failing twice is an honest test_failed, with the failing test names printed
+# last so the host-side classifier's log tail carries them into the cell.
+if [ "${VMOD_TESTS:-}" = make-check ]; then
+  if ! make check; then
+    echo "make check failed; retrying once (known VTC load-flakes)"
+    if ! make check; then
+      fails=$( { grep -hE '^FAIL' test-suite.log src/test-suite.log 2>/dev/null || true; } \
+        | head -n 5 | tr '\n' ' ' )
+      echo "make check failed twice: ${fails:-no FAIL lines found in test-suite.log}"
+      exit 1
+    fi
+  fi
+  echo "make check OK"
+else
+  echo "no test suite declared; skipping"
+fi
 EOF
 
   LOG="$WORKDIR/logs/$TAG.log"
@@ -261,11 +284,17 @@ for c in vinyld varnishd; do
   if command -v "$c" >/dev/null 2>&1; then DAEMON=$c; fi
 done
 [ -n "$DAEMON" ] || { echo "no vinyld/varnishd on PATH after install" >&2; exit 1; }
-printf 'vcl 4.1;\nimport %s;\nbackend default none;\n' "$VMOD_ID" > /tmp/load.vcl
+# One VCL importing every module name the package ships (package.modules,
+# defaulted to the VMOD id by matrix.py env).
+{
+  printf 'vcl 4.1;\n'
+  for mod in ${VMOD_MODULES:-$VMOD_ID}; do printf 'import %s;\n' "$mod"; done
+  printf 'backend default none;\n'
+} > /tmp/load.vcl
 if ! "$DAEMON" -j none -C -n /tmp/vd -f /tmp/load.vcl > /tmp/load.log 2>&1; then
   echo "installed load check failed:"; sed -n '1,40p' /tmp/load.log; exit 1
 fi
-echo "installed load check OK ($DAEMON, import $VMOD_ID)"
+echo "installed load check OK ($DAEMON, import: ${VMOD_MODULES:-$VMOD_ID})"
 EOF
 
 LOG2="$WORKDIR/logs/$TAG2.log"

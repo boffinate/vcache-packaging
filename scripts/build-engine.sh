@@ -89,7 +89,7 @@ step make
 make -j"$(nproc)"
 make install
 
-step check
+step daemon
 DAEMON=""
 for c in vinyld varnishd; do
   if [ -x "$PREFIX/sbin/$c" ]; then DAEMON="$PREFIX/sbin/$c"; fi
