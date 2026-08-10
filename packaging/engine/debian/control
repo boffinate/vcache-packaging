@@ -1,0 +1,56 @@
+Source: vinyl-cache
+Section: web
+Priority: optional
+Maintainer: Vinyl Cache matrix CI <vcache-matrix-ci@invalid>
+Build-Depends:
+ debhelper-compat (= 13),
+ libedit-dev,
+ libjemalloc-dev,
+ libncurses-dev,
+ libpcre2-dev,
+ libunwind-dev,
+ pkgconf,
+ python3,
+ python3-docutils,
+ python3-sphinx,
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Homepage: https://vinyl-cache.org/
+
+Package: vinyl-cache
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ gcc,
+ libc6-dev | libc-dev,
+Suggests: vinyl-cache-dev
+Description: high-performance web accelerator (matrix build)
+ Vinyl Cache is a high-performance HTTP accelerator. It stores responses in
+ memory so origin servers do not have to produce the same response repeatedly.
+ .
+ This package contains the vinyld daemon, the command line utilities, the
+ shared library and the VMODs distributed with Vinyl Cache. It ships no
+ systemd integration: it is a compatibility-matrix build ("you don't want to
+ compile from source"), not a distribution-quality package, and it carries no
+ security-update commitment.
+ .
+ gcc and the C library headers are runtime dependencies because vinyld
+ compiles each VCL program with the system toolchain at run time.
+
+Package: vinyl-cache-dev
+Section: libdevel
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ vinyl-cache (= ${binary:Version}),
+ pkgconf,
+ python3,
+Description: development files for Vinyl Cache (matrix build)
+ Headers, the vinylapi.pc pkg-config file, the vinyl.m4 autoconf macros and
+ the vmodtool.py/vsctool.py generators needed to build a Vinyl Cache VMOD or
+ an application against libvinylapi.
+ .
+ A VMOD is bound to the exact Vinyl Cache build it was compiled against, so
+ this package depends on the exact matching vinyl-cache binary version.

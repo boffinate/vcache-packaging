@@ -1,0 +1,36 @@
+#!/usr/bin/make -f
+# Engine packaging rules, simplified from v1 recipes/debian-13/vinyl/debian/
+# for the matrix quality bar: no ABI/cohort provides, no systemd units, no
+# hardening ceremony beyond Debian's defaults. debian/changelog is generated
+# by scripts/build-engine.sh with the version from the pins; it is never
+# committed here.
+
+DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+# --localstatedir=/var: Vinyl derives its state dir as
+# ${localstatedir}/lib/vinyl-cache, so /var is the correct value (a /var/lib
+# value would compile /var/lib/lib/vinyl-cache into the daemon).
+CONFIGURE_FLAGS = \
+	--localstatedir=/var \
+	--libdir=/usr/lib/$(DEB_HOST_MULTIARCH) \
+	--with-unwind
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	dh_auto_configure -- $(CONFIGURE_FLAGS)
+
+# The engine's own test suite is not run in a package build; the matrix load
+# checks cover the packaged artifact.
+override_dh_auto_test:
+
+# VINYL_STATE_DIR: the 9.0.1 release tarball's install-data-local rule mkdirs
+# the state dir without $(DESTDIR); the *relative* override keeps that mkdir
+# harmlessly inside the build tree on affected tarballs and is a no-op on
+# fixed ones. vinylstat_help_gen is a build-time generator with no runtime
+# user; libtool archives and static libraries are not shipped.
+override_dh_auto_install:
+	dh_auto_install -- VINYL_STATE_DIR=var/lib/vinyl-cache
+	rm -f debian/tmp/usr/bin/vinylstat_help_gen
+	find debian/tmp \( -name '*.la' -o -name '*.a' \) -delete

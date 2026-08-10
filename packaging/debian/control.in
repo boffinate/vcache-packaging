@@ -1,0 +1,13 @@
+Source: @PACKAGE_NAME@
+Section: web
+Priority: optional
+Maintainer: @MAINTAINER_NAME@ <@MAINTAINER_EMAIL@>
+Build-Depends: @DEB_BUILD_DEPS@
+Standards-Version: 4.6.2
+Homepage: @HOMEPAGE@
+
+Package: @PACKAGE_NAME@
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}, vinyl-cache (= @ENGINE_DEB_PKG_VERSION@)
+Description: @SUMMARY@
+@DEB_DESCRIPTION@

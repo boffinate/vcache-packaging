@@ -1,0 +1,7 @@
+usr/include/vinyl-cache
+usr/lib/*/libvinylapi.so
+usr/lib/*/pkgconfig/*.pc
+usr/share/aclocal/*.m4
+usr/share/vinyl-cache/vcc/*
+usr/share/vinyl-cache/vmodtool.py
+usr/share/vinyl-cache/vsctool.py
