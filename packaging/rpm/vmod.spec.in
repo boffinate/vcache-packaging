@@ -17,7 +17,7 @@ Source0:        @PACKAGE_NAME@-@RPM_VERSION@.tar.gz
 
 @RPM_BUILD_REQUIRES@
 
-Requires:       vinyl-cache = @ENGINE_RPM_PKG_VERSION@
+Requires:       vinyl-cache%{?_isa} = @ENGINE_RPM_PKG_VERSION@
 
 %description
 @RPM_DESCRIPTION@

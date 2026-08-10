@@ -128,7 +128,7 @@ matrix.py selftest
 
 ## tools/recipe.py
 
-Renders a Debian source dir and an RPM spec from `packaging/` templates plus one VMOD's catalog entry and one engine's `env` values. Package naming (uniform, all VMODs including cachetag): Debian binary `vinyl-vmod-<id>`, RPM `vinyl-vmod-<id>`. Version: `<upstream_version>-1~vinyl<engine_version>` style Debian revision / `Release: 1.vinyl<engine_version>` RPM. ABI coherence is expressed as an exact-version dependency on the engine runtime package (`Depends: vinyl-cache (= <engine pkg version>)` / `Requires: vinyl-cache = <ver>`). `debian/copyright` is generated minimal: SPDX id + pointer to upstream license file. No lintian/rpmlint gating.
+Renders a Debian source dir and an RPM spec from `packaging/` templates plus one VMOD's catalog entry and one engine's `env` values. Package naming (uniform, all VMODs including cachetag): Debian binary `vinyl-vmod-<id>`, RPM `vinyl-vmod-<id>`. Version: `<upstream_version>-1~vinyl<engine_version>` style Debian revision / `Release: 1.vinyl<engine_version>` RPM. ABI coherence is expressed as an exact-version dependency on the engine runtime package (`Depends: vinyl-cache (= <engine pkg version>)` / `Requires: vinyl-cache%{?_isa} = <ver>`). The RPM side is architecture-qualified: a VMOD is a dlopen()ed plugin that must match the daemon's architecture exactly, and without `%{?_isa}` a multilib host could satisfy an x86_64 VMOD with an i686 engine. Debian needs no equivalent — its dependency resolution is architecture-aware through the package architecture itself. `debian/copyright` is generated minimal: SPDX id + pointer to upstream license file. No lintian/rpmlint gating.
 
 ## Script contracts
 

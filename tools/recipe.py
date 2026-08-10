@@ -11,7 +11,10 @@ engine dependency follow DESIGN.md:
   * Debian version ``<upstream>-1~vinyl<engine>``, RPM release
     ``1.vinyl<engine>%{?dist}``;
   * ``Depends: vinyl-cache (= <engine pkg version>)`` /
-    ``Requires: vinyl-cache = <engine pkg version>``.
+    ``Requires: vinyl-cache%{?_isa} = <engine pkg version>`` -- the RPM side
+    needs ``%{?_isa}`` because a dlopen()ed plugin must match the daemon's
+    architecture exactly and multilib would otherwise let an i686 engine
+    satisfy an x86_64 VMOD; Debian encodes that in the package architecture.
 
 Templates live next to this tool (they are code, not catalog data), so a
 ``--root`` pointing at a fixture catalog still renders the real templates.

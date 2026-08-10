@@ -682,7 +682,8 @@ def recipe_rpm_generation():
         ok("Name:           vinyl-vmod-dict" in spec, "rpm name")
         ok("Version:        1.7" in spec, "rpm version")
         ok("Release:        1.vinyl9.0.1%{?dist}" in spec, "rpm release")
-        ok("Requires:       vinyl-cache = 9.0.1-1%{?dist}" in spec, "exact-version engine requires")
+        ok("Requires:       vinyl-cache%{?_isa} = 9.0.1-1%{?dist}" in spec,
+           "exact-version arch-qualified engine requires")
         ok("BuildRequires:  vinyl-cache-devel = 9.0.1-1%{?dist}" in spec, "exact-version -devel requires")
         ok("BuildRequires:  python3-docutils" in spec, "manifest build_deps included")
 
