@@ -12,7 +12,7 @@ die() { printf 'E: %s\n' "$*" >&2; exit 2; }
 image_for_target() {
   case "$1" in
     debian-13-amd64) echo debian:13 ;;
-    el9-x86_64)      echo almalinux:9 ;;
+    el10-x86_64)     echo almalinux:10 ;;
     *) return 1 ;;
   esac
 }
@@ -20,7 +20,7 @@ image_for_target() {
 pkgfmt_for_target() {
   case "$1" in
     debian-13-amd64) echo deb ;;
-    el9-x86_64)      echo rpm ;;
+    el10-x86_64)     echo rpm ;;
     *) return 1 ;;
   esac
 }

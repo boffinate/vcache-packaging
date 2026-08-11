@@ -179,7 +179,7 @@ def build_engines() -> dict:
                 enum=list(matrix.KINDS),
             ),
             "source": source,
-            "targets": _string_list("Build targets, e.g. debian-13-amd64, el9-x86_64."),
+            "targets": _string_list("Build targets, e.g. debian-13-amd64, el10-x86_64."),
             "packages": _string(
                 'Quoted "true" if this engine is packaged, not merely tested. '
                 "Requires kind: release and family: vinyl. Defaults to \"false\".",

@@ -6,6 +6,12 @@
 %global vmoddir %{_libdir}/vinyl-cache/vmods
 %global __provides_exclude_from ^%{vmoddir}/.*\\.so$
 
+# Serial build: VMOD vmodtool.py make rules race under -j (duplicate vcc_if
+# generation), the same reason debian/rules passes dh --no-parallel and the
+# compat harness retries serially. Overriding _smp_mflags covers both
+# %%make_build and %%make_install.
+%global _smp_mflags -j1
+
 Name:           @PACKAGE_NAME@
 Version:        @RPM_VERSION@
 Release:        @RPM_RELEASE@%{?dist}
@@ -29,7 +35,17 @@ ref @VMOD_REF@.
 %autosetup -n @PACKAGE_NAME@-@RPM_VERSION@
 
 %build
-[ -x configure ] || autoreconf -fi
+# Same bootstrap ladder as the compat harness (scripts/build-vmod.sh): prefer
+# upstream's own bootstrap/autogen.sh, because it knows how to locate the
+# engine's aclocal macros. cachetag's, for one, exports VINYLAPI_DATAROOTDIR
+# from pkg-config and mkdir -p m4 before autoreconf; a bare autoreconf leaves
+# that make variable unexpanded and dies on "couldn't open directory
+# '/aclocal'". Fall back to autoreconf only when upstream ships neither.
+if [ ! -x configure ]; then
+  if [ -f bootstrap ]; then sh ./bootstrap
+  elif [ -f autogen.sh ]; then sh ./autogen.sh
+  else autoreconf -fi; fi
+fi
 %configure
 %make_build
 

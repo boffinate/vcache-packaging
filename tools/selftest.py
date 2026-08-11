@@ -67,7 +67,7 @@ FIXTURE_ENGINES = textwrap.dedent(
         packages: "true"
         targets:
           - debian-13-amd64
-          - el9-x86_64
+          - el10-x86_64
       - id: varnish-9.0.3
         family: varnish
         series: varnish-9.0
@@ -200,7 +200,7 @@ def yaml_parses_mappings_lists_and_quoting():
     eq(doc["schema"], "engines/1", "schema")
     eq(len(doc["engines"]), 3, "engine count")
     first = doc["engines"][0]
-    eq(first["targets"], ["debian-13-amd64", "el9-x86_64"], "block sequence of scalars")
+    eq(first["targets"], ["debian-13-amd64", "el10-x86_64"], "block sequence of scalars")
     eq(first["source"]["sha256"], "aa11", "quoted scalar")
     eq(first["packages"], "true", "quoted 'true' stays a string")
 
@@ -483,13 +483,13 @@ def expand_release_lane():
         expansion = matrix.expand(catalog, "release", "all")
         eq(expansion["engines"], [
             {"engine": "vinyl-9.0.1", "target": "debian-13-amd64"},
-            {"engine": "vinyl-9.0.1", "target": "el9-x86_64"},
+            {"engine": "vinyl-9.0.1", "target": "el10-x86_64"},
             {"engine": "varnish-9.0.3", "target": "debian-13-amd64"},
         ], "engine pairs")
         eq(expansion["vmods"], [
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat"},
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "package"},
-            {"row": "dict", "engine": "vinyl-9.0.1", "target": "el9-x86_64", "mode": "package"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "package"},
             {"row": "dict", "engine": "varnish-9.0.3", "target": "debian-13-amd64", "mode": "compat"},
         ], "vmod rows")
         engine_rows = [r for r in expansion["rows"] if r["mode"] == "engine"]
@@ -540,17 +540,17 @@ def env_output_is_sh_sourceable():
     with tempfile.TemporaryDirectory() as tmp:
         root = str(write_fixture(Path(tmp)))
         code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "dict",
-                                "--target", "el9-x86_64", "--root", root])
+                                "--target", "el10-x86_64", "--root", root])
         eq(code, 0, "env exit code")
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
         eq(values["ENGINE_VERSION"], "'9.0.1'", "ENGINE_VERSION")
         eq(values["ENGINE_TARBALL_URL"], "'https://example.org/vinyl-cache-9.0.1.tgz'", "tarball url")
-        eq(values["TARGET_ID"], "'el9-x86_64'", "TARGET_ID")
+        eq(values["TARGET_ID"], "'el10-x86_64'", "TARGET_ID")
         eq(values["VMOD_REF"], "'v1.7'", "VMOD_REF")
         eq(values["VMOD_DEB_VERSION"], "'1.7-1~vinyl9.0.1'", "VMOD_DEB_VERSION")
         eq(values["VMOD_PACKAGE_NAME"], "'vinyl-vmod-dict'", "VMOD_PACKAGE_NAME")
         eq(values["VMOD_BUILD_DEPS"], "'redhat-rpm-config python3-docutils'",
-           "rpm build deps for an el9 target")
+           "rpm build deps for an el10 target")
         code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "dict",
                                 "--target", "debian-13-amd64", "--root", root])
         eq(code, 0, "deb-target env exit code")
@@ -565,7 +565,7 @@ def env_output_is_sh_sourceable():
         eq(values["VMOD_BUILD_DEPS"], "'python3-docutils'",
            "no --target falls back to the engine's first target's format")
         ok("VMOD_DEB_VERSION" not in values, "no package version for a trunk engine")
-        code, _, err = run_cli(["env", "--engine", "vinyl-trunk", "--target", "el9-x86_64", "--root", root])
+        code, _, err = run_cli(["env", "--engine", "vinyl-trunk", "--target", "el10-x86_64", "--root", root])
         eq(code, 1, "target not in engine targets is an error")
         ok("not a target of engine" in err, "target error message")
 
@@ -661,7 +661,7 @@ def render_smoke():
             make_cell("vinyl-9.0.1", "vinyl-9.0.1", "debian-13-amd64", "engine", "pass",
                       "2026-08-09T00:00:00Z"),
             make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "pass", "2026-08-09T00:00:00Z"),
-            make_cell("dict", "vinyl-9.0.1", "el9-x86_64", "package", "package_failed",
+            make_cell("dict", "vinyl-9.0.1", "el10-x86_64", "package", "package_failed",
                       "2026-08-09T01:00:00Z", detail="rpmbuild exited 1"),
             make_cell("dict", "varnish-9.0.3", "debian-13-amd64", "compat", "infra_failed",
                       "2026-08-09T00:00:00Z"),
@@ -756,7 +756,7 @@ def recipe_rpm_generation():
         tmp = Path(tmp)
         root = write_fixture(tmp / "repo")
         out = tmp / "out"
-        written = recipe.generate(root, "dict", "vinyl-9.0.1", "el9-x86_64", out,
+        written = recipe.generate(root, "dict", "vinyl-9.0.1", "el10-x86_64", out,
                                   maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
         eq([p.name for p in written], ["vinyl-vmod-dict.spec"], "spec filename")
         spec = written[0].read_text()
@@ -793,7 +793,7 @@ def recipe_refusals_and_unresolved_tokens():
         else:
             raise Fail("expected an unresolved-token error")
         eq(recipe.target_format("debian-13-amd64"), "deb", "deb target format")
-        eq(recipe.target_format("el9-x86_64"), "rpm", "rpm target format")
+        eq(recipe.target_format("el10-x86_64"), "rpm", "rpm target format")
 
 
 # ---------------------------------------------------------------------------

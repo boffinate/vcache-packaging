@@ -52,6 +52,20 @@ exact runtime build, so this package requires the exact matching vinyl-cache.
 
 %build
 [ -x configure ] || ./autogen.sh
+# VCC_CC is compiled into the daemon and runs on the *user's* machine every
+# time a VCL is loaded, so it must not name build-only files. Left to itself,
+# configure seeds it from the command-line CFLAGS, and %%configure's hardening
+# set includes -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 — a file shipped
+# by redhat-rpm-config, which is a BuildRequires-grade package absent from any
+# normal install. Every VCL compile then dies with "cannot read spec file",
+# including one that imports nothing. Depending on redhat-rpm-config at
+# runtime would drag 20 packages / 21 MB onto production hosts to satisfy a
+# build artefact; dropping the flags from CFLAGS outright would unharden the
+# daemon itself. So we set VCC_CC explicitly: upstream's own Linux/gcc shape,
+# minus the -specs= options. Debian's build flags never carried -specs=, so
+# this also makes the two targets compile VCL the same way.
+VCC_CFLAGS=$(echo "%{build_cflags}" | sed -e 's|-specs=[^ ]*||g')
+export VCC_CC="exec %{__cc} $VCC_CFLAGS %%w -pthread -fpic -shared -Wl,-x -o %%o %%s"
 %configure --disable-static --with-unwind
 %make_build
 

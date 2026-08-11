@@ -57,8 +57,10 @@ deb)
 rpm)
   dnf -y -q install dnf-plugins-core epel-release
   dnf config-manager --set-enabled crb
+  # /usr/bin/curl, not curl: the base image ships curl-minimal, which provides
+  # the binary and conflicts with the full curl package.
   dnf -y -q install gcc make automake autoconf autoconf-archive libtool \
-    pkgconf-pkg-config git-core ca-certificates curl python3 python3-docutils \
+    pkgconf-pkg-config git-core ca-certificates /usr/bin/curl python3 python3-docutils \
     python3-sphinx libedit-devel jemalloc-devel ncurses-devel pcre2-devel \
     libunwind-devel openssl-devel diffutils rpm-build
   ;;

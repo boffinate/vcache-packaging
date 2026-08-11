@@ -93,7 +93,7 @@
               "type": "string",
               "minLength": 1
             },
-            "description": "Build targets, e.g. debian-13-amd64, el9-x86_64."
+            "description": "Build targets, e.g. debian-13-amd64, el10-x86_64."
           },
           "packages": {
             "type": "string",

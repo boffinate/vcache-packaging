@@ -16,7 +16,7 @@ engines:
     packages: "true"
     targets:
       - debian-13-amd64
-      - el9-x86_64
+      - el10-x86_64
   - id: varnish-9.0.3
     family: varnish
     series: varnish-9.0
