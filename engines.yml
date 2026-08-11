@@ -86,8 +86,8 @@ engines:
     targets:
       - debian-13-amd64
       - debian-13-arm64
-      - ubuntu-26.04-amd64
-      - ubuntu-26.04-arm64
+      - el10-x86_64
+      - el10-aarch64
   # Varnish upstream's default branch is master.
   - id: varnish-trunk
     family: varnish
@@ -100,5 +100,5 @@ engines:
     targets:
       - debian-13-amd64
       - debian-13-arm64
-      - ubuntu-26.04-amd64
-      - ubuntu-26.04-arm64
+      - el10-x86_64
+      - el10-aarch64

@@ -326,7 +326,7 @@ def catalog_target_registry_drives_metadata_and_rejects_bad_entries():
 
 
 @test
-def catalog_real_arm64_targets_use_native_runners():
+def catalog_real_targets_use_native_runners():
     catalog = matrix.load_catalog(matrix.default_root())
     expected = {
         "debian-13-arm64": ("debian:13", "deb", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
@@ -337,9 +337,15 @@ def catalog_real_arm64_targets_use_native_runners():
         target = matrix.find_target(catalog, target_id)
         eq(tuple(target[key] for key in ("image", "format", "runner", "platform", "package_arch")), values,
            f"{target_id} contract")
-    for engine in catalog["engines"]:
+    for engine_id in ("vinyl-9.0.1", "varnish-9.0.3"):
+        engine = matrix.find_engine(catalog, engine_id)
         ok("debian-13-arm64" in engine["targets"], f"{engine['id']} has Debian ARM64")
         ok("ubuntu-26.04-arm64" in engine["targets"], f"{engine['id']} has Ubuntu ARM64")
+    for engine_id in ("vinyl-trunk", "varnish-trunk"):
+        engine = matrix.find_engine(catalog, engine_id)
+        ok("debian-13-arm64" in engine["targets"], f"{engine_id} has Debian ARM64")
+        ok("el10-aarch64" in engine["targets"], f"{engine_id} has EL ARM64")
+        ok("ubuntu-26.04-arm64" not in engine["targets"], f"{engine_id} omits Ubuntu ARM64")
     ok("el10-aarch64" in matrix.find_engine(catalog, "vinyl-9.0.1")["targets"], "vinyl release has EL ARM64")
 
 
