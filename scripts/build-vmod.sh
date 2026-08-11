@@ -26,13 +26,13 @@ TAG="vmod-$VMOD_ARG-$ENGINE_ARG-$TARGET-$MODE"
 ENVFILE="$WORKDIR/tmp/$TAG.env"
 
 case "$MODE" in compat|package) ;; *) die "unknown mode: $MODE" ;; esac
-IMAGE=$(image_for_target "$TARGET") \
-  || infra_cell "$WORKDIR" "$VMOD_ARG" "$ENGINE_ARG" "$TARGET" "$MODE" "" "unknown target: $TARGET"
-PKGFMT=$(pkgfmt_for_target "$TARGET")
-
 python3 "$REPO_ROOT/tools/matrix.py" env --engine "$ENGINE_ARG" --vmod "$VMOD_ARG" --target "$TARGET" > "$ENVFILE" \
   || infra_cell "$WORKDIR" "$VMOD_ARG" "$ENGINE_ARG" "$TARGET" "$MODE" "" "matrix.py env failed for $VMOD_ARG/$ENGINE_ARG"
 . "$ENVFILE"
+IMAGE=${TARGET_IMAGE:?}
+PKGFMT=${TARGET_FORMAT:?}
+assert_target_platform "${TARGET_PLATFORM:?}" \
+  || infra_cell "$WORKDIR" "$VMOD_ARG" "$ENGINE_ARG" "$TARGET" "$MODE" "" "target platform does not match this host"
 
 ENGINE_ID=${ENGINE_ID:-$ENGINE_ARG}
 VMOD_ID=${VMOD_ID:-$VMOD_ARG}
@@ -171,7 +171,7 @@ fi
 EOF
 
   LOG="$WORKDIR/logs/$TAG.log"
-  run_in_container "$IMAGE" "$WORKDIR" "$TAG.sh" "$LOG" \
+  run_in_container "$IMAGE" "$TARGET_PLATFORM" "$WORKDIR" "$TAG.sh" "$LOG" \
     || fail_cell "$WORKDIR" "$VMOD_ID" "$ENGINE_ID" "$TARGET" compat "$VMOD_REF" "$TAG"
   COMMIT=$(cat "$WORKDIR/tmp/$TAG.commit" 2>/dev/null || true)
   emit_result "$WORKDIR" "$VMOD_ID" "$ENGINE_ID" "$TARGET" compat "$VMOD_REF" "$COMMIT" pass ""
@@ -215,8 +215,14 @@ esac
 
 step engine-install
 case "$PKGFMT" in
-deb) apt-get install -y "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.deb ;;
-rpm) dnf -y install "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.rpm ;;
+deb)
+  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.deb
+  apt-get install -y "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.deb
+  ;;
+rpm)
+  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.rpm
+  dnf -y install "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.rpm
+  ;;
 esac
 
 step clone
@@ -239,6 +245,7 @@ deb)
   (cd "$SRC" && dpkg-buildpackage -us -uc -b)
   step collect
   cp /work/tmp/vinyl-vmod-"$VMOD_ID"_*.deb "$OUT/"
+  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$OUT"/*.deb
   ;;
 rpm)
   NAMEDIR="vinyl-vmod-$VMOD_ID-${VMOD_VERSION:?}"
@@ -250,12 +257,13 @@ rpm)
   rpmbuild -bb --define "_topdir $TOPD" "/work/tmp/$TAG-recipe/"*.spec
   step collect
   cp "$TOPD"/RPMS/*/*.rpm "$OUT/"
+  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$OUT"/*.rpm
   ;;
 esac
 EOF
 
 LOG="$WORKDIR/logs/$TAG.log"
-run_in_container "$IMAGE" "$WORKDIR" "$TAG.sh" "$LOG" \
+run_in_container "$IMAGE" "$TARGET_PLATFORM" "$WORKDIR" "$TAG.sh" "$LOG" \
   || fail_cell "$WORKDIR" "$VMOD_ID" "$ENGINE_ID" "$TARGET" package "$VMOD_REF" "$TAG"
 
 # Fresh container: install engine + VMOD packages, then the same import check.
@@ -274,8 +282,14 @@ esac
 step pkg-install
 VPKG="/work/packages/vmod-$VMOD_ID-$ENGINE_ID-$TARGET"
 case "$PKGFMT" in
-deb) apt-get install -y "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.deb "$VPKG"/*.deb ;;
-rpm) dnf -y install "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.rpm "$VPKG"/*.rpm ;;
+deb)
+  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.deb "$VPKG"/*.deb
+  apt-get install -y "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.deb "$VPKG"/*.deb
+  ;;
+rpm)
+  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.rpm "$VPKG"/*.rpm
+  dnf -y install "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.rpm "$VPKG"/*.rpm
+  ;;
 esac
 
 step pkg-load
@@ -298,7 +312,7 @@ echo "installed load check OK ($DAEMON, import: ${VMOD_MODULES:-$VMOD_ID})"
 EOF
 
 LOG2="$WORKDIR/logs/$TAG2.log"
-run_in_container "$IMAGE" "$WORKDIR" "$TAG2.sh" "$LOG2" \
+run_in_container "$IMAGE" "$TARGET_PLATFORM" "$WORKDIR" "$TAG2.sh" "$LOG2" \
   || fail_cell "$WORKDIR" "$VMOD_ID" "$ENGINE_ID" "$TARGET" package "$VMOD_REF" "$TAG2" "$TAG"
 
 COMMIT=$(cat "$WORKDIR/tmp/$TAG.commit" 2>/dev/null || true)

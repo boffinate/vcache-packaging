@@ -5,6 +5,45 @@
 # survey/harness/pins.env. Trunk rows carry no pin: the branch HEAD is built
 # as it stands and the cell result records the commit.
 schema: engines/1
+targets:
+  # Each target carries the complete execution contract. Adding a target is
+  # therefore one catalog edit: engine rows below only select target ids.
+  debian-13-amd64:
+    image: debian:13
+    format: deb
+    runner: ubuntu-24.04
+    platform: linux/amd64
+    package_arch: amd64
+  debian-13-arm64:
+    image: debian:13
+    format: deb
+    runner: ubuntu-24.04-arm
+    platform: linux/arm64
+    package_arch: arm64
+  ubuntu-26.04-amd64:
+    image: ubuntu:26.04
+    format: deb
+    runner: ubuntu-24.04
+    platform: linux/amd64
+    package_arch: amd64
+  ubuntu-26.04-arm64:
+    image: ubuntu:26.04
+    format: deb
+    runner: ubuntu-24.04-arm
+    platform: linux/arm64
+    package_arch: arm64
+  el10-x86_64:
+    image: almalinux:10
+    format: rpm
+    runner: ubuntu-24.04
+    platform: linux/amd64
+    package_arch: x86_64
+  el10-aarch64:
+    image: almalinux:10
+    format: rpm
+    runner: ubuntu-24.04-arm
+    platform: linux/arm64
+    package_arch: aarch64
 engines:
   - id: vinyl-9.0.1
     family: vinyl
@@ -16,8 +55,11 @@ engines:
     packages: "true"
     targets:
       - debian-13-amd64
+      - debian-13-arm64
       - ubuntu-26.04-amd64
+      - ubuntu-26.04-arm64
       - el10-x86_64
+      - el10-aarch64
   - id: varnish-9.0.3
     family: varnish
     series: varnish-9.0
@@ -28,7 +70,9 @@ engines:
     packages: "false"
     targets:
       - debian-13-amd64
+      - debian-13-arm64
       - ubuntu-26.04-amd64
+      - ubuntu-26.04-arm64
   # Vinyl upstream's default branch is main (origin/HEAD of the same remote
   # v1's watcher and trunk workflow cloned).
   - id: vinyl-trunk
@@ -41,7 +85,9 @@ engines:
     packages: "false"
     targets:
       - debian-13-amd64
+      - debian-13-arm64
       - ubuntu-26.04-amd64
+      - ubuntu-26.04-arm64
   # Varnish upstream's default branch is master.
   - id: varnish-trunk
     family: varnish
@@ -53,4 +99,6 @@ engines:
     packages: "false"
     targets:
       - debian-13-amd64
+      - debian-13-arm64
       - ubuntu-26.04-amd64
+      - ubuntu-26.04-arm64

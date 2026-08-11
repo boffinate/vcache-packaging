@@ -57,6 +57,25 @@ FIXTURE_ENGINES = textwrap.dedent(
     """\
     # fixture engine catalog
     schema: engines/1
+    targets:
+      debian-13-amd64:
+        image: debian:13
+        format: deb
+        runner: ubuntu-24.04
+        platform: linux/amd64
+        package_arch: amd64
+      ubuntu-26.04-amd64:
+        image: ubuntu:26.04
+        format: deb
+        runner: ubuntu-24.04
+        platform: linux/amd64
+        package_arch: amd64
+      el10-x86_64:
+        image: almalinux:10
+        format: rpm
+        runner: ubuntu-24.04
+        platform: linux/amd64
+        package_arch: x86_64
     engines:
       - id: vinyl-9.0.1
         family: vinyl
@@ -288,6 +307,43 @@ def catalog_rejects_unknown_key():
 
 
 @test
+def catalog_target_registry_drives_metadata_and_rejects_bad_entries():
+    with tempfile.TemporaryDirectory() as tmp:
+        catalog = matrix.load_catalog(write_fixture(Path(tmp)))
+        target = matrix.find_target(catalog, "el10-x86_64")
+        eq(target["image"], "almalinux:10", "target image comes from registry")
+        eq(target["format"], "rpm", "target format comes from registry")
+        eq(target["runner"], "ubuntu-24.04", "target runner comes from registry")
+        pairs = dict(matrix.env_pairs(catalog, "vinyl-9.0.1", target_id="el10-x86_64"))
+        eq(pairs["TARGET_PLATFORM"], "linux/amd64", "target platform is exported")
+        eq(pairs["TARGET_PACKAGE_ARCH"], "x86_64", "target package architecture is exported")
+    with tempfile.TemporaryDirectory() as tmp:
+        engines = must_replace(FIXTURE_ENGINES, "    format: rpm\n", "    format: apk\n")
+        expect_catalog_error(write_fixture(Path(tmp), engines=engines), "format must be one of", "bad target format")
+    with tempfile.TemporaryDirectory() as tmp:
+        engines = must_replace(FIXTURE_ENGINES, "      - debian-13-amd64\n      - el10-x86_64\n", "      - no-such-target\n")
+        expect_catalog_error(write_fixture(Path(tmp), engines=engines), "unknown target", "unknown engine target")
+
+
+@test
+def catalog_real_arm64_targets_use_native_runners():
+    catalog = matrix.load_catalog(matrix.default_root())
+    expected = {
+        "debian-13-arm64": ("debian:13", "deb", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
+        "ubuntu-26.04-arm64": ("ubuntu:26.04", "deb", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
+        "el10-aarch64": ("almalinux:10", "rpm", "ubuntu-24.04-arm", "linux/arm64", "aarch64"),
+    }
+    for target_id, values in expected.items():
+        target = matrix.find_target(catalog, target_id)
+        eq(tuple(target[key] for key in ("image", "format", "runner", "platform", "package_arch")), values,
+           f"{target_id} contract")
+    for engine in catalog["engines"]:
+        ok("debian-13-arm64" in engine["targets"], f"{engine['id']} has Debian ARM64")
+        ok("ubuntu-26.04-arm64" in engine["targets"], f"{engine['id']} has Ubuntu ARM64")
+    ok("el10-aarch64" in matrix.find_engine(catalog, "vinyl-9.0.1")["targets"], "vinyl release has EL ARM64")
+
+
+@test
 def catalog_rejects_missing_required():
     with tempfile.TemporaryDirectory() as tmp:
         engines = must_replace(FIXTURE_ENGINES, "    series: vinyl-9.0\n", "")
@@ -516,31 +572,31 @@ def expand_release_lane():
         catalog = matrix.load_catalog(write_fixture(Path(tmp)))
         expansion = matrix.expand(catalog, "release", "all")
         eq(expansion["engines"], [
-            {"engine": "vinyl-9.0.1", "target": "debian-13-amd64"},
-            {"engine": "vinyl-9.0.1", "target": "el10-x86_64"},
-            {"engine": "varnish-9.0.3", "target": "debian-13-amd64"},
+            {"engine": "vinyl-9.0.1", "target": "debian-13-amd64", "runner": "ubuntu-24.04"},
+            {"engine": "vinyl-9.0.1", "target": "el10-x86_64", "runner": "ubuntu-24.04"},
+            {"engine": "varnish-9.0.3", "target": "debian-13-amd64", "runner": "ubuntu-24.04"},
         ], "engine pairs")
         eq(expansion["vmods"], [
-            {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat"},
-            {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "compat"},
-            {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "package"},
-            {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "package"},
-            {"row": "dict", "engine": "varnish-9.0.3", "target": "debian-13-amd64", "mode": "compat"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "compat", "runner": "ubuntu-24.04"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "package", "runner": "ubuntu-24.04"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "package", "runner": "ubuntu-24.04"},
+            {"row": "dict", "engine": "varnish-9.0.3", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"},
         ], "vmod rows")
         engine_rows = [r for r in expansion["rows"] if r["mode"] == "engine"]
         eq(len(engine_rows), 3, "engine rows in the full list")
         eq(engine_rows[0], {"row": "vinyl-9.0.1", "engine": "vinyl-9.0.1",
-                            "target": "debian-13-amd64", "mode": "engine"}, "engine row shape")
+                            "target": "debian-13-amd64", "mode": "engine", "runner": "ubuntu-24.04"}, "engine row shape")
         compat_only = matrix.expand(catalog, "release", "compat")
         eq(compat_only["engines"], [
-            {"engine": "vinyl-9.0.1", "target": "debian-13-amd64"},
-            {"engine": "vinyl-9.0.1", "target": "el10-x86_64"},
-            {"engine": "varnish-9.0.3", "target": "debian-13-amd64"},
+            {"engine": "vinyl-9.0.1", "target": "debian-13-amd64", "runner": "ubuntu-24.04"},
+            {"engine": "vinyl-9.0.1", "target": "el10-x86_64", "runner": "ubuntu-24.04"},
+            {"engine": "varnish-9.0.3", "target": "debian-13-amd64", "runner": "ubuntu-24.04"},
         ], "compat engine pairs use every target")
         eq(compat_only["vmods"], [
-            {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat"},
-            {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "compat"},
-            {"row": "dict", "engine": "varnish-9.0.3", "target": "debian-13-amd64", "mode": "compat"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "compat", "runner": "ubuntu-24.04"},
+            {"row": "dict", "engine": "varnish-9.0.3", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"},
         ], "compat vmod rows use every target")
         ok(all(r["mode"] == "compat" for r in compat_only["vmods"]), "compat filter")
 
@@ -580,9 +636,9 @@ def expand_trunk_lane_and_github_format():
         root = str(write_fixture(Path(tmp)))
         catalog = matrix.load_catalog(root)
         expansion = matrix.expand(catalog, "trunk", "all")
-        eq(expansion["engines"], [{"engine": "vinyl-trunk", "target": "debian-13-amd64"}], "trunk engines")
+        eq(expansion["engines"], [{"engine": "vinyl-trunk", "target": "debian-13-amd64", "runner": "ubuntu-24.04"}], "trunk engines")
         eq(expansion["vmods"],
-           [{"row": "dict", "engine": "vinyl-trunk", "target": "debian-13-amd64", "mode": "compat"}],
+           [{"row": "dict", "engine": "vinyl-trunk", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"}],
            "trunk vmod rows are compat only")
         code, out, _ = run_cli(["expand", "--lane", "trunk", "--format", "github", "--root", root])
         eq(code, 0, "expand exit code")
@@ -592,7 +648,7 @@ def expand_trunk_lane_and_github_format():
         engines = json.loads(lines[0][len("engines="):])
         vmods = json.loads(lines[1][len("vmods="):])
         ok(engines and vmods, "neither github array is empty")
-        ok(all(set(r) >= {"engine", "target"} for r in engines), "engines= row shape")
+        ok(all(set(r) >= {"engine", "target", "runner"} for r in engines), "engines= row shape")
         ok(all(r["row"] != r["engine"] for r in vmods), "vmods= excludes engine rows")
         code, _, err = run_cli(["expand", "--lane", "trunk", "--mode", "package", "--root", root])
         eq(code, 1, "trunk+package is an error")
@@ -987,9 +1043,10 @@ def recipe_refusals_and_unresolved_tokens():
             ok("NO_SUCH_TOKEN" in str(exc), f"unresolved token error: {exc}")
         else:
             raise Fail("expected an unresolved-token error")
-        eq(recipe.target_format("debian-13-amd64"), "deb", "deb target format")
-        eq(recipe.target_format("ubuntu-26.04-amd64"), "deb", "Ubuntu target format")
-        eq(recipe.target_format("el10-x86_64"), "rpm", "rpm target format")
+        catalog = matrix.load_catalog(root)
+        eq(recipe.target_format(catalog, "debian-13-amd64"), "deb", "deb target format")
+        eq(recipe.target_format(catalog, "ubuntu-26.04-amd64"), "deb", "Ubuntu target format")
+        eq(recipe.target_format(catalog, "el10-x86_64"), "rpm", "rpm target format")
 
 
 # ---------------------------------------------------------------------------

@@ -6,12 +6,71 @@
   "additionalProperties": false,
   "required": [
     "engines",
-    "schema"
+    "schema",
+    "targets"
   ],
   "properties": {
     "schema": {
       "const": "engines/1",
       "description": "Schema marker; must be 'engines/1'."
+    },
+    "targets": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z0-9_.-]+$"
+      },
+      "patternProperties": {
+        "^[a-z0-9_.-]+$": {
+          "type": "object",
+          "description": "One target's complete build and package architecture contract.",
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "image",
+            "package_arch",
+            "platform",
+            "runner"
+          ],
+          "properties": {
+            "image": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Container image used to build this target."
+            },
+            "format": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Package format produced by this target.",
+              "enum": [
+                "deb",
+                "rpm"
+              ]
+            },
+            "runner": {
+              "type": "string",
+              "minLength": 1,
+              "description": "GitHub Actions runner label for this target."
+            },
+            "platform": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Native Docker platform required by this target.",
+              "enum": [
+                "linux/amd64",
+                "linux/arm64"
+              ]
+            },
+            "package_arch": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Architecture reported by the finished package."
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "Target registry: image, package format, native runner, and architecture."
     },
     "engines": {
       "type": "array",
@@ -93,7 +152,7 @@
               "type": "string",
               "minLength": 1
             },
-            "description": "Build targets, e.g. debian-13-amd64, el10-x86_64."
+            "description": "Target ids from the top-level targets registry."
           },
           "packages": {
             "type": "string",

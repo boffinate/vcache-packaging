@@ -9,21 +9,42 @@ REPO_ROOT=$(cd "$LIB_DIR/.." && pwd)
 
 die() { printf 'E: %s\n' "$*" >&2; exit 2; }
 
-image_for_target() {
-  case "$1" in
-    debian-13-amd64) echo debian:13 ;;
-    ubuntu-26.04-amd64) echo ubuntu:26.04 ;;
-    el10-x86_64)     echo almalinux:10 ;;
+target_platform_for_machine() {
+  case "${1:-$(uname -m)}" in
+    x86_64) echo linux/amd64 ;;
+    aarch64|arm64) echo linux/arm64 ;;
     *) return 1 ;;
   esac
 }
 
-pkgfmt_for_target() {
-  case "$1" in
-    debian-*|ubuntu-*) echo deb ;;
-    el10-x86_64)     echo rpm ;;
-    *) return 1 ;;
-  esac
+# Reject cross-architecture output. Target metadata declares the intended
+# platform, and both the host and container call this before building.
+assert_target_platform() {
+  local actual
+  actual=$(target_platform_for_machine) || {
+    printf 'E: unsupported machine architecture: %s\n' "$(uname -m)" >&2
+    return 1
+  }
+  [ "$actual" = "$1" ] || {
+    printf 'E: target requires %s, but this machine is %s; use a native runner\n' "$1" "$actual" >&2
+    return 1
+  }
+}
+
+# assert_package_arch FORMAT EXPECTED PACKAGE...
+# Check the native architecture recorded in every finished binary package.
+assert_package_arch() {
+  local format=$1 expected=$2 package actual
+  shift 2
+  for package in "$@"; do
+    case "$format" in
+      deb) actual=$(dpkg-deb -f "$package" Architecture) ;;
+      rpm) actual=$(rpm -qp --qf '%{ARCH}\n' "$package") ;;
+      *) die "unknown package format: $format" ;;
+    esac
+    [ "$actual" = "$expected" ] \
+      || die "package $package has architecture $actual, expected $expected"
+  done
 }
 
 # prepare_workdir DIR -> prints the absolute path, standard subdirs created.
@@ -32,15 +53,16 @@ prepare_workdir() {
   (cd "$1" && pwd)
 }
 
-# run_in_container IMAGE WORKDIR SCRIPT_BASENAME LOGFILE
+# run_in_container IMAGE PLATFORM WORKDIR SCRIPT_BASENAME LOGFILE
 # Runs /work/tmp/SCRIPT inside IMAGE with the workdir mounted rw at /work and
 # the repo ro at /repo. Streams output and keeps a log copy. Returns the
 # container's exit status (callers set pipefail).
 run_in_container() {
   docker run --rm \
-    -v "$2:/work" \
+    --platform "$2" \
+    -v "$3:/work" \
     -v "$REPO_ROOT:/repo:ro" \
-    "$1" bash "/work/tmp/$3" 2>&1 | tee "$4"
+    "$1" bash "/work/tmp/$4" 2>&1 | tee "$5"
 }
 
 # write_inner_prologue PATH TAG
@@ -54,6 +76,8 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive LC_ALL=C
 step() { echo "\$1" > /work/tmp/$2.step; printf '\n===== %s =====\n' "\$1"; }
 . /work/tmp/$2.env
+. /repo/scripts/lib.sh
+assert_target_platform "\${TARGET_PLATFORM:?}"
 EOF
 }
 

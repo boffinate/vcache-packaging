@@ -43,6 +43,19 @@ Both key sets of every mapping below live once, in `tools/matrix.py`'s `KEYS` ta
 
 ```yaml
 schema: engines/1
+targets:
+  debian-13-amd64:
+    image: debian:13
+    format: deb
+    runner: ubuntu-24.04
+    platform: linux/amd64
+    package_arch: amd64
+  debian-13-arm64:
+    image: debian:13
+    format: deb
+    runner: ubuntu-24.04-arm
+    platform: linux/arm64
+    package_arch: arm64
 engines:
   - id: vinyl-9.0.1            # unique, becomes a matrix column
     family: vinyl              # vinyl | varnish
@@ -54,10 +67,10 @@ engines:
       git_url: https://...      # trunk: repository
       branch: trunk             # trunk: branch to build HEAD of
     packages: "true"           # "true": we ship packages built against it
-    targets: [debian-13-amd64, el10-x86_64]
+    targets: [debian-13-amd64, debian-13-arm64, el10-x86_64, el10-aarch64]
 ```
 
-Rules: `kind: release` requires `tarball_url` + `sha256`; `kind: trunk` requires `git_url` + `branch` and forces `packages: "false"`. Trunk engines carry a self-named `series` (`vinyl-trunk`); the resolution rule never consults `series` for trunk engines. `packages: "true"` requires `kind: release` and `family: vinyl` (Varnish is matrix-only for now — reversible decision, see Decisions). Compat and package jobs run on every listed target.
+Rules: each top-level target is the complete execution contract: image, package format, native GitHub runner, Docker platform, and expected binary-package architecture. Engine rows only select its target ids. `kind: release` requires `tarball_url` + `sha256`; `kind: trunk` requires `git_url` + `branch` and forces `packages: "false"`. Trunk engines carry a self-named `series` (`vinyl-trunk`); the resolution rule never consults `series` for trunk engines. `packages: "true"` requires `kind: release` and `family: vinyl` (Varnish is matrix-only for now — reversible decision, see Decisions). Compat and package jobs run on every listed target.
 
 Initial contents: `vinyl-9.0.1` (release, packages, both targets — pin from v1 `recipes/debian-13/pins.env`), `varnish-9.0.3` (release, matrix-only, debian target — pin from v1 `survey/harness/pins.env`), `vinyl-trunk` and `varnish-trunk` (trunk, matrix-only — git URLs/branches from v1 `tools/upstream_watch.py` constants).
 
@@ -135,7 +148,7 @@ matrix.py selftest
 
 `schema` writes `schemas/engines.schema.json` and `schemas/vmod.schema.json` from the `KEYS` table and the enum constants in `matrix.py`; `--check` regenerates in memory and exits 1 if the checked-in files differ. The schemas are **editor ergonomics, not a second validator** — see decision 11.
 
-`expand` emits rows `{row, engine, target, mode}` — the GitHub Actions job matrix. Package-mode VMOD rows are emitted only when the engine's family is listed in the VMOD's `package.families` (absent = all families; decision 13). `--format github` prints exactly two `key=<single-line-json>` lines for `$GITHUB_OUTPUT`: `engines=[...]` (unique engine×target pairs) and `vmods=[...]` (VMOD rows only, engine rows excluded). `env` is the **only** way shell/CI gets version strings; nothing like v1's hand-mirrored `pins.env` exists. `merge` rule: newest `finished_at` per (row, engine, target, mode) wins; globs `*.json` recursively; a state file full of red cells is still a successful merge/render.
+`expand` emits rows `{row, engine, target, mode, runner}` — the GitHub Actions job matrix. Package-mode VMOD rows are emitted only when the engine's family is listed in the VMOD's `package.families` (absent = all families; decision 13). `--format github` prints exactly two `key=<single-line-json>` lines for `$GITHUB_OUTPUT`: `engines=[...]` (unique engine×target pairs) and `vmods=[...]` (VMOD rows only, engine rows excluded). `env` is the **only** way shell/CI gets version strings and target metadata; nothing like v1's hand-mirrored `pins.env` exists. `merge` rule: newest `finished_at` per (row, engine, target, mode) wins; globs `*.json` recursively; a state file full of red cells is still a successful merge/render.
 
 ## tools/recipe.py
 
@@ -148,7 +161,7 @@ scripts/build-engine.sh <engine-id> <target> <workdir>
 scripts/build-vmod.sh   <vmod-id> <engine-id> <target> <mode> <workdir>
 ```
 
-Both run everything inside containers (`debian:13` for debian-13-amd64, `ubuntu:26.04` for ubuntu-26.04-amd64, `almalinux:10` for el10 compat+package), pull pins via `matrix.py env`, and always write a cell result JSON into `<workdir>/results/` — including on failure, classifying the failure honestly. Debian and Ubuntu share the generated Debian recipe templates and `build_deps.debian` catalog field; split them only when a genuine distro package difference demands it. Engine build produces, per target: a relocatable prefix tarball (for compat mode consumers) and, if `packages: "true"`, the engine .deb/.rpm set (adapted from v1's engine build + v1 `upstream/pkg-vinyl-cache` derivation, simplified — plain `dpkg-buildpackage`/`rpmbuild` in a container, no pbuilder/mock/sbuild). VMOD compat mode: untar engine prefix, autotools build against it, minimal-VCL load check. VMOD package mode: install engine packages, render recipe via `recipe.py`, build, then fresh-container install + load check. Exit code 0 unless infra_failed.
+Both run everything inside the target registry's container image, pull pins and target metadata via `matrix.py env`, and always write a cell result JSON into `<workdir>/results/` — including on failure, classifying the failure honestly. The scripts select Docker's declared platform, reject a non-native host or container, and verify every finished `.deb`/`.rpm` records the target's declared architecture. Debian and Ubuntu share the generated Debian recipe templates and `build_deps.debian` catalog field; split them only when a genuine distro package difference demands it. Engine build produces, per target: a relocatable prefix tarball (for compat mode consumers) and, if `packages: "true"`, the engine .deb/.rpm set (adapted from v1's engine build + v1 `upstream/pkg-vinyl-cache` derivation, simplified — plain `dpkg-buildpackage`/`rpmbuild` in a container, no pbuilder/mock/sbuild). VMOD compat mode: untar engine prefix, autotools build against it, minimal-VCL load check. VMOD package mode: install engine packages, render recipe via `recipe.py`, build, then fresh-container install + load check. Exit code 0 unless infra_failed.
 
 ## Workflows
 
@@ -174,14 +187,14 @@ Both run everything inside containers (`debian:13` for debian-13-amd64, `ubuntu:
     - **Through bare `dpkg -i` nothing at the packaging layer helps** — and that includes the ABI Provides, which are equally a `Depends:` on the VMOD side. dpkg validates only the incoming package's own dependencies and never re-checks an already-configured reverse-dependency: installing a newer engine over an exact-pinned VMOD succeeds silently, exit 0, with `dpkg --audit` clean. This is dpkg semantics, not a weakness of decision 6, and it is why the supported install path for Release assets is `apt install ./*.deb`.
 
     The backstop for the `dpkg -i` path is the engine's own runtime check, not packaging: a `$ABI strict` VMOD embeds the engine's exact ABI marker and `lib/libvcc/vcc_vmod.c` refuses it with `Incompatible VMOD` at VCL compile time. Demonstrated against a byte-patched `.so` — a clean compile error, exit 2, no crash. Reopen this decision if v2 ever ships more than one engine build per source revision, or if someone else packages VMODs against our engine.
-12. **The RPM target is EL10, not EL9** (2026-08-11). `el9-x86_64` is replaced by `el10-x86_64` on `almalinux:10`. EL9's autotools are simply too old for part of the catalog: `dict`, `remoteip` and `tbf` (all three from git.gnu.org.ua) declare `autoconf >= 2.71` and `automake >= 1.16.5`, against EL9's 2.69 and 1.16.2. Autoconf has an escape hatch there — EL9 packages 2.71 as `autoconf271`, installed off-PATH under `/opt/rh/autoconf271/bin` — but automake has none: 1.16.2 is the only automake in appstream, CRB or EPEL. EL10 ships autoconf 2.71 and automake 1.16.5 in appstream, and the full engine and VMOD dependency sets install there unchanged. The other five VMODs need only automake 1.12 and were never affected.
+12. **The RPM target is EL10, not EL9** (2026-08-11). `el9-x86_64` is replaced by `el10-x86_64` on `almalinux:10`; native ARM builds use the sibling `el10-aarch64` target. EL9's autotools are simply too old for part of the catalog: `dict`, `remoteip` and `tbf` (all three from git.gnu.org.ua) declare `autoconf >= 2.71` and `automake >= 1.16.5`, against EL9's 2.69 and 1.16.2. Autoconf has an escape hatch there — EL9 packages 2.71 as `autoconf271`, installed off-PATH under `/opt/rh/autoconf271/bin` — but automake has none: 1.16.2 is the only automake in appstream, CRB or EPEL. EL10 ships autoconf 2.71 and automake 1.16.5 in appstream, and the full engine and VMOD dependency sets install there unchanged. The other five VMODs need only automake 1.12 and were never affected.
 
     Three alternatives were considered and rejected:
     - **Building automake from source into the EL9 container.** This is the v1 failure mode in miniature: the harness would acquire, and thereafter own, a bespoke toolchain, per target, forever.
     - **Keeping EL9 with three red cells.** Red is normally information, but this red would have been a lie. Those VMODs build on EL9 perfectly well — they just cannot be re-`autoreconf`'d there. The cell would have read "dict does not work on EL9" when the truth was "our harness chose to clone git instead of using the release tarball".
     - **Upstream release tarballs for the three GNU VMODs.** They do publish them (`download.gnu.org.ua/release/vmod-{dict,tbf,remoteip}/`, at exactly the pinned versions), and a `make dist` tarball carries a pre-generated `configure` that needs no autotools at all — this is how a distro packager would really build them. It remains the correct fallback if EL10 ever falls behind the catalog again, but it costs the catalog a second source type, so it is not worth doing while a plain distro bump solves the same problem.
 
-    Two consequences, both accepted. **RHEL/Alma/Rocky 9 get no packages**, despite EL9 being supported until 2032 and being the larger installed base today; there are no users yet, and adding `el9-x86_64` back alongside is a one-line catalog change if that stops being true. **`el10-x86_64` cannot be built on an arm64 macOS host at all**: EL10 requires an x86-64-v3 CPU and Rosetta does not emulate that level, so an emulated amd64 EL10 container dies immediately with `Fatal glibc error: CPU does not support x86-64-v3`. Local proof runs therefore use `--platform linux/arm64`, which exercises every script path (nothing in dnf, autoreconf or rpmbuild is arch-specific) but produces aarch64 RPMs; CI, natively amd64 and v3-capable, is the only place the real x86_64 artifact is built. Judge a local EL10 run on whether the steps pass, never on the artifact names.
+    Two consequences, both accepted. **RHEL/Alma/Rocky 9 get no packages**, despite EL9 being supported until 2032 and being the larger installed base today; there are no users yet, and adding it back alongside is a catalog edit if that stops being true. **`el10-x86_64` cannot be built on an arm64 macOS host at all**: EL10 requires an x86-64-v3 CPU and Rosetta does not emulate that level, so an emulated amd64 EL10 container dies immediately with `Fatal glibc error: CPU does not support x86-64-v3`. Local ARM proof uses the distinct `el10-aarch64` target; CI builds each published architecture on its matching native runner.
 
 11. **Editor schemas are advisory; `validate` stays the authority** (2026-08-11). `schemas/*.schema.json` exist so `yaml-language-server` (Zed, VS Code/Cursor, Neovim `yamlls`, JetBrains, Helix) can red-underline a bad catalog *as it is typed* — the one thing a strict parser plus a CLI cannot do. Three properties keep this from becoming a second, drifting source of truth:
     - **Generated, never hand-written.** They are outputs, like the packaging recipes: fix the generator or the `KEYS` table, never the JSON. `matrix.py schema --check` fails CI and the pre-commit hook if the checked-in files do not match what the generator emits, so drift is caught the day it happens.

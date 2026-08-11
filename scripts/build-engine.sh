@@ -19,14 +19,14 @@ WORKDIR=$(prepare_workdir "$3")
 TAG="engine-$ENGINE_ARG-$TARGET"
 ENVFILE="$WORKDIR/tmp/$TAG.env"
 
-IMAGE=$(image_for_target "$TARGET") \
-  || infra_cell "$WORKDIR" "$ENGINE_ARG" "$ENGINE_ARG" "$TARGET" engine "" "unknown target: $TARGET"
-PKGFMT=$(pkgfmt_for_target "$TARGET")
-
 # Pins come exclusively from matrix.py env (sh-sourceable KEY=value lines).
 python3 "$REPO_ROOT/tools/matrix.py" env --engine "$ENGINE_ARG" --target "$TARGET" > "$ENVFILE" \
   || infra_cell "$WORKDIR" "$ENGINE_ARG" "$ENGINE_ARG" "$TARGET" engine "" "matrix.py env failed for engine $ENGINE_ARG"
 . "$ENVFILE"
+IMAGE=${TARGET_IMAGE:?}
+PKGFMT=${TARGET_FORMAT:?}
+assert_target_platform "${TARGET_PLATFORM:?}" \
+  || infra_cell "$WORKDIR" "$ENGINE_ARG" "$ENGINE_ARG" "$TARGET" engine "" "target platform does not match this host"
 
 ENGINE_ID=${ENGINE_ID:-$ENGINE_ARG}
 ENGINE_VERSION=${ENGINE_VERSION:-${ENGINE_ID#"${ENGINE_FAMILY:-x}"-}}
@@ -124,6 +124,7 @@ CHANGELOG
     (cd "$PKGWORK/build" && dpkg-buildpackage -us -uc -b)
     step collect
     cp "$PKGWORK"/*.deb "$PKGOUT/"
+    assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$PKGOUT"/*.deb
     ;;
   rpm)
     TOPD="/work/tmp/$TAG-rpmtop"
@@ -140,6 +141,7 @@ CHANGELOG
       /repo/packaging/engine/vinyl-cache.spec
     step collect
     cp "$TOPD"/RPMS/*/*.rpm "$PKGOUT/"
+    assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$PKGOUT"/*.rpm
     ;;
   esac
   # Mirror for release collection (release.yml gathers <workdir>/packages/).
@@ -151,7 +153,7 @@ echo "engine build complete"
 EOF
 
 LOG="$WORKDIR/logs/$TAG.log"
-run_in_container "$IMAGE" "$WORKDIR" "$TAG.sh" "$LOG" \
+run_in_container "$IMAGE" "$TARGET_PLATFORM" "$WORKDIR" "$TAG.sh" "$LOG" \
   || fail_cell "$WORKDIR" "$ENGINE_ID" "$ENGINE_ID" "$TARGET" engine "$REF" "$TAG"
 
 COMMIT=$(cat "$WORKDIR/tmp/$TAG.commit" 2>/dev/null || true)

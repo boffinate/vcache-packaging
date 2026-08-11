@@ -41,6 +41,8 @@ STATE_SCHEMA = "matrix-state/1"
 FAMILIES = ("vinyl", "varnish")
 KINDS = ("release", "trunk")
 LANES = ("release", "trunk")
+TARGET_FORMATS = ("deb", "rpm")
+TARGET_PLATFORMS = ("linux/amd64", "linux/arm64")
 # "engine" marks an engine's own build cell (row == engine id); the build
 # scripts write it and the grid shows it on the shared "(engine)" display row.
 MODES = ("compat", "package", "engine")
@@ -67,7 +69,8 @@ MAPPING_KEY_RE = re.compile(r"^[a-z0-9_.-]+$")
 # tools/jsonschema_gen.py emits the editor schemas from it, so the two cannot
 # disagree about which keys exist (DESIGN.md decision 11).
 KEYS = {
-    "engines_doc": ({"schema", "engines"}, set()),
+    "engines_doc": ({"schema", "targets", "engines"}, set()),
+    "target": ({"image", "format", "runner", "platform", "package_arch"}, set()),
     "engine": ({"id", "family", "series", "kind", "source", "targets"}, {"packages"}),
     "engine_source_release": ({"tarball_url", "sha256"}, set()),
     "engine_source_trunk": ({"git_url", "branch"}, set()),
@@ -126,23 +129,24 @@ def _str_list(value, ctx: str, errors: list) -> list:
     return value
 
 
-def _load_engines(path: Path, errors: list) -> list:
+def _load_engines(path: Path, errors: list) -> tuple[list, dict]:
     if not path.is_file():
         errors.append(f"{path}: engine catalog not found (expected engines.yml at the repo root)")
-        return []
+        return [], {}
     try:
         doc = yaml_subset.parse_file(path)
     except yaml_subset.ManifestSyntaxError as exc:
         errors.append(str(exc))
-        return []
+        return [], {}
     ctx = str(path)
     _expect(doc, "engines_doc", ctx, errors)
     if doc.get("schema") != ENGINES_SCHEMA:
         errors.append(f"{ctx}: schema must be {ENGINES_SCHEMA!r}, got {doc.get('schema')!r}")
+    known_targets = _load_targets(doc.get("targets"), ctx, errors)
     engines = doc.get("engines")
     if not isinstance(engines, list) or not engines:
         errors.append(f"{ctx}: 'engines' must be a non-empty list")
-        return []
+        return [], known_targets
     out = []
     seen = set()
     for i, engine in enumerate(engines):
@@ -186,10 +190,38 @@ def _load_engines(path: Path, errors: list) -> list:
             _expect(source, "engine_source_trunk", f"{ectx}: source", errors)
             _str_value(source, "git_url", f"{ectx}: source", errors)
             _str_value(source, "branch", f"{ectx}: source", errors)
-        targets = _str_list(engine.get("targets"), f"{ectx}: targets", errors)
-        if len(targets) != len(set(targets)):
+        engine_target_ids = _str_list(engine.get("targets"), f"{ectx}: targets", errors)
+        if len(engine_target_ids) != len(set(engine_target_ids)):
             errors.append(f"{ectx}: targets contains duplicates")
+        for target in engine_target_ids:
+            if target not in known_targets:
+                errors.append(f"{ectx}: targets includes unknown target {target!r}")
         out.append(engine)
+    return out, known_targets
+
+
+def _load_targets(value, ctx: str, errors: list) -> dict:
+    if not isinstance(value, dict) or not value:
+        errors.append(f"{ctx}: 'targets' must be a non-empty mapping")
+        return {}
+    out = {}
+    for target_id, target in value.items():
+        tctx = f"{ctx}: targets[{target_id!r}]"
+        if not isinstance(target_id, str) or not MAPPING_KEY_RE.match(target_id):
+            errors.append(f"{tctx}: target id must match {MAPPING_KEY_RE.pattern!r}")
+            continue
+        if not isinstance(target, dict):
+            errors.append(f"{tctx}: must be a mapping")
+            continue
+        _expect(target, "target", tctx, errors)
+        target = dict(target)
+        for key in KEYS["target"][0]:
+            target[key] = _str_value(target, key, tctx, errors)
+        if target["format"] and target["format"] not in TARGET_FORMATS:
+            errors.append(f"{tctx}: format must be one of {TARGET_FORMATS}, got {target['format']!r}")
+        if target["platform"] and target["platform"] not in TARGET_PLATFORMS:
+            errors.append(f"{tctx}: platform must be one of {TARGET_PLATFORMS}, got {target['platform']!r}")
+        out[target_id] = target
     return out
 
 
@@ -303,11 +335,11 @@ def _check_source_entry(entry: dict, ctx: str, errors: list) -> None:
 def load_catalog(root) -> dict:
     root = Path(root)
     errors: list = []
-    engines = _load_engines(root / "engines.yml", errors)
+    engines, targets = _load_engines(root / "engines.yml", errors)
     vmods = _load_vmods(root / "vmods", engines, errors)
     if errors:
         raise CatalogError("\n".join(errors))
-    return {"engines": engines, "vmods": vmods}
+    return {"engines": engines, "targets": targets, "vmods": vmods}
 
 
 def find_engine(catalog: dict, engine_id: str) -> dict:
@@ -316,6 +348,14 @@ def find_engine(catalog: dict, engine_id: str) -> dict:
             return engine
     known = ", ".join(e["id"] for e in catalog["engines"])
     raise CatalogError(f"unknown engine {engine_id!r}; known engines: {known}")
+
+
+def find_target(catalog: dict, target_id: str) -> dict:
+    target = catalog["targets"].get(target_id)
+    if target is None:
+        known = ", ".join(catalog["targets"])
+        raise CatalogError(f"unknown target {target_id!r}; known targets: {known}")
+    return target
 
 
 def find_vmod(catalog: dict, vmod_id: str) -> dict:
@@ -420,21 +460,24 @@ def engine_targets(engine: dict, lane: str, mode: str) -> list:
 def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
     """Expand one lane into engine build pairs and VMOD cell rows.
 
-    Returns ``{"engines": [{engine, target}...], "vmods": [{row, engine,
-    target, mode}...], "rows": [...]}`` where ``rows`` is the full cell list
+    Returns ``{"engines": [{engine, target, runner}...], "vmods": [{row,
+    engine, target, mode, runner}...], "rows": [...]}`` where ``rows`` is the full cell list
     including the engines' own build cells (mode ``engine``).
     """
     engine_pairs = []
     vmod_rows = []
     for engine in lane_engines(catalog, lane):
         for target in engine_targets(engine, lane, mode):
-            engine_pairs.append({"engine": engine["id"], "target": target})
+            runner = find_target(catalog, target)["runner"]
+            engine_pairs.append({"engine": engine["id"], "target": target, "runner": runner})
         if mode in ("compat", "all"):
             for target in engine["targets"]:
+                runner = find_target(catalog, target)["runner"]
                 for vid in catalog["vmods"]:
-                    vmod_rows.append({"row": vid, "engine": engine["id"], "target": target, "mode": "compat"})
+                    vmod_rows.append({"row": vid, "engine": engine["id"], "target": target, "mode": "compat", "runner": runner})
         if lane == "release" and engine["packages"] == "true" and mode in ("package", "all"):
             for target in engine["targets"]:
+                runner = find_target(catalog, target)["runner"]
                 for vid, vmod in catalog["vmods"].items():
                     # package.families gates package cells only (DESIGN.md
                     # decision 13); absent means every family. Compat cells
@@ -443,9 +486,9 @@ def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
                     families = vmod["package"].get("families")
                     if families is not None and engine["family"] not in families:
                         continue
-                    vmod_rows.append({"row": vid, "engine": engine["id"], "target": target, "mode": "package"})
+                    vmod_rows.append({"row": vid, "engine": engine["id"], "target": target, "mode": "package", "runner": runner})
     engine_rows = [
-        {"row": pair["engine"], "engine": pair["engine"], "target": pair["target"], "mode": "engine"}
+        {"row": pair["engine"], "engine": pair["engine"], "target": pair["target"], "mode": "engine", "runner": pair["runner"]}
         for pair in engine_pairs
     ]
     return {"engines": engine_pairs, "vmods": vmod_rows, "rows": engine_rows + vmod_rows}
@@ -460,14 +503,9 @@ def sh_quote(value: str) -> str:
     return "'" + value.replace("'", "'\\''") + "'"
 
 
-def target_format(target_id: str) -> str:
-    """deb or rpm, inferred from the target id's distro prefix. Shared with
-    recipe.py so there is exactly one mapping."""
-    if target_id.startswith(("debian-", "ubuntu-")):
-        return "deb"
-    if target_id.startswith(("el", "fedora-", "alma", "rocky")):
-        return "rpm"
-    raise CatalogError(f"cannot infer a package format from target {target_id!r}")
+def target_format(catalog: dict, target_id: str) -> str:
+    """Return a target's declared package format. Shared with recipe.py."""
+    return find_target(catalog, target_id)["format"]
 
 
 def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str = None) -> list:
@@ -493,7 +531,14 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             raise CatalogError(
                 f"target {target_id!r} is not a target of engine {engine_id!r} (targets: {engine['targets']})"
             )
-        pairs.append(("TARGET_ID", target_id))
+        target = find_target(catalog, target_id)
+        pairs += [
+            ("TARGET_ID", target_id),
+            ("TARGET_IMAGE", target["image"]),
+            ("TARGET_FORMAT", target["format"]),
+            ("TARGET_PLATFORM", target["platform"]),
+            ("TARGET_PACKAGE_ARCH", target["package_arch"]),
+        ]
     if vmod_id is not None:
         vmod = find_vmod(catalog, vmod_id)
         resolved = resolve_source(vmod, engine)
@@ -502,7 +547,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
         # --target, the engine's first listed target decides the format (that
         # is the target compat cells run on), so the variable is always
         # present when --vmod is given, like VMOD_REF.
-        fmt = target_format(target_id if target_id is not None else engine["targets"][0])
+        fmt = target_format(catalog, target_id if target_id is not None else engine["targets"][0])
         build_deps = vmod["package"].get("build_deps") or {}
         deps = build_deps.get("debian" if fmt == "deb" else "rpm", [])
         pairs += [

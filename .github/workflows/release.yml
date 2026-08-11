@@ -20,7 +20,7 @@ jobs:
 
   engine:
     needs: expand
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -36,9 +36,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: engine-${{ matrix.engine }}-${{ matrix.target }}
-          path: |
-            work/**
-            !work/results/**
+          path: work/artifacts/
           if-no-files-found: ignore
       - if: always()
         uses: actions/upload-artifact@v4
@@ -49,7 +47,7 @@ jobs:
   vmod:
     needs: [expand, engine]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -61,7 +59,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: engine-${{ matrix.engine }}-${{ matrix.target }}
-          path: work/engine
+          path: work/engine/artifacts
       - run: scripts/build-vmod.sh "${{ matrix.row }}" "${{ matrix.engine }}" "${{ matrix.target }}" "${{ matrix.mode }}" work
       - if: always()
         uses: actions/upload-artifact@v4

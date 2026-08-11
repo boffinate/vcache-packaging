@@ -64,7 +64,7 @@ DEB_BASE_BUILD_DEPS = ["debhelper-compat (= 13)", "autoconf", "automake", "libto
 RPM_BASE_BUILD_REQS = ["autoconf", "automake", "libtool", "make", "gcc", "pkgconfig"]
 
 
-# One mapping, owned by matrix.py; re-exported for existing callers.
+# One lookup, owned by matrix.py; re-exported for existing callers.
 target_format = matrix.target_format
 
 
@@ -156,7 +156,7 @@ def generate(root, vmod_id: str, engine_id: str, target_id: str, out_dir, mainta
             f"target {target_id!r} is not a target of engine {engine_id!r} (targets: {engine['targets']})"
         )
     vmod = matrix.find_vmod(catalog, vmod_id)
-    fmt = target_format(target_id)
+    fmt = target_format(catalog, target_id)
     tokens = build_tokens(vmod, engine, maintainer or maintainer_from_env(), now or datetime.now(timezone.utc))
     out = Path(out_dir)
     written = []

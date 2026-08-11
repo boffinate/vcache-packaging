@@ -151,6 +151,17 @@ def _source_entry(description: str) -> dict:
 
 def build_engines() -> dict:
     """Schema for engines.yml."""
+    target = _object(
+        "target",
+        {
+            "image": _string("Container image used to build this target."),
+            "format": _string("Package format produced by this target.", enum=list(matrix.TARGET_FORMATS)),
+            "runner": _string("GitHub Actions runner label for this target."),
+            "platform": _string("Native Docker platform required by this target.", enum=list(matrix.TARGET_PLATFORMS)),
+            "package_arch": _string("Architecture reported by the finished package."),
+        },
+        "One target's complete build and package architecture contract.",
+    )
     source = _union_object(
         ["engine_source_release", "engine_source_trunk"],
         {
@@ -179,7 +190,7 @@ def build_engines() -> dict:
                 enum=list(matrix.KINDS),
             ),
             "source": source,
-            "targets": _string_list("Build targets, e.g. debian-13-amd64, el10-x86_64."),
+            "targets": _string_list("Target ids from the top-level targets registry."),
             "packages": _string(
                 'Quoted "true" if this engine is packaged, not merely tested. '
                 "Requires kind: release and family: vinyl. Defaults to \"false\".",
@@ -227,6 +238,14 @@ def build_engines() -> dict:
             "schema": {
                 "const": matrix.ENGINES_SCHEMA,
                 "description": f"Schema marker; must be {matrix.ENGINES_SCHEMA!r}.",
+            },
+            "targets": {
+                "type": "object",
+                "minProperties": 1,
+                "propertyNames": {"pattern": matrix.MAPPING_KEY_RE.pattern},
+                "patternProperties": {matrix.MAPPING_KEY_RE.pattern: target},
+                "additionalProperties": False,
+                "description": "Target registry: image, package format, native runner, and architecture.",
             },
             "engines": {
                 "type": "array",
