@@ -1,0 +1,38 @@
+name: render Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Share the publishing lock with matrix.yml and trunk.yml: this workflow
+    # reads the same state branch and deploys the same Pages site.
+    concurrency:
+      group: matrix-publish
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          ref: ci-state/matrix
+          path: state
+          fetch-depth: 1
+      - run: |
+          mkdir -p site
+          python3 tools/matrix.py render --state-file state/matrix-state.json --out site/index.html
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v5
