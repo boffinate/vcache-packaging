@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-blobdigest (schema vmod/1, DESIGN.md).
+#
+# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
+# natively (vinylapi.pc, VINYL_* macros) and a separate 8.0 branch targets
+# Varnish-Cache 8. Tags are stale (pre-Vinylize), so both lanes pin master,
+# the selector precedent; the 0 in 0~master keeps the version valid for
+# Debian. Varnish 9 cells are EXPECTED RED at configure (no vinylapi.pc
+# there); per decision 13 package.families is vinyl. Compat still renders
+# every pairing honestly. Vendors digest code adapted from librhash (MIT per
+# the LICENSE file), and its README requires Perl 5 at build time.
+schema: vmod/1
+id: blobdigest
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvmod-blobdigest.git
+  homepage: https://code.uplex.de/uplex-varnish/libvmod-blobdigest
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: Message digest, checksum and HMAC VMOD for Vinyl Cache
+  description:
+    - libvmod-blobdigest computes message digests, checksums and HMACs for
+    - the VCL BLOB type, covering binary data of arbitrary length. It ships
+    - digest and hmac objects following the init-update-final pattern for
+    - incremental hashing, and one-shot hash and hmacf functions. Supported
+    - algorithms include CRC32, ICRC32, MD5, RS, SHA1, the SHA2 family
+    - through SHA512 and the SHA3 family, with HMAC support for all but the
+    - checksum algorithms. The hash implementations are adapted from the
+    - librhash library and vendored in-tree.
+  license: BSD-2-Clause AND MIT
+  build_deps:
+    debian:
+      - perl
+      - python3
+      - python3-docutils
+    rpm:
+      - perl
+      - python3
+      - python3-docutils
+  families:
+    - vinyl

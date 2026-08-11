@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-ipblocker (schema vmod/1, DESIGN.md).
+#
+# Born post-Vinylize (2026): the repo is Vinyl-native from the start
+# (vinylapi.pc, VINYL_* macros, VINYL_PREREQ 9.0.0), so Varnish 9 cells are
+# EXPECTED RED at configure; v2 carries no patches (SCOPE.md). The default
+# branch is main, not master, and there are no usable tags, so both lanes pin
+# main (selector precedent; the 0 in 0~main keeps the Debian version
+# digit-first). We package only the VMOD, which builds standalone; upstream's
+# reference daemon (server.pl, a Perl script needing Regexp::Common) is NOT
+# packaged. Upstream ships no LICENSE file and no source license headers as of
+# 2026-08; BSD-2-Clause below is the UPLEX org convention, flagged here until
+# upstream states one.
+schema: vmod/1
+id: ipblocker
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvmod-ipblocker.git
+  homepage: https://code.uplex.de/uplex-varnish/libvmod-ipblocker
+sources:
+  head: main
+  default:
+    ref: main
+    version: "0~main"
+package:
+  summary: Dynamic IP blocklist VMOD for Vinyl Cache
+  description:
+    - libvmod-ipblocker manages dynamic IP blocklists from VCL. It sends
+    - add and remove messages over a UDP or UNIX datagram socket to a
+    - companion daemon that applies firewall rules (for example via
+    - ipset), so VCL can block and unblock addresses or CIDR prefixes at
+    - runtime, optionally grouped into named sets. The reference daemon is
+    - a separate Perl script and is not part of this package.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils
+  families:
+    - vinyl

@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-j (schema vmod/1, DESIGN.md).
+#
+# UPLEX Vinylized this repo in 2026-03: the default branch builds against
+# Vinyl Cache 9 natively (vinylapi and VINYL_* autotools macros) and a
+# separate 8.0 branch targets Varnish 8. Note the default branch is trunk,
+# not master. Tags predate the Vinylize, so both lanes pin trunk; the 0 in
+# 0~trunk makes the version valid for Debian, whose package versions must
+# start with a digit. Varnish 9 cells are EXPECTED RED at configure (no
+# vinylapi.pc there); v2 carries no patches (SCOPE.md). Per decision 13
+# package.families is vinyl.
+# The Hoehrmann UTF-8 decoder is vendored as git submodule
+# src/hoehrmann-utf8; the build harness always does a recursive submodule
+# checkout, so nothing extra is needed here. A prior survey suggested a
+# jansson dependency, but configure.ac checks for no library at all, so
+# none is declared.
+schema: vmod/1
+id: j
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvmod-j.git
+  homepage: https://code.uplex.de/uplex-varnish/libvmod-j
+sources:
+  head: trunk
+  default:
+    ref: trunk
+    version: "0~trunk"
+package:
+  summary: JSON formatting VMOD for Vinyl Cache
+  description:
+    - libvmod-j formats JSON output from VCL. It builds objects, arrays,
+    - strings, numbers, booleans and nulls from VCL values with proper
+    - escaping, so valid JSON can be generated without hand-written
+    - string concatenation and escape sequences. Escaping can be
+    - minimal per RFC 8259 or restricted to 7-bit ASCII, and an
+    - unescape function decodes JSON strings back to UTF-8.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils
+  families:
+    - vinyl

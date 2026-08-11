@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-all_healthy (schema vmod/1, DESIGN.md).
+#
+# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
+# natively (vinylapi.pc, VINYL_* macros) and a separate 8.0 branch targets
+# Varnish-Cache 8. Tags are stale (pre-Vinylize), so both lanes pin master,
+# the selector precedent; the 0 in 0~master keeps the version valid for
+# Debian. Varnish 9 cells are EXPECTED RED at configure (no vinylapi.pc
+# there); per decision 13 package.families is vinyl. Compat still renders
+# every pairing honestly. The catalog id is all-healthy because the id feeds
+# Debian package names, where underscores are not allowed; the VCL import
+# name is all_healthy, so package.modules spells it out (the varnish-modules
+# precedent for ids that are not legal module names).
+schema: vmod/1
+id: all-healthy
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvmod-all_healthy.git
+  homepage: https://code.uplex.de/uplex-varnish/libvmod-all_healthy
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: All-backends-healthy director VMOD for Vinyl Cache
+  description:
+    - libvmod-all_healthy provides a director that ties the health of a
+    - backend to other backends. The director is healthy only if all the
+    - backends it is told to consider are healthy, with optional thresholds
+    - as an absolute count or a percentage, while traffic goes to a single
+    - configured backend. Typical uses are running more than one health
+    - check against the same backend through separate probes, or probing a
+    - backend on an alternative port that never serves traffic.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils
+  modules:
+    - all_healthy
+  families:
+    - vinyl

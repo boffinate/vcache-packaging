@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# varnish-objvar (schema vmod/1, DESIGN.md).
+#
+# One catalog entry for the whole bundle (DESIGN.md decision 9): upstream's
+# configure declares all four vmods together, so this is one row and one
+# package carrying four .so.
+#
+# Upstream's tags are stale (pre-Vinylize), so both release and trunk lanes
+# use master. UPLEX Vinylized master in March 2026 (vinylapi.pc, VINYL_*
+# autotools macros; Varnish 8 lives on a separate 8.0 branch), therefore
+# Varnish 9 cells are EXPECTED RED at configure; v2 carries no patches
+# (SCOPE.md). Per decision 13 package.families is vinyl, which is the
+# branch's actual build-system support. The 0 in 0~master makes the trunk
+# version valid for Debian, whose package versions must start with a digit.
+# Compat still renders every pairing honestly.
+schema: vmod/1
+id: objvar
+upstream:
+  git: https://code.uplex.de/uplex-varnish/varnish-objvar.git
+  homepage: https://code.uplex.de/uplex-varnish/varnish-objvar
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: VCL variables as objects with four scopes for Vinyl Cache
+  description:
+    - varnish-objvar bundles four VMODs that implement VCL variables as
+    - objects, one per scope. taskvar variables are scoped to a single
+    - client or backend task, topvar variables to a client request
+    - including all of its ESI include levels, globalvar variables are
+    - shared across the whole VCL, and constant provides read-only values
+    - fixed at VCL initialisation. Variables cover the native VCL types
+    - such as STRING, INT, REAL, BOOL, DURATION, BACKEND, ACL, BLOB and
+    - IP, and taskvar and topvar can protect a value against later
+    - modification.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils
+  modules:
+    - constant
+    - globalvar
+    - taskvar
+    - topvar
+  families:
+    - vinyl

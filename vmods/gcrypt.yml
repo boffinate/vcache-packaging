@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-gcrypt (schema vmod/1, DESIGN.md).
+#
+# UPLEX Vinylized this repo in 2026-03: master builds against Vinyl Cache
+# 9 natively (vinylapi and VINYL_* autotools macros) and a separate 8.0
+# branch targets Varnish 8. Tags predate the Vinylize, so both lanes pin
+# master; the 0 in 0~master makes the version valid for Debian, whose
+# package versions must start with a digit. Varnish 9 cells are EXPECTED
+# RED at configure (no vinylapi.pc there); v2 carries no patches
+# (SCOPE.md). Per decision 13 package.families is vinyl.
+# configure requires libgcrypt >= 1.6.3 via AM_PATH_LIBGCRYPT; the m4
+# macro and the libgcrypt-config it uses ship with the -dev/-devel
+# package declared in build_deps.
+schema: vmod/1
+id: gcrypt
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvmod-gcrypt.git
+  homepage: https://code.uplex.de/uplex-varnish/libvmod-gcrypt
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: libgcrypt cryptography VMOD for Vinyl Cache
+  description:
+    - libvmod-gcrypt gives VCL access to the libgcrypt cryptographic
+    - library used by GnuPG. It provides symmetric AES encryption and
+    - decryption with the ECB, CFB, CBC, OFB and CTR modes and a choice
+    - of padding schemes, pseudo-random data generation at nonce, strong
+    - and very strong quality levels, secure memory handling, and
+    - reading key material from files. Sensitive data is passed between
+    - functions as BLOBs rather than strings.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - libgcrypt20-dev
+      - python3
+      - python3-docutils
+    rpm:
+      - libgcrypt-devel
+      - python3
+      - python3-docutils
+  families:
+    - vinyl

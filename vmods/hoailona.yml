@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-hoailona (schema vmod/1, DESIGN.md).
+#
+# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
+# natively (vinylapi.pc, VINYL_* macros) and a separate 8.0 branch serves
+# Varnish 8, so Varnish 9 cells are EXPECTED RED at configure; v2 carries no
+# patches (SCOPE.md). No usable tags, so both lanes pin master (selector
+# precedent; the 0 in 0~master keeps the Debian version digit-first).
+schema: vmod/1
+id: hoailona
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvmod-hoailona.git
+  homepage: https://code.uplex.de/uplex-varnish/libvmod-hoailona
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: Akamai SecureHD Policy token VMOD for Vinyl Cache
+  description:
+    - libvmod-hoailona supports the Akamai SecureHD Policy service from
+    - VCL. It implements the TOKEN, OPEN and DENY policy types, assigns
+    - policies to hosts globally or to sets of URL paths, determines which
+    - policy applies to a given host and path, and generates authorization
+    - tokens with a TTL. Shared secrets are supported for HMAC-based
+    - authentication, with the HMAC computation itself delegated to
+    - another VMOD such as blobdigest.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils
+  families:
+    - vinyl

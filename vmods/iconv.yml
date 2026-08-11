@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-iconv (schema vmod/1, DESIGN.md).
+#
+# UPLEX Vinylized this repo in 2026-03: the default branch builds against
+# Vinyl Cache 9 natively (vinylapi and VINYL_* autotools macros) and a
+# separate 8.0 branch targets Varnish 8. Note the default branch is trunk,
+# not master. Tags predate the Vinylize, so both lanes pin trunk; the 0 in
+# 0~trunk makes the version valid for Debian, whose package versions must
+# start with a digit. Varnish 9 cells are EXPECTED RED at configure (no
+# vinylapi.pc there); v2 carries no patches (SCOPE.md). Per decision 13
+# package.families is vinyl. iconv(3) comes from libc, so there is no
+# extra library dependency.
+schema: vmod/1
+id: iconv
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvmod-iconv.git
+  homepage: https://code.uplex.de/uplex-varnish/libvmod-iconv
+sources:
+  head: trunk
+  default:
+    ref: trunk
+    version: "0~trunk"
+package:
+  summary: Character set conversion VMOD for Vinyl Cache
+  description:
+    - libvmod-iconv gives VCL access to the standard iconv(3) character
+    - encoding conversion facility. A converter object is created for a
+    - pair of character sets, for example ISO-8859-15 and UTF-8, and its
+    - iconv method converts strings between them. Unmappable characters
+    - can be transliterated or ignored, and an optional fallback string
+    - is returned when a conversion fails.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils
+  families:
+    - vinyl

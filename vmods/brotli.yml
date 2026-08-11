@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvfp-brotli (schema vmod/1, DESIGN.md).
+#
+# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
+# natively (vinylapi.pc, VINYL_* macros) and a separate 8.0 branch serves
+# Varnish 8, so Varnish 9 cells are EXPECTED RED at configure; v2 carries no
+# patches (SCOPE.md). No usable tags, so both lanes pin master (selector
+# precedent; the 0 in 0~master keeps the Debian version digit-first).
+# Upstream's README requires a Vinyl Cache *master* commit (54af42d or later),
+# so the release-engine cell may be red while trunk is green — that split is
+# expected and is exactly the trunk-CI early warning this matrix exists for.
+schema: vmod/1
+id: brotli
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvfp-brotli.git
+  homepage: https://code.uplex.de/uplex-varnish/libvfp-brotli
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: Brotli compression fetch processor for Vinyl Cache
+  description:
+    - libvfp-brotli is a Vinyl fetch processor (VFP) that compresses and
+    - decompresses response bodies fetched from backends with the brotli
+    - algorithm. It provides built-in br and unbr filters using default
+    - parameters, plus encoder and decoder objects whose quality, window,
+    - buffer sizes and content hints can be configured from VCL, and it
+    - publishes statistics under a BROTLI counter namespace. ESI delivery
+    - of brotli-compressed content is not supported.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - libbrotli-dev
+      - python3
+      - python3-docutils
+    rpm:
+      - brotli-devel
+      - python3
+      - python3-docutils
+  families:
+    - vinyl
