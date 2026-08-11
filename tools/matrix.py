@@ -46,6 +46,10 @@ TARGET_PLATFORMS = ("linux/amd64", "linux/arm64")
 # "engine" marks an engine's own build cell (row == engine id); the build
 # scripts write it and the grid shows it on the shared "(engine)" display row.
 MODES = ("compat", "package", "engine")
+# GitHub Actions limits one job matrix to 256 configurations.  Keep shard
+# matrices comfortably below that ceiling so adding a row never makes a
+# workflow invalid, while still preserving one job per VMOD cell.
+VMOD_SHARD_SIZE = 128
 STATUSES = (
     "pass",
     "configure_failed",
@@ -542,6 +546,26 @@ def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
     return {"engines": engine_pairs, "vmods": vmod_rows, "rows": engine_rows + vmod_rows}
 
 
+def shard_vmods(rows: list, size: int = VMOD_SHARD_SIZE) -> list:
+    """Return reusable-workflow matrix rows holding bounded VMOD matrices.
+
+    Each ``items`` value is JSON text because it crosses a workflow_call input
+    boundary.  The caller matrices the shards; the called workflow expands the
+    contained VMOD rows.  Both matrices therefore remain below GitHub's 256
+    configuration limit.
+    """
+    if size < 1:
+        raise ValueError("VMOD shard size must be positive")
+    shard_count = (len(rows) + size - 1) // size
+    return [
+        {
+            "shard": f"{index + 1}/{shard_count}",
+            "items": json.dumps(rows[start:start + size], separators=(",", ":")),
+        }
+        for index, start in enumerate(range(0, len(rows), size))
+    ]
+
+
 # ---------------------------------------------------------------------------
 # env
 # ---------------------------------------------------------------------------
@@ -968,10 +992,13 @@ def cmd_expand(args) -> int:
     if not expansion["engines"] or not expansion["vmods"]:
         raise CatalogError(f"lane {args.lane!r} expanded to an empty matrix; the catalog has no engines or vmods for it")
     if args.format == "github":
-        # Two `key=<json>` lines, appended verbatim to $GITHUB_OUTPUT. Engine
-        # rows are excluded from vmods= (they would become bogus VMOD jobs).
+        # Three `key=<json>` lines, appended verbatim to $GITHUB_OUTPUT.
+        # Engine rows are excluded from vmods= (they would become bogus VMOD
+        # jobs). vmod_shards= is the outer matrix for the reusable VMOD
+        # workflow; each item contains at most VMOD_SHARD_SIZE inner rows.
         print("engines=" + json.dumps(expansion["engines"], separators=(",", ":")))
         print("vmods=" + json.dumps(expansion["vmods"], separators=(",", ":")))
+        print("vmod_shards=" + json.dumps(shard_vmods(expansion["vmods"]), separators=(",", ":")))
     else:
         print(json.dumps(expansion["rows"], indent=2))
     return 0

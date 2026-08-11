@@ -706,16 +706,31 @@ def expand_trunk_lane_and_github_format():
         code, out, _ = run_cli(["expand", "--lane", "trunk", "--format", "github", "--root", root])
         eq(code, 0, "expand exit code")
         lines = out.strip().split("\n")
-        eq(len(lines), 2, "github format is exactly two lines")
-        ok(lines[0].startswith("engines=") and lines[1].startswith("vmods="), "github output keys")
+        eq(len(lines), 3, "github format is exactly three lines")
+        ok(lines[0].startswith("engines=") and lines[1].startswith("vmods=")
+           and lines[2].startswith("vmod_shards="), "github output keys")
         engines = json.loads(lines[0][len("engines="):])
         vmods = json.loads(lines[1][len("vmods="):])
+        shards = json.loads(lines[2][len("vmod_shards="):])
         ok(engines and vmods, "neither github array is empty")
         ok(all(set(r) >= {"engine", "target", "runner"} for r in engines), "engines= row shape")
         ok(all(r["row"] != r["engine"] for r in vmods), "vmods= excludes engine rows")
+        eq([row for shard in shards for row in json.loads(shard["items"])], vmods,
+           "vmod_shards preserves every VMOD row")
         code, _, err = run_cli(["expand", "--lane", "trunk", "--mode", "package", "--root", root])
         eq(code, 1, "trunk+package is an error")
         ok("no package cells" in err, "trunk+package error message")
+
+
+@test
+def vmod_shards_are_bounded_and_ordered():
+    rows = [{"row": str(index)} for index in range(matrix.VMOD_SHARD_SIZE * 2 + 1)]
+    shards = matrix.shard_vmods(rows)
+    eq([shard["shard"] for shard in shards], ["1/3", "2/3", "3/3"], "shard labels")
+    eq([len(json.loads(shard["items"])) for shard in shards],
+       [matrix.VMOD_SHARD_SIZE, matrix.VMOD_SHARD_SIZE, 1], "shard sizes")
+    eq([row for shard in shards for row in json.loads(shard["items"])], rows,
+       "shards preserve order and rows")
 
 
 # ---------------------------------------------------------------------------

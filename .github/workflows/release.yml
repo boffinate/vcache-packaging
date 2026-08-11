@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       engines: ${{ steps.expand.outputs.engines }}
-      vmods: ${{ steps.expand.outputs.vmods }}
+      vmod_shards: ${{ steps.expand.outputs.vmod_shards }}
     steps:
       - uses: actions/checkout@v7
       - id: expand
@@ -47,31 +47,17 @@ jobs:
   vmod:
     needs: [expand, engine]
     if: ${{ !cancelled() }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
     strategy:
+      # Run one shard at a time; the called workflow controls the individual
+      # VMOD job concurrency and every one of its matrices stays below 256.
+      max-parallel: 1
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.expand.outputs.vmods) }}
-    name: ${{ matrix.row }} vs ${{ matrix.engine }} (${{ matrix.mode }}, ${{ matrix.target }})
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          name: engine-${{ matrix.engine }}-${{ matrix.target }}
-          path: work/engine/artifacts
-      - run: scripts/build-vmod.sh "${{ matrix.row }}" "${{ matrix.engine }}" "${{ matrix.target }}" "${{ matrix.mode }}" work
-      - if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: packages-${{ matrix.row }}-${{ matrix.engine }}-${{ matrix.target }}
-          path: work/packages/
-          if-no-files-found: ignore
-      - if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: results-${{ matrix.row }}-${{ matrix.engine }}-${{ matrix.target }}-${{ matrix.mode }}
-          path: work/results/
+        include: ${{ fromJSON(needs.expand.outputs.vmod_shards) }}
+    uses: ./.github/workflows/vmod-shard.yml
+    with:
+      items: ${{ matrix.items }}
+      upload_packages: true
 
   release:
     needs: [expand, engine, vmod]

@@ -1,0 +1,48 @@
+name: vmod shard
+
+on:
+  workflow_call:
+    inputs:
+      items:
+        description: JSON array of VMOD matrix rows, limited to 128 entries.
+        required: true
+        type: string
+      upload_packages:
+        description: Upload package artifacts for package-mode cells.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  vmod:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      # The caller serializes shards. Keep enough parallelism inside a shard
+      # for useful throughput without flooding the Actions artifact service.
+      max-parallel: 20
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.items) }}
+    name: ${{ matrix.row }} vs ${{ matrix.engine }} (${{ matrix.mode }}, ${{ matrix.target }})
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine-${{ matrix.engine }}-${{ matrix.target }}
+          path: work/engine/artifacts
+      - run: scripts/build-vmod.sh "${{ matrix.row }}" "${{ matrix.engine }}" "${{ matrix.target }}" "${{ matrix.mode }}" work
+      - if: ${{ always() && inputs.upload_packages && matrix.mode == 'package' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages-${{ matrix.row }}-${{ matrix.engine }}-${{ matrix.target }}
+          path: work/packages/
+          if-no-files-found: ignore
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-${{ matrix.row }}-${{ matrix.engine }}-${{ matrix.target }}-${{ matrix.mode }}
+          path: work/results/
