@@ -6,6 +6,9 @@
 # v1 needed a reviewed build-system patch to configure against Vinyl. v2
 # carries no patches (SCOPE.md), so vinyl cells fail at configure and varnish
 # cells pass.
+# Per decision 13 this VMOD declares package.families: varnish, so package
+# cells no longer expand on vinyl engines while compat cells still render the
+# honest red.
 schema: vmod/1
 id: selector
 upstream:
@@ -35,3 +38,5 @@ package:
       - autoconf-archive
       - python3
       - python3-docutils
+  families:
+    - varnish

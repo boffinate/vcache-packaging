@@ -8,6 +8,9 @@
 # EXPECTED RED on vinyl columns: upstream's configure looks for varnishapi.pc
 # only, so vinyl cells fail at configure until upstream or a fork supports
 # Vinyl. That red is the matrix doing its job.
+# Per decision 13 this VMOD declares package.families: varnish, so package
+# cells no longer expand on vinyl engines while compat cells still render the
+# honest red.
 schema: vmod/1
 id: varnish-modules
 upstream:
@@ -43,4 +46,6 @@ package:
     - var
     - vsthrottle
     - xkey
+  families:
+    - varnish
 tests: make-check

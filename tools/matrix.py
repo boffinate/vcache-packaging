@@ -75,7 +75,7 @@ KEYS = {
     "vmod_upstream": ({"git"}, {"homepage"}),
     "vmod_sources": ({"head", "default"}, {"by_series"}),
     "vmod_source_entry": ({"ref", "version"}, set()),
-    "vmod_package": ({"summary", "description", "license"}, {"build_deps", "modules"}),
+    "vmod_package": ({"summary", "description", "license"}, {"build_deps", "modules", "families"}),
     "vmod_build_deps": (set(), {"debian", "rpm"}),
 }
 
@@ -276,6 +276,19 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
                     f"{ctx}: package.modules is required because id {vid!r} is not a valid"
                     " module name to default to"
                 )
+            families = package.get("families")
+            if families is not None:
+                # Absent means every family, so an explicit empty list is
+                # almost certainly a mistake; _str_list rejects it.
+                values = _str_list(families, f"{ctx}: package.families", errors)
+                for i, family in enumerate(values):
+                    if family not in FAMILIES:
+                        errors.append(
+                            f"{ctx}: package.families[{i}]: family must be one of {FAMILIES},"
+                            f" got {family!r}"
+                        )
+                if len(values) != len(set(values)):
+                    errors.append(f"{ctx}: package.families contains duplicates")
         if vid:
             vmods[vid] = doc
     return vmods
@@ -422,7 +435,14 @@ def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
                     vmod_rows.append({"row": vid, "engine": engine["id"], "target": target, "mode": "compat"})
         if lane == "release" and engine["packages"] == "true" and mode in ("package", "all"):
             for target in engine["targets"]:
-                for vid in catalog["vmods"]:
+                for vid, vmod in catalog["vmods"].items():
+                    # package.families gates package cells only (DESIGN.md
+                    # decision 13); absent means every family. Compat cells
+                    # above are deliberately untouched: an incompatible
+                    # pairing still renders its honest red.
+                    families = vmod["package"].get("families")
+                    if families is not None and engine["family"] not in families:
+                        continue
                     vmod_rows.append({"row": vid, "engine": engine["id"], "target": target, "mode": "package"})
     engine_rows = [
         {"row": pair["engine"], "engine": pair["engine"], "target": pair["target"], "mode": "engine"}

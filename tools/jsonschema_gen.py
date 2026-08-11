@@ -292,6 +292,16 @@ def build_vmod() -> dict:
                     "description": "A VCL import name: lowercase, digits and underscores.",
                 },
             ),
+            "families": _string_list(
+                "Engine families this VMOD's build system supports. Gates "
+                "package-mode expansion only; absent means no restriction, and "
+                "compat cells are unaffected (DESIGN.md decision 13).",
+                items={
+                    "type": "string",
+                    "enum": list(matrix.FAMILIES),
+                    "description": "An engine family, as engines.yml 'family' spells it.",
+                },
+            ),
         },
         "What the generated .deb/.rpm says about itself.",
     )

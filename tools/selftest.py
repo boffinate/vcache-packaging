@@ -374,6 +374,27 @@ def catalog_tests_and_modules_fields():
                              "package.modules is required", "hyphenated id without modules")
 
 
+@test
+def catalog_package_families_field():
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = FIXTURE_DICT + "  families:\n    - varnish\n"
+        catalog = matrix.load_catalog(write_fixture(Path(tmp), vmods={"dict": vmod}))
+        eq(catalog["vmods"]["dict"]["package"]["families"], ["varnish"], "families carried through")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = FIXTURE_DICT + "  families:\n    - fastly\n"
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
+                             "family must be one of", "unknown family")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = FIXTURE_DICT + "  families:\n    - varnish\n    - varnish\n"
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
+                             "package.families contains duplicates", "duplicate family")
+    # Absent means every family, so an explicit empty sequence is rejected.
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = FIXTURE_DICT + "  families: []\n"
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
+                             "non-empty list", "empty families list")
+
+
 # ---------------------------------------------------------------------------
 # Editor JSON Schemas (DESIGN.md decision 11) - generated outputs, so what
 # these tests guard is that they cannot drift from the validator.
@@ -522,6 +543,35 @@ def expand_release_lane():
             {"row": "dict", "engine": "varnish-9.0.3", "target": "debian-13-amd64", "mode": "compat"},
         ], "compat vmod rows use every target")
         ok(all(r["mode"] == "compat" for r in compat_only["vmods"]), "compat filter")
+
+
+@test
+def expand_package_rows_honour_families():
+    # packages "true" requires family vinyl, so no varnish engine can emit
+    # package rows to filter; assert the gate both ways on the vinyl engine.
+    def with_families(family):
+        vmod = must_replace(FIXTURE_DICT, "id: dict\n", f"id: {family}only\n")
+        return vmod + f"  families:\n    - {family}\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = write_fixture(Path(tmp), vmods={
+            "dict": FIXTURE_DICT,
+            "vinylonly": with_families("vinyl"),
+            "varnishonly": with_families("varnish"),
+        })
+        catalog = matrix.load_catalog(root)
+        expansion = matrix.expand(catalog, "release", "all")
+        package_rows = [r for r in expansion["vmods"] if r["mode"] == "package"]
+        eq({r["row"] for r in package_rows}, {"dict", "vinylonly"},
+           "families gates package rows; absent means unrestricted")
+        eq(len([r for r in package_rows if r["row"] == "vinylonly"]), 2,
+           "a listed family keeps its package rows on every target")
+        vinyl_compat = {r["row"] for r in expansion["vmods"]
+                        if r["mode"] == "compat" and r["engine"] == "vinyl-9.0.1"}
+        eq(vinyl_compat, {"dict", "vinylonly", "varnishonly"},
+           "compat rows ignore families entirely")
+        package_only = matrix.expand(catalog, "release", "package")
+        eq({r["row"] for r in package_only["vmods"]}, {"dict", "vinylonly"},
+           "--mode package applies the same gate")
 
 
 @test

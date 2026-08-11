@@ -87,12 +87,15 @@ package:
     debian: [python3-docutils]  # beyond the implied engine -dev + autotools set
     rpm: [python3-docutils]
   modules: [accept, bodyaccess]  # optional: VCL import names the package ships; default [<id>]
+  families: [varnish]   # optional: engine families the build system supports; gates package mode only
 tests: make-check       # optional: run upstream's own `make check` in compat mode; absent = no suite
 ```
 
 `package.modules` exists for multi-VMOD repositories (varnish-modules ships nine `.so` from one tree; upstream cannot build a subset, and Debian itself ships it as one package — so it is ONE catalog entry, one matrix row, one package). Module names must match `[a-z][a-z0-9_]*`. `tests: make-check` runs upstream's suite from upstream's tree — we still carry no tests; a VMOD whose suite needs fixtures we won't provide simply doesn't set it.
 
-**Source resolution rule** (the one rule, used everywhere): for engine E, a VMOD builds `sources.head` if `E.kind == trunk`, else `sources.by_series[E.series]` if present, else `sources.default`. There is no "skip": every VMOD gets a cell for every engine column, and an incompatible pairing simply fails and renders red.
+`package.families` (optional) lists the engine families — `vinyl` | `varnish`, the same vocabulary as engines.yml `family` — whose engines the VMOD's build system can configure against. It gates **package-mode expansion only**: a package cell is expanded only when the engine's family is listed; absent means no restriction. Compat mode ignores it entirely — the no-skip rule below stands, and a Varnish-flavoured VMOD still renders its honest red compat cell on vinyl columns (decision 13).
+
+**Source resolution rule** (the one rule, used everywhere): for engine E, a VMOD builds `sources.head` if `E.kind == trunk`, else `sources.by_series[E.series]` if present, else `sources.default`. There is no "skip": every VMOD gets a compat cell for every engine column, and an incompatible pairing simply fails and renders red. Package mode is the one exception — it is gated by `package.families` (decision 13), because a package build that cannot succeed is a doomed product build, not information the way a compat red is.
 
 No pinned commits or archive digests for VMODs. The ref is the pin; trunk cells record the commit they actually built in the cell result. (Engine release tarballs keep a sha256 because packages are built from them.)
 
@@ -111,7 +114,7 @@ One JSON file per (vmod|engine-itself, engine, target), written by the build scr
 **Statuses** (the full vocabulary — keep it this small):
 `pass`, `configure_failed`, `build_failed`, `load_failed`, `test_failed`, `package_failed`, `install_failed`, `infra_failed`.
 
-The first four come from compat mode (autotools configure, make, a `vcl.load`-style check compiling a minimal VCL that imports every built `.so` against the built engine, then — only when the manifest says `tests: make-check` — upstream's own `make check`, retried once whole on failure to absorb known VTC load-flakes, `test_failed` with the failing test names in `detail` if it fails twice). `package_failed`/`install_failed` come from package mode (recipe build, then install-and-load in a fresh container; the installed load check compiles one VCL importing every name in `package.modules`). `infra_failed` means the harness itself broke and is the **only** status that fails a CI job.
+The first four come from compat mode (autotools configure, make, a `vcl.load`-style check compiling a minimal VCL that imports every built `.so` against the built engine, then — only when the manifest says `tests: make-check` — upstream's own `make check`, retried once whole on failure to absorb known VTC load-flakes, `test_failed` with the failing test names in `detail` if it fails twice). `package_failed`/`install_failed` come from package mode (recipe build, then install-and-load in a fresh container; the installed load check compiles one VCL importing every name in `package.modules`). `infra_failed` means the harness itself broke and is the **only** status that fails a *build* job. The one other deliberately red job is `release.yml`'s gate (decision 13): it fails when any cell of a gated target is not `pass` — the build jobs beneath it still exit 0 and classify honestly.
 
 ## The matrix page
 
@@ -132,7 +135,7 @@ matrix.py selftest
 
 `schema` writes `schemas/engines.schema.json` and `schemas/vmod.schema.json` from the `KEYS` table and the enum constants in `matrix.py`; `--check` regenerates in memory and exits 1 if the checked-in files differ. The schemas are **editor ergonomics, not a second validator** — see decision 11.
 
-`expand` emits rows `{row, engine, target, mode}` — the GitHub Actions job matrix. `--format github` prints exactly two `key=<single-line-json>` lines for `$GITHUB_OUTPUT`: `engines=[...]` (unique engine×target pairs) and `vmods=[...]` (VMOD rows only, engine rows excluded). `env` is the **only** way shell/CI gets version strings; nothing like v1's hand-mirrored `pins.env` exists. `merge` rule: newest `finished_at` per (row, engine, target, mode) wins; globs `*.json` recursively; a state file full of red cells is still a successful merge/render.
+`expand` emits rows `{row, engine, target, mode}` — the GitHub Actions job matrix. Package-mode VMOD rows are emitted only when the engine's family is listed in the VMOD's `package.families` (absent = all families; decision 13). `--format github` prints exactly two `key=<single-line-json>` lines for `$GITHUB_OUTPUT`: `engines=[...]` (unique engine×target pairs) and `vmods=[...]` (VMOD rows only, engine rows excluded). `env` is the **only** way shell/CI gets version strings; nothing like v1's hand-mirrored `pins.env` exists. `merge` rule: newest `finished_at` per (row, engine, target, mode) wins; globs `*.json` recursively; a state file full of red cells is still a successful merge/render.
 
 ## tools/recipe.py
 
@@ -152,7 +155,7 @@ Both run everything inside containers (`debian:13` for debian-13-amd64 compat+pa
 - `ci.yml` — PR + push to main: `matrix.py validate` + `matrix.py schema --check` + `matrix.py selftest`. Fast, host-safe, no containers. Same three commands as the pre-commit hook, so a hook-skipping commit (`--no-verify`) is still caught.
 - `matrix.yml` — workflow_dispatch + weekly: expand release lane → engine jobs (upload prefix/package artifacts) → VMOD jobs (fail-fast off, never red on cell failure) → merge → render → commit state to `ci-state/matrix` → deploy Pages. Main-branch runs only publish.
 - `trunk.yml` — cron Mon/Thu + dispatch: same shape for trunk engines, compat mode only. **No change-gating, no issue filing, no re-pin PRs** — it just runs; the matrix page is the notification surface.
-- `release.yml` — workflow_dispatch only: build vinyl release engine packages + all VMOD packages on all package targets, collect green results, `gh release create` (not draft) with .deb/.rpm/SHA256SUMS and a body generated from the merged results. A VMOD whose package build fails is simply omitted from the release and listed as such in the body.
+- `release.yml` — workflow_dispatch only: build vinyl release engine packages + every package-eligible VMOD (`package.families`, decision 13) on all package targets, then gate per (engine, target) pair: unless every expected cell — the engine's own build plus every eligible VMOD — is `pass`, that pair publishes nothing and the job fails. Green pairs (re)publish a GitHub release at the stable tag `<engine-id>-<target>` (delete + recreate with `--cleanup-tag`, so a re-dispatch after a fix replaces the release) with .deb/.rpm/SHA256SUMS and a body that states the all-or-nothing contract and lists the packages.
 
 ## Decisions (all reversible; no users yet)
 
@@ -188,6 +191,16 @@ Both run everything inside containers (`debian:13` for debian-13-amd64 compat+pa
     Everything is typed `string` with `additionalProperties: false`, which mirrors the parser's no-coercion rule and makes the editor flag the house-style slips (`packages: true`, `version: 1.7`) that quoting exists to prevent.
 
     Behaviour proven in a container (`work/schema-proof/`, ajv draft-07 + a YAML 1.2 reader, the same pairing the language server uses): the real catalog validates clean, 14 negative cases are caught with the message naming the offending key, and the three documented limits above are demonstrated as *accepted* rather than assumed.
+
+13. **Releases are all-or-nothing per target, at stable replaceable tags** (2026-08-11). `release.yml` stops omitting failed packages. For each (packaging engine, target) pair it now applies a gate: every expected cell — the engine's own build plus every package-eligible VMOD — must be `pass` (a missing result file counts as a failure), or that pair publishes nothing and the run goes red. A green pair (re)publishes a GitHub release at the stable tag `<engine-id>-<target>` (e.g. `vinyl-9.0.1-el10-x86_64`), delete-and-recreate with `--cleanup-tag`, so fixing a failure and re-dispatching *replaces* the release instead of accumulating dated tags. History is one release per engine version per target — GitHub Releases itself is the historic record a per-release matrix page would have duplicated.
+
+    The user contract this buys (role-played from the installer's side before deciding): **a release existing means the full module set built.** An upgrade can never silently drop a module because its build happened to fail — under exact-version deps (decision 6) that scenario ends with apt removing the VMOD at the user's upgrade prompt and VCL failing to compile at their next restart, the worst possible place for a packaging failure to surface. The previous "omitted and listed in the body" behaviour was disclosure, not protection; nobody re-reads release notes mid-upgrade. The release body states the contract in one line so the guarantee is legible to the person it protects.
+
+    Two supporting changes:
+    - **`package.families` on the VMOD schema.** Four catalog VMODs (querystring, redis, selector, varnish-modules) are Varnish-flavoured and cannot package against vinyl unpatched (no `varnishapi.pc`; SCOPE forbids carrying patches). Under a gate their guaranteed-red package cells would make every vinyl release impossible — and they were never going to ship. They now declare `families: [varnish]`, and package mode expands only for listed families. This is a statement of build-system fact, not an expected-failures ledger: compat mode still tries every pairing and renders the honest red (the no-skip rule stands), and `matrix.yml --mode all` stops paying for eight doomed package builds a week as a side effect.
+    - **A deliberate carve-out from "a red cell never fails a CI job":** the rule now reads "never fails a *build* job". The release gate job — the product lane, where incompleteness is a defect, unlike the information lane where red is content — fails on any non-pass and publishes nothing for that pair. Build scripts and every other workflow are untouched.
+
+    Per-target independence is the point of the tag scheme: a Debian-only fix replaces only the Debian release, and an EL10 failure never holds Debian packages hostage. What the gate cannot do is repeal reality: if an engine bump permanently breaks a VMOD, releases for that target stay blocked until the catalog explicitly drops it — an accepted forcing function that converts build accidents into recorded catalog decisions. Rejected alternatives: keeping omit-and-list (fails the user contract above); a Releases page on the Pages site fed by per-release state files on `ci-state/matrix` (solved failure *visibility* but not release replacement, and added render/state machinery this decision makes unnecessary — a failed release is now a red workflow run and an untouched previous release).
 
 ## Port map (the only v1/survey content that comes across)
 

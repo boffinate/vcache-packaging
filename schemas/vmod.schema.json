@@ -173,6 +173,19 @@
             "description": "A VCL import name: lowercase, digits and underscores."
           },
           "description": "VCL import names this VMOD ships. Defaults to [<id>]; required when the id is not a legal module name (e.g. varnish-modules)."
+        },
+        "families": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "vinyl",
+              "varnish"
+            ],
+            "description": "An engine family, as engines.yml 'family' spells it."
+          },
+          "description": "Engine families this VMOD's build system supports. Gates package-mode expansion only; absent means no restriction, and compat cells are unaffected (DESIGN.md decision 13)."
         }
       }
     },
