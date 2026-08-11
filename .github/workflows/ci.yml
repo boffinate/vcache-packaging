@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: python3 tools/matrix.py validate
       # schemas/ are generated outputs; catch a hand-edit or a stale regen.
       - run: python3 tools/matrix.py schema --check

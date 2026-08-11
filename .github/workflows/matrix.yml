@@ -16,7 +16,7 @@ jobs:
       engines: ${{ steps.expand.outputs.engines }}
       vmods: ${{ steps.expand.outputs.vmods }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: expand
         run: python3 tools/matrix.py expand --lane release --mode all --format github >> "$GITHUB_OUTPUT"
 
@@ -30,7 +30,7 @@ jobs:
         include: ${{ fromJSON(needs.expand.outputs.engines) }}
     name: engine ${{ matrix.engine }} on ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Exits non-zero only on infra_failed; a classified build failure is a
       # red cell in the result JSON, not a red job.
       - run: scripts/build-engine.sh "${{ matrix.engine }}" "${{ matrix.target }}" work
@@ -59,7 +59,7 @@ jobs:
         include: ${{ fromJSON(needs.expand.outputs.vmods) }}
     name: ${{ matrix.row }} vs ${{ matrix.engine }} (${{ matrix.mode }}, ${{ matrix.target }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           name: engine-${{ matrix.engine }}-${{ matrix.target }}
@@ -89,7 +89,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: repo
       - uses: actions/download-artifact@v4
@@ -99,7 +99,7 @@ jobs:
           path: results
       # A second checkout in its own directory so switching to the orphan
       # state branch never touches the tree matrix.py runs from.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: state
           fetch-depth: 1
