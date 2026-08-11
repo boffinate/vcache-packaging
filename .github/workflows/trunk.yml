@@ -35,13 +35,13 @@ jobs:
       # red cell in the result JSON, not a red job.
       - run: scripts/build-engine.sh "${{ matrix.engine }}" "${{ matrix.target }}" work
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: engine-${{ matrix.engine }}-${{ matrix.target }}
           path: work/artifacts/
           if-no-files-found: ignore
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-engine-${{ matrix.engine }}-${{ matrix.target }}
           path: work/results/
@@ -58,13 +58,13 @@ jobs:
     name: ${{ matrix.row }} vs ${{ matrix.engine }} (${{ matrix.mode }}, ${{ matrix.target }})
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: engine-${{ matrix.engine }}-${{ matrix.target }}
           path: work/engine/artifacts
       - run: scripts/build-vmod.sh "${{ matrix.row }}" "${{ matrix.engine }}" "${{ matrix.target }}" "${{ matrix.mode }}" work
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-${{ matrix.row }}-${{ matrix.engine }}-${{ matrix.target }}-${{ matrix.mode }}
           path: work/results/
@@ -90,7 +90,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: repo
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: results-*
           merge-multiple: true
@@ -129,7 +129,7 @@ jobs:
       - run: |
           mkdir -p site
           python3 repo/tools/matrix.py render --state-file state/matrix-state.json --out site/index.html
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site

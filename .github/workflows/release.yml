@@ -33,13 +33,13 @@ jobs:
       # red cell in the result JSON, not a red job.
       - run: scripts/build-engine.sh "${{ matrix.engine }}" "${{ matrix.target }}" work
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: engine-${{ matrix.engine }}-${{ matrix.target }}
           path: work/artifacts/
           if-no-files-found: ignore
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-engine-${{ matrix.engine }}-${{ matrix.target }}
           path: work/results/
@@ -56,19 +56,19 @@ jobs:
     name: ${{ matrix.row }} vs ${{ matrix.engine }} (${{ matrix.mode }}, ${{ matrix.target }})
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: engine-${{ matrix.engine }}-${{ matrix.target }}
           path: work/engine/artifacts
       - run: scripts/build-vmod.sh "${{ matrix.row }}" "${{ matrix.engine }}" "${{ matrix.target }}" "${{ matrix.mode }}" work
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: packages-${{ matrix.row }}-${{ matrix.engine }}-${{ matrix.target }}
           path: work/packages/
           if-no-files-found: ignore
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-${{ matrix.row }}-${{ matrix.engine }}-${{ matrix.target }}-${{ matrix.mode }}
           path: work/results/
@@ -82,18 +82,18 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: results-*
           merge-multiple: true
           path: results
       # No merge-multiple here: each artifact lands in its own subdirectory of
       # pkgdl/, so packages can be collected per (engine, target) pair below.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: engine-*
           path: pkgdl
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: packages-*
           path: pkgdl
