@@ -866,6 +866,14 @@ def render_smoke():
         eq(html_text.count('class="target-matrix"'), 2, "one rendered matrix per target")
         ok('<h2 class="target">debian-13-amd64' in html_text, "Debian matrix heading")
         ok('<h2 class="target">el10-x86_64' in html_text, "EL10 matrix heading")
+        ok('<title>Vinyl Cache and Varnish Cache VMOD compatibility matrix</title>' in html_text,
+           "page title names both cache projects")
+        ok('<h1><span>Vinyl Cache and Varnish Cache</span><span class="title-context">VMOD compatibility matrix</span></h1>'
+           in html_text, "page heading names both cache projects on compact lines")
+        ok('header.page{display:flex;flex-wrap:wrap;align-items:center;min-height:65px;' in html_text,
+           "two-line heading keeps the existing header height")
+        ok('<time datetime="2026-08-10T00:00:00Z">10 August 2026 at 00:00 UTC</time>' in html_text,
+           "generated timestamp is a human-readable time element")
         ok('<td class="rid"><a href="https://example.org/dict" target="_blank" rel="noopener">dict</a></td>'
            in html_text, "VMOD row links to its configured homepage")
         state = json.loads(state_file.read_text())

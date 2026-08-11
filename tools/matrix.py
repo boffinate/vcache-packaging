@@ -95,6 +95,15 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def human_time(value: str) -> str:
+    """Render a matrix timestamp for people while retaining its ISO value in HTML."""
+    try:
+        timestamp = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return value
+    return f"{timestamp.day} {timestamp.strftime('%B %Y at %H:%M UTC')}"
+
+
 # ---------------------------------------------------------------------------
 # Catalog loading and validation
 # ---------------------------------------------------------------------------
@@ -771,9 +780,11 @@ _STYLE = """
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
 a{color:inherit;text-decoration:none}
-header.page{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 20px;padding:18px clamp(16px,3vw,40px);
+header.page{display:flex;flex-wrap:wrap;align-items:center;min-height:65px;gap:8px 20px;padding:8px clamp(16px,3vw,40px);
   border-bottom:1px solid var(--line);background:var(--surface)}
-header.page h1{font-size:18px;margin:0;font-weight:700}
+header.page h1{font-size:16px;line-height:1.15;margin:0;font-weight:700}
+header.page h1 span{display:block}
+header.page h1 .title-context{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--muted)}
 header.page .gen{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .legend{display:flex;gap:14px;align-items:center;margin-left:auto;font-family:var(--mono);font-size:11.5px;
   color:var(--muted);flex-wrap:wrap}
@@ -870,13 +881,13 @@ def render_html(grids: list, generated_at: str) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Vinyl Cache VMOD compatibility matrix</title>
+<title>Vinyl Cache and Varnish Cache VMOD compatibility matrix</title>
 <style>{_STYLE}</style>
 </head>
 <body>
 <header class="page">
-  <h1>Vinyl Cache VMOD compatibility matrix</h1>
-  <span class="gen">generated {_esc(generated_at)}</span>
+  <h1><span>Vinyl Cache and Varnish Cache</span><span class="title-context">VMOD compatibility matrix</span></h1>
+  <span class="gen">generated <time datetime="{_esc(generated_at)}">{_esc(human_time(generated_at))}</time></span>
   <div class="legend">
     <span><i class="swatch sw-pass"></i>pass</span>
     <span><i class="swatch sw-fail"></i>fail</span>
