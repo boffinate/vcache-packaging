@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-gossip (schema vmod/1, DESIGN.md).
+schema: vmod/1
+id: gossip
+upstream:
+  git: https://github.com/carlosabalde/libvmod-gossip.git
+  homepage: https://github.com/carlosabalde/libvmod-gossip
+sources:
+  head: main
+  default:
+    ref: 9.0-18.0
+    version: "18.0"
+package:
+  summary: Gossip protocol VMOD for Varnish Cache
+  description:
+    - libvmod-gossip implements a gossip-based mechanism for sharing
+    - cache and node information between Varnish instances.
+  license: BSD-2-Clause
+  families:
+    - varnish

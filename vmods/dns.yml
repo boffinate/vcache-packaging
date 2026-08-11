@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-dns (schema vmod/1, DESIGN.md).
+schema: vmod/1
+id: dns
+upstream:
+  git: https://github.com/kenshaw/libvmod-dns.git
+  homepage: https://github.com/kenshaw/libvmod-dns
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: DNS lookup VMOD for Vinyl Cache
+  description:
+    - libvmod-dns resolves host names from VCL and returns address records
+    - for use in request and backend selection logic.
+  license: Apache-2.0
+  families:
+    - vinyl

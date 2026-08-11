@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-uuid (schema vmod/1, DESIGN.md).
+schema: vmod/1
+id: uuid
+upstream:
+  git: https://github.com/otto-de/libvmod-uuid.git
+  homepage: https://github.com/otto-de/libvmod-uuid
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: UUID generation VMOD for Varnish Cache
+  description:
+    - libvmod-uuid generates universally unique identifiers from VCL for
+    - request correlation, tracing, and cache metadata.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - uuid-dev
+    rpm:
+      - ossp-uuid-devel
+  families:
+    - varnish

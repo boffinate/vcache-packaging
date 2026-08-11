@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-cfg (schema vmod/1, DESIGN.md).
+schema: vmod/1
+id: cfg
+upstream:
+  git: https://github.com/carlosabalde/libvmod-cfg.git
+  homepage: https://github.com/carlosabalde/libvmod-cfg
+sources:
+  head: main
+  default:
+    ref: 9.0-21.1
+    version: "21.1"
+package:
+  summary: Configuration and environment VMOD for Vinyl Cache
+  description:
+    - libvmod-cfg exposes configuration values and selected process
+    - environment information to VCL, with optional LuaJIT-backed helpers.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - libcurl4-openssl-dev
+      - libluajit-5.1-dev
+    rpm:
+      - libcurl-devel
+      - luajit-devel
+  families:
+    - vinyl

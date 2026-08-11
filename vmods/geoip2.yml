@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-geoip2 (schema vmod/1, DESIGN.md).
+schema: vmod/1
+id: geoip2
+upstream:
+  git: https://github.com/varnishcache-friends/libvmod-geoip2.git
+  homepage: https://github.com/varnishcache-friends/libvmod-geoip2
+sources:
+  head: main
+  default:
+    ref: main
+    version: "0~main"
+package:
+  summary: GeoIP2 database lookup VMOD for Vinyl Cache
+  description:
+    - libvmod-geoip2 looks up client addresses in MaxMind GeoIP2 and
+    - GeoLite2 databases, exposing country, city, ASN, and related fields
+    - to VCL.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - libmaxminddb-dev
+    rpm:
+      - libmaxminddb-devel
+  families:
+    - vinyl

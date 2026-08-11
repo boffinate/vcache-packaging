@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-dynamic (schema vmod/1, DESIGN.md).
+schema: vmod/1
+id: dynamic
+upstream:
+  git: https://github.com/nigoroll/libvmod-dynamic.git
+  homepage: https://github.com/nigoroll/libvmod-dynamic
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: Dynamic backend director VMOD for Vinyl Cache
+  description:
+    - libvmod-dynamic creates directors whose backend endpoints can be
+    - discovered and changed at runtime, allowing VCL to route requests to
+    - dynamically resolved service addresses.
+  license: BSD-2-Clause
+  families:
+    - vinyl

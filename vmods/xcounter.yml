@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-xcounter (schema vmod/1, DESIGN.md).
+schema: vmod/1
+id: xcounter
+upstream:
+  git: https://github.com/xcir/libvmod-xcounter.git
+  homepage: https://github.com/xcir/libvmod-xcounter
+sources:
+  head: vinyl-main
+  default:
+    ref: vinyl-main
+    version: "0~vinyl-main"
+package:
+  summary: Extended counters VMOD for Vinyl Cache
+  description:
+    - libvmod-xcounter provides named counters that can be incremented,
+    - read, and exposed to VCL for request accounting and lightweight
+    - telemetry.
+  license: BSD-2-Clause
+  families:
+    - vinyl
