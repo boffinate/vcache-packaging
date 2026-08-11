@@ -81,6 +81,54 @@ assert_target_platform "\${TARGET_PLATFORM:?}"
 EOF
 }
 
+# write_engine_source_step PATH
+# Append the engine-source provisioning step to a generated container script
+# (DESIGN.md decision 14). When the manifest sets engine_source: required,
+# fetch the engine's own source pin (release: sha256-checked dist tarball;
+# trunk: shallow clone), regenerate the VSC headers the dist archive omits
+# using the installed engine's vsctool, and export VINYLSRC/VARNISHSRC for
+# the VMOD's configure. Entries without the key skip the whole block. A
+# failure here is the harness breaking (infra), like deps or unpack-engine.
+write_engine_source_step() {
+  cat >> "$1" <<'EOF'
+
+step engine-source
+if [ "${VMOD_ENGINE_SOURCE:-}" = required ]; then
+  ETREE_ROOT="/work/tmp/$TAG-engine-src"
+  rm -rf "$ETREE_ROOT"; mkdir -p "$ETREE_ROOT"
+  case "$ENGINE_KIND" in
+  release)
+    curl -fsSL "${ENGINE_TARBALL_URL:?}" -o "$ETREE_ROOT/engine.tgz"
+    echo "${ENGINE_SHA256:?}  $ETREE_ROOT/engine.tgz" | sha256sum -c -
+    tar -xzf "$ETREE_ROOT/engine.tgz" -C "$ETREE_ROOT"
+    rm "$ETREE_ROOT/engine.tgz"
+    ;;
+  trunk)
+    git clone --depth 1 --branch "${ENGINE_BRANCH:?}" "${ENGINE_GIT_URL:?}" "$ETREE_ROOT/tree"
+    ;;
+  esac
+  ENGINE_TREE=""
+  for d in "$ETREE_ROOT"/*/; do
+    [ -z "$ENGINE_TREE" ] || { echo "engine source extracted to more than one directory" >&2; exit 1; }
+    ENGINE_TREE=$(cd "$d" && pwd)
+  done
+  [ -n "$ENGINE_TREE" ] || { echo "engine source extracted to no directory" >&2; exit 1; }
+  # The dist archive ships VSC counter definitions (*.vsc) but not the
+  # headers the engine build generates from them, and VMODs that reach into
+  # engine internals include those headers (pesi: VSC_main.h).
+  VSCTOOL=$(pkg-config --variable=vsctool vinylapi 2>/dev/null \
+    || pkg-config --variable=vsctool varnishapi 2>/dev/null || true)
+  if [ -n "$VSCTOOL" ] && [ -d "$ENGINE_TREE/lib/libvsc" ]; then
+    (cd "$ENGINE_TREE/lib/libvsc" && for vsc in *.vsc; do
+       if [ -f "$vsc" ]; then python3 "$VSCTOOL" -h "$vsc"; fi
+     done)
+  fi
+  export VINYLSRC="$ENGINE_TREE" VARNISHSRC="$ENGINE_TREE"
+  echo "engine source tree provisioned at $ENGINE_TREE"
+fi
+EOF
+}
+
 # status_for_step STEP -> the cell status a failure at STEP maps to.
 # Steps whose failure means the harness/plumbing broke are infra_failed
 # (deps, fetch, clone, unpack-engine, engine-install, recipe, prefix-tar,

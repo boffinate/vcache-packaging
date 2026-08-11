@@ -8,19 +8,15 @@
 # (selector precedent; the 0 in 0~master keeps the Debian version
 # digit-first).
 #
-# EXPECTED RED at configure on vinyl columns too, for now: verified in
-# configure.ac on master -- AC_ARG_VAR([VINYLSRC], [path to Vinyl source]),
-# then AC_MSG_FAILURE([Need VINYLSRC]) when unset, and a header check for
-# cache/cache_obj.h that dies with "Missing $VINYLSRC development files." --
-# so configure hard-requires a Vinyl Cache *source tree* on top of the normal
-# vinylapi.pc machinery (this confirms the July-2026 survey classification).
-# The build harness provides only the installed engine prefix, not a source
-# tree, so every cell is red at configure under the current contract. This is
-# a structural red, not an upstream breakage. A 2026-08-11 experiment on the
-# sibling pesi showed the extracted release tarball satisfies configure but
-# not make (engine-build-generated headers such as VSC_main.h are missing
-# from the dist archive); harness support is an open design question
-# (docs/20260811-vmod-candidate-survey.md).
+# Verified in configure.ac on master: AC_ARG_VAR([VINYLSRC], [path to Vinyl
+# source]), then AC_MSG_FAILURE([Need VINYLSRC]) when unset, and a header
+# check for cache/cache_obj.h that dies with "Missing $VINYLSRC development
+# files." -- configure hard-requires a Vinyl Cache *source tree* on top of
+# the normal vinylapi.pc machinery. engine_source: required makes the
+# harness provision that tree from the engine's own source pin, with VSC
+# headers regenerated (decision 14). The mechanism is container-proven on
+# the sibling pesi; tus itself has not been built yet, so its first cells
+# are the verdict (docs/20260811-vmod-candidate-survey.md).
 schema: vmod/1
 id: tus
 upstream:
@@ -50,3 +46,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+engine_source: required

@@ -196,6 +196,14 @@
       "enum": [
         "make-check"
       ]
+    },
+    "engine_source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Declare that configure needs the engine source tree (VINYLSRC); the build scripts provision it (decision 14).",
+      "enum": [
+        "required"
+      ]
     }
   }
 }

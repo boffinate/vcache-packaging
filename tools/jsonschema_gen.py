@@ -349,6 +349,11 @@ def build_vmod() -> dict:
                 "Opt in to running the VMOD's own suite in compat mode.",
                 enum=list(matrix.TESTS_VALUES),
             ),
+            "engine_source": _string(
+                "Declare that configure needs the engine source tree "
+                "(VINYLSRC); the build scripts provision it (decision 14).",
+                enum=list(matrix.ENGINE_SOURCE_VALUES),
+            ),
         },
         title="vcache vmods/<id>.yml",
         description=(

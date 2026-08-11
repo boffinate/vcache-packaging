@@ -17,6 +17,12 @@ override_dh_autoreconf:
 	  else autoreconf -fi; fi; \
 	fi
 
+# Upstream test suites run only via the compat lane's `tests:` opt-in
+# (DESIGN.md); dh would otherwise run `make check` inside every package
+# build, importing per-suite flakes into package cells. The RPM spec has no
+# %check for the same reason.
+override_dh_auto_test:
+
 override_dh_auto_install:
 	dh_auto_install
 	find debian/@PACKAGE_NAME@ \( -name '*.la' -o -name '*.a' \) -delete

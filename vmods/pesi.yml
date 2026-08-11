@@ -9,19 +9,20 @@
 # pin master (selector precedent; the 0 in 0~master keeps the Debian version
 # digit-first).
 #
-# EXPECTED RED at configure on vinyl columns too, for now: configure.ac
-# hard-requires the VINYLSRC environment variable pointing at a Vinyl Cache
-# *source tree* (it checks for $VINYLSRC/include/miniobj.h and AC_MSG_ERRORs
-# without it), on top of the normal vinylapi.pc machinery. The build harness
-# provides only the installed engine prefix, not a source tree, so every cell
-# is red at configure under the current contract. This is a structural red --
-# the harness does not yet provide what configure demands -- not an upstream
-# breakage. A 2026-08-11 container experiment showed the extracted 9.0.1
-# release tarball satisfies configure (VINYL_PREREQ accepts the release), but
-# make then fails on VSC_main.h, a header the engine build generates from
-# lib/libvsc/VSC_main.vsc and the dist tarball does not ship. Whether the
-# harness should provision a source tree with generated files is an open
-# design question (docs/20260811-vmod-candidate-survey.md).
+# configure.ac hard-requires the VINYLSRC environment variable pointing at a
+# Vinyl Cache *source tree* (it checks for $VINYLSRC/include/miniobj.h and
+# AC_MSG_ERRORs without it), on top of the normal vinylapi.pc machinery.
+# engine_source: required makes the harness provision that tree from the
+# engine's own source pin, regenerating the VSC headers the dist archive
+# omits (decision 14). Container-proven against vinyl-9.0.1: configure
+# accepts the release (VINYL_PREREQ([9.0],[trunk])), the build converges
+# after vsctool regenerates VSC_main.h, and both modules load
+# (docs/20260811-vmod-candidate-survey.md).
+#
+# No tests: key on purpose: upstream's VTC suite ran 52/54 against
+# vinyl-9.0.1 (2026-08-11) with e00000/e00001 timing out on a logexpect
+# that never matches "1001 End" despite it being present in the VSL --
+# revisit when upstream moves.
 schema: vmod/1
 id: pesi
 upstream:
@@ -47,8 +48,14 @@ package:
     debian:
       - python3
       - python3-docutils
+      - zlib1g-dev
     rpm:
       - python3
       - python3-docutils
+      - zlib-devel
+  modules:
+    - pesi
+    - pesi_debug
   families:
     - vinyl
+engine_source: required

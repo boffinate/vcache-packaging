@@ -58,6 +58,10 @@ STATUSES = (
 )
 # The one legal value of a vmod manifest's optional top-level 'tests' key.
 TESTS_VALUES = ("make-check",)
+# The one legal value of a vmod manifest's optional top-level 'engine_source'
+# key (decision 14): configure needs the engine source tree (VINYLSRC), which
+# the build scripts then provision from the engine's own source pin.
+ENGINE_SOURCE_VALUES = ("required",)
 # VCL import names (package.modules entries). VMOD ids may contain hyphens
 # (varnish-modules); module names may not.
 MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -74,7 +78,7 @@ KEYS = {
     "engine": ({"id", "family", "series", "kind", "source", "targets"}, {"packages"}),
     "engine_source_release": ({"tarball_url", "sha256"}, set()),
     "engine_source_trunk": ({"git_url", "branch"}, set()),
-    "vmod_doc": ({"schema", "id", "upstream", "sources", "package"}, {"tests"}),
+    "vmod_doc": ({"schema", "id", "upstream", "sources", "package"}, {"tests", "engine_source"}),
     "vmod_upstream": ({"git"}, {"homepage"}),
     "vmod_sources": ({"head", "default"}, {"by_series"}),
     "vmod_source_entry": ({"ref", "version"}, set()),
@@ -285,6 +289,10 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
                             _check_source_entry(entry, sctx, errors)
         if "tests" in doc and doc.get("tests") not in TESTS_VALUES:
             errors.append(f"{ctx}: tests must be one of {TESTS_VALUES}, got {doc.get('tests')!r}")
+        if "engine_source" in doc and doc.get("engine_source") not in ENGINE_SOURCE_VALUES:
+            errors.append(
+                f"{ctx}: engine_source must be one of {ENGINE_SOURCE_VALUES}, got {doc.get('engine_source')!r}"
+            )
         package = doc.get("package")
         if not isinstance(package, dict):
             errors.append(f"{ctx}: 'package' must be a mapping")
@@ -568,6 +576,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("VMOD_BUILD_DEPS", " ".join(deps)),
             ("VMOD_MODULES", " ".join(vmod_modules(vmod))),
             ("VMOD_TESTS", vmod.get("tests", "")),
+            ("VMOD_ENGINE_SOURCE", vmod.get("engine_source", "")),
             ("VMOD_PACKAGE_NAME", vmod_package_name(vmod["id"])),
         ]
         if resolved["version"]:

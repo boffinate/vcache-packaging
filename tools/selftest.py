@@ -163,6 +163,7 @@ FIXTURE_MULTI = textwrap.dedent(
         - alpha
         - beta_2
     tests: make-check
+    engine_source: required
     """
 )
 
@@ -408,12 +409,17 @@ def catalog_tests_and_modules_fields():
         root = write_fixture(Path(tmp), vmods={"dict": FIXTURE_DICT, "multi": FIXTURE_MULTI})
         catalog = matrix.load_catalog(root)
         eq(catalog["vmods"]["multi"].get("tests"), "make-check", "tests field carried through")
+        eq(catalog["vmods"]["multi"].get("engine_source"), "required", "engine_source carried through")
         eq(matrix.vmod_modules(catalog["vmods"]["multi"]), ["alpha", "beta_2"], "explicit modules")
         eq(matrix.vmod_modules(catalog["vmods"]["dict"]), ["dict"], "modules default to [id]")
     with tempfile.TemporaryDirectory() as tmp:
         vmod = must_replace(FIXTURE_MULTI, "tests: make-check", "tests: pytest")
         expect_catalog_error(write_fixture(Path(tmp), vmods={"multi": vmod}),
                              "tests must be one of", "bad tests value")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_MULTI, "engine_source: required", "engine_source: optional")
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"multi": vmod}),
+                             "engine_source must be one of", "bad engine_source value")
     with tempfile.TemporaryDirectory() as tmp:
         vmod = must_replace(FIXTURE_MULTI, "    - beta_2\n", "    - Beta-2\n")
         expect_catalog_error(write_fixture(Path(tmp), vmods={"multi": vmod}),
@@ -504,6 +510,8 @@ def schema_documents_are_shaped_as_the_language_server_needs():
     eq(engines["properties"]["schema"]["const"], matrix.ENGINES_SCHEMA, "engines schema marker")
     vmod = docs["vmod.schema.json"]
     eq(vmod["properties"]["tests"]["enum"], list(matrix.TESTS_VALUES), "tests enum tracks matrix.TESTS_VALUES")
+    eq(vmod["properties"]["engine_source"]["enum"], list(matrix.ENGINE_SOURCE_VALUES),
+       "engine_source enum tracks matrix.ENGINE_SOURCE_VALUES")
     eq(vmod["properties"]["package"]["properties"]["modules"]["items"]["pattern"],
        matrix.MODULE_NAME_RE.pattern, "module name pattern tracks matrix.MODULE_NAME_RE")
 
@@ -712,12 +720,14 @@ def env_emits_tests_and_modules():
         eq(code, 0, "env exit code with tests+modules")
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
         eq(values["VMOD_TESTS"], "'make-check'", "VMOD_TESTS from the manifest")
+        eq(values["VMOD_ENGINE_SOURCE"], "'required'", "VMOD_ENGINE_SOURCE from the manifest")
         eq(values["VMOD_MODULES"], "'alpha beta_2'", "VMOD_MODULES space-separated")
         code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "dict",
                                 "--target", "debian-13-amd64", "--root", root])
         eq(code, 0, "env exit code without tests/modules")
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
         eq(values["VMOD_TESTS"], "''", "no tests declared -> empty VMOD_TESTS")
+        eq(values["VMOD_ENGINE_SOURCE"], "''", "no engine_source declared -> empty VMOD_ENGINE_SOURCE")
         eq(values["VMOD_MODULES"], "'dict'", "VMOD_MODULES defaults to the id")
 
 
