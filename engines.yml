@@ -77,6 +77,8 @@ engines:
       - debian-13-arm64
       - ubuntu-26.04-amd64
       - ubuntu-26.04-arm64
+      - el10-x86_64
+      - el10-aarch64
   # Vinyl upstream's default branch is main (origin/HEAD of the same remote
   # v1's watcher and trunk workflow cloned).
   - id: vinyl-trunk
