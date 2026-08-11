@@ -139,11 +139,11 @@ infra_cell() {
 # Return a short, human-useful diagnostic from a failed container log. RPM
 # appends headings, macro warnings and a generic exit status after the useful
 # error, so a physical log tail reports the wrapper rather than the cause.
-# For package builds, retain the final diagnostics after excluding that known
-# epilogue; every other step keeps the compact log-tail fallback.
+# Make and package builds need the same diagnostic selection; every other step
+# keeps the compact log-tail fallback.
 failure_detail() {
   local log=$1 step=$2 detail=""
-  if [ "$step" = pkg-build ]; then
+  case "$step" in make|pkg-build)
     detail=$(awk '
       function rpm_epilogue(line) {
         return line ~ /^[[:space:]]*RPM build (warnings|errors):[[:space:]]*$/ ||
@@ -178,7 +178,7 @@ failure_detail() {
         }
       }
     ' "$log" 2>/dev/null || true)
-  fi
+  ;; esac
   if [ -z "$detail" ]; then
     detail=$(tail -n 3 "$log" 2>/dev/null || true)
   fi

@@ -130,8 +130,8 @@ step configure
 # Second chance via autoreconf: autogen.sh often leaves aux files uninstalled.
 ./configure || { autoreconf -f -i && ./configure; }
 step make
-# Sequential retry: old vmodtool rules race under -j.
-make -j"$(nproc)" || make
+# VMOD generators are not reliably parallel-safe.
+make -j1
 
 step modules
 SOS=$(find . -path '*/.libs/libvmod_*.so' | sort)

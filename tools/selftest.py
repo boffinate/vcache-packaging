@@ -764,6 +764,43 @@ def shell_failure_details_prefer_causes_over_rpm_epilogues():
 
 
 @test
+def shell_failure_details_preserve_compat_make_diagnostics():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        race_log = tmp / "race.log"
+        race_log.write_text(
+            "FileNotFoundError: [Errno 2] No such file or directory: 'vcc_if.c.tmp2'\n"
+            "make[2]: *** [Makefile:784: vcc_if.h] Error 1\n"
+            "make[1]: *** [Makefile:514: all-recursive] Error 1\n"
+            "make: *** [Makefile:425: all] Error 2\n"
+        )
+        eq(shell_failure_detail(race_log, "make"),
+           "FileNotFoundError: [Errno 2] No such file or directory: 'vcc_if.c.tmp2'",
+           "compat detail retains a generated-source race")
+
+        api_log = tmp / "api.log"
+        api_log.write_text(
+            "match.c:55:17: error: implicit declaration of function 'WS_Assert_Allocated'; "
+            "did you mean 'WS_Allocated'? [-Wimplicit-function-declaration]\n"
+            "make[2]: *** [Makefile:750: match.lo] Error 1\n"
+            "make[1]: *** [Makefile:514: all-recursive] Error 1\n"
+            "make: *** [Makefile:425: all] Error 2\n"
+        )
+        eq(shell_failure_detail(api_log, "make"),
+           "match.c:55:17: error: implicit declaration of function 'WS_Assert_Allocated'; "
+           "did you mean 'WS_Allocated'? [-Wimplicit-function-declaration]",
+           "compat detail retains an API compiler error")
+
+
+@test
+def vmod_compat_build_is_serial():
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
+    ok('make -j"$(nproc)" || make' not in script, "compat build does not retry a parallel make")
+    ok("# VMOD generators are not reliably parallel-safe.\nmake -j1" in script,
+       "compat build is serial from the outset")
+
+
+@test
 def package_load_failure_reports_the_end_of_compiler_output():
     script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
     ok('tail -n 40 /tmp/load.log' in script, "package load failure prints diagnostic tail")
