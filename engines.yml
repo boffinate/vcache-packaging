@@ -5,6 +5,10 @@
 # survey/harness/pins.env. Trunk rows carry no pin: the branch HEAD is built
 # as it stands and the cell result records the commit.
 schema: engines/1
+toolchains:
+  rust:
+    version: "1.90.0"
+    bootstrap: rustup
 targets:
   # Each target carries the complete execution contract. Adding a target is
   # therefore one catalog edit: engine rows below only select target ids.

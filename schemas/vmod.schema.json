@@ -21,6 +21,15 @@
       "minLength": 1,
       "description": "VMOD id. Must equal the filename stem \u2014 the validator checks that; this schema cannot."
     },
+    "build": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Source build system. Defaults to autotools.",
+      "enum": [
+        "autotools",
+        "cargo"
+      ]
+    },
     "upstream": {
       "type": "object",
       "description": "Where this VMOD lives upstream.",
@@ -179,6 +188,16 @@
           },
           "description": "VCL import names this VMOD ships. Defaults to [<id>]; required when the id is not a legal module name (e.g. varnish-modules)."
         },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.so$",
+            "description": "A distinct basename-only release shared library ending in .so."
+          },
+          "description": "Cargo release shared libraries, in the same order as modules. Required for build: cargo."
+        },
         "families": {
           "type": "array",
           "minItems": 1,
@@ -215,9 +234,10 @@
     "tests": {
       "type": "string",
       "minLength": 1,
-      "description": "Opt in to running the VMOD's own suite in compat mode.",
+      "description": "Opt in to the selected build system's upstream suite in compat mode.",
       "enum": [
-        "make-check"
+        "make-check",
+        "cargo-test"
       ]
     },
     "engine_source": {

@@ -27,4 +27,6 @@ package:
     rpm:
       - python3
       - python3-docutils
+  families:
+    - vinyl
   promoted: "true"

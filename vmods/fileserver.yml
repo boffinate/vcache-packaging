@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# Pinned varnish-rs Cargo VMOD; package promotion waits for native proof.
+schema: vmod/1
+id: fileserver
+upstream:
+  git: https://github.com/varnish-rs/vmod-fileserver.git
+  homepage: https://github.com/varnish-rs/vmod-fileserver
+sources:
+  head: main
+  default:
+    ref: v0.1.0
+    version: "0.1.0"
+build: cargo
+package:
+  summary: Static file server VMOD for Varnish Cache
+  description:
+    - vmod-fileserver serves files from a configured directory through VCL.
+  license: BSD-3-Clause
+  modules:
+    - fileserver
+  artifacts:
+    - libvmod_fileserver.so
+  families:
+    - varnish

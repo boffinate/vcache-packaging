@@ -61,7 +61,10 @@ jobs:
 
   release:
     needs: [expand, engine, vmod]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    concurrency:
+      group: release-stable
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -86,9 +89,9 @@ jobs:
       # Decision 13: releases are all-or-nothing per (engine, target) pair, at
       # the stable tag <engine-id>-<target>. Every expected cell — the engine's
       # own build plus every package-eligible VMOD — must be `pass` or the pair
-      # publishes nothing and the job goes red. Green pairs publish regardless
-      # of other pairs' failures: per-target independence is the point.
-      - name: gate per (engine, target) pair and publish the green pairs
+      # publishes nothing and the job goes red. All green-pair payloads are
+      # staged and validated before any stable tag or release is mutated.
+      - name: gate, stage, and publish the green pairs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -96,12 +99,18 @@ jobs:
           python3 - <<'EOF'
           import glob, json, os, shutil, subprocess, sys
 
+          sys.path.insert(0, "tools")
+
+          import matrix
+          import release_gate
+
+          catalog = matrix.load_catalog(".")
           # The same expansion the build jobs ran: every expected cell of the
           # release lane in package mode, engine rows (mode "engine") included.
-          expected = json.loads(subprocess.run(
-              ["python3", "tools/matrix.py", "expand",
-               "--lane", "release", "--mode", "package", "--format", "json"],
-              check=True, stdout=subprocess.PIPE, text=True).stdout)
+          expansion = matrix.expand(catalog, "release", "package")
+          if not expansion["engines"] or not expansion["vmods"]:
+              sys.exit("release package matrix is empty")
+          expected = expansion["rows"]
 
           results = {}
           for path in glob.glob("results/**/*.json", recursive=True):
@@ -115,6 +124,7 @@ jobs:
 
           sha = os.environ["GITHUB_SHA"]
           gate_failed = False
+          prepared = []
           for (engine, target), cells in sorted(pairs.items()):
               tag = f"{engine}-{target}"
               bad = [(c, results.get((c["row"], engine, target, c["mode"]), "missing result"))
@@ -126,21 +136,20 @@ jobs:
                   for c, status in bad:
                       print(f"  {c['row']} ({c['mode']}): {status}")
                   continue
+              engine_doc = matrix.find_engine(catalog, engine)
+              target_doc = matrix.find_target(catalog, target)
               dist = os.path.join("dist", tag)
-              os.makedirs(dist, exist_ok=True)
-              for c in cells:
-                  # Engine rows carry their packages inside the engine artifact;
-                  # VMOD rows upload a dedicated packages artifact.
-                  sub = (f"engine-{engine}-{target}" if c["mode"] == "engine"
-                         else f"packages-{c['row']}-{engine}-{target}")
-                  for ext in ("deb", "rpm"):
-                      for pkg in glob.glob(f"pkgdl/{sub}/**/*.{ext}", recursive=True):
-                          shutil.copy(pkg, dist)
-              names = sorted(os.listdir(dist))
-              if not names:
+              if os.path.isdir(dist):
+                  shutil.rmtree(dist)
+              try:
+                  release_gate.validate_pair_payload(
+                      "pkgdl", engine_doc, target_doc, cells, stage_dir=dist
+                  )
+              except release_gate.PayloadError as exc:
                   gate_failed = True
-                  print(f"gate FAILED for {tag}: every cell passed but no .deb/.rpm was found")
+                  print(f"gate FAILED for {tag}: {exc}")
                   continue
+              names = sorted(os.listdir(dist))
               sums = subprocess.run(["sha256sum", "--"] + names, cwd=dist,
                                     check=True, stdout=subprocess.PIPE, text=True).stdout
               with open(os.path.join(dist, "SHA256SUMS"), "w") as f:
@@ -151,6 +160,13 @@ jobs:
                   f.write(f"Packages built from the pinned release catalog for `{target}`, against engine `{engine}`. Every package below passed its build-and-install-and-load check.\n\n")
                   f.write("## Packages\n\n")
                   f.write("".join(f"- `{name}`\n" for name in names))
+              prepared.append((tag, dist, body, names))
+
+          if gate_failed:
+              print("release validation failed; no stable release was mutated")
+              sys.exit(1)
+
+          for tag, dist, body, names in prepared:
               # Stable, replaceable tag: delete-and-recreate so a re-dispatch
               # after a fix replaces the release. The delete may fail because
               # the release does not exist yet; that is fine.
@@ -160,6 +176,4 @@ jobs:
                              + ["--target", sha, "--title", tag, "--notes-file", body],
                              check=True)
               print(f"published {tag}: {len(names)} packages")
-
-          sys.exit(1 if gate_failed else 0)
           EOF

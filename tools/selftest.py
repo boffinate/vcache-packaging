@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import jsonschema_gen  # noqa: E402
 import matrix  # noqa: E402
 import recipe  # noqa: E402
+import release_gate  # noqa: E402
 import yaml_subset  # noqa: E402
 
 TESTS: list = []
@@ -168,6 +169,39 @@ FIXTURE_MULTI = textwrap.dedent(
     """
 )
 
+FIXTURE_CARGO = textwrap.dedent(
+    """\
+    schema: vmod/1
+    id: reqwest
+    upstream:
+      git: https://example.org/vmod-reqwest.git
+    sources:
+      head: main
+      default:
+        ref: v0.1.0
+        version: "0.1.0"
+    build: cargo
+    tests: cargo-test
+    package:
+      summary: HTTP client VMOD
+      description:
+        - Sends HTTP requests from VCL.
+      license: BSD-3-Clause
+      modules:
+        - reqwest
+      artifacts:
+        - libvmod_reqwest.so
+    """
+)
+
+
+def cargo_fixture_engines() -> str:
+    return must_replace(
+        FIXTURE_ENGINES,
+        "schema: engines/1\n",
+        "schema: engines/1\ntoolchains:\n  rust:\n    version: \"1.90.0\"\n    bootstrap: rustup\n",
+    )
+
 
 def write_fixture(root: Path, engines: str = FIXTURE_ENGINES, vmods: dict = None) -> Path:
     root.mkdir(parents=True, exist_ok=True)
@@ -183,6 +217,22 @@ def must_replace(text: str, old: str, new: str) -> str:
     if old not in text:
         raise Fail(f"fixture edit missed: {old!r} not found")
     return text.replace(old, new)
+
+
+def varnish_package_fixture(include_rpm: bool = False) -> str:
+    """A proof fixture only: the real Varnish catalog row stays disabled."""
+    engines = must_replace(
+        FIXTURE_ENGINES,
+        '      sha256: "bb22"\n    packages: "false"\n',
+        '      sha256: "bb22"\n    packages: "true"\n',
+    )
+    if include_rpm:
+        engines = must_replace(
+            engines,
+            "    targets:\n      - debian-13-amd64\n  - id: vinyl-trunk\n",
+            "    targets:\n      - debian-13-amd64\n      - el10-x86_64\n  - id: vinyl-trunk\n",
+        )
+    return engines
 
 
 def expect_catalog_error(root: Path, needle: str, ctx: str) -> None:
@@ -222,6 +272,17 @@ def shell_failure_detail(log: Path, step: str = "pkg-build") -> str:
         encoding="utf-8",
     )
     return proc.stdout
+
+
+def shell_status_for_step(step: str, mode: str = "") -> str:
+    lib = Path(__file__).resolve().parent.parent / "scripts" / "lib.sh"
+    proc = subprocess.run(
+        ["bash", "-c", '. "$1"; status_for_step "$2" "$3"', "bash", str(lib), step, mode],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    )
+    return proc.stdout.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +422,14 @@ def catalog_real_targets_use_native_runners():
 
 
 @test
+def catalog_promoted_vinyl_vmods_are_not_implicitly_varnish_promoted():
+    catalog = matrix.load_catalog(matrix.default_root())
+    for vmod_id in ("cachetag", "dict", "pesi", "remoteip", "tbf"):
+        eq(catalog["vmods"][vmod_id]["package"].get("families"), ["vinyl"],
+           f"{vmod_id}: package promotion remains Vinyl-only until Varnish proof")
+
+
+@test
 def catalog_rejects_missing_required():
     with tempfile.TemporaryDirectory() as tmp:
         engines = must_replace(FIXTURE_ENGINES, "    series: vinyl-9.0\n", "")
@@ -382,7 +451,7 @@ def catalog_rejects_trunk_with_tarball():
 
 
 @test
-def catalog_rejects_packages_on_trunk_or_varnish():
+def catalog_rejects_packages_on_trunk_and_checks_family_identity():
     with tempfile.TemporaryDirectory() as tmp:
         engines = must_replace(
             FIXTURE_ENGINES,
@@ -392,13 +461,18 @@ def catalog_rejects_packages_on_trunk_or_varnish():
         expect_catalog_error(write_fixture(Path(tmp), engines=engines),
                              'packages "true" requires kind release', "packages on trunk")
     with tempfile.TemporaryDirectory() as tmp:
+        engines = must_replace(FIXTURE_ENGINES, "id: varnish-9.0.3", "id: cache-9.0.3")
+        expect_catalog_error(write_fixture(Path(tmp), engines=engines),
+                             "id must start with its family prefix varnish-", "family/id identity")
+    with tempfile.TemporaryDirectory() as tmp:
         engines = must_replace(
             FIXTURE_ENGINES,
             "      sha256: \"bb22\"\n    packages: \"false\"\n",
             "      sha256: \"bb22\"\n    packages: \"true\"\n",
         )
-        expect_catalog_error(write_fixture(Path(tmp), engines=engines),
-                             'packages "true" requires family vinyl', "packages on varnish")
+        catalog = matrix.load_catalog(write_fixture(Path(tmp), engines=engines))
+        eq(matrix.find_engine(catalog, "varnish-9.0.3")["packages"], "true",
+           "release Varnish engines may opt into packages after proof")
 
 
 @test
@@ -450,6 +524,68 @@ def catalog_tests_and_modules_fields():
         vmod = must_replace(vmod, "  modules:\n    - alpha\n    - beta_2\n", "")
         expect_catalog_error(write_fixture(Path(tmp), vmods={"multi-mod": vmod}),
                              "package.modules is required", "hyphenated id without modules")
+
+
+@test
+def catalog_cargo_contract_requires_pinned_ordered_artifacts():
+    with tempfile.TemporaryDirectory() as tmp:
+        catalog = matrix.load_catalog(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": FIXTURE_CARGO}))
+        vmod = catalog["vmods"]["reqwest"]
+        eq(matrix.vmod_build(vmod), "cargo", "Cargo build is carried through")
+        eq(matrix.vmod_artifacts(vmod), ["libvmod_reqwest.so"], "Cargo artifact is carried through")
+        eq(catalog["toolchains"]["rust"], {"version": "1.90.0", "bootstrap": "rustup"},
+           "Cargo toolchain pin is carried through")
+    with tempfile.TemporaryDirectory() as tmp:
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"reqwest": FIXTURE_CARGO}),
+                             "requires engines.yml toolchains.rust", "Cargo requires the global toolchain")
+    with tempfile.TemporaryDirectory() as tmp:
+        engines = must_replace(cargo_fixture_engines(), 'version: "1.90.0"', 'version: "stable"')
+        expect_catalog_error(write_fixture(Path(tmp), engines=engines, vmods={"reqwest": FIXTURE_CARGO}),
+                             "exact major.minor.patch Rust version", "Rust toolchain is exactly pinned")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_CARGO, "  artifacts:\n    - libvmod_reqwest.so\n", "")
+        expect_catalog_error(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": vmod}),
+                             "requires package.artifacts", "Cargo requires artifacts")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_CARGO, "    - libvmod_reqwest.so\n", "    - ../libvmod_reqwest.so\n")
+        expect_catalog_error(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": vmod}),
+                             "must be a basename ending in .so", "Cargo artifact is basename only")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_CARGO, "    - reqwest\n", "    - reqwest\n    - extra\n")
+        expect_catalog_error(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": vmod}),
+                             "must have equal lengths", "Cargo module/artifact ordering has equal lengths")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_CARGO, "    - reqwest\n", "    - reqwest\n    - reqwest\n")
+        vmod = must_replace(vmod, "    - libvmod_reqwest.so\n", "    - libvmod_reqwest.so\n    - libvmod_extra.so\n")
+        expect_catalog_error(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": vmod}),
+                             "package.modules contains duplicates", "Cargo modules are an unambiguous mapping")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_CARGO, "tests: cargo-test", "tests: make-check")
+        expect_catalog_error(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": vmod}),
+                             "make-check requires build autotools", "Cargo cannot use make-check")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_MULTI, "tests: make-check", "tests: cargo-test")
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"multi": vmod}),
+                             "cargo-test requires build cargo", "Autotools cannot use cargo-test")
+
+
+@test
+def catalog_real_rust_vmods_are_unpromoted_and_explicitly_mapped():
+    catalog = matrix.load_catalog(Path(__file__).resolve().parent.parent)
+    expected = {
+        "reqwest": ("v0.1.0", "libvmod_reqwest.so", "reqwest"),
+        "fileserver": ("v0.1.0", "libvmod_fileserver.so", "fileserver"),
+        "rers": ("v0.0.14", "libvmod_rs_template.so", "rers"),
+        "fcgi": ("821221922e7437a22e668c42680d98e6560aa4ca", "libvmod_fastcgi.so", "fastcgi"),
+    }
+    for vmod_id, (ref, artifact, module) in expected.items():
+        vmod = catalog["vmods"][vmod_id]
+        eq(matrix.vmod_build(vmod), "cargo", f"{vmod_id} uses Cargo")
+        eq(vmod["sources"]["default"]["ref"], ref, f"{vmod_id} immutable release ref")
+        eq(matrix.vmod_artifacts(vmod), [artifact], f"{vmod_id} artifact mapping")
+        eq(matrix.vmod_modules(vmod), [module], f"{vmod_id} VCL import mapping")
+        ok("promoted" not in vmod["package"], f"{vmod_id} remains unpromoted")
+        eq(vmod["package"].get("families"), ["varnish"], f"{vmod_id} family gate")
 
 
 @test
@@ -543,12 +679,17 @@ def schema_documents_are_shaped_as_the_language_server_needs():
     eq(engine["properties"]["family"]["enum"], list(matrix.FAMILIES), "family enum tracks matrix.FAMILIES")
     eq(engine["properties"]["kind"]["enum"], list(matrix.KINDS), "kind enum tracks matrix.KINDS")
     eq(engines["properties"]["schema"]["const"], matrix.ENGINES_SCHEMA, "engines schema marker")
+    rust = engines["properties"]["toolchains"]["properties"]["rust"]
+    eq(rust["properties"]["version"]["pattern"], matrix.RUST_VERSION_RE.pattern, "Rust pin pattern tracks matrix")
     vmod = docs["vmod.schema.json"]
+    eq(vmod["properties"]["build"]["enum"], list(matrix.BUILD_FAMILIES), "build enum tracks matrix.BUILD_FAMILIES")
     eq(vmod["properties"]["tests"]["enum"], list(matrix.TESTS_VALUES), "tests enum tracks matrix.TESTS_VALUES")
     eq(vmod["properties"]["engine_source"]["enum"], list(matrix.ENGINE_SOURCE_VALUES),
        "engine_source enum tracks matrix.ENGINE_SOURCE_VALUES")
     eq(vmod["properties"]["package"]["properties"]["modules"]["items"]["pattern"],
        matrix.MODULE_NAME_RE.pattern, "module name pattern tracks matrix.MODULE_NAME_RE")
+    eq(vmod["properties"]["package"]["properties"]["artifacts"]["items"]["pattern"],
+       matrix.ARTIFACT_BASENAME_RE.pattern, "artifact name pattern tracks matrix.ARTIFACT_BASENAME_RE")
 
 
 @test
@@ -608,7 +749,28 @@ def resolution_rule():
         eq(matrix.vmod_package_version("1.7", release),
            {"deb": "1.7-1~vinyl9.0.1", "rpm_version": "1.7", "rpm_release": "1.vinyl9.0.1"},
            "vmod package version")
-        eq(matrix.vmod_package_name("dict"), "vinyl-vmod-dict", "package name")
+        eq(matrix.engine_runtime_package(release), "vinyl-cache", "Vinyl runtime package")
+        eq(matrix.engine_development_package(release, "deb"), "vinyl-cache-dev", "Vinyl Debian development package")
+        eq(matrix.engine_development_package(release, "rpm"), "vinyl-cache-devel", "Vinyl RPM development package")
+        eq(matrix.engine_api(release), "vinylapi", "Vinyl API")
+        eq(matrix.engine_daemon(release), "vinyld", "Vinyl daemon")
+        eq(matrix.engine_vmod_dir_component(release), "vinyl-cache", "Vinyl VMOD directory component")
+        eq(matrix.engine_source_name(release), "vinyl-cache", "Vinyl source identity")
+        eq(matrix.engine_rpm_archive_stem(release), "vinyl-cache", "Vinyl RPM archive stem")
+        eq(matrix.engine_recipe_directory(release), "packaging/engine/vinyl", "Vinyl recipe directory")
+        eq(matrix.engine_runtime_package(varnish), "varnish", "Varnish runtime package")
+        eq(matrix.engine_development_package(varnish, "deb"), "varnish-dev", "Varnish Debian development package")
+        eq(matrix.engine_development_package(varnish, "rpm"), "varnish-devel", "Varnish RPM development package")
+        eq(matrix.engine_api(varnish), "varnishapi", "Varnish API")
+        eq(matrix.engine_daemon(varnish), "varnishd", "Varnish daemon")
+        eq(matrix.engine_vmod_dir_component(varnish), "varnish", "Varnish VMOD directory component")
+        eq(matrix.engine_source_name(varnish), "varnish", "Varnish source identity")
+        eq(matrix.engine_rpm_archive_stem(varnish), "varnish", "Varnish RPM archive stem")
+        eq(matrix.engine_recipe_directory(varnish), "packaging/engine/varnish", "Varnish recipe directory")
+        eq(matrix.engine_vmod_package_name(varnish, "dict"), "varnish-vmod-dict", "Varnish VMOD package name")
+        eq(matrix.vmod_package_version("1.8", varnish),
+           {"deb": "1.8-1~varnish9.0.3", "rpm_version": "1.8", "rpm_release": "1.varnish9.0.3"},
+           "Varnish VMOD package version")
 
 
 # ---------------------------------------------------------------------------
@@ -757,6 +919,13 @@ def env_output_is_sh_sourceable():
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
         eq(values["ENGINE_VERSION"], "'9.0.1'", "ENGINE_VERSION")
         eq(values["ENGINE_TARBALL_URL"], "'https://example.org/vinyl-cache-9.0.1.tgz'", "tarball url")
+        eq(values["ENGINE_RUNTIME_PACKAGE"], "'vinyl-cache'", "runtime package comes from family")
+        eq(values["ENGINE_DEVELOPMENT_PACKAGE"], "'vinyl-cache-devel'", "target development package comes from family")
+        eq(values["ENGINE_API"], "'vinylapi'", "API comes from family")
+        eq(values["ENGINE_DAEMON"], "'vinyld'", "daemon comes from family")
+        eq(values["ENGINE_SOURCE_NAME"], "'vinyl-cache'", "Debian source identity comes from family")
+        eq(values["ENGINE_RPM_ARCHIVE_STEM"], "'vinyl-cache'", "RPM archive identity comes from family")
+        eq(values["ENGINE_RECIPE_DIR"], "'packaging/engine/vinyl'", "recipe directory comes from family")
         eq(values["TARGET_ID"], "'el10-x86_64'", "TARGET_ID")
         eq(values["VMOD_REF"], "'v1.7'", "VMOD_REF")
         eq(values["VMOD_DEB_VERSION"], "'1.7-1~vinyl9.0.1'", "VMOD_DEB_VERSION")
@@ -768,6 +937,17 @@ def env_output_is_sh_sourceable():
         eq(code, 0, "deb-target env exit code")
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
         eq(values["VMOD_BUILD_DEPS"], "'python3-docutils'", "debian build deps for a debian target")
+        code, out, _ = run_cli(["env", "--engine", "varnish-9.0.3", "--vmod", "dict",
+                                "--target", "debian-13-amd64", "--root", root])
+        eq(code, 0, "Varnish env exit code")
+        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        eq(values["ENGINE_RUNTIME_PACKAGE"], "'varnish'", "Varnish runtime package comes from family")
+        eq(values["ENGINE_DEVELOPMENT_PACKAGE"], "'varnish-dev'", "Varnish development package comes from family")
+        eq(values["ENGINE_API"], "'varnishapi'", "Varnish API comes from family")
+        eq(values["ENGINE_DAEMON"], "'varnishd'", "Varnish daemon comes from family")
+        eq(values["ENGINE_RECIPE_DIR"], "'packaging/engine/varnish'", "Varnish recipe directory comes from family")
+        eq(values["VMOD_PACKAGE_NAME"], "'varnish-vmod-dict'", "Varnish VMOD name comes from family")
+        eq(values["VMOD_DEB_VERSION"], "'1.8-1~varnish9.0.3'", "Varnish VMOD version comes from family")
         code, out, _ = run_cli(["env", "--engine", "vinyl-trunk", "--vmod", "dict", "--root", root])
         eq(code, 0, "trunk env exit code")
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
@@ -802,9 +982,37 @@ def env_emits_tests_and_modules():
         eq(values["VMOD_MODULES"], "'dict'", "VMOD_MODULES defaults to the id")
 
 
+@test
+def env_emits_cargo_execution_contract():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = str(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": FIXTURE_CARGO}))
+        code, out, _ = run_cli(["env", "--engine", "varnish-9.0.3", "--vmod", "reqwest",
+                                "--target", "debian-13-amd64", "--root", root])
+        eq(code, 0, "Cargo env exit code")
+        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        eq(values["VMOD_BUILD"], "'cargo'", "Cargo build kind")
+        eq(values["VMOD_ARTIFACTS"], "'libvmod_reqwest.so'", "Cargo declared artifacts")
+        eq(values["RUST_VERSION"], "'1.90.0'", "global Rust version")
+        eq(values["RUST_BOOTSTRAP"], "'rustup'", "global Rust bootstrap")
+
+
 # ---------------------------------------------------------------------------
 # shell failure details
 # ---------------------------------------------------------------------------
+
+
+@test
+def cargo_status_map_preserves_existing_failure_meanings():
+    for step in ("cargo-preflight", "cargo-build", "cargo-artifacts"):
+        eq(shell_status_for_step(step), "build_failed", f"{step} is an honest build failure")
+    for step in ("cargo-fetch", "cargo-bootstrap", "cargo-deps"):
+        eq(shell_status_for_step(step), "infra_failed", f"{step} is a bootstrap/transport failure")
+    eq(shell_status_for_step("cargo-test"), "test_failed", "Cargo test failure is a test failure")
+    eq(shell_status_for_step("load"), "load_failed", "load failure meaning is preserved")
+    eq(shell_status_for_step("pkg-build"), "package_failed", "package failure meaning is preserved")
+    eq(shell_status_for_step("pkg-install"), "install_failed", "install failure meaning is preserved")
+    eq(shell_status_for_step("cargo-preflight", "package"), "package_failed",
+       "Cargo package preflight is a package failure")
 
 
 @test
@@ -877,8 +1085,41 @@ def shell_failure_details_preserve_compat_make_diagnostics():
 def vmod_compat_build_is_serial():
     script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
     ok('make -j"$(nproc)" || make' not in script, "compat build does not retry a parallel make")
-    ok("# VMOD generators are not reliably parallel-safe.\nmake -j1" in script,
+    ok("# VMOD generators are not reliably parallel-safe.\n  make -j1" in script,
        "compat build is serial from the outset")
+
+
+@test
+def vmod_cargo_compat_contract_is_offline_after_one_fetch():
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
+    library = (Path(__file__).resolve().parent.parent / "scripts" / "lib.sh").read_text()
+    for expected in (
+        "build_autotools()",
+        "build_cargo()",
+        "prepare_cargo",
+        'python3 /repo/tools/cargo-artifacts.py --release-dir "$CARGO_TARGET_DIR/release"',
+        'artifact_args+=(--mapping "${modules[$i]}=${artifacts[$i]}")',
+        'load_modules "${sos[@]}"',
+    ):
+        ok(expected in script, f"Cargo compatibility path uses {expected}")
+    for expected in (
+        "[ -f Cargo.lock ]",
+        "cargo metadata --locked --offline --no-deps",
+        "cargo fetch --locked",
+        'export RUSTUP_HOME=/work/rustup',
+        'export CARGO_HOME=/work/cargo',
+        'export RUSTUP_TOOLCHAIN="${RUST_VERSION:?}"',
+        '[ ! -x "$CARGO_HOME/bin/rustup" ]',
+        'rustup run "$RUSTUP_TOOLCHAIN" rustc --version',
+        'rustc --version | grep -F "rustc $RUST_VERSION "',
+        'cargo --version | grep -F "cargo $RUST_VERSION "',
+    ):
+        ok(expected in library, f"shared Cargo preparation uses {expected}")
+    for expected in ("cargo build --release --locked --offline", "cargo test --release --locked --offline"):
+        ok(expected in script, f"Cargo compatibility path uses {expected}")
+    ok(script.count("prepare_cargo") == 2, "compat and package paths share Cargo preparation")
+    ok(library.count("step cargo-fetch") == 1, "shared Cargo preparation fetches once")
+    ok(library.count("cargo fetch --locked") == 2, "Cargo fetch has exactly one retry")
 
 
 @test
@@ -890,11 +1131,62 @@ def package_load_failure_reports_the_end_of_compiler_output():
 
 
 @test
+def vmod_package_collection_and_install_use_family_names():
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
+    library = (Path(__file__).resolve().parent.parent / "scripts" / "lib.sh").read_text()
+    combined = script + library
+    ok("vinyl-vmod-" not in combined, "VMOD package collection has no Vinyl literal")
+    for expected in (
+        'VMOD_PACKAGE_NAME=${VMOD_PACKAGE_NAME:?}',
+        'ENGINE_RUNTIME_PACKAGE=${ENGINE_RUNTIME_PACKAGE:?}',
+        'ENGINE_DEVELOPMENT_PACKAGE=${ENGINE_DEVELOPMENT_PACKAGE:?}',
+        'NAMEDIR="$VMOD_PACKAGE_NAME-${VMOD_VERSION:?}"',
+        '"/work/tmp/$TAG-recipe/$VMOD_PACKAGE_NAME.spec"',
+        '"$VMOD_PACKAGE_NAME"_*.deb',
+        '"$VMOD_PACKAGE_NAME"-*.rpm',
+        '"$ENGINE_RUNTIME_PACKAGE"_*.deb',
+        '"$ENGINE_DEVELOPMENT_PACKAGE"_*.deb',
+        '"$ENGINE_RUNTIME_PACKAGE"-*.rpm',
+        '"$ENGINE_DEVELOPMENT_PACKAGE"-*.rpm',
+        'pkg-config --variable=vmoddir "$ENGINE_API"',
+    ):
+        ok(expected in combined, f"VMOD package flow uses {expected}")
+    ok(script.count('install_engine_packages "$ENGINE_PKGDIR"') == 3,
+       "build and fresh-install paths share engine package installation")
+    ok('for c in vinyld varnishd' not in script, "VMOD load checks use the family daemon")
+
+
+@test
 def engine_daemon_smoke_check_preserves_failure():
     script = (Path(__file__).resolve().parent.parent / "scripts" / "build-engine.sh").read_text()
-    ok('"$DAEMON" -V 2>&1\n' in script, "engine smoke check executes the daemon directly")
-    ok('"$DAEMON" -V 2>&1 | head -2 || true' not in script,
+    ok('"$PREFIX/sbin/$ENGINE_DAEMON" -V 2>&1\n' in script,
+       "engine smoke check executes the family daemon directly")
+    ok('"$PREFIX/sbin/$ENGINE_DAEMON" -V 2>&1 | head -2 || true' not in script,
        "engine smoke check does not discard the daemon exit status")
+
+
+@test
+def engine_family_recipes_and_script_use_the_contract():
+    root = Path(__file__).resolve().parent.parent
+    vinyl = root / "packaging" / "engine" / "vinyl"
+    varnish = root / "packaging" / "engine" / "varnish"
+    for recipe_dir, runtime, development in [
+        (vinyl, "vinyl-cache", "vinyl-cache-dev"),
+        (varnish, "varnish", "varnish-dev"),
+    ]:
+        ok((recipe_dir / "debian" / "control").is_file(), f"{runtime}: Debian control exists")
+        ok((recipe_dir / "debian" / "rules").is_file(), f"{runtime}: Debian rules exists")
+        ok((recipe_dir / f"{runtime}.spec").is_file(), f"{runtime}: RPM spec exists")
+        control = (recipe_dir / "debian" / "control").read_text()
+        ok(f"Package: {runtime}" in control, f"{runtime}: runtime identity")
+        ok(f"Package: {development}" in control, f"{runtime}: development identity")
+    ok(not (root / "packaging" / "engine" / "debian").exists(), "old unscoped Debian recipe directory moved")
+    script = (root / "scripts" / "build-engine.sh").read_text()
+    for exported in ("ENGINE_RUNTIME_PACKAGE", "ENGINE_DEVELOPMENT_PACKAGE", "ENGINE_RECIPE_DIR",
+                     "ENGINE_SOURCE_NAME", "ENGINE_RPM_ARCHIVE_STEM", "ENGINE_DAEMON"):
+        ok(f"${{{exported}:?}}" in script, f"build script requires {exported} from matrix env")
+    ok("/repo/packaging/engine/debian" not in script, "build script has no unscoped recipe path")
+    ok("/repo/packaging/engine/vinyl-cache.spec" not in script, "build script has no Vinyl RPM spec path")
 
 
 @test
@@ -906,6 +1198,61 @@ def missing_engine_artifact_reaches_vmod_classifier():
     download_step = workflow[start:end]
     ok("continue-on-error: true" in download_step,
        "a missing engine artifact does not stop the job before build-vmod.sh classifies it")
+
+
+@test
+def release_payload_gate_rejects_missing_artifact():
+    engine = {"id": "vinyl-9.0.1", "family": "vinyl"}
+    target = {"format": "deb", "package_arch": "amd64"}
+    cells = [
+        {"row": "vinyl-9.0.1", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "engine"},
+        {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "package"},
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        pkgdl = Path(tmp) / "pkgdl"
+        engine_dir = pkgdl / "engine-vinyl-9.0.1-debian-13-amd64"
+        vmod_dir = pkgdl / "packages-dict-vinyl-9.0.1-debian-13-amd64"
+        engine_dir.mkdir(parents=True)
+        vmod_dir.mkdir(parents=True)
+        runtime = engine_dir / "runtime.deb"
+        development = engine_dir / "development.deb"
+        vmod = vmod_dir / "dict.deb"
+        for path in (runtime, development, vmod):
+            path.write_bytes(b"native package placeholder")
+        metadata = {
+            runtime: ("vinyl-cache", "amd64"),
+            development: ("vinyl-cache-dev", "amd64"),
+            vmod: ("vinyl-vmod-dict", "amd64"),
+        }
+        reader = lambda path: metadata[path]
+        staged = Path(tmp) / "dist"
+        release_gate.validate_pair_payload(pkgdl, engine, target, cells,
+                                            metadata_reader=reader, stage_dir=staged)
+        eq(sorted(path.name for path in staged.iterdir()),
+           ["development.deb", "dict.deb", "runtime.deb"],
+           "release payload stages every expected package")
+        vmod.unlink()
+        try:
+            release_gate.validate_pair_payload(pkgdl, engine, target, cells,
+                                                metadata_reader=reader)
+        except release_gate.PayloadError as exc:
+            ok("no native deb artifacts" in str(exc) or "missing package artifact" in str(exc),
+               "missing package is reported by release gate")
+        else:
+            raise Fail("release payload gate accepted a missing VMOD artifact")
+
+
+@test
+def stable_release_mutation_is_main_only_and_prevalidated():
+    workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
+                "release.yml").read_text()
+    ok("github.ref == 'refs/heads/main'" in workflow,
+       "stable release job is restricted to main")
+    ok("group: release-stable" in workflow and "cancel-in-progress: false" in workflow,
+       "stable release replacement is serialized without cancellation")
+    gate = workflow.index("release validation failed; no stable release was mutated")
+    mutation = workflow.index("gh", gate)
+    ok(gate < mutation, "release mutation follows complete payload validation")
 
 
 # ---------------------------------------------------------------------------
@@ -1173,6 +1520,92 @@ def recipe_rpm_generation():
            "exact-version arch-qualified engine requires")
         ok("BuildRequires:  vinyl-cache-devel = 9.0.1-1%{?dist}" in spec, "exact-version -devel requires")
         ok("BuildRequires:  python3-docutils" in spec, "manifest build_deps included")
+
+
+@test
+def recipe_varnish_family_generation():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        deb_root = write_fixture(tmp / "deb-repo", engines=varnish_package_fixture())
+        deb_out = tmp / "deb-out"
+        recipe.generate(deb_root, "dict", "varnish-9.0.3", "debian-13-amd64", deb_out,
+                        maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
+        control = (deb_out / "debian" / "control").read_text()
+        changelog = (deb_out / "debian" / "changelog").read_text()
+        ok("Package: varnish-vmod-dict" in control, "Varnish Debian package name")
+        ok("varnish (= 9.0.3-1)" in control, "Varnish exact runtime dependency")
+        ok("varnish-dev (= 9.0.3-1)" in control, "Varnish exact development build dependency")
+        ok("varnish-vmod-dict (1.8-1~varnish9.0.3) unstable" in changelog, "Varnish Debian version")
+        ok("Built against Varnish Cache 9.0.3" in changelog, "Varnish family description")
+
+        rpm_root = write_fixture(tmp / "rpm-repo", engines=varnish_package_fixture(include_rpm=True))
+        rpm_out = tmp / "rpm-out"
+        written = recipe.generate(rpm_root, "dict", "varnish-9.0.3", "el10-x86_64", rpm_out,
+                                  maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
+        eq([path.name for path in written], ["varnish-vmod-dict.spec"], "Varnish RPM spec filename")
+        spec = written[0].read_text()
+        eq(recipe.TOKEN_RE.findall(spec), [], "unresolved tokens in Varnish RPM spec")
+        ok("%global vmoddir %{_libdir}/varnish/vmods" in spec, "Varnish RPM VMOD directory")
+        ok("Requires:       varnish%{?_isa} = 9.0.3-1%{?dist}" in spec,
+           "Varnish exact RPM runtime dependency")
+        ok("BuildRequires:  varnish-devel = 9.0.3-1%{?dist}" in spec,
+           "Varnish exact RPM development build dependency")
+        ok("Built against Varnish Cache 9.0.3" in spec, "Varnish RPM family description")
+
+
+@test
+def recipe_cargo_debian_and_rpm_mapping():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        root = write_fixture(tmp / "repo", engines=cargo_fixture_engines(), vmods={"reqwest": FIXTURE_CARGO})
+        deb_out = tmp / "deb-out"
+        recipe.generate(root, "reqwest", "vinyl-9.0.1", "debian-13-amd64", deb_out,
+                        maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
+        control = (deb_out / "debian" / "control").read_text()
+        rules = (deb_out / "debian" / "rules").read_text()
+        ok("clang" in control and "libclang-dev" in control, "Cargo Debian native dependencies")
+        ok("cargo build --release --locked --offline" in rules, "Cargo Debian build")
+        ok("--mapping reqwest=libvmod_reqwest.so" in rules, "Cargo Debian artifact mapping")
+        ok("/repo/tools/cargo-artifacts.py" in rules, "Cargo Debian shared artifact helper")
+
+        rpm_out = tmp / "rpm-out"
+        written = recipe.generate(root, "reqwest", "vinyl-9.0.1", "el10-x86_64", rpm_out,
+                                  maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
+        spec = written[0].read_text()
+        ok("BuildRequires:  clang" in spec and "BuildRequires:  libclang-devel" in spec,
+           "Cargo RPM native dependencies")
+        ok("cargo build --release --locked --offline" in spec, "Cargo RPM build")
+        ok("--mapping reqwest=libvmod_reqwest.so" in spec, "Cargo RPM artifact mapping")
+
+
+@test
+def cargo_artifact_helper_preserves_explicit_rers_mapping():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        release = tmp / "release"
+        destination = tmp / "dest"
+        release.mkdir()
+        (release / "libvmod_rs_template.so").write_bytes(b"shared object")
+        command = [
+            sys.executable, str(Path(__file__).resolve().parent / "cargo-artifacts.py"),
+            "--release-dir", str(release), "--destination", str(destination),
+            "--mapping", "rers=libvmod_rs_template.so",
+        ]
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        eq(result.returncode, 0, "Cargo artifact helper accepts rers mapping")
+        ok((destination / "libvmod_rers.so").is_file(), "rers mapping installs conventional basename")
+        duplicate = subprocess.run(command + ["--mapping", "rers=other.so"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        ok(duplicate.returncode != 0 and "duplicate Cargo module mapping" in duplicate.stderr,
+           "Cargo artifact helper rejects duplicate module mappings")
+        invalid = subprocess.run(command[:-2] + ["--mapping", "../rers=libvmod_rs_template.so"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        ok(invalid.returncode != 0 and "invalid artifact mapping" in invalid.stderr,
+           "Cargo artifact helper validates module names independently")
+        (release / "unexpected.so").write_bytes(b"extra")
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        ok(result.returncode != 0 and "unexpected" in result.stderr,
+           "Cargo artifact helper rejects undeclared shared objects")
 
 
 @test

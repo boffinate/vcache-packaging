@@ -24,4 +24,6 @@ package:
       - python3
     rpm:
       - python3
+  families:
+    - vinyl
   promoted: "true"

@@ -6,9 +6,10 @@
 #   <workdir>/artifacts/engine-<id>-<target>-prefix.tar.gz
 # (configured --prefix=/opt/<id>; consumers untar at / so the baked-in paths
 # are correct by construction). When the catalog says packages "true", also
-# builds the vinyl-cache/-dev .deb or .rpm set into
+# builds the selected family's runtime/development .deb or .rpm set into
 #   <workdir>/artifacts/engine-<id>-<target>-pkgs/   (consumed by build-vmod)
-# and mirrors it into <workdir>/packages/ for release collection.
+# and mirrors it into <workdir>/packages/ for release collection. Package
+# identity comes from the selected engine family contract in matrix.py env.
 # Writes the engine's own cell result: row = engine id, mode = "engine".
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -29,13 +30,22 @@ assert_target_platform "${TARGET_PLATFORM:?}" \
   || infra_cell "$WORKDIR" "$ENGINE_ARG" "$ENGINE_ARG" "$TARGET" engine "" "target platform does not match this host"
 
 ENGINE_ID=${ENGINE_ID:-$ENGINE_ARG}
-ENGINE_VERSION=${ENGINE_VERSION:-${ENGINE_ID#"${ENGINE_FAMILY:-x}"-}}
+ENGINE_VERSION=${ENGINE_VERSION:?}
+ENGINE_PACKAGE_NAME=${ENGINE_RUNTIME_PACKAGE:?}
+ENGINE_DEVELOPMENT_PACKAGE=${ENGINE_DEVELOPMENT_PACKAGE:?}
+ENGINE_SOURCE_NAME=${ENGINE_SOURCE_NAME:?}
+ENGINE_RPM_ARCHIVE_STEM=${ENGINE_RPM_ARCHIVE_STEM:?}
+ENGINE_RECIPE_DIR=${ENGINE_RECIPE_DIR:?}
+ENGINE_DAEMON=${ENGINE_DAEMON:?}
 PREFIX="/opt/$ENGINE_ID"
 if [ "${ENGINE_KIND:-release}" = trunk ]; then REF=${ENGINE_BRANCH:-trunk}; else REF=$ENGINE_VERSION; fi
 
 {
   printf "TAG='%s'\nTARGET='%s'\nPKGFMT='%s'\nPREFIX='%s'\n" "$TAG" "$TARGET" "$PKGFMT" "$PREFIX"
   printf "ENGINE_ID='%s'\nENGINE_VERSION='%s'\n" "$ENGINE_ID" "$ENGINE_VERSION"
+  printf "ENGINE_PACKAGE_NAME='%s'\nENGINE_DEVELOPMENT_PACKAGE='%s'\n" "$ENGINE_PACKAGE_NAME" "$ENGINE_DEVELOPMENT_PACKAGE"
+  printf "ENGINE_SOURCE_NAME='%s'\nENGINE_RPM_ARCHIVE_STEM='%s'\n" "$ENGINE_SOURCE_NAME" "$ENGINE_RPM_ARCHIVE_STEM"
+  printf "ENGINE_RECIPE_DIR='%s'\nENGINE_DAEMON='%s'\n" "$ENGINE_RECIPE_DIR" "$ENGINE_DAEMON"
   printf "MAINTAINER='%s'\n" "${MAINTAINER:-Vinyl Cache matrix CI <vcache-matrix-ci@invalid>}"
 } >> "$ENVFILE"
 
@@ -51,8 +61,7 @@ deb)
     build-essential automake autoconf autoconf-archive libtool pkg-config \
     git ca-certificates curl python3 python3-docutils python3-sphinx \
     libedit-dev libjemalloc-dev libncurses-dev libpcre2-dev libunwind-dev \
-    libssl-dev \
-    debhelper
+    libssl-dev debhelper
   ;;
 rpm)
   dnf -y -q install dnf-plugins-core epel-release
@@ -92,12 +101,9 @@ make -j"$(nproc)"
 make install
 
 step daemon
-DAEMON=""
-for c in vinyld varnishd; do
-  if [ -x "$PREFIX/sbin/$c" ]; then DAEMON="$PREFIX/sbin/$c"; fi
-done
-[ -n "$DAEMON" ] || { echo "no vinyld/varnishd in $PREFIX/sbin" >&2; exit 1; }
-"$DAEMON" -V 2>&1
+[ -x "$PREFIX/sbin/$ENGINE_DAEMON" ] \
+  || { echo "no $ENGINE_DAEMON in $PREFIX/sbin" >&2; exit 1; }
+"$PREFIX/sbin/$ENGINE_DAEMON" -V 2>&1
 
 step prefix-tar
 tar -C / -czf "/work/artifacts/engine-$ENGINE_ID-$TARGET-prefix.tar.gz" "${PREFIX#/}"
@@ -111,25 +117,26 @@ if [ "${ENGINE_PACKAGES:-false}" = "true" ]; then
     PKGWORK="/work/tmp/$TAG-pkg"
     rm -rf "$PKGWORK"; mkdir -p "$PKGWORK/build"
     tar -xzf "/work/tmp/$TAG.tar.gz" -C "$PKGWORK/build" --strip-components=1
-    cp -R /repo/packaging/engine/debian "$PKGWORK/build/debian"
+    cp -R "/repo/$ENGINE_RECIPE_DIR/debian" "$PKGWORK/build/debian"
     # The changelog is generated, not committed: version stamped from the pins.
     cat > "$PKGWORK/build/debian/changelog" <<CHANGELOG
-vinyl-cache ($ENGINE_VERSION-1) unstable; urgency=medium
+$ENGINE_SOURCE_NAME ($ENGINE_VERSION-1) unstable; urgency=medium
 
-  * Automated matrix build of Vinyl Cache $ENGINE_VERSION
+  * Automated matrix build of $ENGINE_PACKAGE_NAME $ENGINE_VERSION
     (engine $ENGINE_ID, target $TARGET).
 
  -- $MAINTAINER  $(date -R)
 CHANGELOG
     (cd "$PKGWORK/build" && dpkg-buildpackage -us -uc -b)
     step collect
-    cp "$PKGWORK"/*.deb "$PKGOUT/"
+    cp "$PKGWORK"/"$ENGINE_PACKAGE_NAME"_*.deb \
+       "$PKGWORK"/"$ENGINE_DEVELOPMENT_PACKAGE"_*.deb "$PKGOUT/"
     assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$PKGOUT"/*.deb
     ;;
   rpm)
     TOPD="/work/tmp/$TAG-rpmtop"
     rm -rf "$TOPD"; mkdir -p "$TOPD/SOURCES" "$TOPD/BUILD" "$TOPD/RPMS" "$TOPD/SRPMS"
-    cp "/work/tmp/$TAG.tar.gz" "$TOPD/SOURCES/vinyl-cache-$ENGINE_VERSION.tar.gz"
+    cp "/work/tmp/$TAG.tar.gz" "$TOPD/SOURCES/$ENGINE_RPM_ARCHIVE_STEM-$ENGINE_VERSION.tar.gz"
     SRCDIR=$(tar -tzf "/work/tmp/$TAG.tar.gz" | head -1 | cut -d/ -f1 || true)
     [ -n "$SRCDIR" ] || { echo "cannot read tarball top directory" >&2; exit 1; }
     rpmbuild -bb \
@@ -138,9 +145,10 @@ CHANGELOG
       --define "engine_release 1" \
       --define "engine_srcdir $SRCDIR" \
       --define "build_date $(date '+%a %b %d %Y')" \
-      /repo/packaging/engine/vinyl-cache.spec
+      "/repo/$ENGINE_RECIPE_DIR/$ENGINE_PACKAGE_NAME.spec"
     step collect
-    cp "$TOPD"/RPMS/*/*.rpm "$PKGOUT/"
+    cp "$TOPD"/RPMS/*/"$ENGINE_PACKAGE_NAME"-*.rpm \
+       "$TOPD"/RPMS/*/"$ENGINE_DEVELOPMENT_PACKAGE"-*.rpm "$PKGOUT/"
     assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$PKGOUT"/*.rpm
     ;;
   esac

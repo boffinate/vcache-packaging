@@ -1,0 +1,12 @@
+# Provisional conventional Varnish payload. The pinned archive's surprising
+# Vinyl-named internals mean this manifest must be verified in a native target
+# container before varnish-9.0.3 is made package-enabled.
+usr/bin/*
+usr/sbin/*
+usr/lib/*/libvarnishapi.so.*
+usr/lib/*/varnish/vmods/*.so
+usr/share/doc/varnish/*.vcl
+usr/share/man/man1/*
+usr/share/man/man3/*
+usr/share/man/man7/*
+usr/share/varnish/vcl/*

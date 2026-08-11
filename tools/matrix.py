@@ -39,6 +39,37 @@ CELL_SCHEMA = "cell/1"
 STATE_SCHEMA = "matrix-state/1"
 
 FAMILIES = ("vinyl", "varnish")
+# Family is the package-identity authority. Keep this small and explicit: it
+# is code-owned behaviour shared by the catalog, recipe renderer, and build
+# scripts, rather than another layer of per-engine catalog fields.
+FAMILY_CONTRACTS = {
+    "vinyl": {
+        "display_name": "Vinyl Cache",
+        "runtime_package": "vinyl-cache",
+        "development_packages": {"deb": "vinyl-cache-dev", "rpm": "vinyl-cache-devel"},
+        "vmod_package_prefix": "vinyl-vmod-",
+        "api": "vinylapi",
+        "daemon": "vinyld",
+        "vmod_dir_component": "vinyl-cache",
+        "version_marker": "vinyl",
+        "source_name": "vinyl-cache",
+        "rpm_archive_stem": "vinyl-cache",
+        "recipe_directory": "vinyl",
+    },
+    "varnish": {
+        "display_name": "Varnish Cache",
+        "runtime_package": "varnish",
+        "development_packages": {"deb": "varnish-dev", "rpm": "varnish-devel"},
+        "vmod_package_prefix": "varnish-vmod-",
+        "api": "varnishapi",
+        "daemon": "varnishd",
+        "vmod_dir_component": "varnish",
+        "version_marker": "varnish",
+        "source_name": "varnish",
+        "rpm_archive_stem": "varnish",
+        "recipe_directory": "varnish",
+    },
+}
 KINDS = ("release", "trunk")
 LANES = ("release", "trunk")
 TARGET_FORMATS = ("deb", "rpm")
@@ -61,7 +92,9 @@ STATUSES = (
     "infra_failed",
 )
 # The one legal value of a vmod manifest's optional top-level 'tests' key.
-TESTS_VALUES = ("make-check",)
+BUILD_FAMILIES = ("autotools", "cargo")
+TESTS_VALUES = ("make-check", "cargo-test")
+RUST_BOOTSTRAPS = ("rustup",)
 # The one legal value of a vmod manifest's optional top-level 'engine_source'
 # key (decision 14): configure needs the engine source tree (VINYLSRC), which
 # the build scripts then provision from the engine's own source pin.
@@ -69,6 +102,8 @@ ENGINE_SOURCE_VALUES = ("required",)
 # VCL import names (package.modules entries). VMOD ids may contain hyphens
 # (varnish-modules); module names may not.
 MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+ARTIFACT_BASENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.so$")
+RUST_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 # Mapping keys the parser accepts; also the by_series key charset (DESIGN.md).
 MAPPING_KEY_RE = re.compile(r"^[a-z0-9_.-]+$")
 
@@ -77,18 +112,20 @@ MAPPING_KEY_RE = re.compile(r"^[a-z0-9_.-]+$")
 # tools/jsonschema_gen.py emits the editor schemas from it, so the two cannot
 # disagree about which keys exist (DESIGN.md decision 11).
 KEYS = {
-    "engines_doc": ({"schema", "targets", "engines"}, set()),
+    "engines_doc": ({"schema", "targets", "engines"}, {"toolchains"}),
     "target": ({"image", "format", "runner", "platform", "package_arch"}, set()),
     "engine": ({"id", "family", "series", "kind", "source", "targets"}, {"packages"}),
     "engine_source_release": ({"tarball_url", "sha256"}, set()),
     "engine_source_trunk": ({"git_url", "branch"}, set()),
-    "vmod_doc": ({"schema", "id", "upstream", "sources", "package"}, {"tests", "engine_source"}),
+    "toolchains": ({"rust"}, set()),
+    "rust_toolchain": ({"version", "bootstrap"}, set()),
+    "vmod_doc": ({"schema", "id", "upstream", "sources", "package"}, {"build", "tests", "engine_source"}),
     "vmod_upstream": ({"git"}, {"homepage"}),
     "vmod_sources": ({"head", "default"}, {"by_series"}),
     "vmod_source_entry": ({"ref", "version"}, set()),
     "vmod_package": (
         {"summary", "description", "license"},
-        {"build_deps", "build_target", "modules", "families", "promoted", "targets"},
+        {"build_deps", "build_target", "modules", "artifacts", "families", "promoted", "targets"},
     ),
     "vmod_build_deps": (set(), {"debian", "rpm"}),
 }
@@ -149,24 +186,25 @@ def _str_list(value, ctx: str, errors: list) -> list:
     return value
 
 
-def _load_engines(path: Path, errors: list) -> tuple[list, dict]:
+def _load_engines(path: Path, errors: list) -> tuple[list, dict, dict]:
     if not path.is_file():
         errors.append(f"{path}: engine catalog not found (expected engines.yml at the repo root)")
-        return [], {}
+        return [], {}, {}
     try:
         doc = yaml_subset.parse_file(path)
     except yaml_subset.ManifestSyntaxError as exc:
         errors.append(str(exc))
-        return [], {}
+        return [], {}, {}
     ctx = str(path)
     _expect(doc, "engines_doc", ctx, errors)
     if doc.get("schema") != ENGINES_SCHEMA:
         errors.append(f"{ctx}: schema must be {ENGINES_SCHEMA!r}, got {doc.get('schema')!r}")
     known_targets = _load_targets(doc.get("targets"), ctx, errors)
+    toolchains = _load_toolchains(doc.get("toolchains"), ctx, errors)
     engines = doc.get("engines")
     if not isinstance(engines, list) or not engines:
         errors.append(f"{ctx}: 'engines' must be a non-empty list")
-        return [], known_targets
+        return [], known_targets, toolchains
     out = []
     seen = set()
     for i, engine in enumerate(engines):
@@ -184,6 +222,8 @@ def _load_engines(path: Path, errors: list) -> tuple[list, dict]:
         family = _str_value(engine, "family", ectx, errors)
         if family and family not in FAMILIES:
             errors.append(f"{ectx}: family must be one of {FAMILIES}, got {family!r}")
+        if family and eid and not eid.startswith(f"{family}-"):
+            errors.append(f"{ectx}: id must start with its family prefix {family + '-'}")
         kind = _str_value(engine, "kind", ectx, errors)
         if kind and kind not in KINDS:
             errors.append(f"{ectx}: kind must be one of {KINDS}, got {kind!r}")
@@ -197,8 +237,6 @@ def _load_engines(path: Path, errors: list) -> tuple[list, dict]:
         if packages == "true":
             if kind != "release":
                 errors.append(f'{ectx}: packages "true" requires kind release')
-            if family != "vinyl":
-                errors.append(f'{ectx}: packages "true" requires family vinyl')
         source = engine.get("source")
         if not isinstance(source, dict):
             errors.append(f"{ectx}: 'source' must be a mapping")
@@ -217,7 +255,29 @@ def _load_engines(path: Path, errors: list) -> tuple[list, dict]:
             if target not in known_targets:
                 errors.append(f"{ectx}: targets includes unknown target {target!r}")
         out.append(engine)
-    return out, known_targets
+    return out, known_targets, toolchains
+
+
+def _load_toolchains(value, ctx: str, errors: list) -> dict:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        errors.append(f"{ctx}: 'toolchains' must be a mapping")
+        return {}
+    _expect(value, "toolchains", f"{ctx}: toolchains", errors)
+    rust = value.get("rust")
+    if not isinstance(rust, dict):
+        errors.append(f"{ctx}: toolchains.rust must be a mapping")
+        return {}
+    rctx = f"{ctx}: toolchains.rust"
+    _expect(rust, "rust_toolchain", rctx, errors)
+    version = _str_value(rust, "version", rctx, errors)
+    if version and not RUST_VERSION_RE.match(version):
+        errors.append(f"{rctx}: version must be an exact major.minor.patch Rust version, got {version!r}")
+    bootstrap = _str_value(rust, "bootstrap", rctx, errors)
+    if bootstrap and bootstrap not in RUST_BOOTSTRAPS:
+        errors.append(f"{rctx}: bootstrap must be one of {RUST_BOOTSTRAPS}, got {bootstrap!r}")
+    return {"rust": {"version": version, "bootstrap": bootstrap}}
 
 
 def _load_targets(value, ctx: str, errors: list) -> dict:
@@ -245,7 +305,7 @@ def _load_targets(value, ctx: str, errors: list) -> dict:
     return out
 
 
-def _load_vmods(dirpath: Path, engines: list, targets: dict, errors: list) -> dict:
+def _load_vmods(dirpath: Path, engines: list, targets: dict, toolchains: dict, errors: list) -> dict:
     if not dirpath.is_dir():
         errors.append(f"{dirpath}: vmods directory not found")
         return {}
@@ -294,8 +354,16 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, errors: list) -> di
                             errors.append(f"{sctx}: must be a mapping")
                         else:
                             _check_source_entry(entry, sctx, errors)
-        if "tests" in doc and doc.get("tests") not in TESTS_VALUES:
-            errors.append(f"{ctx}: tests must be one of {TESTS_VALUES}, got {doc.get('tests')!r}")
+        build = doc.get("build", "autotools")
+        if not isinstance(build, str) or build not in BUILD_FAMILIES:
+            errors.append(f"{ctx}: build must be one of {BUILD_FAMILIES}, got {build!r}")
+        tests = doc.get("tests")
+        if tests is not None and (not isinstance(tests, str) or tests not in TESTS_VALUES):
+            errors.append(f"{ctx}: tests must be one of {TESTS_VALUES}, got {tests!r}")
+        if tests == "make-check" and build != "autotools":
+            errors.append(f"{ctx}: tests make-check requires build autotools")
+        if tests == "cargo-test" and build != "cargo":
+            errors.append(f"{ctx}: tests cargo-test requires build cargo")
         if "engine_source" in doc and doc.get("engine_source") not in ENGINE_SOURCE_VALUES:
             errors.append(
                 f"{ctx}: engine_source must be one of {ENGINE_SOURCE_VALUES}, got {doc.get('engine_source')!r}"
@@ -321,6 +389,7 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, errors: list) -> di
                         if eco in build_deps:
                             _str_list(build_deps[eco], f"{ctx}: package.build_deps.{eco}", errors)
             modules = package.get("modules")
+            names = []
             if modules is not None:
                 names = _str_list(modules, f"{ctx}: package.modules", errors)
                 for i, name in enumerate(names):
@@ -334,6 +403,29 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, errors: list) -> di
                     f"{ctx}: package.modules is required because id {vid!r} is not a valid"
                     " module name to default to"
                 )
+            artifacts = package.get("artifacts")
+            if build == "cargo":
+                if "rust" not in toolchains:
+                    errors.append(f"{ctx}: build cargo requires engines.yml toolchains.rust")
+                if modules is None:
+                    errors.append(f"{ctx}: build cargo requires package.modules")
+                elif len(names) != len(set(names)):
+                    errors.append(f"{ctx}: package.modules contains duplicates")
+                if artifacts is None:
+                    errors.append(f"{ctx}: build cargo requires package.artifacts")
+                else:
+                    artifact_names = _str_list(artifacts, f"{ctx}: package.artifacts", errors)
+                    for i, artifact in enumerate(artifact_names):
+                        if not ARTIFACT_BASENAME_RE.match(artifact):
+                            errors.append(
+                                f"{ctx}: package.artifacts[{i}]: {artifact!r} must be a basename ending in .so"
+                            )
+                    if len(artifact_names) != len(set(artifact_names)):
+                        errors.append(f"{ctx}: package.artifacts contains duplicates")
+                    if modules is not None and len(names) != len(artifact_names):
+                        errors.append(f"{ctx}: package.modules and package.artifacts must have equal lengths")
+            elif artifacts is not None:
+                errors.append(f"{ctx}: package.artifacts is legal only for build cargo")
             families = package.get("families")
             if families is not None:
                 # Absent means every family, so an explicit empty list is
@@ -379,11 +471,11 @@ def _check_source_entry(entry: dict, ctx: str, errors: list) -> None:
 def load_catalog(root) -> dict:
     root = Path(root)
     errors: list = []
-    engines, targets = _load_engines(root / "engines.yml", errors)
-    vmods = _load_vmods(root / "vmods", engines, targets, errors)
+    engines, targets, toolchains = _load_engines(root / "engines.yml", errors)
+    vmods = _load_vmods(root / "vmods", engines, targets, toolchains, errors)
     if errors:
         raise CatalogError("\n".join(errors))
-    return {"engines": engines, "targets": targets, "vmods": vmods}
+    return {"engines": engines, "targets": targets, "toolchains": toolchains, "vmods": vmods}
 
 
 def find_engine(catalog: dict, engine_id: str) -> dict:
@@ -415,6 +507,58 @@ def find_vmod(catalog: dict, vmod_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def family_contract(family: str) -> dict:
+    """Return the code-owned package contract for one validated engine family."""
+    try:
+        return FAMILY_CONTRACTS[family]
+    except KeyError:
+        raise CatalogError(f"unknown engine family {family!r}; known families: {', '.join(FAMILIES)}") from None
+
+
+def engine_runtime_package(engine: dict) -> str:
+    return family_contract(engine["family"])["runtime_package"]
+
+
+def engine_display_name(engine: dict) -> str:
+    return family_contract(engine["family"])["display_name"]
+
+
+def engine_development_package(engine: dict, package_format: str) -> str:
+    try:
+        return family_contract(engine["family"])["development_packages"][package_format]
+    except KeyError:
+        raise CatalogError(f"unknown package format {package_format!r}; known formats: {', '.join(TARGET_FORMATS)}") from None
+
+
+def engine_api(engine: dict) -> str:
+    return family_contract(engine["family"])["api"]
+
+
+def engine_daemon(engine: dict) -> str:
+    return family_contract(engine["family"])["daemon"]
+
+
+def engine_vmod_dir_component(engine: dict) -> str:
+    return family_contract(engine["family"])["vmod_dir_component"]
+
+
+def engine_source_name(engine: dict) -> str:
+    """The Debian source/changelog identity for this engine family."""
+    return family_contract(engine["family"])["source_name"]
+
+
+def engine_rpm_archive_stem(engine: dict) -> str:
+    return family_contract(engine["family"])["rpm_archive_stem"]
+
+
+def engine_recipe_directory(engine: dict) -> str:
+    return f"packaging/engine/{family_contract(engine['family'])['recipe_directory']}"
+
+
+def engine_vmod_package_name(engine: dict, vmod_id: str) -> str:
+    return family_contract(engine["family"])["vmod_package_prefix"] + vmod_id
+
+
 def engine_version(engine: dict) -> str:
     """The engine's version string, derived from its id: family prefix stripped.
 
@@ -438,23 +582,30 @@ def engine_package_version(engine: dict) -> dict:
     return {"deb": f"{version}-1", "rpm": f"{version}-1%{{?dist}}"}
 
 
-def vmod_package_name(vmod_id: str) -> str:
-    return f"vinyl-vmod-{vmod_id}"
-
-
 def vmod_modules(vmod: dict) -> list:
     """The VCL import names the VMOD ships: ``package.modules``, defaulting to
     ``[<id>]`` when absent (DESIGN.md)."""
     return vmod["package"].get("modules") or [vmod["id"]]
 
 
+def vmod_build(vmod: dict) -> str:
+    """Return the explicitly supported source build system for a VMOD."""
+    return vmod.get("build", "autotools")
+
+
+def vmod_artifacts(vmod: dict) -> list:
+    """Return Cargo's declared release artifacts (empty for Autotools VMODs)."""
+    return vmod["package"].get("artifacts", [])
+
+
 def vmod_package_version(upstream_version: str, engine: dict) -> dict:
-    """DESIGN.md naming: Debian ``<v>-1~vinyl<ev>``, RPM release ``1.vinyl<ev>``."""
+    """DESIGN.md naming: family-marked Debian and RPM package versions."""
     ev = engine_version(engine)
+    marker = family_contract(engine["family"])["version_marker"]
     return {
-        "deb": f"{upstream_version}-1~vinyl{ev}",
+        "deb": f"{upstream_version}-1~{marker}{ev}",
         "rpm_version": upstream_version,
-        "rpm_release": f"1.vinyl{ev}",
+        "rpm_release": f"1.{marker}{ev}",
     }
 
 
@@ -592,6 +743,13 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
         ("ENGINE_KIND", engine["kind"]),
         ("ENGINE_VERSION", ev),
         ("ENGINE_PACKAGES", engine["packages"]),
+        ("ENGINE_RUNTIME_PACKAGE", engine_runtime_package(engine)),
+        ("ENGINE_API", engine_api(engine)),
+        ("ENGINE_DAEMON", engine_daemon(engine)),
+        ("ENGINE_VMOD_DIR_COMPONENT", engine_vmod_dir_component(engine)),
+        ("ENGINE_SOURCE_NAME", engine_source_name(engine)),
+        ("ENGINE_RPM_ARCHIVE_STEM", engine_rpm_archive_stem(engine)),
+        ("ENGINE_RECIPE_DIR", engine_recipe_directory(engine)),
     ]
     source = engine["source"]
     if engine["kind"] == "release":
@@ -612,6 +770,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("TARGET_FORMAT", target["format"]),
             ("TARGET_PLATFORM", target["platform"]),
             ("TARGET_PACKAGE_ARCH", target["package_arch"]),
+            ("ENGINE_DEVELOPMENT_PACKAGE", engine_development_package(engine, target["format"])),
         ]
     if vmod_id is not None:
         vmod = find_vmod(catalog, vmod_id)
@@ -632,12 +791,17 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("VMOD_REF", resolved["ref"]),
             ("VMOD_VERSION", resolved["version"]),
             ("VMOD_BUILD_DEPS", " ".join(deps)),
+            ("VMOD_BUILD", vmod_build(vmod)),
             ("VMOD_BUILD_TARGET", package.get("build_target", "all")),
             ("VMOD_MODULES", " ".join(vmod_modules(vmod))),
+            ("VMOD_ARTIFACTS", " ".join(vmod_artifacts(vmod))),
             ("VMOD_TESTS", vmod.get("tests", "")),
             ("VMOD_ENGINE_SOURCE", vmod.get("engine_source", "")),
-            ("VMOD_PACKAGE_NAME", vmod_package_name(vmod["id"])),
+            ("VMOD_PACKAGE_NAME", engine_vmod_package_name(engine, vmod["id"])),
         ]
+        if vmod_build(vmod) == "cargo":
+            rust = catalog["toolchains"]["rust"]
+            pairs += [("RUST_VERSION", rust["version"]), ("RUST_BOOTSTRAP", rust["bootstrap"])]
         if resolved["version"]:
             pv = vmod_package_version(resolved["version"], engine)
             pairs += [

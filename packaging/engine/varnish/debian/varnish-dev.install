@@ -1,0 +1,8 @@
+# Provisional conventional Varnish development payload; see varnish.install.
+usr/include/varnish
+usr/lib/*/libvarnishapi.so
+usr/lib/*/pkgconfig/varnishapi.pc
+usr/share/aclocal/*.m4
+usr/share/varnish/vcc/*
+usr/share/varnish/vmodtool.py
+usr/share/varnish/vsctool.py

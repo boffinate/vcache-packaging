@@ -7,11 +7,10 @@ whole recipe. Substitution is ``@TOKEN@`` replacement and nothing else; an
 unresolved token fails loudly. Naming, versioning, and the exact-version
 engine dependency follow DESIGN.md:
 
-  * binary package ``vinyl-vmod-<id>`` on both formats;
-  * Debian version ``<upstream>-1~vinyl<engine>``, RPM release
-    ``1.vinyl<engine>%{?dist}``;
-  * ``Depends: vinyl-cache (= <engine pkg version>)`` /
-    ``Requires: vinyl-cache%{?_isa} = <engine pkg version>`` -- the RPM side
+  * binary package ``<family>-vmod-<id>`` on both formats;
+  * Debian version ``<upstream>-1~<family><engine>``, RPM release
+    ``1.<family><engine>%{?dist}``;
+  * exact dependency on the selected family's runtime package -- the RPM side
     needs ``%{?_isa}`` because a dlopen()ed plugin must match the daemon's
     architecture exactly and multilib would otherwise let an i686 engine
     satisfy an x86_64 VMOD; Debian encodes that in the package architecture.
@@ -62,6 +61,8 @@ RPM_TEMPLATE = "vmod.spec.in"
 # package.build_deps adds to it, never replaces it.
 DEB_BASE_BUILD_DEPS = ["debhelper-compat (= 13)", "autoconf", "automake", "libtool", "pkgconf"]
 RPM_BASE_BUILD_REQS = ["autoconf", "automake", "libtool", "make", "gcc", "pkgconfig"]
+DEB_CARGO_BUILD_DEPS = ["clang", "libclang-dev"]
+RPM_CARGO_BUILD_REQS = ["clang", "libclang-devel"]
 
 
 # One lookup, owned by matrix.py; re-exported for existing callers.
@@ -112,10 +113,18 @@ def build_tokens(vmod: dict, engine: dict, maintainer: tuple, now: datetime) -> 
     pv = matrix.vmod_package_version(resolved["version"], engine)
     epv = matrix.engine_package_version(engine)
     build_deps = package.get("build_deps") or {}
-    deb_deps = DEB_BASE_BUILD_DEPS + [f"vinyl-cache-dev (= {epv['deb']})"] + list(build_deps.get("debian", []))
-    rpm_reqs = RPM_BASE_BUILD_REQS + [f"vinyl-cache-devel = {epv['rpm']}"] + list(build_deps.get("rpm", []))
+    runtime_package = matrix.engine_runtime_package(engine)
+    deb_development_package = matrix.engine_development_package(engine, "deb")
+    rpm_development_package = matrix.engine_development_package(engine, "rpm")
+    build = matrix.vmod_build(vmod)
+    deb_base = DEB_BASE_BUILD_DEPS + (DEB_CARGO_BUILD_DEPS if build == "cargo" else [])
+    rpm_base = RPM_BASE_BUILD_REQS + (RPM_CARGO_BUILD_REQS if build == "cargo" else [])
+    deb_deps = deb_base + [f"{deb_development_package} (= {epv['deb']})"] + list(build_deps.get("debian", []))
+    rpm_reqs = rpm_base + [f"{rpm_development_package} = {epv['rpm']}"] + list(build_deps.get("rpm", []))
+    modules = matrix.vmod_modules(vmod)
+    artifacts = matrix.vmod_artifacts(vmod)
     return {
-        "PACKAGE_NAME": matrix.vmod_package_name(vmod["id"]),
+        "PACKAGE_NAME": matrix.engine_vmod_package_name(engine, vmod["id"]),
         "VMOD_ID": vmod["id"],
         "SUMMARY": package["summary"],
         "DEB_DESCRIPTION": deb_description(package["description"]),
@@ -130,10 +139,16 @@ def build_tokens(vmod: dict, engine: dict, maintainer: tuple, now: datetime) -> 
         "RPM_RELEASE": pv["rpm_release"],
         "ENGINE_ID": engine["id"],
         "ENGINE_VERSION": matrix.engine_version(engine),
+        "ENGINE_DISPLAY_NAME": matrix.engine_display_name(engine),
+        "ENGINE_RUNTIME_PACKAGE": runtime_package,
+        "VMOD_DIR_COMPONENT": matrix.engine_vmod_dir_component(engine),
         "ENGINE_DEB_PKG_VERSION": epv["deb"],
         "ENGINE_RPM_PKG_VERSION": epv["rpm"],
         "DEB_BUILD_DEPS": ", ".join(deb_deps),
         "RPM_BUILD_REQUIRES": "\n".join(f"BuildRequires:  {req}" for req in rpm_reqs),
+        "VMOD_BUILD": build,
+        "CARGO_BUILD": "1" if build == "cargo" else "0",
+        "CARGO_ARTIFACT_ARGS": " ".join(f"--mapping {module}={artifact}" for module, artifact in zip(modules, artifacts)),
         "BUILD_TARGET": package.get("build_target", "all"),
         "MAINTAINER_NAME": maintainer[0],
         "MAINTAINER_EMAIL": maintainer[1],

@@ -173,6 +173,19 @@ def build_engines() -> dict:
         "Where the engine source comes from. A release engine takes "
         "tarball_url + sha256; a trunk engine takes git_url + branch.",
     )
+    rust_toolchain = _object(
+        "rust_toolchain",
+        {
+            "version": _string("Exact Rust toolchain version, e.g. 1.90.0.", pattern=matrix.RUST_VERSION_RE.pattern),
+            "bootstrap": _string("How the in-container Rust toolchain is installed.", enum=list(matrix.RUST_BOOTSTRAPS)),
+        },
+        "The global Rust toolchain contract used by Cargo VMODs.",
+    )
+    toolchains = _object(
+        "toolchains",
+        {"rust": rust_toolchain},
+        "Global language toolchains. Required only when a VMOD uses that language.",
+    )
     engine = _object(
         "engine",
         {
@@ -193,7 +206,7 @@ def build_engines() -> dict:
             "targets": _string_list("Target ids from the top-level targets registry."),
             "packages": _string(
                 'Quoted "true" if this engine is packaged, not merely tested. '
-                "Requires kind: release and family: vinyl. Defaults to \"false\".",
+                "Requires kind: release. Defaults to \"false\".",
                 enum=["true", "false"],
             ),
         },
@@ -227,8 +240,8 @@ def build_engines() -> dict:
         {
             "if": {"properties": {"packages": {"const": "true"}}, "required": ["packages"]},
             "then": {
-                "properties": {"kind": {"const": "release"}, "family": {"const": "vinyl"}},
-                "description": 'packages "true" requires kind: release and family: vinyl.',
+                "properties": {"kind": {"const": "release"}},
+                "description": 'packages "true" requires kind: release.',
             },
         },
     ]
@@ -247,6 +260,7 @@ def build_engines() -> dict:
                 "additionalProperties": False,
                 "description": "Target registry: image, package format, native runner, and architecture.",
             },
+            "toolchains": toolchains,
             "engines": {
                 "type": "array",
                 "minItems": 1,
@@ -316,6 +330,14 @@ def build_vmod() -> dict:
                     "description": "A VCL import name: lowercase, digits and underscores.",
                 },
             ),
+            "artifacts": _string_list(
+                "Cargo release shared libraries, in the same order as modules. Required for build: cargo.",
+                items={
+                    "type": "string",
+                    "pattern": matrix.ARTIFACT_BASENAME_RE.pattern,
+                    "description": "A distinct basename-only release shared library ending in .so.",
+                },
+            ),
             "families": _string_list(
                 "Engine families this VMOD's build system supports. Gates "
                 "package-mode expansion only; absent means no restriction, and "
@@ -355,6 +377,7 @@ def build_vmod() -> dict:
                 "VMOD id. Must equal the filename stem — the validator checks "
                 "that; this schema cannot."
             ),
+            "build": _string("Source build system. Defaults to autotools.", enum=list(matrix.BUILD_FAMILIES)),
             "upstream": _object(
                 "vmod_upstream",
                 {
@@ -366,7 +389,7 @@ def build_vmod() -> dict:
             "sources": sources,
             "package": package,
             "tests": _string(
-                "Opt in to running the VMOD's own suite in compat mode.",
+                "Opt in to the selected build system's upstream suite in compat mode.",
                 enum=list(matrix.TESTS_VALUES),
             ),
             "engine_source": _string(

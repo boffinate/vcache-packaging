@@ -3,7 +3,7 @@
 
 # The VMOD is a dlopen()ed plugin, not a system library: suppress its
 # automatic soname Provides while leaving Requires generation intact.
-%global vmoddir %{_libdir}/vinyl-cache/vmods
+%global vmoddir %{_libdir}/@VMOD_DIR_COMPONENT@/vmods
 %global __provides_exclude_from ^%{vmoddir}/.*\\.so$
 
 # Serial build: VMOD vmodtool.py make rules race under -j (duplicate vcc_if
@@ -23,24 +23,25 @@ Source0:        @PACKAGE_NAME@-@RPM_VERSION@.tar.gz
 
 @RPM_BUILD_REQUIRES@
 
-Requires:       vinyl-cache%{?_isa} = @ENGINE_RPM_PKG_VERSION@
+Requires:       @ENGINE_RUNTIME_PACKAGE@%{?_isa} = @ENGINE_RPM_PKG_VERSION@
 
 %description
 @RPM_DESCRIPTION@
 
-Built against Vinyl Cache @ENGINE_VERSION@ (engine @ENGINE_ID@), upstream
+Built against @ENGINE_DISPLAY_NAME@ @ENGINE_VERSION@ (engine @ENGINE_ID@), upstream
 ref @VMOD_REF@.
 
 %prep
 %autosetup -n @PACKAGE_NAME@-@RPM_VERSION@
 
 %build
+%if @CARGO_BUILD@
+cargo build --release --locked --offline
+%else
 # Same bootstrap ladder as the compat harness (scripts/build-vmod.sh): prefer
 # upstream's own bootstrap/autogen.sh, because it knows how to locate the
-# engine's aclocal macros. cachetag's, for one, exports VINYLAPI_DATAROOTDIR
-# from pkg-config and mkdir -p m4 before autoreconf; a bare autoreconf leaves
-# that make variable unexpanded and dies on "couldn't open directory
-# '/aclocal'". Fall back to autoreconf only when upstream ships neither.
+# selected engine's aclocal macros. Fall back to autoreconf only when upstream
+# ships neither.
 if [ ! -x configure ]; then
   if [ -f bootstrap ]; then sh ./bootstrap
   elif [ -f autogen.sh ]; then sh ./autogen.sh
@@ -48,13 +49,21 @@ if [ ! -x configure ]; then
 fi
 %configure
 %make_build @BUILD_TARGET@
+%endif
 
 %install
+%if @CARGO_BUILD@
+python3 /repo/tools/cargo-artifacts.py \
+  --release-dir "${CARGO_TARGET_DIR:?}/release" \
+  --destination "%{buildroot}%{vmoddir}" \
+  @CARGO_ARTIFACT_ARGS@
+%else
 %make_install
 # Ship the VMOD shared object and nothing else: upstream-installed docs and
 # man pages would otherwise fail the build as installed-but-unpackaged.
 rm -rf %{buildroot}%{_docdir} %{buildroot}%{_mandir}
 find %{buildroot} \( -name '*.la' -o -name '*.a' \) -delete
+%endif
 
 %files
 %{vmoddir}/*.so
@@ -62,4 +71,4 @@ find %{buildroot} \( -name '*.la' -o -name '*.a' \) -delete
 %changelog
 * @RPM_DATE@ @MAINTAINER_NAME@ <@MAINTAINER_EMAIL@> - @RPM_VERSION@-@RPM_RELEASE@
 - Generated from vmods/@VMOD_ID@.yml; do not edit by hand.
-- Upstream ref @VMOD_REF@, built against Vinyl Cache @ENGINE_VERSION@.
+- Upstream ref @VMOD_REF@, built against @ENGINE_DISPLAY_NAME@ @ENGINE_VERSION@.

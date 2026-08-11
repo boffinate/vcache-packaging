@@ -7,6 +7,25 @@
 %:
 	dh $@ --no-parallel
 
+ifeq (@CARGO_BUILD@,1)
+
+override_dh_auto_configure:
+	:
+
+override_dh_auto_build:
+	cargo build --release --locked --offline
+
+override_dh_auto_test:
+	:
+
+override_dh_auto_install:
+	python3 /repo/tools/cargo-artifacts.py \
+	  --release-dir "$${CARGO_TARGET_DIR:?}/release" \
+	  --destination "debian/@PACKAGE_NAME@/usr/lib/@VMOD_DIR_COMPONENT@/vmods" \
+	  @CARGO_ARTIFACT_ARGS@
+
+else
+
 # Mirror the compat/RPM bootstrap ladder.  Some upstream git trees, including
 # cachetag, need their own bootstrap script to create m4 and locate the
 # engine's aclocal macros; dh_autoreconf alone then searches a bogus /aclocal.
@@ -29,3 +48,5 @@ override_dh_auto_test:
 override_dh_auto_install:
 	dh_auto_install
 	find debian/@PACKAGE_NAME@ \( -name '*.la' -o -name '*.a' \) -delete
+
+endif

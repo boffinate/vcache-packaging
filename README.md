@@ -1,6 +1,6 @@
 # vcache-packaging v2
 
-Basic APT/RPM packages of Vinyl Cache + selected VMODs, and a compatibility matrix showing which VMODs build and load against which Vinyl Cache / Varnish Cache versions — including trunk, as early warning.
+Basic, best-effort APT/RPM packages of pinned Vinyl Cache or Varnish Cache engines plus selected VMODs, for users who do not want to compile. They are convenience artifacts, not distro-quality replacements. The compatibility matrix shows which VMODs build and load against Vinyl Cache and Varnish Cache versions, including trunk, as early warning.
 
 - What this project is and is not: [SCOPE.md](SCOPE.md)
 - How it works, schemas and contracts: [DESIGN.md](DESIGN.md)

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# Pinned varnish-rs Cargo VMOD; package promotion waits for native proof.
+schema: vmod/1
+id: fcgi
+upstream:
+  git: https://github.com/varnish-rs/vmod-fcgi.git
+  homepage: https://github.com/varnish-rs/vmod-fcgi
+sources:
+  head: main
+  default:
+    ref: 821221922e7437a22e668c42680d98e6560aa4ca
+    version: "0.1.1"
+build: cargo
+package:
+  summary: FastCGI VMOD for Varnish Cache
+  description:
+    - vmod-fcgi forwards VCL requests to FastCGI backends.
+  license: BSD-3-Clause
+  modules:
+    - fastcgi
+  artifacts:
+    - libvmod_fastcgi.so
+  families:
+    - varnish

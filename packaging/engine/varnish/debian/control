@@ -1,0 +1,49 @@
+Source: varnish
+Section: web
+Priority: optional
+Maintainer: Vinyl Cache matrix CI <vcache-matrix-ci@invalid>
+Build-Depends:
+ debhelper-compat (= 13),
+ libedit-dev,
+ libjemalloc-dev,
+ libncurses-dev,
+ libpcre2-dev,
+ libunwind-dev,
+ pkgconf,
+ python3,
+ python3-docutils,
+ python3-sphinx,
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Homepage: https://varnish-cache.org/
+
+Package: varnish
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ gcc,
+ libc6-dev | libc-dev,
+Suggests: varnish-dev
+Description: high-performance web accelerator (matrix build)
+ Varnish Cache is a high-performance HTTP accelerator. This provisional
+ family recipe is retained for the matrix packaging contract only; it ships
+ no systemd integration or distribution replacement policy.
+ .
+ gcc and the C library headers are runtime dependencies because varnishd
+ compiles each VCL program with the system toolchain at run time.
+
+Package: varnish-dev
+Section: libdevel
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ varnish (= ${binary:Version}),
+ pkgconf,
+ python3,
+Description: development files for Varnish Cache (matrix build)
+ Headers, the varnishapi.pc pkg-config file, autoconf macros and generator
+ tools needed to build a Varnish VMOD or an application against libvarnishapi.
+ A VMOD is bound to the exact Varnish Cache build it was compiled against, so
+ this package depends on the exact matching varnish binary version.

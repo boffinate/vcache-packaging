@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# vmod-reqwest (schema vmod/1, DESIGN.md). This unpromoted Cargo entry proves
+# the compatibility and package contracts.
+schema: vmod/1
+id: reqwest
+upstream:
+  git: https://github.com/varnish-rs/vmod-reqwest.git
+  homepage: https://github.com/varnish-rs/vmod-reqwest
+sources:
+  head: main
+  default:
+    ref: v0.1.0
+    version: "0.1.0"
+build: cargo
+package:
+  summary: HTTP client VMOD for Varnish Cache
+  description:
+    - vmod-reqwest makes outbound HTTP requests from VCL through the
+    - varnish-rs bindings.
+  license: BSD-3-Clause
+  modules:
+    - reqwest
+  artifacts:
+    - libvmod_reqwest.so
+  families:
+    - varnish

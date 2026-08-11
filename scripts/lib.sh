@@ -81,6 +81,86 @@ assert_target_platform "\${TARGET_PLATFORM:?}"
 EOF
 }
 
+# Clone and resolve the selected VMOD source into the standard container path.
+checkout_vmod() {
+  step clone
+  SRC="/work/tmp/$TAG-src"
+  rm -rf "$SRC"
+  git clone "${VMOD_GIT:?}" "$SRC"
+  step checkout
+  git -C "$SRC" checkout --detach "$VMOD_REF" 2>/dev/null \
+    || git -C "$SRC" checkout --detach "origin/$VMOD_REF"
+  git -C "$SRC" submodule update --init --recursive
+  git -C "$SRC" rev-parse HEAD > "/work/tmp/$TAG.commit"
+}
+
+# Install the pinned Rust toolchain, validate the lockfile, and fetch once.
+# /work is persistent across local container runs, so an existing toolchain is
+# reused after its exact version has been checked.
+prepare_cargo() {
+  step cargo-deps
+  case "$PKGFMT" in
+    deb) apt-get install -y --no-install-recommends clang libclang-dev ;;
+    rpm) dnf -y -q install clang libclang-devel ;;
+  esac
+
+  step cargo-bootstrap
+  export RUSTUP_HOME=/work/rustup
+  export CARGO_HOME=/work/cargo
+  export CARGO_TARGET_DIR="/work/cargo-target/$VMOD_ID-$ENGINE_ID-$TARGET-$MODE"
+  export RUSTUP_TOOLCHAIN="${RUST_VERSION:?}"
+  mkdir -p "$RUSTUP_HOME" "$CARGO_HOME" "$CARGO_TARGET_DIR"
+  case "${RUST_BOOTSTRAP:?}" in
+    rustup)
+      if [ ! -x "$CARGO_HOME/bin/rustup" ]; then
+        curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
+          | sh -s -- -y --profile minimal --default-toolchain "$RUSTUP_TOOLCHAIN" --no-modify-path
+      fi
+      ;;
+    *) echo "unsupported Rust bootstrap: $RUST_BOOTSTRAP" >&2; exit 1 ;;
+  esac
+  export PATH="$CARGO_HOME/bin:$PATH"
+  if ! rustup run "$RUSTUP_TOOLCHAIN" rustc --version >/dev/null 2>&1; then
+    rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+  fi
+  rustc --version | grep -F "rustc $RUST_VERSION "
+  cargo --version | grep -F "cargo $RUST_VERSION "
+
+  cd "$SRC"
+  step cargo-preflight
+  [ -f Cargo.lock ] || { echo "Cargo.lock is required" >&2; exit 1; }
+  cargo metadata --locked --offline --no-deps >/dev/null
+
+  step cargo-fetch
+  if ! cargo fetch --locked; then
+    echo "cargo fetch failed; retrying once"
+    cargo fetch --locked
+  fi
+}
+
+# Install one engine package pair and any additional packages supplied by the
+# caller, checking every package's native architecture first.
+install_engine_packages() {
+  local package_dir=$1
+  shift
+  case "$PKGFMT" in
+    deb)
+      assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" \
+        "$package_dir"/"$ENGINE_RUNTIME_PACKAGE"_*.deb \
+        "$package_dir"/"$ENGINE_DEVELOPMENT_PACKAGE"_*.deb "$@"
+      apt-get install -y "$package_dir"/"$ENGINE_RUNTIME_PACKAGE"_*.deb \
+        "$package_dir"/"$ENGINE_DEVELOPMENT_PACKAGE"_*.deb "$@"
+      ;;
+    rpm)
+      assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" \
+        "$package_dir"/"$ENGINE_RUNTIME_PACKAGE"-*.rpm \
+        "$package_dir"/"$ENGINE_DEVELOPMENT_PACKAGE"-*.rpm "$@"
+      dnf -y install "$package_dir"/"$ENGINE_RUNTIME_PACKAGE"-*.rpm \
+        "$package_dir"/"$ENGINE_DEVELOPMENT_PACKAGE"-*.rpm "$@"
+      ;;
+  esac
+}
+
 # write_engine_source_step PATH
 # Append the engine-source provisioning step to a generated container script
 # (DESIGN.md decision 14). When the manifest sets engine_source: required,
@@ -116,8 +196,7 @@ if [ "${VMOD_ENGINE_SOURCE:-}" = required ]; then
   # The dist archive ships VSC counter definitions (*.vsc) but not the
   # headers the engine build generates from them, and VMODs that reach into
   # engine internals include those headers (pesi: VSC_main.h).
-  VSCTOOL=$(pkg-config --variable=vsctool vinylapi 2>/dev/null \
-    || pkg-config --variable=vsctool varnishapi 2>/dev/null || true)
+  VSCTOOL=$(pkg-config --variable=vsctool "$ENGINE_API" 2>/dev/null || true)
   if [ -n "$VSCTOOL" ] && [ -d "$ENGINE_TREE/lib/libvsc" ]; then
     (cd "$ENGINE_TREE/lib/libvsc" && for vsc in *.vsc; do
        if [ -f "$vsc" ]; then python3 "$VSCTOOL" -h "$vsc"; fi
@@ -137,14 +216,17 @@ EOF
 # the VMOD make-check step (upstream's own suite); the engine's daemon smoke
 # test is the separate 'daemon' step.
 status_for_step() {
+  local step=$1 mode=${2:-}
   case "$1" in
-    digest|checkout|daemon|modules) echo build_failed ;;
+    digest|checkout|daemon|modules|cargo-build|cargo-artifacts) echo build_failed ;;
+    cargo-preflight) [ "$mode" = package ] && echo package_failed || echo build_failed ;;
     bootstrap|configure)            echo configure_failed ;;
     make)                           echo build_failed ;;
     load)                           echo load_failed ;;
-    check)                          echo test_failed ;;
+    check|cargo-test)               echo test_failed ;;
     pkg-build)                      echo package_failed ;;
     pkg-install|pkg-load)           echo install_failed ;;
+    cargo-fetch|cargo-bootstrap|cargo-deps) echo infra_failed ;;
     *)                              echo infra_failed ;;
   esac
 }
@@ -241,7 +323,7 @@ fail_cell() {
   local commit step status detail
   commit=$(cat "$workdir/tmp/$ctag.commit" 2>/dev/null || true)
   step=$(cat "$workdir/tmp/$tag.step" 2>/dev/null || echo unknown)
-  status=$(status_for_step "$step")
+  status=$(status_for_step "$step" "$mode")
   detail="step '$step' failed: $(failure_detail "$workdir/logs/$tag.log" "$step" | tr '\n' ' ' | cut -c1-300 || true)"
   emit_result "$workdir" "$row" "$engine" "$target" "$mode" "$ref" "$commit" "$status" "$detail"
   if [ "$status" = infra_failed ]; then

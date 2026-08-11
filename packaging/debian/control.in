@@ -8,6 +8,6 @@ Homepage: @HOMEPAGE@
 
 Package: @PACKAGE_NAME@
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}, vinyl-cache (= @ENGINE_DEB_PKG_VERSION@)
+Depends: ${misc:Depends}, ${shlibs:Depends}, @ENGINE_RUNTIME_PACKAGE@ (= @ENGINE_DEB_PKG_VERSION@)
 Description: @SUMMARY@
 @DEB_DESCRIPTION@

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# Pinned varnish-rs Cargo VMOD; package promotion waits for native proof.
+schema: vmod/1
+id: rers
+upstream:
+  git: https://github.com/varnish-rs/vmod-rers.git
+  homepage: https://github.com/varnish-rs/vmod-rers
+sources:
+  head: main
+  default:
+    ref: v0.0.14
+    version: "0.0.14"
+build: cargo
+package:
+  summary: Regular expression replacement VMOD for Varnish Cache
+  description:
+    - vmod-rers provides regular expression replacement helpers for VCL.
+  license: BSD-3-Clause
+  modules:
+    - rers
+  artifacts:
+    - libvmod_rs_template.so
+  families:
+    - varnish

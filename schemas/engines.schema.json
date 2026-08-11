@@ -72,6 +72,41 @@
       "additionalProperties": false,
       "description": "Target registry: image, package format, native runner, and architecture."
     },
+    "toolchains": {
+      "type": "object",
+      "description": "Global language toolchains. Required only when a VMOD uses that language.",
+      "additionalProperties": false,
+      "required": [
+        "rust"
+      ],
+      "properties": {
+        "rust": {
+          "type": "object",
+          "description": "The global Rust toolchain contract used by Cargo VMODs.",
+          "additionalProperties": false,
+          "required": [
+            "bootstrap",
+            "version"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Exact Rust toolchain version, e.g. 1.90.0.",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "bootstrap": {
+              "type": "string",
+              "minLength": 1,
+              "description": "How the in-container Rust toolchain is installed.",
+              "enum": [
+                "rustup"
+              ]
+            }
+          }
+        }
+      }
+    },
     "engines": {
       "type": "array",
       "minItems": 1,
@@ -157,7 +192,7 @@
           "packages": {
             "type": "string",
             "minLength": 1,
-            "description": "Quoted \"true\" if this engine is packaged, not merely tested. Requires kind: release and family: vinyl. Defaults to \"false\".",
+            "description": "Quoted \"true\" if this engine is packaged, not merely tested. Requires kind: release. Defaults to \"false\".",
             "enum": [
               "true",
               "false"
@@ -252,12 +287,9 @@
               "properties": {
                 "kind": {
                   "const": "release"
-                },
-                "family": {
-                  "const": "vinyl"
                 }
               },
-              "description": "packages \"true\" requires kind: release and family: vinyl."
+              "description": "packages \"true\" requires kind: release."
             }
           }
         ]

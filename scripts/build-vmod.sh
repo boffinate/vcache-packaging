@@ -5,7 +5,7 @@
 # contracts"). mode:
 #   compat  - untar the engine prefix, autotools-build the resolved ref
 #             against it, compile a minimal VCL importing each built module
-#             with the engine daemon (vinyld/varnishd -C), then run
+#             with the selected family daemon (-C), then run
 #             upstream's own `make check` when the manifest declares
 #             tests: make-check (retried once; twice -> test_failed).
 #   package - install the engine .deb/.rpm set, build the generated recipe
@@ -36,6 +36,12 @@ assert_target_platform "${TARGET_PLATFORM:?}" \
 
 ENGINE_ID=${ENGINE_ID:-$ENGINE_ARG}
 VMOD_ID=${VMOD_ID:-$VMOD_ARG}
+VMOD_PACKAGE_NAME=${VMOD_PACKAGE_NAME:?}
+ENGINE_RUNTIME_PACKAGE=${ENGINE_RUNTIME_PACKAGE:?}
+ENGINE_DEVELOPMENT_PACKAGE=${ENGINE_DEVELOPMENT_PACKAGE:?}
+ENGINE_API=${ENGINE_API:?}
+ENGINE_DAEMON=${ENGINE_DAEMON:?}
+ENGINE_VMOD_DIR_COMPONENT=${ENGINE_VMOD_DIR_COMPONENT:?}
 [ -n "${VMOD_REF:-}" ] \
   || infra_cell "$WORKDIR" "$VMOD_ID" "$ENGINE_ID" "$TARGET" "$MODE" "" "matrix.py env provided no VMOD_REF"
 PREFIX="/opt/$ENGINE_ID"
@@ -62,7 +68,7 @@ if [ "$MODE" = compat ]; then
   cat >> "$INNER" <<'EOF'
 
 step deps
-# The engine prefix ships vinyld/varnishd but not their shared-library
+# The engine prefix ships the family daemon but not its shared-library
 # dependencies; install the same library set build-engine.sh builds against
 # so the daemon can run for the load check.
 case "$PKGFMT" in
@@ -98,82 +104,110 @@ VARNISHAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir varnishapi 2>/dev/nul
 VINYLAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir vinylapi 2>/dev/null || true)
 export VARNISHAPI_DATAROOTDIR VINYLAPI_DATAROOTDIR
 export LIBVARNISHAPI_DATAROOTDIR="$VARNISHAPI_DATAROOTDIR" LIBVINYLAPI_DATAROOTDIR="$VINYLAPI_DATAROOTDIR"
-DAEMON=""
-for c in vinyld varnishd; do
-  if [ -x "$PREFIX/sbin/$c" ]; then DAEMON="$PREFIX/sbin/$c"; fi
-done
-[ -n "$DAEMON" ] || { echo "no vinyld/varnishd in $PREFIX/sbin" >&2; exit 1; }
+DAEMON="$PREFIX/sbin/$ENGINE_DAEMON"
+[ -x "$DAEMON" ] || { echo "no $ENGINE_DAEMON in $PREFIX/sbin" >&2; exit 1; }
 EOF
   write_engine_source_step "$INNER"
   cat >> "$INNER" <<'EOF'
 
-step clone
-SRC="/work/tmp/$TAG-src"
-rm -rf "$SRC"
-git clone "${VMOD_GIT:?}" "$SRC"
-step checkout
-git -C "$SRC" checkout --detach "$VMOD_REF" 2>/dev/null \
-  || git -C "$SRC" checkout --detach "origin/$VMOD_REF"
-# Build-system boilerplate may live in submodules (vmod-dict's acvmod).
-git -C "$SRC" submodule update --init --recursive
-git -C "$SRC" rev-parse HEAD > "/work/tmp/$TAG.commit"
-
-step bootstrap
-cd "$SRC"
-# Some repos keep the build system in a single subdirectory (urlsort-style).
-if [ ! -f configure ] && [ ! -f configure.ac ] && [ ! -f autogen.sh ] && [ ! -f bootstrap ]; then
-  sub=$(for d in */; do if [ -f "$d/configure.ac" ]; then echo "$d"; fi; done)
-  if [ "$(printf '%s\n' "$sub" | grep -c . || true)" = 1 ]; then cd "$sub"; fi
-fi
-if [ ! -f configure ]; then
-  if [ -f bootstrap ]; then sh ./bootstrap || autoreconf -f -i
-  elif [ -f autogen.sh ]; then sh ./autogen.sh || autoreconf -f -i
-  else autoreconf -f -i; fi
-fi
-[ -f configure ] || { echo "bootstrap produced no configure script" >&2; exit 1; }
-
-step configure
-# Second chance via autoreconf: autogen.sh often leaves aux files uninstalled.
-./configure || { autoreconf -f -i && ./configure; }
-step make
-# VMOD generators are not reliably parallel-safe.
-make -j1 ${VMOD_BUILD_TARGET:-all}
-
-step modules
-SOS=$(find . -path '*/.libs/libvmod_*.so' | sort)
-[ -n "$SOS" ] || { echo "build produced no libvmod_*.so" >&2; exit 1; }
-
-step load
-for so in $SOS; do
-  mod=$(basename "$so" .so); mod=${mod#libvmod_}
-  abs="$(cd "$(dirname "$so")" && pwd)/$(basename "$so")"
-  vd=$(mktemp -d)
-  printf 'vcl 4.1;\nimport %s from "%s";\nbackend default none;\n' "$mod" "$abs" > "$vd/t.vcl"
-  if ! "$DAEMON" -j none -C -n "$vd/n" -f "$vd/t.vcl" > "$vd/out.log" 2>&1; then
-    echo "load check failed for $mod:"; sed -n '1,40p' "$vd/out.log"; exit 1
-  fi
-  echo "loaded $mod OK"
-done
-
-step check
-# Upstream's own suite, only when the manifest says so (tests: make-check).
-# Retried once whole on failure to absorb known VTC load-flakes (DESIGN.md);
-# failing twice is an honest test_failed, with the failing test names printed
-# last so the host-side classifier's log tail carries them into the cell.
-if [ "${VMOD_TESTS:-}" = make-check ]; then
-  if ! make check; then
-    echo "make check failed; retrying once (known VTC load-flakes)"
-    if ! make check; then
-      fails=$( { grep -hE '^FAIL' test-suite.log src/test-suite.log 2>/dev/null || true; } \
-        | head -n 5 | tr '\n' ' ' )
-      echo "make check failed twice: ${fails:-no FAIL lines found in test-suite.log}"
-      exit 1
+load_modules() {
+  step load
+  for so in "$@"; do
+    mod=$(basename "$so" .so); mod=${mod#libvmod_}
+    abs="$(cd "$(dirname "$so")" && pwd)/$(basename "$so")"
+    vd=$(mktemp -d)
+    printf 'vcl 4.1;\nimport %s from "%s";\nbackend default none;\n' "$mod" "$abs" > "$vd/t.vcl"
+    if ! "$DAEMON" -j none -C -n "$vd/n" -f "$vd/t.vcl" > "$vd/out.log" 2>&1; then
+      echo "load check failed for $mod:"; sed -n '1,40p' "$vd/out.log"; exit 1
     fi
+    echo "loaded $mod OK"
+  done
+}
+
+build_autotools() {
+  step bootstrap
+  cd "$SRC"
+  # Some repos keep the build system in a single subdirectory (urlsort-style).
+  if [ ! -f configure ] && [ ! -f configure.ac ] && [ ! -f autogen.sh ] && [ ! -f bootstrap ]; then
+    sub=$(for d in */; do if [ -f "$d/configure.ac" ]; then echo "$d"; fi; done)
+    if [ "$(printf '%s\n' "$sub" | grep -c . || true)" = 1 ]; then cd "$sub"; fi
   fi
-  echo "make check OK"
-else
-  echo "no test suite declared; skipping"
-fi
+  if [ ! -f configure ]; then
+    if [ -f bootstrap ]; then sh ./bootstrap || autoreconf -f -i
+    elif [ -f autogen.sh ]; then sh ./autogen.sh || autoreconf -f -i
+    else autoreconf -f -i; fi
+  fi
+  [ -f configure ] || { echo "bootstrap produced no configure script" >&2; exit 1; }
+
+  step configure
+  # Second chance via autoreconf: autogen.sh often leaves aux files uninstalled.
+  ./configure || { autoreconf -f -i && ./configure; }
+  step make
+  # VMOD generators are not reliably parallel-safe.
+  make -j1 ${VMOD_BUILD_TARGET:-all}
+
+  step modules
+  SOS=$(find . -path '*/.libs/libvmod_*.so' | sort)
+  [ -n "$SOS" ] || { echo "build produced no libvmod_*.so" >&2; exit 1; }
+  load_modules $SOS
+
+  step check
+  # Upstream's own suite, only when the manifest says so (tests: make-check).
+  if [ "${VMOD_TESTS:-}" = make-check ]; then
+    if ! make check; then
+      echo "make check failed; retrying once (known VTC load-flakes)"
+      if ! make check; then
+        fails=$( { grep -hE '^FAIL' test-suite.log src/test-suite.log 2>/dev/null || true; } \
+          | head -n 5 | tr '\n' ' ' )
+        echo "make check failed twice: ${fails:-no FAIL lines found in test-suite.log}"
+        exit 1
+      fi
+    fi
+    echo "make check OK"
+  else
+    echo "no test suite declared; skipping"
+  fi
+}
+
+build_cargo() {
+  prepare_cargo
+
+  step cargo-build
+  cargo build --release --locked --offline
+
+  step cargo-artifacts
+  modules=( $VMOD_MODULES )
+  artifacts=( $VMOD_ARTIFACTS )
+  [ "${#modules[@]}" -eq "${#artifacts[@]}" ] || { echo "module/artifact contract mismatch" >&2; exit 1; }
+  VMOD_DIR=$(pkg-config --variable=vmoddir "$ENGINE_API")
+  [ -n "$VMOD_DIR" ] || { echo "$ENGINE_API reports an empty VMOD directory" >&2; exit 1; }
+  artifact_args=()
+  for i in "${!artifacts[@]}"; do
+    artifact_args+=(--mapping "${modules[$i]}=${artifacts[$i]}")
+  done
+  python3 /repo/tools/cargo-artifacts.py --release-dir "$CARGO_TARGET_DIR/release" \
+    --destination "$VMOD_DIR" "${artifact_args[@]}"
+  sos=()
+  for module in "${modules[@]}"; do sos+=("$VMOD_DIR/libvmod_$module.so"); done
+  load_modules "${sos[@]}"
+
+  step cargo-test
+  if [ "${VMOD_TESTS:-}" = cargo-test ]; then
+    if ! cargo test --release --locked --offline; then
+      echo "cargo test failed; retrying once"
+      cargo test --release --locked --offline
+    fi
+  else
+    echo "no Cargo test suite declared; skipping"
+  fi
+}
+
+checkout_vmod
+case "${VMOD_BUILD:-autotools}" in
+autotools) build_autotools ;;
+cargo) build_cargo ;;
+*) echo "unsupported VMOD build: $VMOD_BUILD" >&2; exit 1 ;;
+esac
 EOF
 
   LOG="$WORKDIR/logs/$TAG.log"
@@ -223,52 +257,39 @@ rpm)
 esac
 
 step engine-install
-case "$PKGFMT" in
-deb)
-  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.deb
-  apt-get install -y "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.deb
-  ;;
-rpm)
-  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.rpm
-  dnf -y install "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.rpm
-  ;;
-esac
+ENGINE_PKGDIR="$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"
+install_engine_packages "$ENGINE_PKGDIR"
 EOF
 write_engine_source_step "$INNER"
 cat >> "$INNER" <<'EOF'
 
-step clone
-SRC="/work/tmp/$TAG-src"
-rm -rf "$SRC"
-git clone "${VMOD_GIT:?}" "$SRC"
-step checkout
-git -C "$SRC" checkout --detach "$VMOD_REF" 2>/dev/null \
-  || git -C "$SRC" checkout --detach "origin/$VMOD_REF"
-# Build-system boilerplate may live in submodules (vmod-dict's acvmod).
-git -C "$SRC" submodule update --init --recursive
-git -C "$SRC" rev-parse HEAD > "/work/tmp/$TAG.commit"
+checkout_vmod
+
+if [ "${VMOD_BUILD:-autotools}" = cargo ]; then
+  prepare_cargo
+fi
 
 step pkg-build
-OUT="/work/packages/vmod-$VMOD_ID-$ENGINE_ID-$TARGET"
+OUT="/work/packages/$VMOD_PACKAGE_NAME-$ENGINE_ID-$TARGET"
 rm -rf "$OUT"; mkdir -p "$OUT"
 case "$PKGFMT" in
 deb)
   cp -R "/work/tmp/$TAG-recipe/debian" "$SRC/debian"
   (cd "$SRC" && dpkg-buildpackage -us -uc -b)
   step collect
-  cp /work/tmp/vinyl-vmod-"$VMOD_ID"_*.deb "$OUT/"
+  cp /work/tmp/"$VMOD_PACKAGE_NAME"_*.deb "$OUT/"
   assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$OUT"/*.deb
   ;;
 rpm)
-  NAMEDIR="vinyl-vmod-$VMOD_ID-${VMOD_VERSION:?}"
+  NAMEDIR="$VMOD_PACKAGE_NAME-${VMOD_VERSION:?}"
   TOPD="/work/tmp/$TAG-rpmtop"
   rm -rf "$TOPD" "/work/tmp/$NAMEDIR"
   mkdir -p "$TOPD/SOURCES" "$TOPD/BUILD" "$TOPD/RPMS" "$TOPD/SRPMS"
   cp -a "$SRC" "/work/tmp/$NAMEDIR"
   tar -C /work/tmp -czf "$TOPD/SOURCES/$NAMEDIR.tar.gz" "$NAMEDIR"
-  rpmbuild -bb --define "_topdir $TOPD" "/work/tmp/$TAG-recipe/"*.spec
+  rpmbuild -bb --define "_topdir $TOPD" "/work/tmp/$TAG-recipe/$VMOD_PACKAGE_NAME.spec"
   step collect
-  cp "$TOPD"/RPMS/*/*.rpm "$OUT/"
+  cp "$TOPD"/RPMS/*/"$VMOD_PACKAGE_NAME"-*.rpm "$OUT/"
   assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$OUT"/*.rpm
   ;;
 esac
@@ -292,29 +313,34 @@ rpm) dnf -y -q install epel-release ;;  # engine runtime needs libunwind
 esac
 
 step pkg-install
-VPKG="/work/packages/vmod-$VMOD_ID-$ENGINE_ID-$TARGET"
+VPKG="/work/packages/$VMOD_PACKAGE_NAME-$ENGINE_ID-$TARGET"
+ENGINE_PKGDIR="$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"
 case "$PKGFMT" in
 deb)
-  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.deb "$VPKG"/*.deb
-  apt-get install -y "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.deb "$VPKG"/*.deb
+  install_engine_packages "$ENGINE_PKGDIR" "$VPKG"/"$VMOD_PACKAGE_NAME"_*.deb
   ;;
 rpm)
-  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.rpm "$VPKG"/*.rpm
-  dnf -y install "$ENGINE_ART/engine-$ENGINE_ID-$TARGET-pkgs"/*.rpm "$VPKG"/*.rpm
+  install_engine_packages "$ENGINE_PKGDIR" "$VPKG"/"$VMOD_PACKAGE_NAME"-*.rpm
   ;;
 esac
 
 step pkg-load
-DAEMON=""
-for c in vinyld varnishd; do
-  if command -v "$c" >/dev/null 2>&1; then DAEMON=$c; fi
-done
-[ -n "$DAEMON" ] || { echo "no vinyld/varnishd on PATH after install" >&2; exit 1; }
+DAEMON=$(command -v "$ENGINE_DAEMON" || true)
+[ -n "$DAEMON" ] || { echo "no $ENGINE_DAEMON on PATH after install" >&2; exit 1; }
 # One VCL importing every module name the package ships (package.modules,
 # defaulted to the VMOD id by matrix.py env).
+VMOD_DIR=$(pkg-config --variable=vmoddir "$ENGINE_API")
+[ -n "$VMOD_DIR" ] || { echo "$ENGINE_API reports an empty VMOD directory" >&2; exit 1; }
+case "$VMOD_DIR" in
+  */"$ENGINE_VMOD_DIR_COMPONENT"/vmods) ;;
+  *) echo "$ENGINE_API VMOD directory $VMOD_DIR does not match family component $ENGINE_VMOD_DIR_COMPONENT" >&2; exit 1 ;;
+esac
 {
   printf 'vcl 4.1;\n'
-  for mod in ${VMOD_MODULES:-$VMOD_ID}; do printf 'import %s;\n' "$mod"; done
+  for mod in ${VMOD_MODULES:-$VMOD_ID}; do
+    [ -f "$VMOD_DIR/libvmod_$mod.so" ] || { echo "missing $VMOD_DIR/libvmod_$mod.so" >&2; exit 1; }
+    printf 'import %s;\n' "$mod"
+  done
   printf 'backend default none;\n'
 } > /tmp/load.vcl
 if ! "$DAEMON" -j none -C -n /tmp/vd -f /tmp/load.vcl > /tmp/load.log 2>&1; then
