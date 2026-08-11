@@ -699,9 +699,11 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
         columns = [e["id"] for e in catalog["engines"] if e["kind"] == "release" and target in e["targets"]]
         columns += [e["id"] for e in catalog["engines"] if e["kind"] == "trunk" and target in e["targets"]]
         row_ids = ["(engine)"] + list(catalog["vmods"])
+        row_urls = {row_id: vmod["upstream"].get("homepage", "") for row_id, vmod in catalog["vmods"].items()}
     else:
         columns = []
         row_ids = ["(engine)"]
+        row_urls = {}
     columns += sorted({c["engine"] for c in cells} - set(columns))
     row_ids += sorted({display_row(c) for c in cells} - set(row_ids))
 
@@ -741,7 +743,8 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
                 "run_url": top.get("run_url", ""),
             }
             counts[bucket] += 1
-    return {"target": target, "columns": columns, "rows": row_ids, "cells": grid_cells, "counts": counts}
+    return {"target": target, "columns": columns, "rows": row_ids, "row_urls": row_urls,
+            "cells": grid_cells, "counts": counts}
 
 
 # Light palette on bare :root; dark redefined under prefers-color-scheme
@@ -789,6 +792,7 @@ th.col{text-align:center;border-right:1px solid var(--line);min-width:110px}
 td.rid{border-right:1px solid var(--line-2);border-bottom:1px solid var(--line);padding:4px 12px;
   white-space:nowrap;background:var(--surface)}
 tr.engine-row td.rid{font-style:italic;font-weight:700}
+td.rid a{text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
 td.cell{min-width:110px;height:28px;padding:0;text-align:center;border-bottom:1px solid var(--line);
   border-right:1px solid var(--line);font-size:11px;font-weight:700}
 td.cell a,td.cell span.v{display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:inherit}
@@ -843,8 +847,12 @@ def _grid_html(grid: dict) -> str:
     for row_id in grid["rows"]:
         row_class = "engine-row" if row_id == "(engine)" else ""
         label = "engine build" if row_id == "(engine)" else row_id
+        label = _esc(label)
+        row_url = grid["row_urls"].get(row_id)
+        if row_url:
+            label = f'<a href="{_esc(row_url)}" target="_blank" rel="noopener">{label}</a>'
         tds = "".join(_cell_html(grid["cells"].get((row_id, col))) for col in grid["columns"])
-        body_rows.append(f'<tr class="{row_class}"><td class="rid">{_esc(label)}</td>{tds}</tr>')
+        body_rows.append(f'<tr class="{row_class}"><td class="rid">{label}</td>{tds}</tr>')
     return f'''<section class="target-matrix">
   <h2 class="target">{_esc(grid["target"])} &middot; {counts["PASS"]} pass, {counts["FAIL"]} fail, {counts["INFRA"]} infra, {counts["MISSING"]} missing</h2>
   <div class="matrix-scroll">

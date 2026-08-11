@@ -4,6 +4,7 @@ schema: vmod/1
 id: remoteip
 upstream:
   git: https://git.gnu.org.ua/vmod-remoteip.git
+  homepage: https://git.gnu.org.ua/vmod-remoteip
 sources:
   head: master
   default:

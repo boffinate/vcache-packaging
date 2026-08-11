@@ -4,6 +4,7 @@ schema: vmod/1
 id: dict
 upstream:
   git: https://git.gnu.org.ua/vmod-dict.git
+  homepage: https://git.gnu.org.ua/vmod-dict
 sources:
   head: master
   default:

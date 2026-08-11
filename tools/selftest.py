@@ -117,6 +117,7 @@ FIXTURE_DICT = textwrap.dedent(
     id: dict
     upstream:
       git: https://example.org/vmod-dict.git
+      homepage: https://example.org/dict
     sources:
       head: master
       default:
@@ -865,6 +866,8 @@ def render_smoke():
         eq(html_text.count('class="target-matrix"'), 2, "one rendered matrix per target")
         ok('<h2 class="target">debian-13-amd64' in html_text, "Debian matrix heading")
         ok('<h2 class="target">el10-x86_64' in html_text, "EL10 matrix heading")
+        ok('<td class="rid"><a href="https://example.org/dict" target="_blank" rel="noopener">dict</a></td>'
+           in html_text, "VMOD row links to its configured homepage")
         state = json.loads(state_file.read_text())
         catalog = matrix.load_catalog(root)
         eq(matrix.matrix_targets(state, catalog), ["debian-13-amd64", "el10-x86_64"], "target order from catalog")

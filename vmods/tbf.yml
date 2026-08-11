@@ -4,6 +4,7 @@ schema: vmod/1
 id: tbf
 upstream:
   git: https://git.gnu.org.ua/vmod-tbf.git
+  homepage: https://git.gnu.org.ua/vmod-tbf
 sources:
   head: master
   default:

@@ -15,6 +15,7 @@ schema: vmod/1
 id: varnish-modules
 upstream:
   git: https://github.com/varnish/varnish-modules.git
+  homepage: https://github.com/varnish/varnish-modules
 sources:
   head: master
   default:

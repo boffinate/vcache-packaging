@@ -12,6 +12,7 @@ schema: vmod/1
 id: querystring
 upstream:
   git: https://git.sr.ht/~dridi/vmod-querystring
+  homepage: https://git.sr.ht/~dridi/vmod-querystring
 sources:
   head: master
   default:

@@ -13,6 +13,7 @@ schema: vmod/1
 id: redis
 upstream:
   git: https://github.com/carlosabalde/libvmod-redis.git
+  homepage: https://github.com/carlosabalde/libvmod-redis
 sources:
   head: main
   default:

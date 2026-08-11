@@ -4,6 +4,7 @@ schema: vmod/1
 id: cachetag
 upstream:
   git: https://github.com/boffinate/libvmod-cachetag.git
+  homepage: https://github.com/boffinate/libvmod-cachetag
 sources:
   head: main
   default:

@@ -13,6 +13,7 @@ schema: vmod/1
 id: selector
 upstream:
   git: https://gitlab.com/uplex/varnish/libvmod-selector.git
+  homepage: https://gitlab.com/uplex/varnish/libvmod-selector
 sources:
   head: master
   default:
