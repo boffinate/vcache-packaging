@@ -843,6 +843,50 @@ def test_failed_cell_merges_and_renders_red():
         ok("FAIL: tests/x01.vtc" in html_text, "failing test names survive into the tooltip")
 
 
+@test
+def key_line_is_exact_and_tooltips_speak_human():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        root = write_fixture(tmp / "repo")
+        results = tmp / "results"
+        results.mkdir()
+        cells = [
+            make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "pass", "2026-08-09T00:00:00Z"),
+            make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "package", "package_failed",
+                      "2026-08-09T01:00:00Z"),
+            make_cell("redis", "vinyl-9.0.1", "debian-13-amd64", "compat", "configure_failed",
+                      "2026-08-09T00:00:00Z"),
+        ]
+        for i, cell in enumerate(cells):
+            (results / f"c{i}.json").write_text(json.dumps(cell))
+        state_file = tmp / "state.json"
+        run_cli(["merge", "--results-dir", str(results), "--state-file", str(state_file)])
+        grid = matrix.build_grid(json.loads(state_file.read_text()), "debian-13-amd64", matrix.load_catalog(root))
+        eq(grid["cells"][("dict", "vinyl-9.0.1")]["bucket"], "FAIL",
+           "mixed cell keeps the worst-across-modes colour fold")
+        redis_title = grid["cells"][("redis", "vinyl-9.0.1")]["title"]
+        ok("compat: This module fails to compile or load against this engine "
+           "(usually: upstream does not support this engine yet). (configure_failed)" in redis_title,
+           "failing compat tooltip carries the human sentence plus its status")
+        dict_title = grid["cells"][("dict", "vinyl-9.0.1")]["title"]
+        ok("compat: This module compiles from source against this engine and loads. (pass)" in dict_title,
+           "passing compat tooltip line speaks human")
+        ok("package: The ready-to-install package (.deb/.rpm) failed to build or install. "
+           "(package_failed)" in dict_title, "failing package tooltip line speaks human")
+        ok("[v1.7 @ abcdef123456]" in dict_title, "ref and commit stay in the tooltip")
+        ok("(2026-08-09T01:00:00Z)" in dict_title, "timestamps stay in the tooltip")
+        out_file = tmp / "index.html"
+        code, _, _ = run_cli(["render", "--state-file", str(state_file), "--out", str(out_file),
+                              "--root", str(root), "--generated-at", "2026-08-10T00:00:00Z"])
+        eq(code, 0, "render exit code")
+        html_text = out_file.read_text()
+        eq(html_text.count('class="matrix-key"'), 1, "the key line renders exactly once")
+        ok('<p class="matrix-key">Rows are modules, columns are engine versions. Green: works. '
+           "Red: doesn't — usually upstream doesn't support that engine yet. Grey: not tested.</p>"
+           in html_text, "key line is exactly the contract text")
+        ok('class="cell FAIL"' in html_text, "mixed cell td keeps the worst-fold class")
+
+
 # ---------------------------------------------------------------------------
 # recipe
 # ---------------------------------------------------------------------------
