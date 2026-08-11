@@ -929,6 +929,20 @@ def recipe_debian_generation():
         ok("else autoreconf -fi; fi" in rules_text,
            "Debian recipe retains an autoreconf fallback")
         eq((out / "debian" / "source" / "format").read_text(), "3.0 (quilt)\n", "source format")
+        ubuntu_engines = must_replace(
+            FIXTURE_ENGINES,
+            "      - debian-13-amd64\n      - el10-x86_64\n",
+            "      - debian-13-amd64\n      - ubuntu-26.04-amd64\n      - el10-x86_64\n",
+        )
+        ubuntu_root = write_fixture(tmp / "ubuntu-repo", engines=ubuntu_engines)
+        ubuntu_out = tmp / "ubuntu-out"
+        ubuntu_written = recipe.generate(
+            ubuntu_root, "dict", "vinyl-9.0.1", "ubuntu-26.04-amd64", ubuntu_out,
+            maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW,
+        )
+        eq(sorted(p.relative_to(ubuntu_out).as_posix() for p in ubuntu_written),
+           ["debian/changelog", "debian/control", "debian/copyright", "debian/rules",
+            "debian/source/format"], "Ubuntu uses the shared Debian recipe templates")
 
 
 @test
@@ -974,6 +988,7 @@ def recipe_refusals_and_unresolved_tokens():
         else:
             raise Fail("expected an unresolved-token error")
         eq(recipe.target_format("debian-13-amd64"), "deb", "deb target format")
+        eq(recipe.target_format("ubuntu-26.04-amd64"), "deb", "Ubuntu target format")
         eq(recipe.target_format("el10-x86_64"), "rpm", "rpm target format")
 
 
