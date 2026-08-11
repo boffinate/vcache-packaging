@@ -26,3 +26,4 @@ package:
     rpm:
       - python3
       - python3-docutils
+  promoted: "true"

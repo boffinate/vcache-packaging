@@ -186,6 +186,24 @@
             "description": "An engine family, as engines.yml 'family' spells it."
           },
           "description": "Engine families this VMOD's build system supports. Gates package-mode expansion only; absent means no restriction, and compat cells are unaffected (DESIGN.md decision 13)."
+        },
+        "promoted": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Promotion gate (decision 15): package cells expand only when this is \"true\", so a new entry cannot block the release gate. Absent means not promoted; compat cells are unaffected.",
+          "enum": [
+            "true",
+            "false"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "description": "A target id from engines.yml targets."
+          },
+          "description": "Targets packaging can work on at all (e.g. an x86_64-only VMOD lists only x86_64 targets). Gates package-mode expansion only; absent means every target (decision 15)."
         }
       }
     },

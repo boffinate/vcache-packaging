@@ -82,7 +82,10 @@ KEYS = {
     "vmod_upstream": ({"git"}, {"homepage"}),
     "vmod_sources": ({"head", "default"}, {"by_series"}),
     "vmod_source_entry": ({"ref", "version"}, set()),
-    "vmod_package": ({"summary", "description", "license"}, {"build_deps", "modules", "families"}),
+    "vmod_package": (
+        {"summary", "description", "license"},
+        {"build_deps", "modules", "families", "promoted", "targets"},
+    ),
     "vmod_build_deps": (set(), {"debian", "rpm"}),
 }
 
@@ -238,7 +241,7 @@ def _load_targets(value, ctx: str, errors: list) -> dict:
     return out
 
 
-def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
+def _load_vmods(dirpath: Path, engines: list, targets: dict, errors: list) -> dict:
     if not dirpath.is_dir():
         errors.append(f"{dirpath}: vmods directory not found")
         return {}
@@ -338,6 +341,24 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
                         )
                 if len(values) != len(set(values)):
                     errors.append(f"{ctx}: package.families contains duplicates")
+            promoted = package.get("promoted")
+            if promoted is not None and promoted not in ("true", "false"):
+                errors.append(
+                    f'{ctx}: package.promoted must be "true" or "false", got {promoted!r}'
+                )
+            pkg_targets = package.get("targets")
+            if pkg_targets is not None:
+                # Absent means every target, so an explicit empty list is
+                # almost certainly a mistake; _str_list rejects it.
+                values = _str_list(pkg_targets, f"{ctx}: package.targets", errors)
+                for i, tid in enumerate(values):
+                    if tid not in targets:
+                        errors.append(
+                            f"{ctx}: package.targets[{i}]: unknown target {tid!r};"
+                            f" known targets: {', '.join(sorted(targets))}"
+                        )
+                if len(values) != len(set(values)):
+                    errors.append(f"{ctx}: package.targets contains duplicates")
         if vid:
             vmods[vid] = doc
     return vmods
@@ -353,7 +374,7 @@ def load_catalog(root) -> dict:
     root = Path(root)
     errors: list = []
     engines, targets = _load_engines(root / "engines.yml", errors)
-    vmods = _load_vmods(root / "vmods", engines, errors)
+    vmods = _load_vmods(root / "vmods", engines, targets, errors)
     if errors:
         raise CatalogError("\n".join(errors))
     return {"engines": engines, "targets": targets, "vmods": vmods}
@@ -502,6 +523,16 @@ def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
                     # pairing still renders its honest red.
                     families = vmod["package"].get("families")
                     if families is not None and engine["family"] not in families:
+                        continue
+                    # Promotion gate (decision 15): package cells exist only
+                    # once the catalog says promoted: "true", so an unproven
+                    # entry can never block the all-or-nothing release gate.
+                    if vmod["package"].get("promoted") != "true":
+                        continue
+                    # package.targets restricts where packaging can work at
+                    # all (e.g. an x86_64-only VMOD); absent = every target.
+                    pkg_targets = vmod["package"].get("targets")
+                    if pkg_targets is not None and target not in pkg_targets:
                         continue
                     vmod_rows.append({"row": vid, "engine": engine["id"], "target": target, "mode": "package", "runner": runner})
     engine_rows = [

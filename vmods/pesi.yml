@@ -58,4 +58,5 @@ package:
     - pesi_debug
   families:
     - vinyl
+  promoted: "true"
 engine_source: required

@@ -321,6 +321,21 @@ def build_vmod() -> dict:
                     "description": "An engine family, as engines.yml 'family' spells it.",
                 },
             ),
+            "promoted": _string(
+                'Promotion gate (decision 15): package cells expand only when '
+                'this is "true", so a new entry cannot block the release gate. '
+                "Absent means not promoted; compat cells are unaffected.",
+                enum=["true", "false"],
+            ),
+            "targets": _string_list(
+                "Targets packaging can work on at all (e.g. an x86_64-only "
+                "VMOD lists only x86_64 targets). Gates package-mode expansion "
+                "only; absent means every target (decision 15).",
+                items={
+                    "type": "string",
+                    "description": "A target id from engines.yml targets.",
+                },
+            ),
         },
         "What the generated .deb/.rpm says about itself.",
     )

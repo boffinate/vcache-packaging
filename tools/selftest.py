@@ -139,6 +139,7 @@ FIXTURE_DICT = textwrap.dedent(
         rpm:
           - redhat-rpm-config
           - python3-docutils
+      promoted: "true"
     """
 )
 
@@ -464,6 +465,32 @@ def catalog_package_families_field():
                              "non-empty list", "empty families list")
 
 
+@test
+def catalog_promoted_and_package_targets_fields():
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = FIXTURE_DICT + "  targets:\n    - el10-x86_64\n"
+        catalog = matrix.load_catalog(write_fixture(Path(tmp), vmods={"dict": vmod}))
+        eq(catalog["vmods"]["dict"]["package"]["promoted"], "true", "promoted carried through")
+        eq(catalog["vmods"]["dict"]["package"]["targets"], ["el10-x86_64"], "targets carried through")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_DICT, 'promoted: "true"', "promoted: yes")
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
+                             'promoted must be "true" or "false"', "bad promoted value")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = FIXTURE_DICT + "  targets:\n    - debian-14-amd64\n"
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
+                             "unknown target", "unknown package target")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = FIXTURE_DICT + "  targets:\n    - el10-x86_64\n    - el10-x86_64\n"
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
+                             "package.targets contains duplicates", "duplicate package target")
+    # Absent means every target, so an explicit empty sequence is rejected.
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = FIXTURE_DICT + "  targets: []\n"
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
+                             "non-empty list", "empty package targets list")
+
+
 # ---------------------------------------------------------------------------
 # Editor JSON Schemas (DESIGN.md decision 11) - generated outputs, so what
 # these tests guard is that they cannot drift from the validator.
@@ -643,6 +670,27 @@ def expand_package_rows_honour_families():
         package_only = matrix.expand(catalog, "release", "package")
         eq({r["row"] for r in package_only["vmods"]}, {"dict", "vinylonly"},
            "--mode package applies the same gate")
+
+
+@test
+def expand_package_rows_honour_promotion_and_targets():
+    with tempfile.TemporaryDirectory() as tmp:
+        held = must_replace(FIXTURE_DICT, '  promoted: "true"\n', "")
+        held = must_replace(held, "id: dict\n", "id: held\n")
+        restricted = FIXTURE_DICT + "  targets:\n    - el10-x86_64\n"
+        catalog = matrix.load_catalog(write_fixture(Path(tmp), vmods={
+            "held": held,
+            "dict": restricted,
+        }))
+        rows = matrix.expand(catalog, "release", "all")["vmods"]
+        package = [(r["row"], r["target"]) for r in rows if r["mode"] == "package"]
+        eq(package, [("dict", "el10-x86_64")],
+           "unpromoted vmods expand no package rows; package.targets restricts the rest")
+        held_compat = [r for r in rows if r["mode"] == "compat" and r["row"] == "held"]
+        ok(len(held_compat) > 0, "an unpromoted vmod keeps every compat cell")
+        package_only = matrix.expand(catalog, "release", "package")
+        eq({r["row"] for r in package_only["vmods"]}, {"dict"},
+           "--mode package applies the promotion gate too")
 
 
 @test
