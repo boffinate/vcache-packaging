@@ -134,6 +134,7 @@ def build_tokens(vmod: dict, engine: dict, maintainer: tuple, now: datetime) -> 
         "ENGINE_RPM_PKG_VERSION": epv["rpm"],
         "DEB_BUILD_DEPS": ", ".join(deb_deps),
         "RPM_BUILD_REQUIRES": "\n".join(f"BuildRequires:  {req}" for req in rpm_reqs),
+        "BUILD_TARGET": package.get("build_target", "all"),
         "MAINTAINER_NAME": maintainer[0],
         "MAINTAINER_EMAIL": maintainer[1],
         "DEB_DATE": format_datetime(now),

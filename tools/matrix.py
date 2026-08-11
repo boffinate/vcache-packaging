@@ -88,7 +88,7 @@ KEYS = {
     "vmod_source_entry": ({"ref", "version"}, set()),
     "vmod_package": (
         {"summary", "description", "license"},
-        {"build_deps", "modules", "families", "promoted", "targets"},
+        {"build_deps", "build_target", "modules", "families", "promoted", "targets"},
     ),
     "vmod_build_deps": (set(), {"debian", "rpm"}),
 }
@@ -309,6 +309,8 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, errors: list) -> di
             _str_value(package, "license", f"{ctx}: package", errors)
             if "description" in package:
                 _str_list(package.get("description"), f"{ctx}: package.description", errors)
+            if "build_target" in package:
+                _str_value(package, "build_target", f"{ctx}: package", errors)
             build_deps = package.get("build_deps")
             if build_deps is not None:
                 if not isinstance(build_deps, dict):
@@ -613,6 +615,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
         ]
     if vmod_id is not None:
         vmod = find_vmod(catalog, vmod_id)
+        package = vmod["package"]
         resolved = resolve_source(vmod, engine)
         # The manifest's extra build dependencies for the target's package
         # format, space-separated for the build scripts to install. Without
@@ -629,6 +632,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("VMOD_REF", resolved["ref"]),
             ("VMOD_VERSION", resolved["version"]),
             ("VMOD_BUILD_DEPS", " ".join(deps)),
+            ("VMOD_BUILD_TARGET", package.get("build_target", "all")),
             ("VMOD_MODULES", " ".join(vmod_modules(vmod))),
             ("VMOD_TESTS", vmod.get("tests", "")),
             ("VMOD_ENGINE_SOURCE", vmod.get("engine_source", "")),

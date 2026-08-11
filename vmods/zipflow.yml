@@ -13,13 +13,15 @@
 # hard-requires a Vinyl Cache *source tree* on top of the normal vinylapi.pc
 # machinery. engine_source: required makes the harness provision that tree
 # from the engine's own source pin, with VSC headers regenerated
-# (decision 14). That gets zipflow through configure, but its make is still
-# an EXPECTED RED (verified 2026-08-11 against vinyl-9.0.1): the noinst test
-# binary zfr_iter_test links lib/libvinyl/libvinyl.la out of a *compiled*
+# (decision 14). The default upstream make also builds an auxiliary noinst
+# test (verified 2026-08-11 against vinyl-9.0.1): zfr_iter_test links
+# lib/libvinyl/libvinyl.la out of a *compiled*
 # engine tree, and the provisioned tree is source-only by design -- building
-# the engine per cell was rejected in decision 14. An honest red until
-# upstream decouples that binary; the pandoc build dep is real either way
-# (Makefile regenerates README.md from README.rst when building from git).
+# the engine per cell was rejected in decision 14. The catalog build target
+# therefore builds only the installable VMOD library; upstream's own suite
+# remains opt-in and still exercises zfr_iter_test when explicitly requested.
+# The pandoc build dep is real either way (Makefile regenerates README.md from
+# README.rst when building from git).
 #
 # Bundles the zipflow library by Mark Adler as a git submodule at
 # src/foreign/zipflow (github.com/nigoroll/zipflow, branch vmod_zipflow), so
@@ -47,6 +49,7 @@ package:
     - handling, and the resulting ZIP is compressed with zlib and
     - delivered while it is generated rather than stored.
   license: BSD-2-Clause AND Zlib
+  build_target: "-C src libvmod_zipflow.la"
   build_deps:
     debian:
       - pandoc

@@ -294,6 +294,11 @@ def build_vmod() -> dict:
                 "No '|' block scalars: the parser rejects them."
             ),
             "license": _string("SPDX identifier, e.g. GPL-3.0-or-later, BSD-2-Clause."),
+            "build_target": _string(
+                "Make target or target arguments used to build the installable VMOD. "
+                "Defaults to 'all'; use this when upstream's default also builds "
+                "an auxiliary program requiring an unavailable compiled engine tree."
+            ),
             "build_deps": _object(
                 "vmod_build_deps",
                 {

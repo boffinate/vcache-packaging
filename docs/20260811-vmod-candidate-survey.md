@@ -59,7 +59,7 @@ Verified through the real harness on debian-13-arm64 against vinyl-9.0.1 (eviden
 
 - **pesi: green in both modes.** Compat pass with both pesi and pesi_debug loading (after adding the missing zlib build dep its link needed); package pass with the .deb shipping both modules and the fresh-container install check importing both (`package.modules` added — without it the check covered only the id).
 - **tus: green in compat** — first build ever, straight pass.
-- **zipflow: honest red at make.** configure now passes (mechanism works), but its noinst test binary `zfr_iter_test` links `lib/libvinyl/libvinyl.la` from a *compiled* engine tree, which the source-only provisioning deliberately does not produce. Red until upstream decouples that binary. Its pandoc build dep (README regeneration when building from git) is real and now declared.
+- **zipflow: default make target fixed.** configure passes, but its noinst test binary `zfr_iter_test` links `lib/libvinyl/libvinyl.la` from a *compiled* engine tree, which the source-only provisioning deliberately does not produce. The catalog now builds only `libvmod_zipflow.la`; the upstream suite remains opt-in. Its pandoc build dep (README regeneration when building from git) is real and declared.
 - **Generator fix found along the way**: debhelper's default `dh_auto_test` was running every VMOD's full `make check` inside deb package builds — pesi's suite (52/54 against vinyl, two ESI logexpect timeouts) exposed it. The generated rules now no-op `dh_auto_test`; upstream suites run only via the compat lane's `tests:` opt-in, matching the RPM spec which never had a `%check`.
 
 ## Group 3 — non-uplex, active in the last year (8 entries)

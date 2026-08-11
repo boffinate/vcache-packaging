@@ -17,6 +17,9 @@ override_dh_autoreconf:
 	  else autoreconf -fi; fi; \
 	fi
 
+override_dh_auto_build:
+	dh_auto_build -- @BUILD_TARGET@
+
 # Upstream test suites run only via the compat lane's `tests:` opt-in
 # (DESIGN.md); dh would otherwise run `make check` inside every package
 # build, importing per-suite flakes into package cells. The RPM spec has no

@@ -47,7 +47,7 @@ if [ ! -x configure ]; then
   else autoreconf -fi; fi
 fi
 %configure
-%make_build
+%make_build @BUILD_TARGET@
 
 %install
 %make_install

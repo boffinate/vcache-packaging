@@ -137,7 +137,7 @@ step configure
 ./configure || { autoreconf -f -i && ./configure; }
 step make
 # VMOD generators are not reliably parallel-safe.
-make -j1
+make -j1 ${VMOD_BUILD_TARGET:-all}
 
 step modules
 SOS=$(find . -path '*/.libs/libvmod_*.so' | sort)

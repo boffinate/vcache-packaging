@@ -138,6 +138,11 @@
           "minLength": 1,
           "description": "SPDX identifier, e.g. GPL-3.0-or-later, BSD-2-Clause."
         },
+        "build_target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Make target or target arguments used to build the installable VMOD. Defaults to 'all'; use this when upstream's default also builds an auxiliary program requiring an unavailable compiled engine tree."
+        },
         "build_deps": {
           "type": "object",
           "description": "Extra build dependencies, per packaging ecosystem.",
