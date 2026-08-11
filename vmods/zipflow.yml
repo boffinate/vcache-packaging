@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-zipflow (schema vmod/1, DESIGN.md).
+#
+# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
+# natively (vinylapi.pc, VINYL_PREREQ([9.0.0],[trunk])) and a separate 8.0
+# branch serves Varnish 8, so Varnish 9 cells are EXPECTED RED at configure;
+# v2 carries no patches (SCOPE.md). No usable tags, so both lanes pin master
+# (selector precedent; the 0 in 0~master keeps the Debian version
+# digit-first).
+#
+# EXPECTED RED at configure on vinyl columns too, for now: verified in
+# configure.ac on master -- AC_ARG_VAR([VINYLSRC], [path to Vinyl source]),
+# then AC_MSG_FAILURE([Need VINYLSRC]) when unset -- so configure
+# hard-requires a Vinyl Cache *source tree* on top of the normal vinylapi.pc
+# machinery (this confirms the July-2026 survey classification). The build
+# harness provides only the installed engine prefix, not a source tree, so
+# every cell is red at configure under the current contract. This is a
+# structural red, not an upstream breakage. A 2026-08-11 experiment on the
+# sibling pesi showed the extracted release tarball satisfies configure but
+# not make (engine-build-generated headers such as VSC_main.h are missing
+# from the dist archive); harness support is an open design question
+# (docs/20260811-vmod-candidate-survey.md).
+#
+# Bundles the zipflow library by Mark Adler as a git submodule at
+# src/foreign/zipflow (github.com/nigoroll/zipflow, branch vmod_zipflow), so
+# checkout needs a recursive submodule update (dict precedent, which the
+# harness already does). The submodule code is Zlib-licensed (verified in
+# zipflow.h), hence the compound SPDX expression. configure.ac also does
+# PKG_CHECK_MODULES([ZLIB], [zlib]), hence the zlib build dep.
+schema: vmod/1
+id: zipflow
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvmod-zipflow.git
+  homepage: https://code.uplex.de/uplex-varnish/libvmod-zipflow
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: ZIP archive streaming delivery processor for Vinyl Cache
+  description:
+    - libvmod-zipflow provides a Vinyl delivery processor (VDP) that
+    - streams responses as ZIP archives generated on the fly, using the
+    - zipflow library by Mark Adler, which is bundled as a git submodule.
+    - Objects are added to the archive through subrequests, similar to ESI
+    - handling, and the resulting ZIP is compressed with zlib and
+    - delivered while it is generated rather than stored.
+  license: BSD-2-Clause AND Zlib
+  build_deps:
+    debian:
+      - zlib1g-dev
+      - python3
+      - python3-docutils
+    rpm:
+      - zlib-devel
+      - python3
+      - python3-docutils
+  families:
+    - vinyl

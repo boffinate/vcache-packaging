@@ -49,6 +49,12 @@ All autotools with a `bootstrap` script, actively maintained (2026 commits), Fre
 - **pesi** (parallel ESI VDP), **tus** (resumable uploads), **zipflow** (ZIP streaming VDP): the v1 sweep — run in July 2026, after the Vinylize commits — classified all three `needs-source-tree`: configure demands the engine's source tree, which the harness does not provide. They will be permanently red at configure on every cell until upstream changes that. Red is information, but these reds are structural. pesi (real 1.3.2 release, 2024) is the one worth re-verifying first in case the verdict is stale.
 - **file** (libvmod-file, re-read files at intervals): not vinylized; updated 2025-09 for Varnish 8.0. Sweep: green on Varnish 9.0.3, red on vinyl (`VRT_synth_page` removed). Add with `families: varnish`.
 
+### Group 2 verification (2026-08-11, same day)
+
+The four entries were written same-day; the VINYLSRC requirement was confirmed verbatim in tus and zipflow configure.ac (not just pesi), and zipflow additionally needs zlib and carries the Adler code under the Zlib license in a submodule (`BSD-2-Clause AND Zlib`). file confirmed un-Vinylized (`VARNISH_PREREQ([6.5.0])`, no VINYL anywhere) and is the only one of the four needing autoconf-archive.
+
+A container experiment tested whether the harness could satisfy VINYLSRC from the engine release tarball (`ENGINE_TARBALL_URL` is already in `matrix.py env` output): the extracted vinyl-cache-9.0.1 dist tree contains `include/miniobj.h`, pesi bootstraps and configures cleanly against it (`VINYL_PREREQ([9.0],[trunk])` accepts the 9.0.1 release), but make fails on `VSC_main.h` — a header the engine build generates from `lib/libvsc/VSC_main.vsc`, which the dist archive does not ship. So the tarball alone is insufficient; pesi needs engine-build-generated files. A follow-up experiment is probing whether generating those files with the installed prefix's own vsctool converges (smallest mechanism, no new artifacts) or whether only a fully built engine tree suffices (which would mean the engine job exporting a built-source-tree artifact). Until one of those becomes a DESIGN.md contract, pesi/tus/zipflow cells are structural reds.
+
 ## Group 3 — non-uplex, active in the last year (8 entries)
 
 | id | upstream | evidence | notes |

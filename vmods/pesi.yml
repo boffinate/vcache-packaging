@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvdp-pesi (schema vmod/1, DESIGN.md).
+#
+# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
+# natively (vinylapi.pc, VINYL_* macros; configure.ac declares
+# VINYL_PREREQ([9.0],[trunk]) and its AC_INIT version is trunk) and a separate
+# 8.0 branch serves Varnish 8, so Varnish 9 cells are EXPECTED RED at
+# configure; v2 carries no patches (SCOPE.md). No usable tags, so both lanes
+# pin master (selector precedent; the 0 in 0~master keeps the Debian version
+# digit-first).
+#
+# EXPECTED RED at configure on vinyl columns too, for now: configure.ac
+# hard-requires the VINYLSRC environment variable pointing at a Vinyl Cache
+# *source tree* (it checks for $VINYLSRC/include/miniobj.h and AC_MSG_ERRORs
+# without it), on top of the normal vinylapi.pc machinery. The build harness
+# provides only the installed engine prefix, not a source tree, so every cell
+# is red at configure under the current contract. This is a structural red --
+# the harness does not yet provide what configure demands -- not an upstream
+# breakage. A 2026-08-11 container experiment showed the extracted 9.0.1
+# release tarball satisfies configure (VINYL_PREREQ accepts the release), but
+# make then fails on VSC_main.h, a header the engine build generates from
+# lib/libvsc/VSC_main.vsc and the dist tarball does not ship. Whether the
+# harness should provision a source tree with generated files is an open
+# design question (docs/20260811-vmod-candidate-survey.md).
+schema: vmod/1
+id: pesi
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvdp-pesi.git
+  homepage: https://code.uplex.de/uplex-varnish/libvdp-pesi
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: Parallel ESI delivery processor for Vinyl Cache
+  description:
+    - libvdp-pesi provides a Vinyl delivery processor (VDP) that runs ESI
+    - subrequests in parallel instead of sequentially, which can cut
+    - response latency substantially when a page includes several
+    - uncacheable fragments. It is activated per request by calling
+    - pesi.activate() in vcl_deliver and works with existing ESI setups,
+    - provided the backend does not depend on includes arriving in serial
+    - order.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils
+  families:
+    - vinyl

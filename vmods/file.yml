@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-file (schema vmod/1, DESIGN.md).
+#
+# NOT Vinylized, unlike the other UPLEX repos in the catalog: master was last
+# updated September 2025 "for current Varnish-Cache 8.0" and configure.ac
+# still uses VARNISH_PREREQ (floor 6.5.0) with no VINYL_* machinery. The
+# July-2026 empirical sweep found it builds green against varnishd 9.0.3 but
+# red against vinyl -- it uses VRT_synth_page, which vinyl removed -- so per
+# decision 13 package.families is varnish (varnish-modules precedent) and the
+# vinyl compat cells render the honest red.
+# Upstream has old tags (v1.0.0, 2022) targeting Varnish 6.x; they are
+# ignored, and both lanes pin master (selector precedent; the 0 in 0~master
+# keeps the Debian version digit-first).
+schema: vmod/1
+id: file
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvmod-file.git
+  homepage: https://code.uplex.de/uplex-varnish/libvmod-file
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: File reader VMOD with periodic refresh for Vinyl Cache
+  description:
+    - libvmod-file provides a reader object that reads the contents of a
+    - file and re-checks it for changes at a configurable interval,
+    - reloading modified contents in a background thread. Unlike the
+    - std.fileread() function, which caches file contents until the engine
+    - restarts, updated contents become visible without a restart. Files
+    - are memory mapped for efficient access.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - autoconf-archive
+      - python3
+      - python3-docutils
+    rpm:
+      - autoconf-archive
+      - python3
+      - python3-docutils
+  families:
+    - varnish

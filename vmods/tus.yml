@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-tus (schema vmod/1, DESIGN.md).
+#
+# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
+# natively (vinylapi.pc, VINYL_PREREQ([9.0.0])) and a separate 8.0 branch
+# serves Varnish 8, so Varnish 9 cells are EXPECTED RED at configure; v2
+# carries no patches (SCOPE.md). No usable tags, so both lanes pin master
+# (selector precedent; the 0 in 0~master keeps the Debian version
+# digit-first).
+#
+# EXPECTED RED at configure on vinyl columns too, for now: verified in
+# configure.ac on master -- AC_ARG_VAR([VINYLSRC], [path to Vinyl source]),
+# then AC_MSG_FAILURE([Need VINYLSRC]) when unset, and a header check for
+# cache/cache_obj.h that dies with "Missing $VINYLSRC development files." --
+# so configure hard-requires a Vinyl Cache *source tree* on top of the normal
+# vinylapi.pc machinery (this confirms the July-2026 survey classification).
+# The build harness provides only the installed engine prefix, not a source
+# tree, so every cell is red at configure under the current contract. This is
+# a structural red, not an upstream breakage. A 2026-08-11 experiment on the
+# sibling pesi showed the extracted release tarball satisfies configure but
+# not make (engine-build-generated headers such as VSC_main.h are missing
+# from the dist archive); harness support is an open design question
+# (docs/20260811-vmod-candidate-survey.md).
+schema: vmod/1
+id: tus
+upstream:
+  git: https://code.uplex.de/uplex-varnish/libvmod-tus.git
+  homepage: https://code.uplex.de/uplex-varnish/libvmod-tus
+sources:
+  head: master
+  default:
+    ref: master
+    version: "0~master"
+package:
+  summary: TUS resumable upload proxy VMOD for Vinyl Cache
+  description:
+    - libvmod-tus implements the tus resumable upload protocol, including
+    - all currently defined protocol extensions such as concatenation. It
+    - acts as a proxy that collects the pieces of an upload on the Vinyl
+    - server and forwards the complete file to a backend in one request
+    - for storage. The VMOD implements no permanent storage itself; a
+    - backend must provide final persistence.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - python3
+      - python3-docutils
+    rpm:
+      - python3
+      - python3-docutils
+  families:
+    - vinyl
