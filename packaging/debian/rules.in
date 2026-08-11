@@ -7,6 +7,16 @@
 %:
 	dh $@ --no-parallel
 
+# Mirror the compat/RPM bootstrap ladder.  Some upstream git trees, including
+# cachetag, need their own bootstrap script to create m4 and locate the
+# engine's aclocal macros; dh_autoreconf alone then searches a bogus /aclocal.
+override_dh_autoreconf:
+	if [ ! -x configure ]; then \
+	  if [ -f bootstrap ]; then sh ./bootstrap; \
+	  elif [ -f autogen.sh ]; then sh ./autogen.sh; \
+	  else autoreconf -fi; fi; \
+	fi
+
 override_dh_auto_install:
 	dh_auto_install
 	find debian/@PACKAGE_NAME@ \( -name '*.la' -o -name '*.a' \) -delete

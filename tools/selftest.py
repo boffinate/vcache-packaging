@@ -919,6 +919,15 @@ def recipe_debian_generation():
         ok("Test Maintainer <test@example.org>" in changelog, "maintainer identity")
         rules = out / "debian" / "rules"
         ok(rules.stat().st_mode & 0o111, "rules is executable")
+        rules_text = rules.read_text()
+        ok("override_dh_autoreconf:" in rules_text,
+           "Debian recipe takes responsibility for upstream bootstrap")
+        ok("if [ -f bootstrap ]; then sh ./bootstrap" in rules_text,
+           "Debian recipe prefers an upstream bootstrap script")
+        ok("elif [ -f autogen.sh ]; then sh ./autogen.sh" in rules_text,
+           "Debian recipe falls back to an upstream autogen script")
+        ok("else autoreconf -fi; fi" in rules_text,
+           "Debian recipe retains an autoreconf fallback")
         eq((out / "debian" / "source" / "format").read_text(), "3.0 (quilt)\n", "source format")
 
 
