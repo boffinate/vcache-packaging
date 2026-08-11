@@ -10,6 +10,7 @@ This is a clean-room successor to `../vcache-packaging` (referred to as **v1** b
 SCOPE.md  DESIGN.md  README.md
 engines.yml              # hand-maintained: every engine version we test/package
 vmods/<id>.yml           # hand-maintained: one file per selected VMOD
+schemas/                 # generated: JSON Schema for the two catalog shapes (editors only)
 packaging/
   debian/                # one generic Debian recipe template set (*.in)
   rpm/                   # one generic RPM spec template (*.in)
@@ -27,12 +28,16 @@ scripts/
   matrix.yml             # dispatch + weekly: full release-engine matrix -> Pages
   trunk.yml              # schedule Mon/Thu: trunk columns -> Pages
   release.yml            # dispatch: build packages, create GitHub Release
+.githooks/
+  pre-commit             # validate + schema --check + selftest; enabled via core.hooksPath
 work/                    # gitignored scratch (container mounts, results, artifacts)
 ```
 
 ## Catalog schemas
 
 Parsed with `tools/yaml_subset.py`: mappings, block sequences, scalars-as-strings only — no flow `[a, b]` lists, no `|` block scalars, no anchors. Mapping keys may contain lowercase letters, digits, `_`, `-`, and `.` (series names like `vinyl-9.0` must be expressible as `by_series` keys). Multi-line prose (`description`) is a list of plain scalar lines. Unknown keys are validation errors. The inline examples below use flow-list shorthand for brevity only; the real files use block sequences throughout.
+
+Both key sets of every mapping below live once, in `tools/matrix.py`'s `KEYS` table; the validator and the generated editor schemas both read it, so they cannot drift (decision 11).
 
 ### engines.yml
 
@@ -121,8 +126,11 @@ matrix.py resolve --vmod ID --engine ID                 # print resolved ref+ver
 matrix.py env --engine ID [--vmod ID] [--target ID]     # sh-sourceable pins for scripts
 matrix.py merge --results-dir DIR --state-file FILE     # fold cell JSONs into state
 matrix.py render --state-file FILE --out index.html
+matrix.py schema [--out DIR] [--check]                  # write (or verify) schemas/*.schema.json
 matrix.py selftest
 ```
+
+`schema` writes `schemas/engines.schema.json` and `schemas/vmod.schema.json` from the `KEYS` table and the enum constants in `matrix.py`; `--check` regenerates in memory and exits 1 if the checked-in files differ. The schemas are **editor ergonomics, not a second validator** — see decision 11.
 
 `expand` emits rows `{row, engine, target, mode}` — the GitHub Actions job matrix. `--format github` prints exactly two `key=<single-line-json>` lines for `$GITHUB_OUTPUT`: `engines=[...]` (unique engine×target pairs) and `vmods=[...]` (VMOD rows only, engine rows excluded). `env` is the **only** way shell/CI gets version strings; nothing like v1's hand-mirrored `pins.env` exists. `merge` rule: newest `finished_at` per (row, engine, target, mode) wins; globs `*.json` recursively; a state file full of red cells is still a successful merge/render.
 
@@ -141,7 +149,7 @@ Both run everything inside containers (`debian:13` for debian-13-amd64 compat+pa
 
 ## Workflows
 
-- `ci.yml` — PR + push to main: `matrix.py validate` + `matrix.py selftest`. Fast, host-safe, no containers.
+- `ci.yml` — PR + push to main: `matrix.py validate` + `matrix.py schema --check` + `matrix.py selftest`. Fast, host-safe, no containers. Same three commands as the pre-commit hook, so a hook-skipping commit (`--no-verify`) is still caught.
 - `matrix.yml` — workflow_dispatch + weekly: expand release lane → engine jobs (upload prefix/package artifacts) → VMOD jobs (fail-fast off, never red on cell failure) → merge → render → commit state to `ci-state/matrix` → deploy Pages. Main-branch runs only publish.
 - `trunk.yml` — cron Mon/Thu + dispatch: same shape for trunk engines, compat mode only. **No change-gating, no issue filing, no re-pin PRs** — it just runs; the matrix page is the notification surface.
 - `release.yml` — workflow_dispatch only: build vinyl release engine packages + all VMOD packages on all package targets, collect green results, `gh release create` (not draft) with .deb/.rpm/SHA256SUMS and a body generated from the merged results. A VMOD whose package build fails is simply omitted from the release and listed as such in the body.
@@ -163,6 +171,14 @@ Both run everything inside containers (`debian:13` for debian-13-amd64 compat+pa
     - **Through bare `dpkg -i` nothing at the packaging layer helps** — and that includes the ABI Provides, which are equally a `Depends:` on the VMOD side. dpkg validates only the incoming package's own dependencies and never re-checks an already-configured reverse-dependency: installing a newer engine over an exact-pinned VMOD succeeds silently, exit 0, with `dpkg --audit` clean. This is dpkg semantics, not a weakness of decision 6, and it is why the supported install path for Release assets is `apt install ./*.deb`.
 
     The backstop for the `dpkg -i` path is the engine's own runtime check, not packaging: a `$ABI strict` VMOD embeds the engine's exact ABI marker and `lib/libvcc/vcc_vmod.c` refuses it with `Incompatible VMOD` at VCL compile time. Demonstrated against a byte-patched `.so` — a clean compile error, exit 2, no crash. Reopen this decision if v2 ever ships more than one engine build per source revision, or if someone else packages VMODs against our engine.
+11. **Editor schemas are advisory; `validate` stays the authority** (2026-08-11). `schemas/*.schema.json` exist so `yaml-language-server` (Zed, VS Code/Cursor, Neovim `yamlls`, JetBrains, Helix) can red-underline a bad catalog *as it is typed* — the one thing a strict parser plus a CLI cannot do. Three properties keep this from becoming a second, drifting source of truth:
+    - **Generated, never hand-written.** They are outputs, like the packaging recipes: fix the generator or the `KEYS` table, never the JSON. `matrix.py schema --check` fails CI and the pre-commit hook if the checked-in files do not match what the generator emits, so drift is caught the day it happens.
+    - **Deliberately weaker than `validate`.** The language server parses real YAML, not our subset, so it accepts anchors, flow mappings, and tabs that `yaml_subset.py` rejects; and JSON Schema cannot express the cross-file or cross-record rules (`id` matching the filename stem, `by_series` keys naming a declared engine series, duplicate ids). Green in the editor therefore means "probably fine", never "valid". Nothing in CI or the build scripts reads these files.
+    - **Structural only.** No catalog *data* is baked in — the `by_series` key pattern is a charset, not an enum of current engine series — so the schemas change only when the schema changes, not when a pin moves.
+
+    Everything is typed `string` with `additionalProperties: false`, which mirrors the parser's no-coercion rule and makes the editor flag the house-style slips (`packages: true`, `version: 1.7`) that quoting exists to prevent.
+
+    Behaviour proven in a container (`work/schema-proof/`, ajv draft-07 + a YAML 1.2 reader, the same pairing the language server uses): the real catalog validates clean, 14 negative cases are caught with the message naming the offending key, and the three documented limits above are demonstrated as *accepted* rather than assumed.
 
 ## Port map (the only v1/survey content that comes across)
 

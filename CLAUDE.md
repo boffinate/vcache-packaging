@@ -11,7 +11,7 @@ This repository is the clean-room v2 of the Vinyl Cache packaging + compatibilit
 - Every version pin has exactly one machine-readable home: `engines.yml` or `vmods/<id>.yml`. Shell/CI gets values only via `python3 tools/matrix.py env`. Never hand-mirror a pin into a script, workflow, or second file — v1's worst recurring bug was four unguarded copies of the engine pin.
 - We carry nothing on behalf of upstreams: no patches, no ported tests, no vendored source. A VMOD that fails against an engine is a red cell, which is a correct and useful result. If a patch is ever truly needed, fork the VMOD repo and point the catalog at the fork.
 - A red cell never fails a CI job; only `infra_failed` (the harness itself broke) does. Build scripts exit 0 on classified failures.
-- Generated recipes are outputs. Never hand-patch one; fix the generator or the catalog.
+- Generated recipes are outputs. Never hand-patch one; fix the generator or the catalog. The same goes for `schemas/*.schema.json` — fix `tools/jsonschema_gen.py` or `matrix.py`'s `KEYS` table, then `python3 tools/matrix.py schema`. Every catalog file's first line is a `# yaml-language-server:` modeline; keep it there (a selftest checks).
 - Do not hard-wrap Markdown. Do not edit `../vinyl-cache`, `../slash`, or other workspace checkouts from here.
 - Catalog YAML house style: block sequences only (no flow `[a, b]`), no `|` block scalars, `description` is a list of plain lines, quote anything that could look numeric. The parser (`tools/yaml_subset.py`) is strict on purpose.
 
@@ -24,6 +24,7 @@ python3 tools/matrix.py expand --lane release|trunk [--mode compat|package|all] 
 python3 tools/matrix.py env --engine <id> [--vmod <id>] [--target <id>]   # the only pin source for shell
 python3 tools/matrix.py merge --results-dir <dir> --state-file <f>
 python3 tools/matrix.py render --state-file <f> --out index.html
+python3 tools/matrix.py schema [--check]  # regenerate (or verify) the editor JSON Schemas
 python3 tools/recipe.py generate --vmod <id> --engine <id> --target <id> --out <dir>
 scripts/build-engine.sh <engine-id> <target> <workdir>
 scripts/build-vmod.sh <vmod-id> <engine-id> <target> compat|package <workdir>

@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import jsonschema_gen  # noqa: E402
 import matrix  # noqa: E402
 import recipe  # noqa: E402
 import yaml_subset  # noqa: E402
@@ -358,6 +359,87 @@ def catalog_tests_and_modules_fields():
         vmod = must_replace(vmod, "  modules:\n    - alpha\n    - beta_2\n", "")
         expect_catalog_error(write_fixture(Path(tmp), vmods={"multi-mod": vmod}),
                              "package.modules is required", "hyphenated id without modules")
+
+
+# ---------------------------------------------------------------------------
+# Editor JSON Schemas (DESIGN.md decision 11) - generated outputs, so what
+# these tests guard is that they cannot drift from the validator.
+# ---------------------------------------------------------------------------
+
+
+@test
+def schema_files_match_the_generator():
+    problems = jsonschema_gen.check(matrix.default_root() / "schemas")
+    ok(not problems, "checked-in schemas/ differ from the generator:\n" + "\n".join(problems))
+
+
+@test
+def schema_covers_every_keys_entry():
+    covered = jsonschema_gen.covered_kinds()
+    missing = sorted(set(matrix.KEYS) - covered)
+    unknown = sorted(covered - set(matrix.KEYS))
+    ok(not missing, f"matrix.KEYS entries absent from the editor schemas: {missing}")
+    ok(not unknown, f"schemas describe mappings not in matrix.KEYS: {unknown}")
+
+
+@test
+def schema_documents_are_shaped_as_the_language_server_needs():
+    docs = jsonschema_gen.build_all()
+    eq(sorted(docs), ["engines.schema.json", "vmod.schema.json"], "generated files")
+    for name, doc in docs.items():
+        eq(doc["$schema"], jsonschema_gen.DRAFT, f"{name}: dialect")
+        # additionalProperties:false everywhere is what turns a typo into a
+        # squiggle rather than a silently ignored key.
+        stack = [doc]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                if node.get("type") == "object" and "patternProperties" not in node:
+                    ok("additionalProperties" in node and node["additionalProperties"] is False,
+                       f"{name}: an object node allows additional properties: {sorted(node)}")
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+    engines = docs["engines.schema.json"]
+    engine = engines["properties"]["engines"]["items"]
+    eq(engine["properties"]["family"]["enum"], list(matrix.FAMILIES), "family enum tracks matrix.FAMILIES")
+    eq(engine["properties"]["kind"]["enum"], list(matrix.KINDS), "kind enum tracks matrix.KINDS")
+    eq(engines["properties"]["schema"]["const"], matrix.ENGINES_SCHEMA, "engines schema marker")
+    vmod = docs["vmod.schema.json"]
+    eq(vmod["properties"]["tests"]["enum"], list(matrix.TESTS_VALUES), "tests enum tracks matrix.TESTS_VALUES")
+    eq(vmod["properties"]["package"]["properties"]["modules"]["items"]["pattern"],
+       matrix.MODULE_NAME_RE.pattern, "module name pattern tracks matrix.MODULE_NAME_RE")
+
+
+@test
+def schema_cli_writes_and_detects_drift():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "schemas"
+        code, stdout, _ = run_cli(["schema", "--out", str(out)])
+        eq(code, 0, "schema exit code")
+        ok("engines.schema.json" in stdout, "schema names what it wrote")
+        for name in jsonschema_gen.SCHEMA_FILES:
+            json.loads((out / name).read_text(encoding="utf-8"))
+        eq(run_cli(["schema", "--out", str(out), "--check"])[0], 0, "check passes on fresh output")
+        # A hand-patched schema must be caught: these are outputs.
+        target = out / "vmod.schema.json"
+        target.write_text(target.read_text(encoding="utf-8").replace('"title"', '"tilte"', 1), encoding="utf-8")
+        code, _, stderr = run_cli(["schema", "--out", str(out), "--check"])
+        eq(code, 1, "check exit code on drift")
+        ok("does not match the generator" in stderr, f"drift message: {stderr!r}")
+        target.unlink()
+        eq(run_cli(["schema", "--out", str(out), "--check"])[0], 1, "check exit code on a missing file")
+
+
+@test
+def catalog_files_carry_a_language_server_modeline():
+    root = matrix.default_root()
+    files = [(root / "engines.yml", "schemas/engines.schema.json")]
+    files += [(p, "../schemas/vmod.schema.json") for p in sorted((root / "vmods").glob("*.yml"))]
+    for path, target in files:
+        first = path.read_text(encoding="utf-8").splitlines()[0]
+        eq(first, jsonschema_gen.MODELINE.format(path=target), f"{path.name}: first line")
+        ok((path.parent / target).is_file(), f"{path.name}: modeline points at a real schema file")
 
 
 # ---------------------------------------------------------------------------

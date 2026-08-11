@@ -9,6 +9,7 @@ Subcommands (contract: DESIGN.md):
   env        sh-sourceable pins for the build scripts
   merge      fold cell result JSONs into the persistent state file
   render     pivot the state file into one self-contained HTML matrix page
+  schema     write (or --check) the editor JSON Schemas under schemas/
   selftest   run tools/selftest.py
 
 Catalog loading, the source-resolution rule, and every version string the
@@ -58,6 +59,25 @@ TESTS_VALUES = ("make-check",)
 # VCL import names (package.modules entries). VMOD ids may contain hyphens
 # (varnish-modules); module names may not.
 MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+# Mapping keys the parser accepts; also the by_series key charset (DESIGN.md).
+MAPPING_KEY_RE = re.compile(r"^[a-z0-9_.-]+$")
+
+# The key sets of every catalog mapping, as (required, optional). One home:
+# _load_engines/_load_vmods validate against this table and
+# tools/jsonschema_gen.py emits the editor schemas from it, so the two cannot
+# disagree about which keys exist (DESIGN.md decision 11).
+KEYS = {
+    "engines_doc": ({"schema", "engines"}, set()),
+    "engine": ({"id", "family", "series", "kind", "source", "targets"}, {"packages"}),
+    "engine_source_release": ({"tarball_url", "sha256"}, set()),
+    "engine_source_trunk": ({"git_url", "branch"}, set()),
+    "vmod_doc": ({"schema", "id", "upstream", "sources", "package"}, {"tests"}),
+    "vmod_upstream": ({"git"}, {"homepage"}),
+    "vmod_sources": ({"head", "default"}, {"by_series"}),
+    "vmod_source_entry": ({"ref", "version"}, set()),
+    "vmod_package": ({"summary", "description", "license"}, {"build_deps", "modules"}),
+    "vmod_build_deps": (set(), {"debian", "rpm"}),
+}
 
 
 class CatalogError(Exception):
@@ -82,6 +102,12 @@ def _expect_keys(mapping: dict, required: set, allowed: set, ctx: str, errors: l
         errors.append(f"{ctx}: missing required key {key!r}")
     for key in sorted(set(mapping) - allowed):
         errors.append(f"{ctx}: unknown key {key!r}")
+
+
+def _expect(mapping: dict, kind: str, ctx: str, errors: list) -> None:
+    """_expect_keys against the named entry of the KEYS table."""
+    required, optional = KEYS[kind]
+    _expect_keys(mapping, required, required | optional, ctx, errors)
 
 
 def _str_value(mapping: dict, key: str, ctx: str, errors: list) -> str:
@@ -110,7 +136,7 @@ def _load_engines(path: Path, errors: list) -> list:
         errors.append(str(exc))
         return []
     ctx = str(path)
-    _expect_keys(doc, {"schema", "engines"}, {"schema", "engines"}, ctx, errors)
+    _expect(doc, "engines_doc", ctx, errors)
     if doc.get("schema") != ENGINES_SCHEMA:
         errors.append(f"{ctx}: schema must be {ENGINES_SCHEMA!r}, got {doc.get('schema')!r}")
     engines = doc.get("engines")
@@ -124,13 +150,7 @@ def _load_engines(path: Path, errors: list) -> list:
         if not isinstance(engine, dict):
             errors.append(f"{ectx}: must be a mapping")
             continue
-        _expect_keys(
-            engine,
-            {"id", "family", "series", "kind", "source", "targets"},
-            {"id", "family", "series", "kind", "source", "targets", "packages"},
-            ectx,
-            errors,
-        )
+        _expect(engine, "engine", ectx, errors)
         eid = _str_value(engine, "id", ectx, errors)
         if eid:
             ectx = f"{ctx}: engine {eid!r}"
@@ -159,11 +179,11 @@ def _load_engines(path: Path, errors: list) -> list:
         if not isinstance(source, dict):
             errors.append(f"{ectx}: 'source' must be a mapping")
         elif kind == "release":
-            _expect_keys(source, {"tarball_url", "sha256"}, {"tarball_url", "sha256"}, f"{ectx}: source", errors)
+            _expect(source, "engine_source_release", f"{ectx}: source", errors)
             _str_value(source, "tarball_url", f"{ectx}: source", errors)
             _str_value(source, "sha256", f"{ectx}: source", errors)
         elif kind == "trunk":
-            _expect_keys(source, {"git_url", "branch"}, {"git_url", "branch"}, f"{ectx}: source", errors)
+            _expect(source, "engine_source_trunk", f"{ectx}: source", errors)
             _str_value(source, "git_url", f"{ectx}: source", errors)
             _str_value(source, "branch", f"{ectx}: source", errors)
         targets = _str_list(engine.get("targets"), f"{ectx}: targets", errors)
@@ -186,8 +206,7 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
         except yaml_subset.ManifestSyntaxError as exc:
             errors.append(str(exc))
             continue
-        _expect_keys(doc, {"schema", "id", "upstream", "sources", "package"},
-                     {"schema", "id", "upstream", "sources", "package", "tests"}, ctx, errors)
+        _expect(doc, "vmod_doc", ctx, errors)
         if doc.get("schema") != VMOD_SCHEMA:
             errors.append(f"{ctx}: schema must be {VMOD_SCHEMA!r}, got {doc.get('schema')!r}")
         vid = _str_value(doc, "id", ctx, errors)
@@ -197,13 +216,13 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
         if not isinstance(upstream, dict):
             errors.append(f"{ctx}: 'upstream' must be a mapping")
         else:
-            _expect_keys(upstream, {"git"}, {"git", "homepage"}, f"{ctx}: upstream", errors)
+            _expect(upstream, "vmod_upstream", f"{ctx}: upstream", errors)
             _str_value(upstream, "git", f"{ctx}: upstream", errors)
         sources = doc.get("sources")
         if not isinstance(sources, dict):
             errors.append(f"{ctx}: 'sources' must be a mapping")
         else:
-            _expect_keys(sources, {"head", "default"}, {"head", "default", "by_series"}, f"{ctx}: sources", errors)
+            _expect(sources, "vmod_sources", f"{ctx}: sources", errors)
             _str_value(sources, "head", f"{ctx}: sources", errors)
             default = sources.get("default")
             if not isinstance(default, dict):
@@ -229,8 +248,7 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
         if not isinstance(package, dict):
             errors.append(f"{ctx}: 'package' must be a mapping")
         else:
-            _expect_keys(package, {"summary", "description", "license"},
-                         {"summary", "description", "license", "build_deps", "modules"}, f"{ctx}: package", errors)
+            _expect(package, "vmod_package", f"{ctx}: package", errors)
             _str_value(package, "summary", f"{ctx}: package", errors)
             _str_value(package, "license", f"{ctx}: package", errors)
             if "description" in package:
@@ -240,7 +258,7 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
                 if not isinstance(build_deps, dict):
                     errors.append(f"{ctx}: package.build_deps must be a mapping")
                 else:
-                    _expect_keys(build_deps, set(), {"debian", "rpm"}, f"{ctx}: package.build_deps", errors)
+                    _expect(build_deps, "vmod_build_deps", f"{ctx}: package.build_deps", errors)
                     for eco in ("debian", "rpm"):
                         if eco in build_deps:
                             _str_list(build_deps[eco], f"{ctx}: package.build_deps.{eco}", errors)
@@ -264,7 +282,7 @@ def _load_vmods(dirpath: Path, engines: list, errors: list) -> dict:
 
 
 def _check_source_entry(entry: dict, ctx: str, errors: list) -> None:
-    _expect_keys(entry, {"ref", "version"}, {"ref", "version"}, ctx, errors)
+    _expect(entry, "vmod_source_entry", ctx, errors)
     _str_value(entry, "ref", ctx, errors)
     _str_value(entry, "version", ctx, errors)
 
@@ -850,6 +868,23 @@ def cmd_render(args) -> int:
     return 0
 
 
+def cmd_schema(args) -> int:
+    """Write (or verify) the editor JSON Schemas. DESIGN.md decision 11."""
+    import jsonschema_gen
+
+    outdir = Path(args.out) if args.out else Path(args.root) / "schemas"
+    if args.check:
+        problems = jsonschema_gen.check(outdir)
+        if problems:
+            print("\n".join(problems), file=sys.stderr)
+            return 1
+        print(f"ok: {outdir} matches the generator")
+        return 0
+    written = jsonschema_gen.write(outdir)
+    print("wrote " + ", ".join(str(p) for p in written))
+    return 0
+
+
 def cmd_selftest(args) -> int:
     import selftest
 
@@ -898,6 +933,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--generated-at", help="timestamp for the page header; defaults to now (tests pass this)")
     add_root(p)
     p.set_defaults(func=cmd_render)
+
+    p = sub.add_parser("schema", help="write (or --check) the editor JSON Schemas")
+    p.add_argument("--out", default=None, help="output directory (default: <root>/schemas)")
+    p.add_argument("--check", action="store_true", help="verify the checked-in files match; exit 1 on drift")
+    add_root(p)
+    p.set_defaults(func=cmd_schema)
 
     p = sub.add_parser("selftest", help="run tools/selftest.py")
     p.set_defaults(func=cmd_selftest)

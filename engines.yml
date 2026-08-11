@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=schemas/engines.schema.json
 # Hand-maintained engine catalog (schema engines/1, DESIGN.md).
 # Release pins were transcribed once from v1: vinyl-9.0.1 from
 # recipes/debian-13/pins.env (release block), varnish-9.0.3 from

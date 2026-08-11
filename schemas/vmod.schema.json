@@ -1,0 +1,188 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "vcache vmods/<id>.yml",
+  "type": "object",
+  "description": "One selected VMOD. Authority is 'python3 tools/matrix.py validate'; this schema is editor assistance only (DESIGN.md decision 11).",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "package",
+    "schema",
+    "sources",
+    "upstream"
+  ],
+  "properties": {
+    "schema": {
+      "const": "vmod/1",
+      "description": "Schema marker; must be 'vmod/1'."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "VMOD id. Must equal the filename stem \u2014 the validator checks that; this schema cannot."
+    },
+    "upstream": {
+      "type": "object",
+      "description": "Where this VMOD lives upstream.",
+      "additionalProperties": false,
+      "required": [
+        "git"
+      ],
+      "properties": {
+        "git": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical clone URL.",
+          "format": "uri"
+        },
+        "homepage": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Project page, used in the package metadata.",
+          "format": "uri"
+        }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "description": "How this VMOD's source ref is chosen per engine.",
+      "additionalProperties": false,
+      "required": [
+        "default",
+        "head"
+      ],
+      "properties": {
+        "head": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Branch used for the trunk lane's moving target."
+        },
+        "default": {
+          "type": "object",
+          "description": "The ref/version used for any engine without a by_series override.",
+          "additionalProperties": false,
+          "required": [
+            "ref",
+            "version"
+          ],
+          "properties": {
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Git ref to build: a tag, branch, or commit. This is the pin."
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Upstream version for package naming, quoted so it stays a string (e.g. \"1.7\", not 1.7)."
+            }
+          }
+        },
+        "by_series": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Per-engine-series overrides, keyed by an engine's 'series' value. The validator additionally checks each key names a series some engine declares; this schema only checks shape.",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z0-9_.-]+$": {
+              "type": "object",
+              "description": "Override for this engine series.",
+              "additionalProperties": false,
+              "required": [
+                "ref",
+                "version"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Git ref to build: a tag, branch, or commit. This is the pin."
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Upstream version for package naming, quoted so it stays a string (e.g. \"1.7\", not 1.7)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "description": "What the generated .deb/.rpm says about itself.",
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "license",
+        "summary"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One-line package summary (Debian Description / RPM Summary)."
+        },
+        "description": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Long description as a list of plain lines, one per line of prose. No '|' block scalars: the parser rejects them."
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "description": "SPDX identifier, e.g. GPL-3.0-or-later, BSD-2-Clause."
+        },
+        "build_deps": {
+          "type": "object",
+          "description": "Extra build dependencies, per packaging ecosystem.",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "debian": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Extra Build-Depends beyond the common set."
+            },
+            "rpm": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Extra BuildRequires beyond the common set."
+            }
+          }
+        },
+        "modules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "A VCL import name: lowercase, digits and underscores."
+          },
+          "description": "VCL import names this VMOD ships. Defaults to [<id>]; required when the id is not a legal module name (e.g. varnish-modules)."
+        }
+      }
+    },
+    "tests": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Opt in to running the VMOD's own suite in compat mode.",
+      "enum": [
+        "make-check"
+      ]
+    }
+  }
+}

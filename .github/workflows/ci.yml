@@ -15,4 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 tools/matrix.py validate
+      # schemas/ are generated outputs; catch a hand-edit or a stale regen.
+      - run: python3 tools/matrix.py schema --check
       - run: python3 tools/matrix.py selftest

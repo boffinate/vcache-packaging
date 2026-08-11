@@ -1,0 +1,19 @@
+#!/bin/sh
+# Pre-commit gate for vcache-packaging.
+#
+# Runs exactly what ci.yml runs, so a broken catalog is caught here rather than
+# on a push. All three commands are host-safe by design (Python 3 stdlib only,
+# no containers, no network) and finish in well under a second.
+#
+# Enable in a fresh clone with:
+#     git config core.hooksPath .githooks
+# Skip it for one commit with `git commit --no-verify` - CI still checks.
+
+set -e
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+python3 tools/matrix.py validate      # catalog well-formed (the authority)
+python3 tools/matrix.py schema --check # schemas/ still matches its generator
+python3 tools/matrix.py selftest      # all tooling tests
