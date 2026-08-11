@@ -1120,6 +1120,19 @@ def vmod_cargo_compat_contract_is_offline_after_one_fetch():
     ok(script.count("prepare_cargo") == 2, "compat and package paths share Cargo preparation")
     ok(library.count("step cargo-fetch") == 1, "shared Cargo preparation fetches once")
     ok(library.count("cargo fetch --locked") == 2, "Cargo fetch has exactly one retry")
+    ok("dnf -y -q install clang clang-devel" in library,
+       "EL Cargo preparation uses the EL10 clang development package")
+    ok("libclang-devel" not in library,
+       "EL Cargo preparation does not request the removed libclang-devel name")
+
+
+@test
+def container_image_pull_retries_transient_registry_failures():
+    library = (Path(__file__).resolve().parent.parent / "scripts" / "lib.sh").read_text()
+    ok('docker image inspect "$1"' in library, "container runner checks the local image cache")
+    ok("docker pull --platform \"$2\" \"$1\"" in library,
+       "container runner explicitly pulls a missing image")
+    ok("for attempt in 1 2 3" in library, "container runner bounds pull retries")
 
 
 @test
@@ -1572,7 +1585,7 @@ def recipe_cargo_debian_and_rpm_mapping():
         written = recipe.generate(root, "reqwest", "vinyl-9.0.1", "el10-x86_64", rpm_out,
                                   maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
         spec = written[0].read_text()
-        ok("BuildRequires:  clang" in spec and "BuildRequires:  libclang-devel" in spec,
+        ok("BuildRequires:  clang" in spec and "BuildRequires:  clang-devel" in spec,
            "Cargo RPM native dependencies")
         ok("cargo build --release --locked --offline" in spec, "Cargo RPM build")
         ok("--mapping reqwest=libvmod_reqwest.so" in spec, "Cargo RPM artifact mapping")

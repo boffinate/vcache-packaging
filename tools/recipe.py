@@ -62,7 +62,7 @@ RPM_TEMPLATE = "vmod.spec.in"
 DEB_BASE_BUILD_DEPS = ["debhelper-compat (= 13)", "autoconf", "automake", "libtool", "pkgconf"]
 RPM_BASE_BUILD_REQS = ["autoconf", "automake", "libtool", "make", "gcc", "pkgconfig"]
 DEB_CARGO_BUILD_DEPS = ["clang", "libclang-dev"]
-RPM_CARGO_BUILD_REQS = ["clang", "libclang-devel"]
+RPM_CARGO_BUILD_REQS = ["clang", "clang-devel"]
 
 
 # One lookup, owned by matrix.py; re-exported for existing callers.

@@ -20,6 +20,8 @@ package:
     debian:
       - uuid-dev
     rpm:
-      - ossp-uuid-devel
+      # EL packages OSSP UUID as uuid-devel (the historical
+      # ossp-uuid-devel name is not present in EL10).
+      - uuid-devel
   families:
     - varnish

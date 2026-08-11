@@ -58,6 +58,20 @@ prepare_workdir() {
 # the repo ro at /repo. Streams output and keeps a log copy. Returns the
 # container's exit status (callers set pipefail).
 run_in_container() {
+  # Registry authentication and manifest requests occasionally time out on
+  # hosted runners. Pull explicitly with bounded retries so a transient
+  # Docker Hub failure does not turn an otherwise valid build into an
+  # infra_failed cell. Once the image is local, avoid another registry hit.
+  if ! docker image inspect "$1" >/dev/null 2>&1; then
+    local attempt
+    for attempt in 1 2 3; do
+      if docker pull --platform "$2" "$1"; then
+        break
+      fi
+      [ "$attempt" -lt 3 ] || return 1
+      sleep $((attempt * 5))
+    done
+  fi
   docker run --rm \
     --platform "$2" \
     -v "$3:/work" \
@@ -101,7 +115,7 @@ prepare_cargo() {
   step cargo-deps
   case "$PKGFMT" in
     deb) apt-get install -y --no-install-recommends clang libclang-dev ;;
-    rpm) dnf -y -q install clang libclang-devel ;;
+    rpm) dnf -y -q install clang clang-devel ;;
   esac
 
   step cargo-bootstrap
