@@ -31,6 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
+        # An early engine infra failure can produce no artifact. Continue so
+        # build-vmod.sh emits the required infra_failed cell for this VMOD.
+        continue-on-error: true
         with:
           name: engine-${{ matrix.engine }}-${{ matrix.target }}
           path: work/engine/artifacts

@@ -251,11 +251,19 @@ def yaml_parses_description_list_and_dotted_keys():
 
 
 @test
-def yaml_supports_flow_sequences_and_literals():
-    doc = yaml_subset.parse("a: [x, y]\nb: []\nc: |\n  line one\n  line two\n", "t")
-    eq(doc["a"], ["x", "y"], "flow sequence")
-    eq(doc["b"], [], "empty flow sequence")
-    eq(doc["c"], "line one\nline two\n", "literal block")
+def yaml_rejects_flow_sequences_and_literals():
+    bad = [
+        ("a: [x, y]\n", "flow sequences are not supported"),
+        ("a: []\n", "flow sequences are not supported"),
+        ("a: |\n  line one\n  line two\n", "literal block scalars are not supported"),
+    ]
+    for text, needle in bad:
+        try:
+            yaml_subset.parse(text, "t")
+        except yaml_subset.ManifestSyntaxError as exc:
+            ok(needle in str(exc), f"{text!r}: error does not mention {needle!r}: {exc}")
+        else:
+            raise Fail(f"{text!r}: expected ManifestSyntaxError")
 
 
 @test
@@ -265,10 +273,10 @@ def yaml_rejects_out_of_subset_input():
         ("a: 1\na: 2\n", "duplicate"),
         ("a: 'oops\n", "unterminated"),
         ("a: {x: 1}\n", "unsupported"),
-        ("a: [x, {y}]\n", "unsupported"),
+        ("a: [x, {y}]\n", "flow sequences are not supported"),
         ("a: value \n", "trailing"),
         ("A-Key: v\n", "invalid key"),
-        ("a: |\nb: c\n", "no content"),
+        ("a: |\nb: c\n", "literal block scalars are not supported"),
     ]
     for text, needle in bad:
         try:
@@ -427,9 +435,9 @@ def catalog_tests_and_modules_fields():
                              "not a valid module name", "bad module name")
     with tempfile.TemporaryDirectory() as tmp:
         vmod = must_replace(FIXTURE_MULTI, "  modules:\n    - alpha\n    - beta_2\n",
-                            "  modules: []\n")
+                            "  modules: none\n")
         expect_catalog_error(write_fixture(Path(tmp), vmods={"multi": vmod}),
-                             "non-empty list", "empty modules list")
+                             "non-empty list", "modules must be a list")
     # Hyphens stay legal in VMOD ids (varnish-modules), but such an id cannot
     # be the module-name default, so package.modules becomes required.
     with tempfile.TemporaryDirectory() as tmp:
@@ -458,11 +466,11 @@ def catalog_package_families_field():
         vmod = FIXTURE_DICT + "  families:\n    - varnish\n    - varnish\n"
         expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
                              "package.families contains duplicates", "duplicate family")
-    # Absent means every family, so an explicit empty sequence is rejected.
+    # The field must be a list; absent means every family.
     with tempfile.TemporaryDirectory() as tmp:
-        vmod = FIXTURE_DICT + "  families: []\n"
+        vmod = FIXTURE_DICT + "  families: none\n"
         expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
-                             "non-empty list", "empty families list")
+                             "non-empty list", "families must be a list")
 
 
 @test
@@ -484,11 +492,11 @@ def catalog_promoted_and_package_targets_fields():
         vmod = FIXTURE_DICT + "  targets:\n    - el10-x86_64\n    - el10-x86_64\n"
         expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
                              "package.targets contains duplicates", "duplicate package target")
-    # Absent means every target, so an explicit empty sequence is rejected.
+    # The field must be a list; absent means every target.
     with tempfile.TemporaryDirectory() as tmp:
-        vmod = FIXTURE_DICT + "  targets: []\n"
+        vmod = FIXTURE_DICT + "  targets: none\n"
         expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": vmod}),
-                             "non-empty list", "empty package targets list")
+                             "non-empty list", "package targets must be a list")
 
 
 # ---------------------------------------------------------------------------
@@ -879,6 +887,25 @@ def package_load_failure_reports_the_end_of_compiler_output():
     ok('tail -n 40 /tmp/load.log' in script, "package load failure prints diagnostic tail")
     ok('sed -n \'1,40p\' /tmp/load.log' not in script,
        "package load failure no longer ends on a source-file header")
+
+
+@test
+def engine_daemon_smoke_check_preserves_failure():
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-engine.sh").read_text()
+    ok('"$DAEMON" -V 2>&1\n' in script, "engine smoke check executes the daemon directly")
+    ok('"$DAEMON" -V 2>&1 | head -2 || true' not in script,
+       "engine smoke check does not discard the daemon exit status")
+
+
+@test
+def missing_engine_artifact_reaches_vmod_classifier():
+    workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
+                "vmod-shard.yml").read_text()
+    start = workflow.index("      - uses: actions/download-artifact@v8")
+    end = workflow.index("      - run: scripts/build-vmod.sh", start)
+    download_step = workflow[start:end]
+    ok("continue-on-error: true" in download_step,
+       "a missing engine artifact does not stop the job before build-vmod.sh classifies it")
 
 
 # ---------------------------------------------------------------------------

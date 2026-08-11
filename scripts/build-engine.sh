@@ -97,7 +97,7 @@ for c in vinyld varnishd; do
   if [ -x "$PREFIX/sbin/$c" ]; then DAEMON="$PREFIX/sbin/$c"; fi
 done
 [ -n "$DAEMON" ] || { echo "no vinyld/varnishd in $PREFIX/sbin" >&2; exit 1; }
-"$DAEMON" -V 2>&1 | head -2 || true
+"$DAEMON" -V 2>&1
 
 step prefix-tar
 tar -C / -czf "/work/artifacts/engine-$ENGINE_ID-$TARGET-prefix.tar.gz" "${PREFIX#/}"

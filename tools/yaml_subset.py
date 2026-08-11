@@ -5,21 +5,17 @@ deliberately accepts only a small subset:
 
 * nested block mappings (``key: value`` and ``key:`` + indented block);
 * block sequences (``- scalar``, ``- key: value`` + aligned continuation);
-* flow sequences of plain scalars (``[]``, ``[a, b]``) on one line;
-* literal block scalars (``key: |`` + indented text) as mapping values;
 * plain and quoted scalars, all returned as ``str``.
 
-Everything else - anchors, aliases, tags, flow mappings, folded scalars,
+Everything else - flow collections, block scalars, anchors, aliases, tags,
 multiple documents, tabs, merge keys, comments that trail a value - is a hard
 error. There is no type coercion: every scalar is returned as a string and the
 schema layer in ``matrix.py`` applies typing. That avoids YAML's
 implicit-typing surprises (``9.0`` becoming a float, ``no`` becoming
 ``False``) in files whose entire purpose is exact identity.
 
-Ported from v1 ``tools/yaml_subset.py`` with three additions the v2 catalog
-needs: hyphens in keys (``by_series`` is keyed by series ids like
-``varnish-10``), non-empty flow sequences (``targets: [debian-13-amd64]``),
-and literal blocks (``description: |``).
+Ported from v1 ``tools/yaml_subset.py`` with hyphens added to keys
+(``by_series`` is keyed by series ids like ``varnish-10``).
 
 Standard library only.
 """
@@ -46,22 +42,19 @@ class ManifestSyntaxError(Exception):
 # ``by_series`` maps; v1 allowed lower_snake_case only.
 KEY_RE = re.compile(r"^[a-z][a-z0-9_.-]*$")
 MAP_RE = re.compile(r"^([A-Za-z0-9_.-]+):(?:[ ](.+))?$")
-LITERAL_RE = re.compile(r"^([A-Za-z0-9_.-]+): \|$")
-
 # Characters that introduce YAML syntax we do not support. Rejecting them in
 # plain scalars keeps "looks like a string" and "is a string" identical.
 FORBIDDEN_PLAIN = set("{}[]&*!|>%@`\"'#")
 
 
 class _Line:
-    __slots__ = ("lineno", "indent", "text", "is_item", "literal")
+    __slots__ = ("lineno", "indent", "text", "is_item")
 
-    def __init__(self, lineno: int, indent: int, text: str, is_item: bool, literal: str = None) -> None:
+    def __init__(self, lineno: int, indent: int, text: str, is_item: bool) -> None:
         self.lineno = lineno
         self.indent = indent
         self.text = text
         self.is_item = is_item
-        self.literal = literal
 
 
 def parse_file(path) -> dict:
@@ -120,17 +113,15 @@ def _tokenize(text: str, path: str) -> list:
             raise ManifestSyntaxError(path, lineno, "list item must be written as '- value' on one line")
         if stripped.startswith("-") and not stripped.startswith("- "):
             raise ManifestSyntaxError(path, lineno, "a line starting with '-' must be a list item written as '- value'")
-        literal_match = LITERAL_RE.match(stripped)
-        if literal_match:
-            content, i = _capture_literal(raw_lines, i, indent, path)
-            lines.append(_Line(lineno, indent, literal_match.group(1) + ":", False, literal=content))
-            continue
+        if re.match(r"^[A-Za-z0-9_.-]+: \|", stripped):
+            raise ManifestSyntaxError(
+                path, lineno,
+                "literal block scalars are not supported; use a block sequence of plain scalar lines",
+            )
         if stripped.startswith("- "):
             rest = stripped[2:]
             if rest.startswith(" "):
                 raise ManifestSyntaxError(path, lineno, "exactly one space must follow the list item dash")
-            if LITERAL_RE.match(rest):
-                raise ManifestSyntaxError(path, lineno, "literal blocks are not supported on a list item's first line")
             lines.append(_Line(lineno, indent, "", True))
             lines.append(_Line(lineno, indent + 2, rest, False))
             i += 1
@@ -140,42 +131,11 @@ def _tokenize(text: str, path: str) -> list:
     return lines
 
 
-def _capture_literal(raw_lines: list, i: int, key_indent: int, path: str):
-    """Capture the indented block after ``key: |`` starting at raw_lines[i]."""
-    j = i + 1
-    content: list = []
-    block_indent = None
-    while j < len(raw_lines):
-        raw = raw_lines[j]
-        if "\r" in raw:
-            raise ManifestSyntaxError(path, j + 1, "carriage return found; use LF line endings")
-        if raw.strip() == "":
-            content.append("")
-            j += 1
-            continue
-        this_indent = len(raw) - len(raw.lstrip(" "))
-        if this_indent <= key_indent:
-            break
-        if block_indent is None:
-            if this_indent < key_indent + 2:
-                raise ManifestSyntaxError(path, j + 1, "literal block must be indented at least two spaces from its key")
-            block_indent = this_indent
-        if this_indent < block_indent:
-            raise ManifestSyntaxError(path, j + 1, "literal block line is indented less than the block's first line")
-        content.append(raw[block_indent:])
-        j += 1
-    if block_indent is None:
-        raise ManifestSyntaxError(path, i + 1, "literal block has no content")
-    while content and content[-1] == "":
-        content.pop()
-    return "\n".join(content) + "\n", j
-
-
 def _parse_block(lines: list, index: int, indent: int, path: str):
     line = lines[index]
     if line.is_item:
         return _parse_sequence(lines, index, indent, path)
-    if MAP_RE.match(line.text) or line.literal is not None:
+    if MAP_RE.match(line.text):
         return _parse_mapping(lines, index, indent, path)
     return _parse_scalar_block(lines, index, indent, path)
 
@@ -212,10 +172,6 @@ def _parse_mapping(lines: list, index: int, indent: int, path: str):
             raise ManifestSyntaxError(path, line.lineno, f"invalid key {key!r}; use lower case, digits, '_' or '-'")
         if key in result:
             raise ManifestSyntaxError(path, line.lineno, f"duplicate key {key!r}")
-        if line.literal is not None:
-            result[key] = line.literal
-            index += 1
-            continue
         raw_value = match.group(2)
         if raw_value is None:
             if index + 1 >= len(lines) or lines[index + 1].indent <= indent:
@@ -253,35 +209,9 @@ def _parse_sequence(lines: list, index: int, indent: int, path: str):
     return items, index
 
 
-def _parse_flow_sequence(raw: str, path: str, lineno: int) -> list:
-    inner = raw[1:-1].strip()
-    if inner == "":
-        return []
-    items = []
-    for part in inner.split(","):
-        part = part.strip()
-        if part == "":
-            raise ManifestSyntaxError(path, lineno, "empty item in flow sequence")
-        bad = sorted(set(part) & FORBIDDEN_PLAIN)
-        if bad:
-            raise ManifestSyntaxError(
-                path,
-                lineno,
-                "flow sequence items must be plain scalars; unsupported character(s) {}".format(
-                    ", ".join(repr(ch) for ch in bad)
-                ),
-            )
-        if ": " in part or part.endswith(":"):
-            raise ManifestSyntaxError(path, lineno, "flow sequence items must be plain scalars")
-        items.append(part)
-    return items
-
-
 def _parse_scalar(raw: str, path: str, lineno: int):
     if raw.startswith("["):
-        if not raw.endswith("]"):
-            raise ManifestSyntaxError(path, lineno, "unterminated flow sequence")
-        return _parse_flow_sequence(raw, path, lineno)
+        raise ManifestSyntaxError(path, lineno, "flow sequences are not supported; use a block sequence")
     if raw[0] in "\"'":
         quote = raw[0]
         if len(raw) < 2 or not raw.endswith(quote):
