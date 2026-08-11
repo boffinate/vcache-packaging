@@ -57,7 +57,7 @@ engines:
     targets: [debian-13-amd64, el10-x86_64]
 ```
 
-Rules: `kind: release` requires `tarball_url` + `sha256`; `kind: trunk` requires `git_url` + `branch` and forces `packages: "false"`. Trunk engines carry a self-named `series` (`vinyl-trunk`); the resolution rule never consults `series` for trunk engines. `packages: "true"` requires `kind: release` and `family: vinyl` (Varnish is matrix-only for now — reversible decision, see Decisions). Compat columns are tested on the first listed target only; package engines build on every listed target.
+Rules: `kind: release` requires `tarball_url` + `sha256`; `kind: trunk` requires `git_url` + `branch` and forces `packages: "false"`. Trunk engines carry a self-named `series` (`vinyl-trunk`); the resolution rule never consults `series` for trunk engines. `packages: "true"` requires `kind: release` and `family: vinyl` (Varnish is matrix-only for now — reversible decision, see Decisions). Compat and package jobs run on every listed target.
 
 Initial contents: `vinyl-9.0.1` (release, packages, both targets — pin from v1 `recipes/debian-13/pins.env`), `varnish-9.0.3` (release, matrix-only, debian target — pin from v1 `survey/harness/pins.env`), `vinyl-trunk` and `varnish-trunk` (trunk, matrix-only — git URLs/branches from v1 `tools/upstream_watch.py` constants).
 
@@ -115,7 +115,7 @@ The first four come from compat mode (autotools configure, make, a `vcl.load`-st
 
 ## The matrix page
 
-Rows: engines' own build row first, then one row per VMOD (catalog order). Columns: engines in `engines.yml` order (release engines, then trunk engines). Cell colour by worst status across that cell's targets/modes; green `pass`, red any `*_failed` except infra, grey `infra_failed` or no data. Tooltip carries per-target/mode detail, ref, commit, timestamps, link to the producing run. Rendering ports v1 `tools/status_page.py`'s bones (state-file merge, self-contained HTML, light/dark) with the new axes. State lives in `matrix-state.json` on orphan branch `ci-state/matrix`; Pages deploys from `matrix.yml` and `trunk.yml` on main only, shared concurrency group.
+The page renders a separate matrix for every target. Rows are engines' own build row first, then one row per VMOD (catalog order). Columns are the engines configured for that target, in `engines.yml` order (release engines, then trunk engines). Cell colour by worst status across that target's modes; green `pass`, red any `*_failed` except infra, grey `infra_failed` or no data. Tooltip carries mode detail, ref, commit, timestamps, link to the producing run. Rendering ports v1 `tools/status_page.py`'s bones (state-file merge, self-contained HTML, light/dark) with the new axes. State lives in `matrix-state.json` on orphan branch `ci-state/matrix`; Pages deploys from `matrix.yml` and `trunk.yml` on main only, shared concurrency group.
 
 ## tools/matrix.py CLI contract
 
@@ -145,7 +145,7 @@ scripts/build-engine.sh <engine-id> <target> <workdir>
 scripts/build-vmod.sh   <vmod-id> <engine-id> <target> <mode> <workdir>
 ```
 
-Both run everything inside containers (`debian:13` for debian-13-amd64 compat+package, `almalinux:10` for el10 package builds), pull pins via `matrix.py env`, and always write a cell result JSON into `<workdir>/results/` — including on failure, classifying the failure honestly. Engine build produces, per target: a relocatable prefix tarball (for compat mode consumers) and, if `packages: "true"`, the engine .deb/.rpm set (adapted from v1's engine build + v1 `upstream/pkg-vinyl-cache` derivation, simplified — plain `dpkg-buildpackage`/`rpmbuild` in a container, no pbuilder/mock/sbuild). VMOD compat mode: untar engine prefix, autotools build against it, minimal-VCL load check. VMOD package mode: install engine packages, render recipe via `recipe.py`, build, then fresh-container install + load check. Exit code 0 unless infra_failed.
+Both run everything inside containers (`debian:13` for debian-13-amd64 compat+package, `almalinux:10` for el10 compat+package), pull pins via `matrix.py env`, and always write a cell result JSON into `<workdir>/results/` — including on failure, classifying the failure honestly. Engine build produces, per target: a relocatable prefix tarball (for compat mode consumers) and, if `packages: "true"`, the engine .deb/.rpm set (adapted from v1's engine build + v1 `upstream/pkg-vinyl-cache` derivation, simplified — plain `dpkg-buildpackage`/`rpmbuild` in a container, no pbuilder/mock/sbuild). VMOD compat mode: untar engine prefix, autotools build against it, minimal-VCL load check. VMOD package mode: install engine packages, render recipe via `recipe.py`, build, then fresh-container install + load check. Exit code 0 unless infra_failed.
 
 ## Workflows
 

@@ -501,6 +501,7 @@ def expand_release_lane():
         ], "engine pairs")
         eq(expansion["vmods"], [
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "compat"},
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "package"},
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "package"},
             {"row": "dict", "engine": "varnish-9.0.3", "target": "debian-13-amd64", "mode": "compat"},
@@ -512,8 +513,14 @@ def expand_release_lane():
         compat_only = matrix.expand(catalog, "release", "compat")
         eq(compat_only["engines"], [
             {"engine": "vinyl-9.0.1", "target": "debian-13-amd64"},
+            {"engine": "vinyl-9.0.1", "target": "el10-x86_64"},
             {"engine": "varnish-9.0.3", "target": "debian-13-amd64"},
-        ], "compat engine pairs use first target only")
+        ], "compat engine pairs use every target")
+        eq(compat_only["vmods"], [
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "compat"},
+            {"row": "dict", "engine": "varnish-9.0.3", "target": "debian-13-amd64", "mode": "compat"},
+        ], "compat vmod rows use every target")
         ok(all(r["mode"] == "compat" for r in compat_only["vmods"]), "compat filter")
 
 
@@ -743,13 +750,21 @@ def render_smoke():
                        'class="cell MISSING"', "rpmbuild exited 1", "prefers-color-scheme",
                        "data-theme", "https://example.org/runs/1"):
             ok(needle in html_text, f"rendered page is missing {needle!r}")
-        # dict x vinyl-9.0.1 aggregates a pass and a package_failed: worst wins.
-        grid = matrix.build_grid(json.loads(state_file.read_text()), matrix.load_catalog(root))
-        eq(grid["cells"][("dict", "vinyl-9.0.1")]["bucket"], "FAIL", "worst status colours the cell")
-        eq(grid["cells"][("(engine)", "vinyl-9.0.1")]["bucket"], "PASS", "engine cell on the (engine) row")
-        eq(grid["rows"][0], "(engine)", "engine row renders first")
-        eq(grid["columns"], ["vinyl-9.0.1", "varnish-9.0.3", "vinyl-trunk"], "column order from catalog")
-        ok(grid["counts"]["MISSING"] > 0, "cells without data count as missing")
+        eq(html_text.count('class="target-matrix"'), 2, "one rendered matrix per target")
+        ok('<h2 class="target">debian-13-amd64' in html_text, "Debian matrix heading")
+        ok('<h2 class="target">el10-x86_64' in html_text, "EL10 matrix heading")
+        state = json.loads(state_file.read_text())
+        catalog = matrix.load_catalog(root)
+        eq(matrix.matrix_targets(state, catalog), ["debian-13-amd64", "el10-x86_64"], "target order from catalog")
+        debian_grid = matrix.build_grid(state, "debian-13-amd64", catalog)
+        el10_grid = matrix.build_grid(state, "el10-x86_64", catalog)
+        eq(debian_grid["cells"][("dict", "vinyl-9.0.1")]["bucket"], "PASS", "Debian status stays separate")
+        eq(el10_grid["cells"][("dict", "vinyl-9.0.1")]["bucket"], "FAIL", "EL10 failure stays separate")
+        eq(debian_grid["cells"][("(engine)", "vinyl-9.0.1")]["bucket"], "PASS", "engine cell on the (engine) row")
+        eq(debian_grid["rows"][0], "(engine)", "engine row renders first")
+        eq(debian_grid["columns"], ["vinyl-9.0.1", "varnish-9.0.3", "vinyl-trunk"], "Debian column order from catalog")
+        eq(el10_grid["columns"], ["vinyl-9.0.1"], "EL10 excludes unsupported engines")
+        ok(debian_grid["counts"]["MISSING"] > 0, "cells without data count as missing")
 
 
 @test
@@ -765,7 +780,7 @@ def test_failed_cell_merges_and_renders_red():
         state_file = tmp / "state.json"
         code, _, _ = run_cli(["merge", "--results-dir", str(results), "--state-file", str(state_file)])
         eq(code, 0, "a test_failed cell passes merge")
-        grid = matrix.build_grid(json.loads(state_file.read_text()), matrix.load_catalog(root))
+        grid = matrix.build_grid(json.loads(state_file.read_text()), "debian-13-amd64", matrix.load_catalog(root))
         cell_view = grid["cells"][("dict", "vinyl-9.0.1")]
         eq(cell_view["bucket"], "FAIL", "test_failed renders red, not infra")
         eq(cell_view["text"], "test", "test_failed short label")

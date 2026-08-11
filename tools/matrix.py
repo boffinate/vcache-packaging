@@ -391,12 +391,12 @@ def lane_engines(catalog: dict, lane: str) -> list:
 def engine_targets(engine: dict, lane: str, mode: str) -> list:
     """The unique targets an engine must be built on for a lane and mode filter.
 
-    Compat cells run on the first listed target only; package cells run on
-    every listed target of a packages-"true" engine (release lane only).
+    Compat cells run on every listed target. Package cells also run on every
+    listed target of a packages-"true" engine (release lane only).
     """
     targets = []
     if mode in ("compat", "all"):
-        targets.append(engine["targets"][0])
+        targets.extend(engine["targets"])
     if lane == "release" and engine["packages"] == "true" and mode in ("package", "all"):
         for target in engine["targets"]:
             if target not in targets:
@@ -417,9 +417,9 @@ def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
         for target in engine_targets(engine, lane, mode):
             engine_pairs.append({"engine": engine["id"], "target": target})
         if mode in ("compat", "all"):
-            first = engine["targets"][0]
-            for vid in catalog["vmods"]:
-                vmod_rows.append({"row": vid, "engine": engine["id"], "target": first, "mode": "compat"})
+            for target in engine["targets"]:
+                for vid in catalog["vmods"]:
+                    vmod_rows.append({"row": vid, "engine": engine["id"], "target": target, "mode": "compat"})
         if lane == "release" and engine["packages"] == "true" and mode in ("package", "all"):
             for target in engine["targets"]:
                 for vid in catalog["vmods"]:
@@ -595,18 +595,30 @@ def display_row(cell: dict) -> str:
     return "(engine)" if cell["mode"] == "engine" else cell["row"]
 
 
-def build_grid(state: dict, catalog: dict = None) -> dict:
-    """Pivot merged cells into one visual cell per (display row, engine).
+def matrix_targets(state: dict, catalog: dict = None) -> list:
+    """Return targets in catalog order, followed by stale-state targets."""
+    targets = []
+    if catalog is not None:
+        for engine in catalog["engines"]:
+            for target in engine["targets"]:
+                if target not in targets:
+                    targets.append(target)
+    return targets + sorted({c["target"] for c in state["cells"].values()} - set(targets))
+
+
+def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
+    """Pivot one target's merged cells into one visual cell per row and engine.
 
     Axis order comes from the catalog when it is loadable (columns: release
     engines then trunk engines, in engines.yml order; rows: the engine build
-    row, then VMODs in catalog order); anything present only in the state is
-    appended sorted, so stale state still renders instead of erroring.
+    row, then VMODs in catalog order). Only engines configured for ``target``
+    are shown. Anything present only in the state is appended sorted, so stale
+    state still renders instead of erroring.
     """
-    cells = list(state["cells"].values())
+    cells = [cell for cell in state["cells"].values() if cell["target"] == target]
     if catalog is not None:
-        columns = [e["id"] for e in catalog["engines"] if e["kind"] == "release"]
-        columns += [e["id"] for e in catalog["engines"] if e["kind"] == "trunk"]
+        columns = [e["id"] for e in catalog["engines"] if e["kind"] == "release" and target in e["targets"]]
+        columns += [e["id"] for e in catalog["engines"] if e["kind"] == "trunk" and target in e["targets"]]
         row_ids = ["(engine)"] + list(catalog["vmods"])
     else:
         columns = []
@@ -649,7 +661,7 @@ def build_grid(state: dict, catalog: dict = None) -> dict:
                 "run_url": top.get("run_url", ""),
             }
             counts[bucket] += 1
-    return {"columns": columns, "rows": row_ids, "cells": grid_cells, "counts": counts}
+    return {"target": target, "columns": columns, "rows": row_ids, "cells": grid_cells, "counts": counts}
 
 
 # Light palette on bare :root; dark redefined under prefers-color-scheme
@@ -687,6 +699,8 @@ header.page .gen{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .sw-pass{background:var(--pass)}.sw-fail{background:var(--fail)}.sw-infra{background:var(--na)}
 .sw-missing{background:repeating-linear-gradient(45deg,var(--na),var(--na) 2px,transparent 2px,transparent 5px)}
 main{padding:20px clamp(16px,3vw,40px) 60px}
+.target{margin:0 0 8px;font-family:var(--mono);font-size:14px}
+.target-matrix+.target-matrix{margin-top:30px}
 .matrix-scroll{overflow-x:auto;border:1px solid var(--line-2);background:var(--surface);max-width:100%}
 table.matrix{border-collapse:separate;border-spacing:0;font-family:var(--mono);font-size:12px}
 th.corner,th.col{background:var(--surface-2);border-bottom:1px solid var(--line-2);padding:8px 12px;
@@ -741,7 +755,7 @@ def _cell_html(cell) -> str:
     return f'<td class="cell {cell["bucket"]}" title="{_esc(cell["title"])}">{inner}</td>'
 
 
-def render_html(grid: dict, generated_at: str) -> str:
+def _grid_html(grid: dict) -> str:
     counts = grid["counts"]
     head_cols = "".join(f'<th class="col">{_esc(col)}</th>' for col in grid["columns"])
     body_rows = []
@@ -750,6 +764,18 @@ def render_html(grid: dict, generated_at: str) -> str:
         label = "engine build" if row_id == "(engine)" else row_id
         tds = "".join(_cell_html(grid["cells"].get((row_id, col))) for col in grid["columns"])
         body_rows.append(f'<tr class="{row_class}"><td class="rid">{_esc(label)}</td>{tds}</tr>')
+    return f'''<section class="target-matrix">
+  <h2 class="target">{_esc(grid["target"])} &middot; {counts["PASS"]} pass, {counts["FAIL"]} fail, {counts["INFRA"]} infra, {counts["MISSING"]} missing</h2>
+  <div class="matrix-scroll">
+    <table class="matrix">
+      <thead><tr><th class="corner">VMOD \\ engine</th>{head_cols}</tr></thead>
+      <tbody>{"".join(body_rows)}</tbody>
+    </table>
+  </div>
+</section>'''
+
+
+def render_html(grids: list, generated_at: str) -> str:
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -761,8 +787,7 @@ def render_html(grid: dict, generated_at: str) -> str:
 <body>
 <header class="page">
   <h1>Vinyl Cache VMOD compatibility matrix</h1>
-  <span class="gen">generated {_esc(generated_at)} &middot; {counts['PASS']} pass,
-    {counts['FAIL']} fail, {counts['INFRA']} infra, {counts['MISSING']} missing</span>
+  <span class="gen">generated {_esc(generated_at)}</span>
   <div class="legend">
     <span><i class="swatch sw-pass"></i>pass</span>
     <span><i class="swatch sw-fail"></i>fail</span>
@@ -772,16 +797,11 @@ def render_html(grid: dict, generated_at: str) -> str:
   <button class="theme-btn" id="theme-toggle" type="button" aria-label="Toggle theme">&#9680; theme</button>
 </header>
 <main>
-  <div class="matrix-scroll">
-    <table class="matrix">
-      <thead><tr><th class="corner">VMOD \\ engine</th>{head_cols}</tr></thead>
-      <tbody>{"".join(body_rows)}</tbody>
-    </table>
-  </div>
+  {"".join(_grid_html(grid) for grid in grids)}
 </main>
 <p class="page-foot">Generated by tools/matrix.py &mdash; do not edit. A red cell is information, not an
   emergency: it means that VMOD does not build or load against that engine. Cells link to the run that
-  produced them; hover for per-target detail.</p>
+  produced them; hover for detail.</p>
 <script>{_SCRIPT}</script>
 </body>
 </html>
@@ -855,16 +875,13 @@ def cmd_render(args) -> int:
     except CatalogError as exc:
         print(f"warning: rendering without a catalog ({exc.args[0].splitlines()[0]})", file=sys.stderr)
         catalog = None
-    grid = build_grid(state, catalog)
+    grids = [build_grid(state, target, catalog) for target in matrix_targets(state, catalog)]
     generated_at = args.generated_at or now_iso()
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render_html(grid, generated_at), encoding="utf-8")
-    counts = grid["counts"]
-    print(
-        f"rendered {out_path}: {len(grid['rows'])} row(s) x {len(grid['columns'])} column(s); "
-        f"{counts['PASS']} pass, {counts['FAIL']} fail, {counts['INFRA']} infra, {counts['MISSING']} missing"
-    )
+    out_path.write_text(render_html(grids, generated_at), encoding="utf-8")
+    shapes = ", ".join(f"{grid['target']}: {len(grid['rows'])} row(s) x {len(grid['columns'])} column(s)" for grid in grids)
+    print(f"rendered {out_path}: {len(grids)} target matrix/matrices ({shapes})")
     return 0
 
 
