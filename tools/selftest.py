@@ -1090,6 +1090,12 @@ def vmod_compat_build_is_serial():
 
 
 @test
+def cfg_declares_xxd_build_dependency():
+    cfg = (Path(__file__).resolve().parent.parent / "vmods" / "cfg.yml").read_text()
+    ok("      - xxd" in cfg, "cfg declares xxd for its generated source step")
+
+
+@test
 def vmod_cargo_compat_contract_is_offline_after_one_fetch():
     script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
     library = (Path(__file__).resolve().parent.parent / "scripts" / "lib.sh").read_text()

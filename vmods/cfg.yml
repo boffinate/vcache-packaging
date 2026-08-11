@@ -20,8 +20,10 @@ package:
     debian:
       - libcurl4-openssl-dev
       - libluajit-5.1-dev
+      - xxd
     rpm:
       - libcurl-devel
       - luajit-devel
+      - xxd
   families:
     - vinyl
