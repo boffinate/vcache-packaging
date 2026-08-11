@@ -292,7 +292,7 @@ done
   printf 'backend default none;\n'
 } > /tmp/load.vcl
 if ! "$DAEMON" -j none -C -n /tmp/vd -f /tmp/load.vcl > /tmp/load.log 2>&1; then
-  echo "installed load check failed:"; sed -n '1,40p' /tmp/load.log; exit 1
+  echo "installed load check failed:"; tail -n 40 /tmp/load.log; exit 1
 fi
 echo "installed load check OK ($DAEMON, import: ${VMOD_MODULES:-$VMOD_ID})"
 EOF

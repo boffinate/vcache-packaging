@@ -110,16 +110,66 @@ infra_cell() {
   exit 1
 }
 
+# failure_detail LOG STEP
+# Return a short, human-useful diagnostic from a failed container log. RPM
+# appends headings, macro warnings and a generic exit status after the useful
+# error, so a physical log tail reports the wrapper rather than the cause.
+# For package builds, retain the final diagnostics after excluding that known
+# epilogue; every other step keeps the compact log-tail fallback.
+failure_detail() {
+  local log=$1 step=$2 detail=""
+  if [ "$step" = pkg-build ]; then
+    detail=$(awk '
+      function rpm_epilogue(line) {
+        return line ~ /^[[:space:]]*RPM build (warnings|errors):[[:space:]]*$/ ||
+          line ~ /^[[:space:]]*(error: )?Bad exit status from / ||
+          line ~ /^[[:space:]]*Macro expanded in comment on line [0-9]+:/
+      }
+      function strong_diagnostic(line) {
+        return line ~ /(^|[[:space:]:])error:/ ||
+          line ~ /[[:alnum:]_]+Error:/ ||
+          line ~ /fatal[[:space:]]+(error:)?/ ||
+          line ~ /undefined reference/
+      }
+      function weak_diagnostic(line) {
+        return line ~ /(cannot|couldn.t|No such file|not found)/ ||
+          line ~ /require(s)? [[:alnum:].-]+ [0-9]/
+      }
+      !rpm_epilogue($0) && strong_diagnostic($0) {
+        strong[count_strong % 3] = $0
+        count_strong++
+      }
+      !rpm_epilogue($0) && !strong_diagnostic($0) && weak_diagnostic($0) {
+        weak[count_weak % 3] = $0
+        count_weak++
+      }
+      END {
+        if (count_strong) {
+          first = count_strong > 3 ? count_strong - 3 : 0
+          for (i = first; i < count_strong; i++) print strong[i % 3]
+        } else {
+          first = count_weak > 3 ? count_weak - 3 : 0
+          for (i = first; i < count_weak; i++) print weak[i % 3]
+        }
+      }
+    ' "$log" 2>/dev/null || true)
+  fi
+  if [ -z "$detail" ]; then
+    detail=$(tail -n 3 "$log" 2>/dev/null || true)
+  fi
+  printf '%s' "$detail"
+}
+
 # fail_cell WORKDIR ROW ENGINE TARGET MODE REF TAG [COMMIT_TAG]
-# Classify a failed container run via TAG's step file and log tail, emit the
-# cell result, then exit: 1 for infra_failed, 0 for an honest red cell.
+# Classify a failed container run via TAG's step file and a concise diagnostic,
+# emit the cell result, then exit: 1 for infra_failed, 0 for an honest red cell.
 fail_cell() {
   local workdir=$1 row=$2 engine=$3 target=$4 mode=$5 ref=$6 tag=$7 ctag=${8:-$7}
   local commit step status detail
   commit=$(cat "$workdir/tmp/$ctag.commit" 2>/dev/null || true)
   step=$(cat "$workdir/tmp/$tag.step" 2>/dev/null || echo unknown)
   status=$(status_for_step "$step")
-  detail="step '$step' failed: $(tail -n 3 "$workdir/logs/$tag.log" 2>/dev/null | tr '\n' ' ' | cut -c1-300 || true)"
+  detail="step '$step' failed: $(failure_detail "$workdir/logs/$tag.log" "$step" | tr '\n' ' ' | cut -c1-300 || true)"
   emit_result "$workdir" "$row" "$engine" "$target" "$mode" "$ref" "$commit" "$status" "$detail"
   if [ "$status" = infra_failed ]; then
     printf 'E: infra failure at step %s; see %s\n' "$step" "$workdir/logs/$tag.log" >&2

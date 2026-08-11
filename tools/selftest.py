@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -187,6 +188,18 @@ def make_cell(row, engine, target, mode, status, finished, **extra):
     }
     cell.update(extra)
     return cell
+
+
+def shell_failure_detail(log: Path, step: str = "pkg-build") -> str:
+    """Run the host-safe shell classifier without invoking a container build."""
+    lib = Path(__file__).resolve().parent.parent / "scripts" / "lib.sh"
+    proc = subprocess.run(
+        ["bash", "-c", '. "$1"; failure_detail "$2" "$3"', "bash", str(lib), str(log), step],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    )
+    return proc.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -586,6 +599,56 @@ def env_emits_tests_and_modules():
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
         eq(values["VMOD_TESTS"], "''", "no tests declared -> empty VMOD_TESTS")
         eq(values["VMOD_MODULES"], "'dict'", "VMOD_MODULES defaults to the id")
+
+
+# ---------------------------------------------------------------------------
+# shell failure details
+# ---------------------------------------------------------------------------
+
+
+@test
+def shell_failure_details_prefer_causes_over_rpm_epilogues():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        dict_log = tmp / "dict.log"
+        dict_log.write_text(
+            "aclocal: warning: couldn't open directory 'm4': No such file or directory\n"
+            "checking command ... ./configure: line 8133: No such file or directory\n"
+            "FileNotFoundError: [Errno 2] No such file or directory: 'vcc_if.c.tmp2'\n"
+            "make[2]: *** [Makefile:784: vcc_if.h] Error 1\n"
+            "RPM build errors:\n"
+            "error: Bad exit status from /var/tmp/rpm-tmp.x (%build)\n"
+            "    Bad exit status from /var/tmp/rpm-tmp.x (%build)\n"
+        )
+        eq(shell_failure_detail(dict_log),
+           "FileNotFoundError: [Errno 2] No such file or directory: 'vcc_if.c.tmp2'",
+           "RPM detail keeps the vmodtool race rather than its footer")
+
+        automake_log = tmp / "automake.log"
+        automake_log.write_text(
+            "configure.ac:28: error: require Automake 1.16.5, but have 1.16.2\n"
+            "autoreconf: error: automake failed with exit status: 1\n"
+            "RPM build errors:\n"
+            "    Macro expanded in comment on line 12: %make_build and %make_install.\n"
+            "    Bad exit status from /var/tmp/rpm-tmp.x (%build)\n"
+        )
+        eq(shell_failure_detail(automake_log),
+           "configure.ac:28: error: require Automake 1.16.5, but have 1.16.2\n"
+           "autoreconf: error: automake failed with exit status: 1",
+           "RPM detail keeps the Autotools cause rather than a macro warning")
+
+        generic_log = tmp / "generic.log"
+        generic_log.write_text("first\nsecond\nthird\nfourth\n")
+        eq(shell_failure_detail(generic_log, "load"), "second\nthird\nfourth",
+           "non-package failures retain the log-tail fallback")
+
+
+@test
+def package_load_failure_reports_the_end_of_compiler_output():
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
+    ok('tail -n 40 /tmp/load.log' in script, "package load failure prints diagnostic tail")
+    ok('sed -n \'1,40p\' /tmp/load.log' not in script,
+       "package load failure no longer ends on a source-file header")
 
 
 # ---------------------------------------------------------------------------
