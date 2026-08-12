@@ -44,7 +44,7 @@ Amend `SCOPE.md` and `DESIGN.md` in `vcache-packaging` before implementing the s
 
 `DESIGN.md` must:
 
-- replace decision 3 with this producer/distributor boundary;
+- add a new dated decision which explicitly supersedes decision 3 with this producer/distributor boundary, without rewriting the historical decision;
 - define the release-asset interface below;
 - add the package revision to the version contract; and
 - state that replacing a GitHub Release with changed package bytes requires a new package revision before repository publication.
@@ -53,7 +53,7 @@ No signing key, R2 setting or repository publisher belongs in `vcache-packaging`
 
 ## Package revision
 
-Add one positive decimal `package_revision` to every package-enabled release engine. It starts at `1` and applies to the engine package and every VMOD in that engine's release set.
+Add one quoted string `package_revision: "1"` to every package-enabled release engine. It must match `[1-9][0-9]*` and applies to the engine package and every VMOD in that engine's release set. Leading zeroes are invalid.
 
 Bump it whenever a rebuild intended for repository publication could change package bytes without changing the upstream version. This includes packaging fixes, changed moving refs and non-reproducible rebuilds.
 
@@ -61,12 +61,16 @@ The version rules become:
 
 ```text
 Debian engine: <engine-version>-<package-revision>
-Debian VMOD:   <upstream-version>-<package-revision>~<family-marker><engine-version>
+Debian VMOD:   <upstream-version>-1~<family-marker><engine-version>.<package-revision>
 RPM engine:    <engine-version>-<package-revision>%{?dist}
-RPM VMOD:      <upstream-version>-<package-revision>.<family-marker><engine-version>%{?dist}
+RPM VMOD:      <upstream-version>-1.<family-marker><engine-version>.<package-revision>%{?dist}
 ```
 
-One revision for the whole set preserves the exact engine dependencies and makes a revision bump an all-package rebuild. There is no per-package counter and no counter in the sibling.
+These are final package versions. The existing RPM templates append `%{?dist}`, so the renderer supplies the `Release` value without that suffix and it appears exactly once.
+
+Putting the package revision after the engine marker makes both required orderings monotonic: a same-engine revision bump sorts higher, and a newer engine at revision 1 sorts higher than an older engine at any revision. Producer self-tests must cover both comparisons in Debian and RPM version semantics.
+
+One revision for the whole set preserves the exact engine dependencies and makes a revision bump an all-package rebuild. Every VMOD's exact engine dependency uses the matching engine package revision. There is no per-package counter and no counter in the sibling.
 
 Package object keys are immutable. A collision with different package contents fails with a request to bump `package_revision`; the distributor never overwrites the object.
 
@@ -267,6 +271,8 @@ sslverify=1
 
 Its object path is `vinyl-cache/rpm/<family>/vcache-<family>.repo`.
 
+A disposable AlmaLinux 10 container reported DNF 4.20.0 on 2026-08-12, so the initial proof uses DNF4. The native smoke records `dnf --version`; a future DNF implementation change requires the signature checks to be reproved rather than assumed compatible.
+
 ## R2 publication
 
 Production clients use a custom domain. The rate-limited `r2.dev` endpoint is for development only.
@@ -297,7 +303,7 @@ The `feat/signed-apt-r2-repository` branch proves signed APT publication is feas
 
 Do not merge that branch as written. Adapt only its strict checksum parsing, temporary-key handling, `reprepro` publication, ordered R2 upload and clean-client smoke logic in the sibling. Keep all repository credentials and instructions out of `vcache-packaging`.
 
-This document supersedes the earlier in-repository APT/RPM plan.
+This document supersedes the in-repository plan dated 2026-08-11 at `docs/20260811-apt-rpm-repository-plan.md`.
 
 ## Deliberately absent
 
