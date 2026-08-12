@@ -94,14 +94,15 @@ engines:
       - debian-13-arm64
       - el10-x86_64
       - el10-aarch64
-  # Varnish upstream's default branch is master.
+  # Varnish Cache's current upstream repository is varnish/varnish; its
+  # default branch is main.
   - id: varnish-trunk
     family: varnish
     series: varnish-trunk
     kind: trunk
     source:
-      git_url: https://github.com/varnishcache/varnish-cache.git
-      branch: master
+      git_url: https://github.com/varnish/varnish.git
+      branch: main
     packages: "false"
     targets:
       - debian-13-amd64

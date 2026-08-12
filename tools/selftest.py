@@ -419,6 +419,11 @@ def catalog_real_targets_use_native_runners():
         ok("debian-13-arm64" in engine["targets"], f"{engine_id} has Debian ARM64")
         ok("el10-aarch64" in engine["targets"], f"{engine_id} has EL ARM64")
         ok("ubuntu-26.04-arm64" not in engine["targets"], f"{engine_id} omits Ubuntu ARM64")
+    varnish_trunk = matrix.find_engine(catalog, "varnish-trunk")
+    eq(varnish_trunk["source"], {
+        "git_url": "https://github.com/varnish/varnish.git",
+        "branch": "main",
+    }, "varnish trunk follows the current upstream")
     ok("el10-aarch64" in matrix.find_engine(catalog, "vinyl-9.0.1")["targets"], "vinyl release has EL ARM64")
 
 
