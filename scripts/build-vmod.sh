@@ -103,11 +103,12 @@ export ACLOCAL_PATH="$PREFIX/share/aclocal"
 # ACLOCAL_AMFLAGS. Point both aliases at the selected engine's macro
 # directory so an incompatible engine reports its real configure error,
 # rather than trying the invalid '/aclocal' directory.
-ENGINE_API_DATAROOTDIR=$(pkg-config --variable=datarootdir "$ENGINE_API" 2>/dev/null || true)
-VARNISHAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir varnishapi 2>/dev/null || true)
-VINYLAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir vinylapi 2>/dev/null || true)
-VARNISHAPI_DATAROOTDIR=${VARNISHAPI_DATAROOTDIR:-$ENGINE_API_DATAROOTDIR}
-VINYLAPI_DATAROOTDIR=${VINYLAPI_DATAROOTDIR:-$ENGINE_API_DATAROOTDIR}
+# The relocatable engine prefix has a fixed datarootdir. Do not read it from
+# a .pc file: unexpanded upstream placeholders here become paths such as
+# '/aclocal' during autoreconf.
+ENGINE_API_DATAROOTDIR="$PREFIX/share"
+VARNISHAPI_DATAROOTDIR="$ENGINE_API_DATAROOTDIR"
+VINYLAPI_DATAROOTDIR="$ENGINE_API_DATAROOTDIR"
 export VARNISHAPI_DATAROOTDIR VINYLAPI_DATAROOTDIR
 export LIBVARNISHAPI_DATAROOTDIR="$VARNISHAPI_DATAROOTDIR" LIBVINYLAPI_DATAROOTDIR="$VINYLAPI_DATAROOTDIR"
 DAEMON="$PREFIX/sbin/$ENGINE_DAEMON"

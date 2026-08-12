@@ -1081,6 +1081,18 @@ def shell_failure_details_preserve_compat_make_diagnostics():
            "did you mean 'WS_Allocated'? [-Wimplicit-function-declaration]",
            "compat detail retains an API compiler error")
 
+        cargo_log = tmp / "cargo.log"
+        cargo_log.write_text(
+            "error: failed to run custom build command for `varnish-sys v0.1.0`\n"
+            "Caused by:\n"
+            "  Varnish API version mismatch\n"
+            "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+            "warning: build failed, waiting for other jobs to finish...\n"
+        )
+        eq(shell_failure_detail(cargo_log, "cargo-build"),
+           "error: failed to run custom build command for `varnish-sys v0.1.0`",
+           "Cargo detail retains the actual build error rather than its backtrace hint")
+
 
 @test
 def vmod_compat_build_is_serial():
@@ -1131,6 +1143,15 @@ def vmod_cargo_compat_contract_is_offline_after_one_fetch():
        "EL Cargo preparation uses the EL10 clang development package")
     ok("libclang-devel" not in library,
        "EL Cargo preparation does not request the removed libclang-devel name")
+
+
+@test
+def vmod_autotools_aliases_use_the_engine_prefix():
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
+    ok('ENGINE_API_DATAROOTDIR="$PREFIX/share"' in script,
+       "Autotools aliases use the relocatable engine prefix")
+    ok('pkg-config --variable=datarootdir' not in script,
+       "Autotools aliases do not inherit unresolved pkg-config placeholders")
 
 
 @test

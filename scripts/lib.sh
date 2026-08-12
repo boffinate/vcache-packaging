@@ -318,7 +318,7 @@ infra_cell() {
 # keeps the compact log-tail fallback.
 failure_detail() {
   local log=$1 step=$2 detail=""
-  case "$step" in make|pkg-build)
+  case "$step" in make|pkg-build|cargo-build)
     detail=$(awk '
       function rpm_epilogue(line) {
         return line ~ /^[[:space:]]*RPM build (warnings|errors):[[:space:]]*$/ ||
