@@ -1516,7 +1516,9 @@ def render_smoke():
         for needle in ("vinyl-9.0.1", "varnish-9.0.3", "vinyl-trunk", "engine build", "dict",
                        'class="cell PASS"', 'class="cell FAIL"', 'class="cell INFRA"',
                        'class="cell MISSING"', "rpmbuild exited 1", "prefers-color-scheme",
-                       "data-theme", "https://example.org/runs/1"):
+                       "data-theme", "https://example.org/runs/1",
+                       'class="github-badge" href="https://github.com/boffinate/vcache-packaging/"',
+                       'aria-label="View vcache-packaging on GitHub"'):
             ok(needle in html_text, f"rendered page is missing {needle!r}")
         eq(html_text.count('class="target-matrix"'), 2, "one rendered matrix per target")
         ok('<h2 class="target">debian-13-amd64' in html_text, "Debian matrix heading")

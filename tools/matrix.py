@@ -1061,6 +1061,12 @@ td.cell.MISSING{color:var(--na);
 .page-foot{font-family:var(--mono);font-size:11px;color:var(--muted);padding:16px clamp(16px,3vw,40px) 30px}
 .theme-btn{font-family:var(--mono);border:1px solid var(--line-2);background:var(--surface);color:var(--ink);
   cursor:pointer;padding:5px 9px;font-size:12px}
+.github-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);border-radius:999px;
+  padding:5px 10px 5px 8px;background:var(--surface);color:var(--ink);font-family:var(--mono);font-size:12px;line-height:normal;
+  transition:background .15s ease,border-color .15s ease,transform .15s ease}
+.github-badge:hover,.github-badge:focus-visible{background:var(--surface-2);border-color:var(--muted);transform:translateY(-1px)}
+.github-badge:focus-visible{outline:2px solid var(--pass);outline-offset:2px}
+.github-badge svg{width:14px;height:14px;fill:currentColor}
 """.strip()
 
 _SCRIPT = """
@@ -1140,6 +1146,11 @@ def render_html(grids: list, generated_at: str) -> str:
     <span><i class="swatch sw-missing"></i>no data</span>
   </div>
   <button class="theme-btn" id="theme-toggle" type="button" aria-label="Toggle theme">&#9680; theme</button>
+  <a class="github-badge" href="https://github.com/boffinate/vcache-packaging/" target="_blank" rel="noopener"
+     aria-label="View vcache-packaging on GitHub" title="View source on GitHub">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+    GitHub
+  </a>
 </header>
 <main>
   <p class="matrix-key">Rows are modules, columns are engine versions. Green: works. Red: doesn't — usually upstream doesn't support that engine yet. Grey: not tested.</p>
