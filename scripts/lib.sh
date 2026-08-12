@@ -132,8 +132,17 @@ checkout_vmod() {
   SRC="/work/tmp/$TAG-src"
   clone_vmod "${VMOD_GIT:?}" "$SRC"
   step checkout
-  git -C "$SRC" checkout --detach "$VMOD_REF" 2>/dev/null \
-    || git -C "$SRC" checkout --detach "origin/$VMOD_REF"
+  # A branch named by the catalog is not guaranteed to be materialised as a
+  # local branch by `git clone` (GNU's Git transport is one example). Fetch
+  # the ref explicitly and detach at FETCH_HEAD; this also works for tags and
+  # avoids Git's ambiguous `checkout --detach <name>` path handling.
+  if ! git -C "$SRC" rev-parse --verify "${VMOD_REF}^{commit}" >/dev/null 2>&1; then
+    git -C "$SRC" fetch --depth 1 origin "$VMOD_REF"
+    VMOD_CHECKOUT=FETCH_HEAD
+  else
+    VMOD_CHECKOUT="${VMOD_REF}^{commit}"
+  fi
+  git -C "$SRC" checkout --detach "$VMOD_CHECKOUT"
   git -C "$SRC" submodule update --init --recursive
   git -C "$SRC" rev-parse HEAD > "/work/tmp/$TAG.commit"
 }
@@ -247,6 +256,20 @@ if [ "${VMOD_ENGINE_SOURCE:-}" = required ]; then
        if [ -f "$vsc" ]; then python3 "$VSCTOOL" -h "$vsc"; fi
      done)
   fi
+  # Trunk source clones do not contain the generated daemon-private headers
+  # that deep-integration VMODs include (for example
+  # bin/vinyld/cache/cache_vinyld.h). The installed engine development
+  # prefix does contain them, so seed the source tree from that authoritative
+  # build output. Release archives already carry these files; copying the
+  # installed versions is harmless and keeps both paths consistent.
+  ENGINE_INCLUDEDIR=$(pkg-config --variable=includedir "$ENGINE_API" 2>/dev/null || true)
+  for includedir in "$ENGINE_INCLUDEDIR" "$PREFIX/include/$ENGINE_SOURCE_NAME"; do
+    if [ -d "$includedir/cache" ]; then
+      mkdir -p "$ENGINE_TREE/bin/$ENGINE_DAEMON/cache"
+      cp -a "$includedir/cache/." "$ENGINE_TREE/bin/$ENGINE_DAEMON/cache/"
+      break
+    fi
+  done
   export VINYLSRC="$ENGINE_TREE" VARNISHSRC="$ENGINE_TREE"
   echo "engine source tree provisioned at $ENGINE_TREE"
 fi
