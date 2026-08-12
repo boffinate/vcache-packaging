@@ -1396,7 +1396,7 @@ def vmod_package_collection_and_install_use_family_names():
         ok(expected in combined, f"VMOD package flow uses {expected}")
     ok(script.count('install_engine_packages "$ENGINE_PKGDIR"') == 3,
        "build and fresh-install paths share engine package installation")
-    ok('/work/tmp/"$VMOD_PACKAGE_NAME"*.deb' in script and '"$TOPD"/RPMS/*/*.rpm' in script,
+    ok('/work/tmp/*.deb' in script and '"$TOPD"/RPMS/*/*.rpm' in script,
        "every binary emitted by a VMOD recipe gets a native architecture check")
     ok('for c in vinyld varnishd' not in script, "VMOD load checks use the family daemon")
 

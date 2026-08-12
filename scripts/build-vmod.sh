@@ -283,8 +283,7 @@ case "$PKGFMT" in
 deb)
   cp -R "/work/tmp/$TAG-recipe/debian" "$SRC/debian"
   (cd "$SRC" && dpkg-buildpackage -us -uc -b)
-  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" \
-    /work/tmp/"$VMOD_PACKAGE_NAME"*.deb
+  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" /work/tmp/*.deb
   step collect
   cp /work/tmp/"$VMOD_PACKAGE_NAME"_*.deb "$OUT/"
   ;;

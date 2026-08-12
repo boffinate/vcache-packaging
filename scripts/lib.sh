@@ -180,9 +180,8 @@ checkout_vmod() {
   fi
   resolved_commit=$(git -C "$SRC" rev-parse "$VMOD_CHECKOUT")
   if [ -n "${VMOD_EXPECTED_COMMIT:-}" ]; then
-    if ! git -C "$SRC" cat-file -e "$VMOD_EXPECTED_COMMIT^{commit}" 2>/dev/null; then
-      git -C "$SRC" fetch --depth 1 origin "$VMOD_EXPECTED_COMMIT"
-    fi
+    git -C "$SRC" cat-file -e "$VMOD_EXPECTED_COMMIT^{commit}" 2>/dev/null \
+      || { echo "pinned commit $VMOD_EXPECTED_COMMIT is unavailable from source ref $VMOD_REF" >&2; exit 1; }
     VMOD_CHECKOUT="$VMOD_EXPECTED_COMMIT^{commit}"
     if [ "$resolved_commit" != "$VMOD_EXPECTED_COMMIT" ]; then
       echo "source ref $VMOD_REF moved to $resolved_commit; building pinned commit $VMOD_EXPECTED_COMMIT" >&2
