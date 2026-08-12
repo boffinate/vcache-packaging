@@ -195,7 +195,7 @@ For `build: cargo`:
 modules:
   - rers
 artifacts:
-  - libvmod_rs_template.so
+  - libvmod_rers.so
 ```
 
 For each pair, validate exactly one declared artifact in the top level of Cargo's release directory and install it under the conventional `libvmod_<module>.so` name. Reject a missing or duplicate declared artifact and any other top-level `.so`. This handles upstream filenames that do not match their VCL import names without adding per-VMOD code.

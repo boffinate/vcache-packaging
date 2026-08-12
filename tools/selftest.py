@@ -575,7 +575,7 @@ def catalog_real_rust_vmods_are_unpromoted_and_explicitly_mapped():
     expected = {
         "reqwest": ("v0.1.0", "libvmod_reqwest.so", "reqwest"),
         "fileserver": ("v0.1.0", "libvmod_fileserver.so", "fileserver"),
-        "rers": ("v0.0.14", "libvmod_rs_template.so", "rers"),
+        "rers": ("v0.0.14", "libvmod_rers.so", "rers"),
         "fcgi": ("821221922e7437a22e668c42680d98e6560aa4ca", "libvmod_fastcgi.so", "fastcgi"),
     }
     for vmod_id, (ref, artifact, module) in expected.items():
@@ -1598,17 +1598,17 @@ def recipe_cargo_debian_and_rpm_mapping():
 
 
 @test
-def cargo_artifact_helper_preserves_explicit_rers_mapping():
+def cargo_artifact_helper_accepts_rers_mapping():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         release = tmp / "release"
         destination = tmp / "dest"
         release.mkdir()
-        (release / "libvmod_rs_template.so").write_bytes(b"shared object")
+        (release / "libvmod_rers.so").write_bytes(b"shared object")
         command = [
             sys.executable, str(Path(__file__).resolve().parent / "cargo-artifacts.py"),
             "--release-dir", str(release), "--destination", str(destination),
-            "--mapping", "rers=libvmod_rs_template.so",
+            "--mapping", "rers=libvmod_rers.so",
         ]
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         eq(result.returncode, 0, "Cargo artifact helper accepts rers mapping")
@@ -1617,7 +1617,7 @@ def cargo_artifact_helper_preserves_explicit_rers_mapping():
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         ok(duplicate.returncode != 0 and "duplicate Cargo module mapping" in duplicate.stderr,
            "Cargo artifact helper rejects duplicate module mappings")
-        invalid = subprocess.run(command[:-2] + ["--mapping", "../rers=libvmod_rs_template.so"],
+        invalid = subprocess.run(command[:-2] + ["--mapping", "../rers=libvmod_rers.so"],
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         ok(invalid.returncode != 0 and "invalid artifact mapping" in invalid.stderr,
            "Cargo artifact helper validates module names independently")

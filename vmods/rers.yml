@@ -19,6 +19,6 @@ package:
   modules:
     - rers
   artifacts:
-    - libvmod_rs_template.so
+    - libvmod_rers.so
   families:
     - varnish
