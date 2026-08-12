@@ -243,6 +243,8 @@ Architectures: <package-architecture>
 Signed-By: /etc/apt/keyrings/vcache-archive-keyring.asc
 ```
 
+Its object path is `vinyl-cache/apt/<family>/<target>/vcache-<family>.sources`.
+
 It gives the key URL, expected full fingerprint and exact installation commands. It never uses `apt-key`, `trusted=yes` or an insecure APT option.
 
 ## RPM publication
@@ -252,7 +254,7 @@ RPM publication signs copied package payloads and repository metadata. There is 
 For one verified EL10 release, `publish-rpm.sh` must:
 
 1. apply the immutable RPM rule, signing absent objects with `rpmsign --addsign` in an AlmaLinux 10 utility container;
-2. import the public key into a temporary RPM database and require `rpmkeys --checksig --verbose` to verify every RPM;
+2. import the public key into a temporary RPM database and require `rpmkeys --checksig --verbose` to report an `OK` OpenPGP signature for every RPM, rejecting digest-only success;
 3. place the exact signed or reused bytes under a fresh `Packages/` directory;
 4. run `createrepo_c` over the complete current package set;
 5. create and locally verify an armored detached `repodata/repomd.xml.asc`; and

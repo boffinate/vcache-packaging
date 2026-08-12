@@ -1277,6 +1277,8 @@ def engine_family_recipes_and_script_use_the_contract():
         ok((recipe_dir / "debian" / "control").is_file(), f"{runtime}: Debian control exists")
         ok((recipe_dir / "debian" / "rules").is_file(), f"{runtime}: Debian rules exists")
         ok((recipe_dir / f"{runtime}.spec").is_file(), f"{runtime}: RPM spec exists")
+        spec = (recipe_dir / f"{runtime}.spec").read_text()
+        ok('%{!?engine_release:%{error:' in spec, f"{runtime}: RPM recipe requires package revision")
         control = (recipe_dir / "debian" / "control").read_text()
         ok(f"Package: {runtime}" in control, f"{runtime}: runtime identity")
         ok(f"Package: {development}" in control, f"{runtime}: development identity")
