@@ -1225,7 +1225,7 @@ def vmod_cargo_compat_contract_is_offline_after_one_fetch():
     ok(script.count("prepare_cargo") == 2, "compat and package paths share Cargo preparation")
     ok(library.count("step cargo-fetch") == 1, "shared Cargo preparation fetches once")
     ok(library.count("cargo fetch --locked") == 2, "Cargo fetch has exactly one retry")
-    ok("dnf -y -q install clang clang-devel" in library,
+    ok("dnf_install_retry clang clang-devel" in library,
        "EL Cargo preparation uses the EL10 clang development package")
     ok("libclang-devel" not in library,
        "EL Cargo preparation does not request the removed libclang-devel name")
@@ -1247,6 +1247,33 @@ def container_image_pull_retries_transient_registry_failures():
     ok("docker pull --platform \"$2\" \"$1\"" in library,
        "container runner explicitly pulls a missing image")
     ok("for attempt in 1 2 3" in library, "container runner bounds pull retries")
+
+
+@test
+def debian_dependency_installs_retry_mirror_sync_failures():
+    root = Path(__file__).resolve().parent.parent
+    library = (root / "scripts" / "lib.sh").read_text()
+    for helper in ("apt_update_retry()", "apt_install_retry()"):
+        ok(helper in library, f"Debian dependency helper {helper} exists")
+    retry_call = "apt_install_retry " + "\\"
+    ok(retry_call in (root / "scripts" / "build-engine.sh").read_text(),
+       "engine dependency install uses the retry helper")
+    vmod_script = (root / "scripts" / "build-vmod.sh").read_text()
+    ok(vmod_script.count(retry_call) >= 2,
+       "compat and package VMOD dependency installs use the retry helper")
+    ok("rm -rf /var/lib/apt/lists/*" in library,
+       "retry clears stale Debian package indexes")
+
+
+@test
+def rpm_dependency_installs_retry_repo_metadata_failures():
+    root = Path(__file__).resolve().parent.parent
+    library = (root / "scripts" / "lib.sh").read_text()
+    ok("dnf_install_retry()" in library, "RPM dependency retry helper exists")
+    ok("dnf clean all" in library, "RPM retry clears stale repository metadata")
+    for name in ("build-engine.sh", "build-vmod.sh"):
+        script = (root / "scripts" / name).read_text()
+        ok("dnf_install_retry " in script, f"{name} uses the RPM retry helper")
 
 
 @test

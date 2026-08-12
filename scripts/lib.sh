@@ -9,6 +9,42 @@ REPO_ROOT=$(cd "$LIB_DIR/.." && pwd)
 
 die() { printf 'E: %s\n' "$*" >&2; exit 2; }
 
+# Debian mirrors can briefly serve an object that does not match the current
+# package index during mirror publication. Refresh the indexes and retry the
+# dependency transaction a bounded number of times before classifying it as
+# infrastructure failure.
+apt_update_retry() {
+  local attempt
+  for attempt in 1 2 3; do
+    if apt-get update -qq; then return 0; fi
+    [ "$attempt" -lt 3 ] || return 1
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+    sleep $((attempt * 2))
+  done
+}
+
+apt_install_retry() {
+  local attempt
+  for attempt in 1 2 3; do
+    if apt-get install -y --no-install-recommends "$@"; then return 0; fi
+    [ "$attempt" -lt 3 ] || return 1
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+    apt_update_retry
+  done
+}
+
+dnf_install_retry() {
+  local attempt
+  for attempt in 1 2 3; do
+    if dnf -y -q install "$@"; then return 0; fi
+    [ "$attempt" -lt 3 ] || return 1
+    dnf clean all >/dev/null 2>&1 || true
+    sleep $((attempt * 2))
+  done
+}
+
 target_platform_for_machine() {
   case "${1:-$(uname -m)}" in
     x86_64) echo linux/amd64 ;;
@@ -153,8 +189,8 @@ checkout_vmod() {
 prepare_cargo() {
   step cargo-deps
   case "$PKGFMT" in
-    deb) apt-get install -y --no-install-recommends clang libclang-dev ;;
-    rpm) dnf -y -q install clang clang-devel ;;
+    deb) apt_install_retry clang libclang-dev ;;
+    rpm) dnf_install_retry clang clang-devel ;;
   esac
 
   step cargo-bootstrap
@@ -208,7 +244,7 @@ install_engine_packages() {
       assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" \
         "$package_dir"/"$ENGINE_RUNTIME_PACKAGE"-*.rpm \
         "$package_dir"/"$ENGINE_DEVELOPMENT_PACKAGE"-*.rpm "$@"
-      dnf -y install "$package_dir"/"$ENGINE_RUNTIME_PACKAGE"-*.rpm \
+      dnf_install_retry "$package_dir"/"$ENGINE_RUNTIME_PACKAGE"-*.rpm \
         "$package_dir"/"$ENGINE_DEVELOPMENT_PACKAGE"-*.rpm "$@"
       ;;
   esac

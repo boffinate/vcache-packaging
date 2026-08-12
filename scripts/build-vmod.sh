@@ -73,19 +73,19 @@ step deps
 # so the daemon can run for the load check.
 case "$PKGFMT" in
 deb)
-  apt-get update -qq
-  apt-get install -y --no-install-recommends \
+  apt_update_retry
+  apt_install_retry \
     build-essential automake autoconf autoconf-archive libtool pkg-config \
     git ca-certificates curl python3 python3-docutils \
     libedit-dev libjemalloc-dev libncurses-dev libpcre2-dev libunwind-dev \
     ${VMOD_BUILD_DEPS:-}
   ;;
 rpm)
-  dnf -y -q install dnf-plugins-core epel-release
+  dnf_install_retry dnf-plugins-core epel-release
   dnf config-manager --set-enabled crb
   # /usr/bin/curl, never the curl package: EL ships curl-minimal, which
   # provides the binary and conflicts with full curl.
-  dnf -y -q install gcc make automake autoconf autoconf-archive libtool \
+  dnf_install_retry gcc make automake autoconf autoconf-archive libtool \
     pkgconf-pkg-config git-core python3 python3-docutils diffutils \
     /usr/bin/curl \
     libedit-devel jemalloc-devel ncurses-devel pcre2-devel libunwind-devel \
@@ -246,17 +246,17 @@ cat >> "$INNER" <<'EOF'
 step deps
 case "$PKGFMT" in
 deb)
-  apt-get update -qq
-  apt-get install -y --no-install-recommends \
+  apt_update_retry
+  apt_install_retry \
     build-essential automake autoconf autoconf-archive libtool pkg-config \
     git ca-certificates curl python3 python3-docutils debhelper ${VMOD_BUILD_DEPS:-}
   ;;
 rpm)
-  dnf -y -q install dnf-plugins-core epel-release
+  dnf_install_retry dnf-plugins-core epel-release
   dnf config-manager --set-enabled crb
   # /usr/bin/curl, never the curl package: EL ships curl-minimal, which
   # provides the binary and conflicts with full curl.
-  dnf -y -q install gcc make automake autoconf autoconf-archive libtool \
+  dnf_install_retry gcc make automake autoconf autoconf-archive libtool \
     pkgconf-pkg-config git-core python3 python3-docutils diffutils rpm-build \
     /usr/bin/curl \
     ${VMOD_BUILD_DEPS:-}
@@ -315,8 +315,8 @@ cat >> "$INNER2" <<'EOF'
 
 step deps
 case "$PKGFMT" in
-deb) apt-get update -qq ;;
-rpm) dnf -y -q install epel-release ;;  # engine runtime needs libunwind
+deb) apt_update_retry ;;
+rpm) dnf_install_retry epel-release ;;  # engine runtime needs libunwind
 esac
 
 step pkg-install
