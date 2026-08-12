@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 
 import matrix
+import package_contract
 
 
 class PayloadError(Exception):
@@ -21,20 +22,11 @@ class PayloadError(Exception):
 
 def _metadata(path: Path) -> tuple[str, str]:
     """Read package name and architecture using the native package tool."""
-    if path.suffix == ".deb":
-        command = ["dpkg-deb", "-f", str(path), "Package", "Architecture"]
-    elif path.suffix == ".rpm":
-        command = ["rpm", "-qp", "--qf", "%{NAME}\n%{ARCH}\n", str(path)]
-    else:  # pragma: no cover - callers only enumerate supported suffixes
-        raise PayloadError(f"unsupported package suffix: {path}")
     try:
-        output = subprocess.run(command, check=True, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True).stdout.splitlines()
-    except (OSError, subprocess.CalledProcessError) as exc:
+        fields = package_contract.native_fields(path)
+    except package_contract.ContractError as exc:
         raise PayloadError(f"cannot inspect native package {path.name}: {exc}") from exc
-    if len(output) < 2 or not output[0].strip() or not output[1].strip():
-        raise PayloadError(f"native package metadata is incomplete: {path.name}")
-    return output[0].strip(), output[1].strip()
+    return fields["Package"], fields["Architecture"]
 
 
 def _expected_packages(engine: dict, target: dict, cells: list[dict]) -> dict[str, set[str]]:

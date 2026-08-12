@@ -32,6 +32,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: d6c234da43e2aec7dc5db48013b0eaaf66668981
     version: "0~master"
 package:
   summary: Parallel ESI delivery processor for Vinyl Cache

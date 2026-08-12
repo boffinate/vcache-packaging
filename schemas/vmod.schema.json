@@ -80,6 +80,12 @@
               "minLength": 1,
               "description": "Git ref to build: a tag, branch, or commit. This is the pin."
             },
+            "commit": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Expected full Git commit. Required by the validator for promoted package sources; the readable ref is checked out and must resolve to this immutable identity.",
+              "pattern": "^[0-9a-f]{40}$"
+            },
             "version": {
               "type": "string",
               "minLength": 1,
@@ -106,6 +112,12 @@
                   "type": "string",
                   "minLength": 1,
                   "description": "Git ref to build: a tag, branch, or commit. This is the pin."
+                },
+                "commit": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Expected full Git commit. Required by the validator for promoted package sources; the readable ref is checked out and must resolve to this immutable identity.",
+                  "pattern": "^[0-9a-f]{40}$"
                 },
                 "version": {
                   "type": "string",

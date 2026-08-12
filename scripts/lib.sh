@@ -178,9 +178,21 @@ checkout_vmod() {
   else
     VMOD_CHECKOUT="${VMOD_REF}^{commit}"
   fi
+  resolved_commit=$(git -C "$SRC" rev-parse "$VMOD_CHECKOUT")
+  if [ -n "${VMOD_EXPECTED_COMMIT:-}" ]; then
+    git -C "$SRC" cat-file -e "$VMOD_EXPECTED_COMMIT^{commit}" 2>/dev/null \
+      || { echo "pinned commit $VMOD_EXPECTED_COMMIT is unavailable from source ref $VMOD_REF" >&2; exit 1; }
+    VMOD_CHECKOUT="$VMOD_EXPECTED_COMMIT^{commit}"
+    if [ "$resolved_commit" != "$VMOD_EXPECTED_COMMIT" ]; then
+      echo "source ref $VMOD_REF moved to $resolved_commit; building pinned commit $VMOD_EXPECTED_COMMIT" >&2
+    fi
+  fi
   git -C "$SRC" checkout --detach "$VMOD_CHECKOUT"
   git -C "$SRC" submodule update --init --recursive
-  git -C "$SRC" rev-parse HEAD > "/work/tmp/$TAG.commit"
+  actual_commit=$(git -C "$SRC" rev-parse HEAD)
+  [ -z "${VMOD_EXPECTED_COMMIT:-}" ] || [ "$actual_commit" = "$VMOD_EXPECTED_COMMIT" ] \
+    || { echo "checked out $actual_commit, expected $VMOD_EXPECTED_COMMIT" >&2; exit 1; }
+  printf '%s\n' "$actual_commit" > "/work/tmp/$TAG.commit"
 }
 
 # Install the pinned Rust toolchain, validate the lockfile, and fetch once.
@@ -328,7 +340,7 @@ status_for_step() {
     make)                           echo build_failed ;;
     load)                           echo load_failed ;;
     check|cargo-test)               echo test_failed ;;
-    pkg-build)                      echo package_failed ;;
+    pkg-build|pkg-verify)           echo package_failed ;;
     pkg-install|pkg-load)           echo install_failed ;;
     cargo-fetch|cargo-bootstrap|cargo-deps) echo infra_failed ;;
     *)                              echo infra_failed ;;

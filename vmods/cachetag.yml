@@ -9,6 +9,7 @@ sources:
   head: main
   default:
     ref: v1.0.1
+    commit: a3897aaccf1d6996c00ee14b2c6e1ddac91ac982
     version: "1.0.1"
 package:
   summary: Tag-based cache invalidation VMOD for Vinyl Cache

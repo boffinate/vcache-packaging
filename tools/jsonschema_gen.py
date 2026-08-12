@@ -140,6 +140,11 @@ def _source_entry(description: str) -> dict:
         "vmod_source_entry",
         {
             "ref": _string("Git ref to build: a tag, branch, or commit. This is the pin."),
+            "commit": _string(
+                "Expected full Git commit. Required by the validator for promoted package sources; "
+                "the readable ref is checked out and must resolve to this immutable identity.",
+                pattern=matrix.COMMIT_RE.pattern,
+            ),
             "version": _string(
                 "Upstream version for package naming, quoted so it stays a string "
                 '(e.g. "1.7", not 1.7).'

@@ -141,6 +141,7 @@ def build_tokens(vmod: dict, engine: dict, maintainer: tuple, now: datetime) -> 
         "ENGINE_VERSION": matrix.engine_version(engine),
         "ENGINE_DISPLAY_NAME": matrix.engine_display_name(engine),
         "ENGINE_RUNTIME_PACKAGE": runtime_package,
+        "ENGINE_API": matrix.engine_api(engine),
         "VMOD_DIR_COMPONENT": matrix.engine_vmod_dir_component(engine),
         "ENGINE_DEB_PKG_VERSION": epv["deb"],
         "ENGINE_RPM_PKG_VERSION": epv["rpm"],

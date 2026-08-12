@@ -17,6 +17,7 @@ This project does three things, and only these three things:
 - **Red is information.** A build/test failure for a (VMOD, engine) cell is recorded and rendered; it never fails a matrix or build job. The release-only completeness gate is the exception: each package-enabled `(engine, target)` pair publishes only when its engine and every package-eligible VMOD cell pass. A failed Vinyl pair never blocks a Varnish pair, or the reverse.
 - **Verification happens in containers**, never on the host. Host-safe tooling is Python 3 standard library only, so it runs anywhere without an install step.
 - **The smallest mechanism wins.** No evidence ledgers, no per-artifact digest registries, no transaction matrices, no completeness machinery beyond the release-only pair gate, no auto-re-pin PRs, no fleet surveillance, no fault-injection harnesses. Every version pin has exactly one machine-readable home; anything a shell script needs is generated from it.
+- **Promoted source identity is immutable.** Compatibility and trunk refs remain deliberately moving, but a source selection that can produce a published VMOD also names the full Git commit that its readable tag or branch must resolve to. This is a field on the existing catalog entry, not a second digest ledger.
 
 ## Out of scope
 
@@ -25,3 +26,5 @@ Distribution-quality packaging (copyright audits, lintian/rpmlint gates, hardeni
 ## Publication
 
 Every green `(engine, target)` pair is published as a GitHub Release containing its complete package set and `SHA256SUMS`. That checksummed release is this repository's handoff to the external `vcache-repository` distributor; signing and repository publication stay out of scope here. It remains the fallback for direct installation with `apt install ./*.deb` / `dnf install ./*.rpm`, **not** `dpkg -i` / `rpm -i`: a VMOD package pins the engine by exact version, and only the solver enforces that pin. `dpkg -i` will happily install a newer engine over an ABI-pinned VMOD, silently and with exit 0 (see DESIGN.md decision 10).
+
+An upstream-Varnish overlay is being evaluated separately. Its workflow may download the official signed Varnish cohort, build an additional VMOD against the installed upstream development package, and upload evidence artifacts. It does not publish stable packages or make the external repository part of this project's release contract. Promotion would require an explicit scope decision covering provider ownership, ABI dependencies, repository availability, upgrades and security-response latency.
