@@ -97,7 +97,7 @@ dpkg-deb -f "$PACKAGE" Depends | grep -F "$STRICT_ABI"
 python3 /repo/tools/package_contract.py \
   --format deb --package "$PACKAGE" --name "$OVERLAY_PACKAGE_NAME" \
   --arch "$TARGET_PACKAGE_ARCH" --engine-package varnish --vmod-dir "$VMOD_DIR" \
-  --modules $VMOD_MODULES --manifest-out "$OUT/PACKAGE-CONTRACT.json"
+  --modules $VMOD_MODULES
 
 step assembled-cohort
 apt-get install -y "$PACKAGE"
@@ -109,28 +109,6 @@ sleep 2
 kill -0 "$PID" || { tail -n 80 /tmp/overlay.log >&2; exit 1; }
 kill -TERM "$PID"; wait "$PID" || true
 
-step cohort-manifest
-SOURCE_COMMIT=$(cat "/work/tmp/$TAG.commit")
-PACKAGE_SHA256=$(sha256sum "$PACKAGE" | awk '{print $1}')
-export UPSTREAM_VERSION STRICT_ABI VMOD_DIR SOURCE_COMMIT PACKAGE_SHA256 PACKAGE VMOD_ID
-python3 - <<'PY'
-import json, os
-manifest = {
-    "schema": "external-cohort/1",
-    "provider": "packages.varnish-software.com",
-    "target": os.environ["TARGET_ID"],
-    "engine": {"package": "varnish", "version": os.environ["UPSTREAM_VERSION"],
-               "strict_abi": os.environ["STRICT_ABI"]},
-    "overlay": {"package": os.path.basename(os.environ["PACKAGE"]),
-                "sha256": os.environ["PACKAGE_SHA256"],
-                "vmod": os.environ["VMOD_ID"], "source_commit": os.environ["SOURCE_COMMIT"],
-                "vmod_dir": os.environ["VMOD_DIR"]},
-    "published": False,
-}
-with open("/work/packages/upstream-varnish-overlay/COHORT.json", "w") as f:
-    json.dump(manifest, f, indent=2, sort_keys=True)
-    f.write("\n")
-PY
 echo "experimental upstream Varnish overlay proof passed"
 EOF
 

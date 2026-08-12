@@ -10,7 +10,6 @@ payload into the same path vocabulary for both formats.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import subprocess
 import sys
@@ -119,7 +118,7 @@ def installed_engine_requirement(package_format: str, engine: str) -> tuple[str,
 
 def verify_vmod(package_format: str, package: Path, expected_name: str,
                 expected_arch: str, engine: str, vmod_dir: str,
-                modules: list[str]) -> dict:
+                modules: list[str]) -> None:
     if package_format == "deb":
         metadata = deb_fields(package)
         payload = deb_payload(package)
@@ -156,17 +155,6 @@ def verify_vmod(package_format: str, package: Path, expected_name: str,
         raise ContractError(
             f"{package.name}: normalized VMOD payload {actual_payload!r}, expected {expected_payload!r}"
         )
-    return {
-        "schema": "package-contract/1",
-        "file": package.name,
-        "package": metadata["Package"],
-        "version": metadata["Version"],
-        "architecture": metadata["Architecture"],
-        "engine_requirement": requirement,
-        "vmod_payload": actual_payload,
-    }
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--format", required=True, choices=("deb", "rpm"))
@@ -176,23 +164,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--engine-package", required=True)
     parser.add_argument("--vmod-dir", required=True)
     parser.add_argument("--modules", nargs="+", required=True)
-    parser.add_argument("--manifest-out", type=Path)
     return parser
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        manifest = verify_vmod(args.format, args.package, args.name, args.arch,
-                               args.engine_package, args.vmod_dir, args.modules)
+        verify_vmod(args.format, args.package, args.name, args.arch,
+                    args.engine_package, args.vmod_dir, args.modules)
     except ContractError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    output = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
-    if args.manifest_out:
-        args.manifest_out.parent.mkdir(parents=True, exist_ok=True)
-        args.manifest_out.write_text(output)
-    print(output, end="")
     return 0
 
 

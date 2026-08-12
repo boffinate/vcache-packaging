@@ -318,7 +318,6 @@ python3 /repo/tools/package_contract.py \
   --arch "$TARGET_PACKAGE_ARCH" \
   --engine-package "$ENGINE_RUNTIME_PACKAGE" \
   --vmod-dir "$VMOD_DIR" \
-  --manifest-out "$OUT/PACKAGE-CONTRACT.json" \
   --modules $VMOD_MODULES
 EOF
 

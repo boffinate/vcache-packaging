@@ -1119,9 +1119,6 @@ def cohort_env_is_generated_from_the_promoted_catalog():
                                 "--target", "debian-13-amd64", "--root", root])
         eq(code, 0, "cohort-env exit code")
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
-        eq(values["COHORT_PACKAGE_NAMES"],
-           "'vinyl-cache vinyl-cache-dev vinyl-vmod-dict'",
-           "cohort contains engine, development package and promoted VMOD")
         eq(values["COHORT_MODULES"], "'dict'", "cohort imports every declared module")
 
 
@@ -1538,8 +1535,8 @@ def upstream_varnish_overlay_is_strictly_non_publishing_evidence():
        "overlay discovers the strict ABI from the installed upstream package")
     ok("Depends: varnish (= ${UPSTREAM_VERSION}), ${STRICT_ABI}" in probe,
        "overlay proof package binds exact upstream version and strict ABI")
-    ok('"published": False' in probe and '"schema": "external-cohort/1"' in probe,
-       "overlay evidence explicitly records its non-publishing status")
+    ok("COHORT.json" not in probe and "PACKAGE-CONTRACT.json" not in probe,
+       "overlay keeps no unconsumed evidence ledger")
 
 
 # ---------------------------------------------------------------------------

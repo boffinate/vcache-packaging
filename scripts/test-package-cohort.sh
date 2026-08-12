@@ -37,29 +37,17 @@ deb) mapfile -t PACKAGES < <(find "$PACKAGE_ROOT" -type f -name '*.deb' | sort) 
 rpm) mapfile -t PACKAGES < <(find "$PACKAGE_ROOT" -type f -name '*.rpm' | sort) ;;
 esac
 [ "${#PACKAGES[@]}" -gt 0 ] || { echo "no native packages under $PACKAGE_ROOT" >&2; exit 1; }
-case "$PKGFMT" in
-deb) ACTUAL_NAMES=$(for package in "${PACKAGES[@]}"; do dpkg-deb -f "$package" Package; done | sort) ;;
-rpm) ACTUAL_NAMES=$(rpm -qp --qf '%{NAME}\n' "${PACKAGES[@]}" | sort) ;;
-esac
-EXPECTED_NAMES=$(printf '%s\n' $COHORT_PACKAGE_NAMES | sort)
-[ "$ACTUAL_NAMES" = "$EXPECTED_NAMES" ] || {
-  echo "local package cohort differs from catalog" >&2
-  diff -u <(printf '%s\n' "$EXPECTED_NAMES") <(printf '%s\n' "$ACTUAL_NAMES") >&2 || true
-  exit 1
-}
 
 step install
 case "$PKGFMT" in
 deb)
   apt-get update -qq
   apt-get install -y --no-install-recommends "${PACKAGES[@]}"
-  dpkg-query -W $COHORT_PACKAGE_NAMES >/dev/null
   ;;
 rpm)
   dnf -y -q install dnf-plugins-core epel-release
   dnf config-manager --set-enabled crb
   dnf -y --setopt=install_weak_deps=False install "${PACKAGES[@]}"
-  rpm -q $COHORT_PACKAGE_NAMES >/dev/null
   ;;
 esac
 

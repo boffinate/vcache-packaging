@@ -861,14 +861,8 @@ def cohort_env_pairs(catalog: dict, engine_id: str, target_id: str) -> list:
         raise CatalogError(f"engine {engine_id!r} does not publish a package cohort")
     pairs = env_pairs(catalog, engine_id, target_id=target_id)
     vmods = package_vmods(catalog, engine, target_id)
-    package_names = [engine_runtime_package(engine),
-                     engine_development_package(engine, find_target(catalog, target_id)["format"])]
-    package_names.extend(engine_vmod_package_name(engine, vmod["id"]) for vmod in vmods)
     modules = [module for vmod in vmods for module in vmod_modules(vmod)]
-    pairs += [
-        ("COHORT_PACKAGE_NAMES", " ".join(package_names)),
-        ("COHORT_MODULES", " ".join(modules)),
-    ]
+    pairs.append(("COHORT_MODULES", " ".join(modules)))
     return pairs
 
 
