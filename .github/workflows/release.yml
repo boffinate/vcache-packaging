@@ -162,10 +162,6 @@ jobs:
                   f.write("".join(f"- `{name}`\n" for name in names))
               prepared.append((tag, dist, body, names))
 
-          if gate_failed:
-              print("release validation failed; no stable release was mutated")
-              sys.exit(1)
-
           for tag, dist, body, names in prepared:
               # Stable, replaceable tag: delete-and-recreate so a re-dispatch
               # after a fix replaces the release. The delete may fail because
@@ -176,4 +172,8 @@ jobs:
                              + ["--target", sha, "--title", tag, "--notes-file", body],
                              check=True)
               print(f"published {tag}: {len(names)} packages")
+
+          if gate_failed:
+              print("release validation failed for one or more pairs; green pairs were published")
+              sys.exit(1)
           EOF

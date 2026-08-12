@@ -197,6 +197,12 @@
               "true",
               "false"
             ]
+          },
+          "package_revision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Quoted positive packaging revision for a packages \"true\" engine.",
+            "pattern": "^[1-9][0-9]*$"
           }
         },
         "allOf": [
@@ -289,7 +295,17 @@
                   "const": "release"
                 }
               },
-              "description": "packages \"true\" requires kind: release."
+              "required": [
+                "package_revision"
+              ],
+              "description": "packages \"true\" requires kind: release and package_revision."
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "package_revision"
+                ]
+              }
             }
           }
         ]

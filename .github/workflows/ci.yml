@@ -18,3 +18,4 @@ jobs:
       # schemas/ are generated outputs; catch a hand-edit or a stale regen.
       - run: python3 tools/matrix.py schema --check
       - run: python3 tools/matrix.py selftest
+      - run: bash scripts/check-package-version-ordering.sh

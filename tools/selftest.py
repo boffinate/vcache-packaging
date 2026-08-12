@@ -86,6 +86,7 @@ FIXTURE_ENGINES = textwrap.dedent(
           tarball_url: https://example.org/vinyl-cache-9.0.1.tgz
           sha256: "aa11"
         packages: "true"
+        package_revision: "1"
         targets:
           - debian-13-amd64
           - el10-x86_64
@@ -224,7 +225,7 @@ def varnish_package_fixture(include_rpm: bool = False) -> str:
     engines = must_replace(
         FIXTURE_ENGINES,
         '      sha256: "bb22"\n    packages: "false"\n',
-        '      sha256: "bb22"\n    packages: "true"\n',
+        '      sha256: "bb22"\n    packages: "true"\n    package_revision: "1"\n',
     )
     if include_rpm:
         engines = must_replace(
@@ -438,6 +439,33 @@ def catalog_rejects_missing_required():
 
 
 @test
+def catalog_requires_canonical_package_revision():
+    """Published engine builds must carry a positive, quoted package revision."""
+    packaged = FIXTURE_ENGINES
+    with tempfile.TemporaryDirectory() as tmp:
+        matrix.load_catalog(write_fixture(Path(tmp), engines=packaged))
+    for revision, needle in [(None, "package_revision"), ("0", "package_revision"),
+                             ("01", "package_revision"), ("one", "package_revision")]:
+        engines = packaged
+        if revision is None:
+            engines = must_replace(engines, '    package_revision: "1"\n', "")
+        else:
+            engines = must_replace(engines, '    package_revision: "1"\n',
+                                   f'    package_revision: "{revision}"\n')
+        with tempfile.TemporaryDirectory() as tmp:
+            expect_catalog_error(write_fixture(Path(tmp), engines=engines), needle,
+                                 f"package revision {revision!r}")
+    inactive = must_replace(
+        FIXTURE_ENGINES,
+        '    packages: "false"\n    targets:\n',
+        '    packages: "false"\n    package_revision: "1"\n    targets:\n',
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        expect_catalog_error(write_fixture(Path(tmp), engines=inactive),
+                             'valid only when packages is "true"', "inactive package revision")
+
+
+@test
 def catalog_rejects_trunk_with_tarball():
     with tempfile.TemporaryDirectory() as tmp:
         engines = must_replace(
@@ -456,7 +484,7 @@ def catalog_rejects_packages_on_trunk_and_checks_family_identity():
         engines = must_replace(
             FIXTURE_ENGINES,
             "      branch: main\n    packages: \"false\"\n",
-            "      branch: main\n    packages: \"true\"\n",
+            "      branch: main\n    packages: \"true\"\n    package_revision: \"1\"\n",
         )
         expect_catalog_error(write_fixture(Path(tmp), engines=engines),
                              'packages "true" requires kind release', "packages on trunk")
@@ -468,7 +496,7 @@ def catalog_rejects_packages_on_trunk_and_checks_family_identity():
         engines = must_replace(
             FIXTURE_ENGINES,
             "      sha256: \"bb22\"\n    packages: \"false\"\n",
-            "      sha256: \"bb22\"\n    packages: \"true\"\n",
+            "      sha256: \"bb22\"\n    packages: \"true\"\n    package_revision: \"1\"\n",
         )
         catalog = matrix.load_catalog(write_fixture(Path(tmp), engines=engines))
         eq(matrix.find_engine(catalog, "varnish-9.0.3")["packages"], "true",
@@ -731,7 +759,7 @@ def catalog_files_carry_a_language_server_modeline():
 @test
 def resolution_rule():
     with tempfile.TemporaryDirectory() as tmp:
-        catalog = matrix.load_catalog(write_fixture(Path(tmp)))
+        catalog = matrix.load_catalog(write_fixture(Path(tmp), engines=varnish_package_fixture()))
         vmod = catalog["vmods"]["dict"]
         release = matrix.find_engine(catalog, "vinyl-9.0.1")
         varnish = matrix.find_engine(catalog, "varnish-9.0.3")
@@ -747,7 +775,7 @@ def resolution_rule():
         eq(matrix.engine_package_version(release), {"deb": "9.0.1-1", "rpm": "9.0.1-1%{?dist}"},
            "engine package version")
         eq(matrix.vmod_package_version("1.7", release),
-           {"deb": "1.7-1~vinyl9.0.1", "rpm_version": "1.7", "rpm_release": "1.vinyl9.0.1"},
+           {"deb": "1.7-1~vinyl9.0.1.1", "rpm_version": "1.7", "rpm_release": "1.vinyl9.0.1.1"},
            "vmod package version")
         eq(matrix.engine_runtime_package(release), "vinyl-cache", "Vinyl runtime package")
         eq(matrix.engine_development_package(release, "deb"), "vinyl-cache-dev", "Vinyl Debian development package")
@@ -769,8 +797,60 @@ def resolution_rule():
         eq(matrix.engine_recipe_directory(varnish), "packaging/engine/varnish", "Varnish recipe directory")
         eq(matrix.engine_vmod_package_name(varnish, "dict"), "varnish-vmod-dict", "Varnish VMOD package name")
         eq(matrix.vmod_package_version("1.8", varnish),
-           {"deb": "1.8-1~varnish9.0.3", "rpm_version": "1.8", "rpm_release": "1.varnish9.0.3"},
+           {"deb": "1.8-1~varnish9.0.3.1", "rpm_version": "1.8", "rpm_release": "1.varnish9.0.3.1"},
            "Varnish VMOD package version")
+
+
+@test
+def package_revision_drives_versions_and_exact_dependencies():
+    revision_12 = must_replace(FIXTURE_ENGINES, '    package_revision: "1"\n',
+                               '    package_revision: "12"\n')
+    revision_13 = must_replace(revision_12, '    package_revision: "12"\n',
+                               '    package_revision: "13"\n')
+    next_engine = must_replace(
+        FIXTURE_ENGINES,
+        '  - id: vinyl-9.0.1\n    family: vinyl\n    series: vinyl-9.0\n',
+        '  - id: vinyl-9.0.2\n    family: vinyl\n    series: vinyl-9.0\n',
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        root = write_fixture(tmp / "revision-12", engines=revision_12)
+        catalog = matrix.load_catalog(root)
+        engine = matrix.find_engine(catalog, "vinyl-9.0.1")
+        eq(matrix.engine_package_version(engine),
+           {"deb": "9.0.1-12", "rpm": "9.0.1-12%{?dist}"}, "engine revision version")
+        version_12 = matrix.vmod_package_version("1.7", engine)
+        eq(version_12,
+           {"deb": "1.7-1~vinyl9.0.1.12", "rpm_version": "1.7", "rpm_release": "1.vinyl9.0.1.12"},
+           "VMOD revision version")
+        deb_out = tmp / "deb-out"
+        recipe.generate(root, "dict", "vinyl-9.0.1", "debian-13-amd64", deb_out,
+                        maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
+        control = (deb_out / "debian" / "control").read_text()
+        changelog = (deb_out / "debian" / "changelog").read_text()
+        ok("vinyl-cache (= 9.0.1-12)" in control, "Debian runtime dependency has the revision")
+        ok("vinyl-cache-dev (= 9.0.1-12)" in control, "Debian build dependency has the revision")
+        ok("vinyl-vmod-dict (1.7-1~vinyl9.0.1.12)" in changelog, "Debian VMOD version has the revision")
+        rpm_out = tmp / "rpm-out"
+        written = recipe.generate(root, "dict", "vinyl-9.0.1", "el10-x86_64", rpm_out,
+                                  maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
+        spec = written[0].read_text()
+        ok("Release:        1.vinyl9.0.1.12%{?dist}" in spec, "RPM adds dist exactly once")
+        ok("Requires:       vinyl-cache%{?_isa} = 9.0.1-12%{?dist}" in spec,
+           "RPM runtime dependency has the revision")
+        ok("BuildRequires:  vinyl-cache-devel = 9.0.1-12%{?dist}" in spec,
+           "RPM build dependency has the revision")
+
+        same_engine = matrix.find_engine(matrix.load_catalog(write_fixture(tmp / "revision-13", engines=revision_13)),
+                                         "vinyl-9.0.1")
+        newer_engine = matrix.find_engine(matrix.load_catalog(write_fixture(tmp / "next-engine", engines=next_engine)),
+                                          "vinyl-9.0.2")
+        eq(matrix.vmod_package_version("1.7", same_engine),
+           {"deb": "1.7-1~vinyl9.0.1.13", "rpm_version": "1.7", "rpm_release": "1.vinyl9.0.1.13"},
+           "same-engine revision rendering")
+        eq(matrix.vmod_package_version("1.7", newer_engine),
+           {"deb": "1.7-1~vinyl9.0.2.1", "rpm_version": "1.7", "rpm_release": "1.vinyl9.0.2.1"},
+           "new-engine first revision rendering")
 
 
 # ---------------------------------------------------------------------------
@@ -918,6 +998,9 @@ def env_output_is_sh_sourceable():
         eq(code, 0, "env exit code")
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
         eq(values["ENGINE_VERSION"], "'9.0.1'", "ENGINE_VERSION")
+        eq(values["ENGINE_PACKAGE_REVISION"], "'1'", "ENGINE_PACKAGE_REVISION")
+        eq(values["ENGINE_DEB_VERSION"], "'9.0.1-1'", "ENGINE_DEB_VERSION")
+        eq(values["ENGINE_RPM_RELEASE"], "'1'", "ENGINE_RPM_RELEASE")
         eq(values["ENGINE_TARBALL_URL"], "'https://example.org/vinyl-cache-9.0.1.tgz'", "tarball url")
         eq(values["ENGINE_RUNTIME_PACKAGE"], "'vinyl-cache'", "runtime package comes from family")
         eq(values["ENGINE_DEVELOPMENT_PACKAGE"], "'vinyl-cache-devel'", "target development package comes from family")
@@ -928,7 +1011,7 @@ def env_output_is_sh_sourceable():
         eq(values["ENGINE_RECIPE_DIR"], "'packaging/engine/vinyl'", "recipe directory comes from family")
         eq(values["TARGET_ID"], "'el10-x86_64'", "TARGET_ID")
         eq(values["VMOD_REF"], "'v1.7'", "VMOD_REF")
-        eq(values["VMOD_DEB_VERSION"], "'1.7-1~vinyl9.0.1'", "VMOD_DEB_VERSION")
+        eq(values["VMOD_DEB_VERSION"], "'1.7-1~vinyl9.0.1.1'", "VMOD_DEB_VERSION")
         eq(values["VMOD_PACKAGE_NAME"], "'vinyl-vmod-dict'", "VMOD_PACKAGE_NAME")
         eq(values["VMOD_BUILD_DEPS"], "'redhat-rpm-config python3-docutils'",
            "rpm build deps for an el10 target")
@@ -947,7 +1030,7 @@ def env_output_is_sh_sourceable():
         eq(values["ENGINE_DAEMON"], "'varnishd'", "Varnish daemon comes from family")
         eq(values["ENGINE_RECIPE_DIR"], "'packaging/engine/varnish'", "Varnish recipe directory comes from family")
         eq(values["VMOD_PACKAGE_NAME"], "'varnish-vmod-dict'", "Varnish VMOD name comes from family")
-        eq(values["VMOD_DEB_VERSION"], "'1.8-1~varnish9.0.3'", "Varnish VMOD version comes from family")
+        ok("VMOD_DEB_VERSION" not in values, "no package version for an un-packaged engine")
         code, out, _ = run_cli(["env", "--engine", "vinyl-trunk", "--vmod", "dict", "--root", root])
         eq(code, 0, "trunk env exit code")
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
@@ -1202,8 +1285,13 @@ def engine_family_recipes_and_script_use_the_contract():
     ok(not (root / "packaging" / "engine" / "debian").exists(), "old unscoped Debian recipe directory moved")
     script = (root / "scripts" / "build-engine.sh").read_text()
     for exported in ("ENGINE_RUNTIME_PACKAGE", "ENGINE_DEVELOPMENT_PACKAGE", "ENGINE_RECIPE_DIR",
-                     "ENGINE_SOURCE_NAME", "ENGINE_RPM_ARCHIVE_STEM", "ENGINE_DAEMON"):
+                     "ENGINE_SOURCE_NAME", "ENGINE_RPM_ARCHIVE_STEM", "ENGINE_DAEMON",
+                     "ENGINE_PACKAGE_REVISION"):
         ok(f"${{{exported}:?}}" in script, f"build script requires {exported} from matrix env")
+    ok("$ENGINE_SOURCE_NAME ($ENGINE_VERSION-$ENGINE_PACKAGE_REVISION)" in script,
+       "engine Debian package version uses the package revision")
+    ok('--define "engine_release $ENGINE_PACKAGE_REVISION"' in script,
+       "engine RPM package release uses the package revision")
     ok("/repo/packaging/engine/debian" not in script, "build script has no unscoped recipe path")
     ok("/repo/packaging/engine/vinyl-cache.spec" not in script, "build script has no Vinyl RPM spec path")
 
@@ -1262,16 +1350,19 @@ def release_payload_gate_rejects_missing_artifact():
 
 
 @test
-def stable_release_mutation_is_main_only_and_prevalidated():
+def stable_release_keeps_green_pairs_independent():
     workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
                 "release.yml").read_text()
     ok("github.ref == 'refs/heads/main'" in workflow,
        "stable release job is restricted to main")
     ok("group: release-stable" in workflow and "cancel-in-progress: false" in workflow,
        "stable release replacement is serialized without cancellation")
-    gate = workflow.index("release validation failed; no stable release was mutated")
-    mutation = workflow.index("gh", gate)
-    ok(gate < mutation, "release mutation follows complete payload validation")
+    publish = workflow.index("for tag, dist, body, names in prepared:")
+    gate_failure = workflow.index("release validation failed for one or more pairs", publish)
+    ok(publish < gate_failure,
+       "a failed pair reports red only after all independently green pairs publish")
+    ok(workflow.index('sys.exit(1)', gate_failure) > gate_failure,
+       "a failed pair still makes the release workflow fail")
 
 
 # ---------------------------------------------------------------------------
@@ -1491,7 +1582,7 @@ def recipe_debian_generation():
         ok("python3-docutils" in control, "manifest build_deps included")
         ok(" keys up from VCL, with reloading support." in control, "description lines carried over")
         changelog = (out / "debian" / "changelog").read_text()
-        ok("vinyl-vmod-dict (1.7-1~vinyl9.0.1) unstable" in changelog, "debian version")
+        ok("vinyl-vmod-dict (1.7-1~vinyl9.0.1.1) unstable" in changelog, "debian version")
         ok("Test Maintainer <test@example.org>" in changelog, "maintainer identity")
         rules = out / "debian" / "rules"
         ok(rules.stat().st_mode & 0o111, "rules is executable")
@@ -1534,7 +1625,7 @@ def recipe_rpm_generation():
         eq(recipe.TOKEN_RE.findall(spec), [], "unresolved tokens in spec")
         ok("Name:           vinyl-vmod-dict" in spec, "rpm name")
         ok("Version:        1.7" in spec, "rpm version")
-        ok("Release:        1.vinyl9.0.1%{?dist}" in spec, "rpm release")
+        ok("Release:        1.vinyl9.0.1.1%{?dist}" in spec, "rpm release")
         ok("Requires:       vinyl-cache%{?_isa} = 9.0.1-1%{?dist}" in spec,
            "exact-version arch-qualified engine requires")
         ok("BuildRequires:  vinyl-cache-devel = 9.0.1-1%{?dist}" in spec, "exact-version -devel requires")
@@ -1554,7 +1645,7 @@ def recipe_varnish_family_generation():
         ok("Package: varnish-vmod-dict" in control, "Varnish Debian package name")
         ok("varnish (= 9.0.3-1)" in control, "Varnish exact runtime dependency")
         ok("varnish-dev (= 9.0.3-1)" in control, "Varnish exact development build dependency")
-        ok("varnish-vmod-dict (1.8-1~varnish9.0.3) unstable" in changelog, "Varnish Debian version")
+        ok("varnish-vmod-dict (1.8-1~varnish9.0.3.1) unstable" in changelog, "Varnish Debian version")
         ok("Built against Varnish Cache 9.0.3" in changelog, "Varnish family description")
 
         rpm_root = write_fixture(tmp / "rpm-repo", engines=varnish_package_fixture(include_rpm=True))

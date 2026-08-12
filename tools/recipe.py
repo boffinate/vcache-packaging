@@ -8,8 +8,8 @@ unresolved token fails loudly. Naming, versioning, and the exact-version
 engine dependency follow DESIGN.md:
 
   * binary package ``<family>-vmod-<id>`` on both formats;
-  * Debian version ``<upstream>-1~<family><engine>``, RPM release
-    ``1.<family><engine>%{?dist}``;
+  * Debian version ``<upstream>-1~<family><engine>.<package-revision>``, RPM
+    release ``1.<family><engine>.<package-revision>%{?dist}``;
   * exact dependency on the selected family's runtime package -- the RPM side
     needs ``%{?_isa}`` because a dlopen()ed plugin must match the daemon's
     architecture exactly and multilib would otherwise let an i686 engine

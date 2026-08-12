@@ -37,6 +37,9 @@ ENGINE_SOURCE_NAME=${ENGINE_SOURCE_NAME:?}
 ENGINE_RPM_ARCHIVE_STEM=${ENGINE_RPM_ARCHIVE_STEM:?}
 ENGINE_RECIPE_DIR=${ENGINE_RECIPE_DIR:?}
 ENGINE_DAEMON=${ENGINE_DAEMON:?}
+if [ "${ENGINE_PACKAGES:-false}" = "true" ]; then
+  ENGINE_PACKAGE_REVISION=${ENGINE_PACKAGE_REVISION:?}
+fi
 PREFIX="/opt/$ENGINE_ID"
 if [ "${ENGINE_KIND:-release}" = trunk ]; then REF=${ENGINE_BRANCH:-trunk}; else REF=$ENGINE_VERSION; fi
 
@@ -120,7 +123,7 @@ if [ "${ENGINE_PACKAGES:-false}" = "true" ]; then
     cp -R "/repo/$ENGINE_RECIPE_DIR/debian" "$PKGWORK/build/debian"
     # The changelog is generated, not committed: version stamped from the pins.
     cat > "$PKGWORK/build/debian/changelog" <<CHANGELOG
-$ENGINE_SOURCE_NAME ($ENGINE_VERSION-1) unstable; urgency=medium
+$ENGINE_SOURCE_NAME ($ENGINE_VERSION-$ENGINE_PACKAGE_REVISION) unstable; urgency=medium
 
   * Automated matrix build of $ENGINE_PACKAGE_NAME $ENGINE_VERSION
     (engine $ENGINE_ID, target $TARGET).
@@ -142,7 +145,7 @@ CHANGELOG
     rpmbuild -bb \
       --define "_topdir $TOPD" \
       --define "engine_version $ENGINE_VERSION" \
-      --define "engine_release 1" \
+      --define "engine_release $ENGINE_PACKAGE_REVISION" \
       --define "engine_srcdir $SRCDIR" \
       --define "build_date $(date '+%a %b %d %Y')" \
       "/repo/$ENGINE_RECIPE_DIR/$ENGINE_PACKAGE_NAME.spec"

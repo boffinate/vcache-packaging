@@ -1,6 +1,6 @@
 # Signed package repository plan
 
-Status: simplified proposal for a sibling repository; not yet implemented. Date: 2026-08-12.
+Status: implemented in the producer branch and sibling repository. Date: 2026-08-12.
 
 ## Decision
 
@@ -86,7 +86,7 @@ The release must be non-draft and non-prerelease. Its assets are exactly the com
 
 `SHA256SUMS` covers every package and not itself. Each line is a lowercase 64-character digest, two spaces, and a basename with no slash. Its filename set must exactly match the package assets.
 
-The public source repository is fixed in the sibling workflow. The distributor resolves one release, records its release ID and target commit, and downloads every asset by asset ID into a new temporary directory. It then:
+The public source repository is fixed in the sibling workflow. The distributor resolves one release and downloads every asset by asset ID into a new temporary directory. It then:
 
 1. enforces the exact asset and checksum contract;
 2. verifies every checksum;
@@ -133,11 +133,13 @@ DESIGN.md
 routes.tsv
 keys/vcache-archive-keyring.asc
 scripts/fetch-release.sh
+scripts/lib.sh
 scripts/publish-apt.sh
 scripts/publish-rpm.sh
 scripts/smoke-apt.sh
 scripts/smoke-rpm.sh
 tools/selftest.py
+tools/release.py
 .github/workflows/publish.yml
 ```
 
@@ -254,7 +256,7 @@ For one verified EL10 release, `publish-rpm.sh` must:
 3. place the exact signed or reused bytes under a fresh `Packages/` directory;
 4. run `createrepo_c` over the complete current package set;
 5. create and locally verify an armored detached `repodata/repomd.xml.asc`; and
-6. upload packages before metadata, then `repomd.xml`, its signature and the client file.
+6. upload packages before ordinary metadata and the client file, then `repomd.xml` and its signature.
 
 Publish one family-specific client file equivalent to:
 

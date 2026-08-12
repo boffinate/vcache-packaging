@@ -209,6 +209,10 @@ def build_engines() -> dict:
                 "Requires kind: release. Defaults to \"false\".",
                 enum=["true", "false"],
             ),
+            "package_revision": _string(
+                'Quoted positive packaging revision for a packages "true" engine.',
+                pattern=matrix.PACKAGE_REVISION_RE.pattern,
+            ),
         },
         "One engine version we test and/or package against.",
     )
@@ -241,8 +245,10 @@ def build_engines() -> dict:
             "if": {"properties": {"packages": {"const": "true"}}, "required": ["packages"]},
             "then": {
                 "properties": {"kind": {"const": "release"}},
-                "description": 'packages "true" requires kind: release.',
+                "required": ["package_revision"],
+                "description": 'packages "true" requires kind: release and package_revision.',
             },
+            "else": {"not": {"required": ["package_revision"]}},
         },
     ]
     return _document(
