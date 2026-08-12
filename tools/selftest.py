@@ -1279,7 +1279,8 @@ def vmod_cargo_compat_contract_is_offline_after_one_fetch():
         ok(expected in script, f"Cargo compatibility path uses {expected}")
     ok(script.count("prepare_cargo") == 2, "compat and package paths share Cargo preparation")
     ok(library.count("step cargo-fetch") == 1, "shared Cargo preparation fetches once")
-    ok(library.count("cargo fetch --locked") == 2, "Cargo fetch has exactly one retry")
+    ok('retry_command 3 "cargo fetch" cargo fetch --locked' in library,
+       "Cargo fetch uses the shared bounded retry runner")
     ok("dnf_install_retry clang clang-devel" in library,
        "EL Cargo preparation uses the EL10 clang development package")
     ok("libclang-devel" not in library,
@@ -1298,10 +1299,125 @@ def vmod_autotools_aliases_use_the_engine_prefix():
 @test
 def container_image_pull_retries_transient_registry_failures():
     library = (Path(__file__).resolve().parent.parent / "scripts" / "lib.sh").read_text()
-    ok('docker image inspect "$1"' in library, "container runner checks the local image cache")
-    ok("docker pull --platform \"$2\" \"$1\"" in library,
-       "container runner explicitly pulls a missing image")
-    ok("for attempt in 1 2 3" in library, "container runner bounds pull retries")
+    ok('docker image inspect "$image"' in library, "container runner checks the local image cache")
+    ok("ensure_container_image" in library, "container runner shares the explicit image helper")
+    ok('retry_command 3 "docker pull $image"' in library,
+       "container image pulls use the shared bounded retry runner")
+
+
+@test
+def shared_retry_runner_bounds_attempts_and_preserves_status():
+    root = Path(__file__).resolve().parent.parent
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        attempts = tmp / "attempts"
+        result = subprocess.run(
+            ["bash", "-c",
+             'source "$1"; sleep() { :; }; ATTEMPTS_FILE=$2; flaky() { '
+             'attempt=$(cat "$ATTEMPTS_FILE" 2>/dev/null || echo 0); attempt=$((attempt + 1)); '
+             'printf "%s\\n" "$attempt" > "$ATTEMPTS_FILE"; [ "$attempt" -ge 3 ]; }; '
+             'retry_command 3 "fixture operation" flaky',
+             "bash", str(root / "scripts" / "lib.sh"), str(attempts)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, "shared retry runner succeeds on a later attempt")
+        eq(attempts.read_text().strip(), "3", "shared retry runner makes the configured attempts")
+        ok("fixture operation failed; retrying" in result.stderr, "shared retry runner names retrying work")
+        attempts.unlink()
+        result = subprocess.run(
+            ["bash", "-c",
+             'source "$1"; sleep() { :; }; ATTEMPTS_FILE=$2; always_42() { '
+             'attempt=$(cat "$ATTEMPTS_FILE" 2>/dev/null || echo 0); attempt=$((attempt + 1)); '
+             'printf "%s\\n" "$attempt" > "$ATTEMPTS_FILE"; return 42; }; '
+             'retry_command 3 "fixture exhaustion" always_42',
+             "bash", str(root / "scripts" / "lib.sh"), str(attempts)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 42, "shared retry runner preserves the exhausted command status")
+        eq(attempts.read_text().strip(), "3", "shared retry runner stops at its attempt bound")
+
+
+@test
+def missing_remote_branch_is_not_retried_as_a_transport_failure():
+    root = Path(__file__).resolve().parent.parent
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        fake_bin = tmp / "bin"
+        fake_bin.mkdir()
+        attempts = tmp / "attempts"
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            "#!/usr/bin/env bash\n"
+            "count=$(cat \"$GIT_ATTEMPTS\" 2>/dev/null || echo 0)\n"
+            "printf '%s\\n' \"$((count + 1))\" > \"$GIT_ATTEMPTS\"\n"
+            "exit 2\n"
+        )
+        fake_git.chmod(0o755)
+        result = subprocess.run(
+            ["bash", "-c", 'source "$1"; git_remote_head_exists_retry origin missing',
+             "bash", str(root / "scripts" / "lib.sh")],
+            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                 "GIT_ATTEMPTS": str(attempts)},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 2, "missing remote branch keeps git's not-found status")
+        eq(attempts.read_text().strip(), "1", "missing remote branch performs one lookup")
+
+
+@test
+def immutable_downloads_retry_transient_failures():
+    root = Path(__file__).resolve().parent.parent
+    library = (root / "scripts" / "lib.sh").read_text()
+    engine_script = (root / "scripts" / "build-engine.sh").read_text()
+    ok("download_retry()" in library, "shared immutable-download retry helper exists")
+    ok('download_retry "${ENGINE_TARBALL_URL:?}" "/work/tmp/$TAG.tar.gz"' in engine_script,
+       "engine release fetch uses the retry helper")
+    ok('download_retry "${ENGINE_TARBALL_URL:?}" "$ETREE_ROOT/engine.tgz"' in library,
+       "VMOD engine-source fetch uses the retry helper")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        fake_bin = tmp / "bin"
+        fake_bin.mkdir()
+        attempts = tmp / "attempts"
+        fake_curl = fake_bin / "curl"
+        fake_curl.write_text(
+            "#!/usr/bin/env bash\n"
+            "attempt=$(cat \"$DOWNLOAD_ATTEMPTS\" 2>/dev/null || echo 0)\n"
+            "attempt=$((attempt + 1))\n"
+            "printf '%s\\n' \"$attempt\" > \"$DOWNLOAD_ATTEMPTS\"\n"
+            "destination=\n"
+            "while [ $# -gt 0 ]; do\n"
+            "  if [ \"$1\" = -o ]; then destination=$2; shift 2; else shift; fi\n"
+            "done\n"
+            "if [ \"$attempt\" -lt \"${DOWNLOAD_SUCCESS_AT:-3}\" ]; then exit 22; fi\n"
+            "printf 'verified payload\\n' > \"$destination\"\n"
+        )
+        fake_curl.chmod(0o755)
+        destination = tmp / "archive.tgz"
+        result = subprocess.run(
+            ["bash", "-c", 'source "$1"; sleep() { :; }; download_retry "$2" "$3"',
+             "bash", str(root / "scripts" / "lib.sh"), "https://example.test/archive.tgz", str(destination)],
+            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                 "DOWNLOAD_ATTEMPTS": str(attempts)},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, "download succeeds after transient failures")
+        eq(attempts.read_text().strip(), "3", "download retries twice before succeeding")
+        eq(destination.read_text(), "verified payload\n", "only a completed download reaches its destination")
+        ok(not Path(f"{destination}.part").exists(), "temporary partial download is removed")
+        attempts.unlink()
+        exhausted = tmp / "exhausted.tgz"
+        result = subprocess.run(
+            ["bash", "-c", 'source "$1"; sleep() { :; }; download_retry "$2" "$3"',
+             "bash", str(root / "scripts" / "lib.sh"), "https://example.test/unavailable.tgz", str(exhausted)],
+            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                 "DOWNLOAD_ATTEMPTS": str(attempts), "DOWNLOAD_SUCCESS_AT": "99"},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 22, "download preserves curl's status after exhausting retries")
+        eq(attempts.read_text().strip(), "5", "download attempts are bounded at five")
+        ok(not exhausted.exists() and not Path(f"{exhausted}.part").exists(),
+           "exhausted download publishes neither a destination nor a partial file")
 
 
 @test
@@ -1318,6 +1434,9 @@ def debian_dependency_installs_retry_mirror_sync_failures():
        "compat and package VMOD dependency installs use the retry helper")
     ok("rm -rf /var/lib/apt/lists/*" in library,
        "retry clears stale Debian package indexes")
+    install_recovery = library.split("apt_install_recover() {", 1)[1].split("\n}", 1)[0]
+    ok("apt-get update -qq" in install_recovery and "apt_update_retry" not in install_recovery,
+       "install recovery refreshes once instead of nesting a second retry loop")
 
 
 @test
@@ -1336,7 +1455,7 @@ def vmod_clone_retries_transient_failures():
     root = Path(__file__).resolve().parent.parent
     library = (root / "scripts" / "lib.sh").read_text()
     ok("clone_vmod()" in library, "shared library wraps VMOD source clones")
-    ok("for attempt in 1 2 3" in library, "VMOD clone retries are bounded")
+    ok('retry_command 3 "git clone $url"' in library, "VMOD clone uses the shared retry runner")
     ok('clone_vmod "${VMOD_GIT:?}" "$SRC"' in library,
        "VMOD checkout uses the retried clone helper")
     with tempfile.TemporaryDirectory() as tmp:
@@ -1363,6 +1482,100 @@ def vmod_clone_retries_transient_failures():
         eq(result.returncode, 0, "VMOD clone succeeds after transient failures")
         eq(attempts.read_text().strip(), "3", "VMOD clone retries twice before succeeding")
         ok((tmp / "src").is_dir(), "successful retry leaves the cloned destination")
+
+
+@test
+def remaining_script_network_boundaries_use_shared_retries():
+    root = Path(__file__).resolve().parent.parent
+    library = (root / "scripts" / "lib.sh").read_text()
+    cohort = (root / "scripts" / "test-package-cohort.sh").read_text()
+    overlay = (root / "scripts" / "probe-upstream-varnish-overlay.sh").read_text()
+    ordering = (root / "scripts" / "check-package-version-ordering.sh").read_text()
+    for expected in (
+        'git_retry "fetch VMOD ref $VMOD_REF" -C "$SRC" fetch --depth 1 origin "$VMOD_REF"',
+        'git_retry "update VMOD submodules" -C "$SRC" submodule update --init --recursive',
+        'download_retry https://sh.rustup.rs "$RUSTUP_INIT"',
+        'retry_command 3 "rustup bootstrap" sh "$RUSTUP_INIT"',
+        'retry_command 3 "install Rust toolchain $RUSTUP_TOOLCHAIN" rustup toolchain install',
+        'apt_install_retry "$package_dir"/',
+    ):
+        ok(expected in library, f"shared library is missing retried network boundary {expected!r}")
+    for expected in ("apt_update_retry", "apt_install_retry", "dnf_install_retry"):
+        ok(expected in cohort, f"cohort uses {expected}")
+    for expected in ("apt_update_retry", "apt_install_retry"):
+        ok(expected in overlay, f"overlay uses {expected}")
+    ok('download_retry https://packages.varnish-software.com/varnish/varnish.pub.asc' in overlay,
+       "overlay signing key download uses the shared retry helper")
+    ok(ordering.count("ensure_container_image") == 2,
+       "version-order proof explicitly obtains both images with retries")
+
+
+@test
+def workflow_control_plane_commands_use_shared_retries():
+    root = Path(__file__).resolve().parent.parent
+    for name in ("matrix.yml", "trunk.yml"):
+        workflow = (root / ".github" / "workflows" / name).read_text()
+        ok('../repo/scripts/matrix-state.sh checkout' in workflow,
+           f"{name} shares state-branch checkout")
+        ok('../repo/scripts/matrix-state.sh publish "$GITHUB_RUN_ID"' in workflow,
+           f"{name} shares state-branch publication")
+    state_script = (root / "scripts" / "matrix-state.sh").read_text()
+    for expected in (
+        "git_remote_head_exists_retry origin ci-state/matrix",
+        'git_retry "fetch matrix state" fetch --depth 1 origin ci-state/matrix',
+        'git_retry "push matrix state" push origin HEAD:ci-state/matrix',
+    ):
+        ok(expected in state_script, f"matrix-state adapter is missing {expected!r}")
+    release = (root / ".github" / "workflows" / "release.yml").read_text()
+    ok('"scripts/retry.sh", "release"' in release,
+       "stable release replacement is routed through the shared retry helper")
+    retry_script = (root / "scripts" / "retry.sh").read_text()
+    ok("replace_github_release_retry" in retry_script,
+       "retry command adapter delegates release replacement to lib.sh")
+
+
+@test
+def github_release_retry_restarts_the_replace_transaction():
+    root = Path(__file__).resolve().parent.parent
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        fake_bin = tmp / "bin"
+        fake_bin.mkdir()
+        creates = tmp / "creates"
+        deletes = tmp / "deletes"
+        fake_gh = fake_bin / "gh"
+        fake_gh.write_text(
+            "#!/usr/bin/env bash\n"
+            "case \"$1 $2\" in\n"
+            "'release delete')\n"
+            "  count=$(cat \"$DELETE_ATTEMPTS\" 2>/dev/null || echo 0)\n"
+            "  printf '%s\\n' \"$((count + 1))\" > \"$DELETE_ATTEMPTS\"\n"
+            "  exit 0 ;;\n"
+            "'release create')\n"
+            "  count=$(cat \"$CREATE_ATTEMPTS\" 2>/dev/null || echo 0)\n"
+            "  count=$((count + 1)); printf '%s\\n' \"$count\" > \"$CREATE_ATTEMPTS\"\n"
+            "  [ \"$count\" -ge 3 ] ;;\n"
+            "*) exit 64 ;;\n"
+            "esac\n"
+        )
+        fake_gh.chmod(0o755)
+        fake_sleep = fake_bin / "sleep"
+        fake_sleep.write_text("#!/usr/bin/env bash\nexit 0\n")
+        fake_sleep.chmod(0o755)
+        notes = tmp / "notes.md"
+        asset = tmp / "asset.deb"
+        notes.write_text("release notes\n")
+        asset.write_text("package\n")
+        result = subprocess.run(
+            [str(root / "scripts" / "retry.sh"), "release", "engine-target", "deadbeef",
+             str(notes), str(asset)],
+            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                 "CREATE_ATTEMPTS": str(creates), "DELETE_ATTEMPTS": str(deletes)},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, "release replacement succeeds on a later transaction attempt")
+        eq(creates.read_text().strip(), "3", "release creation uses the shared attempt bound")
+        eq(deletes.read_text().strip(), "3", "each retry removes a possibly partial draft first")
 
 
 @test
@@ -1575,6 +1788,48 @@ def merge_newest_wins_and_recursive_glob():
         eq(code, 0, "stale merge exit code")
         state = json.loads(state_file.read_text())
         eq(state["cells"][key]["status"], "pass", "stale cell does not overwrite a newer one")
+
+
+@test
+def merge_preserves_conclusive_cells_across_infrastructure_failures():
+    key = "dict/vinyl-9.0.1/debian-13-amd64/compat"
+    conclusive = make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "pass",
+                           "2026-08-09T00:00:00Z")
+    interrupted = make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "infra_failed",
+                            "2026-08-10T00:00:00Z", detail="upstream returned HTTP 503")
+    recovered = make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "build_failed",
+                          "2026-08-11T00:00:00Z")
+    state = {"schema": matrix.STATE_SCHEMA, "cells": {key: conclusive}}
+    eq(matrix.merge_cells(state, [interrupted]), 1, "new infrastructure evidence is applied")
+    eq(state["cells"][key]["status"], "pass", "infrastructure failure preserves last conclusive status")
+    eq(state["infra_failures"][key]["detail"], "upstream returned HTTP 503",
+       "latest infrastructure failure is retained separately")
+    grid = matrix.build_grid(state, "debian-13-amd64")
+    cell_view = grid["cells"][("dict", "vinyl-9.0.1")]
+    eq(cell_view["bucket"], "PASS", "newer infrastructure evidence does not repaint the cell")
+    ok("A newer attempt could not be tested" in cell_view["title"],
+       "newer infrastructure evidence remains visible in the tooltip")
+    eq(matrix.merge_cells(state, [recovered]), 1, "new conclusive result is applied")
+    eq(state["cells"][key]["status"], "build_failed", "new conclusive result replaces the old one")
+    ok(key not in state["infra_failures"], "recovery clears older infrastructure evidence")
+
+
+@test
+def merge_keeps_first_infrastructure_failure_visible_when_no_conclusion_exists():
+    interrupted = make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "infra_failed",
+                            "2026-08-10T00:00:00Z")
+    state = {"schema": matrix.STATE_SCHEMA, "cells": {}}
+    matrix.merge_cells(state, [interrupted])
+    key = "dict/vinyl-9.0.1/debian-13-amd64/compat"
+    eq(state["cells"][key]["status"], "infra_failed",
+       "a cell with no conclusive history remains visibly infra failed")
+    older_conclusion = make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "pass",
+                                 "2026-08-09T00:00:00Z")
+    matrix.merge_cells(state, [older_conclusion])
+    eq(state["cells"][key]["status"], "pass",
+       "a later merge reconstructs the last conclusion even when it is older")
+    eq(state["infra_failures"][key]["status"], "infra_failed",
+       "the newer interruption remains recorded after reconstruction")
 
 
 @test

@@ -231,13 +231,10 @@ jobs:
               prepared.append((tag, dist, body, names))
 
           for tag, dist, body, names in prepared:
-              # Stable, replaceable tag: delete-and-recreate so a re-dispatch
-              # after a fix replaces the release. The delete may fail because
-              # the release does not exist yet; that is fine.
-              subprocess.run(["gh", "release", "delete", tag, "--cleanup-tag", "--yes"])
-              subprocess.run(["gh", "release", "create", tag]
-                             + [os.path.join(dist, n) for n in sorted(os.listdir(dist))]
-                             + ["--target", sha, "--title", tag, "--notes-file", body],
+              # Retry the whole delete/create transaction. A failed gh create
+              # can leave a draft, so lib.sh deletes it before the next try.
+              subprocess.run(["scripts/retry.sh", "release", tag, sha, body]
+                             + [os.path.join(dist, n) for n in sorted(os.listdir(dist))],
                              check=True)
               print(f"published {tag}: {len(names)} packages")
 

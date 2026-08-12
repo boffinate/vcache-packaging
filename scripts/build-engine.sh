@@ -83,7 +83,7 @@ rm -rf "$SRC"; mkdir -p "$SRC"
 COMMIT=""
 if [ "${ENGINE_KIND:?}" = release ]; then
   step fetch
-  curl -fsSL -o "/work/tmp/$TAG.tar.gz" "${ENGINE_TARBALL_URL:?}"
+  download_retry "${ENGINE_TARBALL_URL:?}" "/work/tmp/$TAG.tar.gz"
   step digest
   echo "${ENGINE_SHA256:?}  /work/tmp/$TAG.tar.gz" | sha256sum -c -
   tar -xzf "/work/tmp/$TAG.tar.gz" -C "$SRC" --strip-components=1

@@ -95,29 +95,11 @@ jobs:
           fetch-depth: 1
       - name: switch the scratch tree to the state branch
         working-directory: state
-        run: |
-          set -eu
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git ls-remote --exit-code --heads origin ci-state/matrix >/dev/null 2>&1; then
-            git fetch --depth 1 origin ci-state/matrix
-            git checkout -B ci-state/matrix FETCH_HEAD
-          else
-            git checkout --orphan ci-state/matrix
-            git rm -rf --quiet . >/dev/null 2>&1 || true
-          fi
+        run: ../repo/scripts/matrix-state.sh checkout
       - run: python3 repo/tools/matrix.py merge --results-dir results --state-file state/matrix-state.json
       - name: commit and push the state branch
         working-directory: state
-        run: |
-          set -eu
-          git add -A
-          if git diff --cached --quiet; then
-            echo "state unchanged; nothing to commit"
-          else
-            git commit -m "matrix state after run ${GITHUB_RUN_ID}"
-            git push origin HEAD:ci-state/matrix
-          fi
+        run: ../repo/scripts/matrix-state.sh publish "$GITHUB_RUN_ID"
       - run: |
           mkdir -p site
           python3 repo/tools/matrix.py render --state-file state/matrix-state.json --out site/index.html

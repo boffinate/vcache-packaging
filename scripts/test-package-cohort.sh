@@ -41,13 +41,13 @@ esac
 step install
 case "$PKGFMT" in
 deb)
-  apt-get update -qq
-  apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+  apt_update_retry
+  apt_install_retry "${PACKAGES[@]}"
   ;;
 rpm)
-  dnf -y -q install dnf-plugins-core epel-release
+  dnf_install_retry dnf-plugins-core epel-release
   dnf config-manager --set-enabled crb
-  dnf -y --setopt=install_weak_deps=False install "${PACKAGES[@]}"
+  dnf_install_retry --setopt=install_weak_deps=False "${PACKAGES[@]}"
   ;;
 esac
 

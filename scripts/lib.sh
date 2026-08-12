@@ -9,40 +9,144 @@ REPO_ROOT=$(cd "$LIB_DIR/.." && pwd)
 
 die() { printf 'E: %s\n' "$*" >&2; exit 2; }
 
+# retry_command ATTEMPTS LABEL COMMAND...
+# retry_command_with_hook ATTEMPTS LABEL HOOK COMMAND...
+#
+# One bounded exponential-backoff policy for every repository-controlled
+# network command. Protocol helpers supply cleanup/recovery hooks where a
+# blind rerun is insufficient.
+retry_command_with_hook() {
+  local attempts=$1 label=$2 hook=$3 attempt=1 status delay
+  shift 3
+  case "$attempts" in *[!0-9]*|0) die "retry attempts must be a positive integer" ;; esac
+  while :; do
+    if "$@"; then return 0; else status=$?; fi
+    [ "$attempt" -lt "$attempts" ] || return "$status"
+    "$hook" || true
+    delay=$((1 << (attempt - 1)))
+    [ "$delay" -le 16 ] || delay=16
+    echo "$label failed; retrying in $delay seconds ($attempt/$attempts)" >&2
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
+}
+
+retry_command() {
+  local attempts=$1 label=$2
+  shift 2
+  retry_command_with_hook "$attempts" "$label" : "$@"
+}
+
+# download_retry URL DESTINATION
+# Fetch HTTPS into a temporary file and publish it only after curl completes.
+# Immutable callers still verify their pinned digest after this returns.
+download_once() {
+  local url=$1 partial=$2
+  rm -f -- "$partial"
+  curl --proto '=https' --tlsv1.2 -fL \
+    --connect-timeout 20 --max-time 300 -o "$partial" "$url"
+}
+
+download_retry() {
+  local url=$1 destination=$2 partial="${2}.part" status
+  if retry_command 5 "download $url" download_once "$url" "$partial"; then
+    mv -f -- "$partial" "$destination"
+    return 0
+  else
+    status=$?
+  fi
+  rm -f -- "$partial"
+  return "$status"
+}
+
 # Debian mirrors can briefly serve an object that does not match the current
 # package index during mirror publication. Refresh the indexes and retry the
 # dependency transaction a bounded number of times before classifying it as
 # infrastructure failure.
+apt_reset_indexes() {
+  apt-get clean
+  rm -rf /var/lib/apt/lists/*
+}
+
 apt_update_retry() {
-  local attempt
-  for attempt in 1 2 3; do
-    if apt-get update -qq; then return 0; fi
-    [ "$attempt" -lt 3 ] || return 1
-    apt-get clean
-    rm -rf /var/lib/apt/lists/*
-    sleep $((attempt * 2))
-  done
+  retry_command_with_hook 3 "apt-get update" apt_reset_indexes apt-get update -qq
+}
+
+apt_install_recover() {
+  apt_reset_indexes
+  # This refresh is part of the outer three-attempt install transaction. Do
+  # not nest another retry loop and multiply the advertised attempt bound.
+  apt-get update -qq
 }
 
 apt_install_retry() {
-  local attempt
-  for attempt in 1 2 3; do
-    if apt-get install -y --no-install-recommends "$@"; then return 0; fi
-    [ "$attempt" -lt 3 ] || return 1
-    apt-get clean
-    rm -rf /var/lib/apt/lists/*
-    apt_update_retry
-  done
+  retry_command_with_hook 3 "apt-get install" apt_install_recover \
+    apt-get install -y --no-install-recommends "$@"
+}
+
+dnf_install_recover() {
+  dnf clean all >/dev/null 2>&1 || true
 }
 
 dnf_install_retry() {
-  local attempt
-  for attempt in 1 2 3; do
-    if dnf -y -q install "$@"; then return 0; fi
-    [ "$attempt" -lt 3 ] || return 1
-    dnf clean all >/dev/null 2>&1 || true
-    sleep $((attempt * 2))
-  done
+  retry_command_with_hook 3 "dnf install" dnf_install_recover dnf -y -q install "$@"
+}
+
+git_retry() {
+  local label=$1
+  shift
+  retry_command 3 "$label" git "$@"
+}
+
+git_clone_once() {
+  local url=$1 destination=$2
+  shift 2
+  rm -rf "$destination"
+  git clone "$@" "$url" "$destination"
+}
+
+git_clone_retry() {
+  local url=$1 destination=$2
+  shift 2
+  retry_command 3 "git clone $url" git_clone_once "$url" "$destination" "$@"
+}
+
+git_remote_head_exists_retry() {
+  local remote=$1 branch=$2 status
+  if git ls-remote --exit-code --heads "$remote" "$branch"; then
+    return 0
+  else
+    status=$?
+  fi
+  # Exit 2 means the request succeeded and the ref is absent, not that the
+  # transport failed. Only retry genuine lookup failures.
+  [ "$status" -ne 2 ] || return 2
+  retry_command 2 "git ls-remote $branch" git ls-remote --exit-code --heads "$remote" "$branch"
+}
+
+ensure_container_image() {
+  local image=$1 platform=${2:-}
+  if docker image inspect "$image" >/dev/null 2>&1; then return 0; fi
+  if [ -n "$platform" ]; then
+    retry_command 3 "docker pull $image" docker pull --platform "$platform" "$image"
+  else
+    retry_command 3 "docker pull $image" docker pull "$image"
+  fi
+}
+
+replace_github_release_once() {
+  local tag=$1 target=$2 notes_file=$3
+  shift 3
+  # A failed create may leave a draft. Delete on every attempt so retrying the
+  # whole transaction is idempotent; absence is the expected first-run case.
+  gh release delete "$tag" --cleanup-tag --yes >/dev/null 2>&1 || true
+  gh release create "$tag" "$@" \
+    --target "$target" --title "$tag" --notes-file "$notes_file"
+}
+
+replace_github_release_retry() {
+  local tag=$1
+  retry_command 3 "replace GitHub release $tag" replace_github_release_once "$@"
 }
 
 target_platform_for_machine() {
@@ -98,16 +202,7 @@ run_in_container() {
   # hosted runners. Pull explicitly with bounded retries so a transient
   # Docker Hub failure does not turn an otherwise valid build into an
   # infra_failed cell. Once the image is local, avoid another registry hit.
-  if ! docker image inspect "$1" >/dev/null 2>&1; then
-    local attempt
-    for attempt in 1 2 3; do
-      if docker pull --platform "$2" "$1"; then
-        break
-      fi
-      [ "$attempt" -lt 3 ] || return 1
-      sleep $((attempt * 5))
-    done
-  fi
+  ensure_container_image "$1" "$2"
   docker run --rm \
     --platform "$2" \
     -v "$3:/work" \
@@ -137,12 +232,14 @@ EOF
 # submodules in both cases: trunk engine configure scripts can require them.
 clone_branch() {
   local url=$1 branch=$2 destination=$3
-  if git clone --depth 1 --recurse-submodules --branch "$branch" "$url" "$destination"; then
+  # A shallow clone may be unsupported by dumb HTTP. Try it once, then use
+  # the fully retried compatible form for both that case and transport flakes.
+  if git_clone_once "$url" "$destination" \
+    --depth 1 --recurse-submodules --branch "$branch"; then
     return 0
   fi
-  rm -rf "$destination"
   echo "shallow clone unavailable; retrying full clone" >&2
-  git clone --recurse-submodules --branch "$branch" "$url" "$destination"
+  git_clone_retry "$url" "$destination" --recurse-submodules --branch "$branch"
 }
 
 # clone_vmod URL DESTINATION
@@ -150,16 +247,8 @@ clone_branch() {
 # requests (for example, GitHub's HTTP 429 response). Retry a bounded number
 # of times so such transport failures do not immediately fail a matrix cell.
 clone_vmod() {
-  local url=$1 destination=$2 attempt
-  for attempt in 1 2 3; do
-    rm -rf "$destination"
-    if git clone "$url" "$destination"; then
-      return 0
-    fi
-    [ "$attempt" -lt 3 ] || return 1
-    echo "VMOD clone failed; retrying in $((attempt * 5)) seconds ($attempt/3)" >&2
-    sleep $((attempt * 5))
-  done
+  local url=$1 destination=$2
+  git_clone_retry "$url" "$destination"
 }
 
 # Clone and resolve the selected VMOD source into the standard container path.
@@ -173,7 +262,7 @@ checkout_vmod() {
   # the ref explicitly and detach at FETCH_HEAD; this also works for tags and
   # avoids Git's ambiguous `checkout --detach <name>` path handling.
   if ! git -C "$SRC" rev-parse --verify "${VMOD_REF}^{commit}" >/dev/null 2>&1; then
-    git -C "$SRC" fetch --depth 1 origin "$VMOD_REF"
+    git_retry "fetch VMOD ref $VMOD_REF" -C "$SRC" fetch --depth 1 origin "$VMOD_REF"
     VMOD_CHECKOUT=FETCH_HEAD
   else
     VMOD_CHECKOUT="${VMOD_REF}^{commit}"
@@ -188,7 +277,7 @@ checkout_vmod() {
     fi
   fi
   git -C "$SRC" checkout --detach "$VMOD_CHECKOUT"
-  git -C "$SRC" submodule update --init --recursive
+  git_retry "update VMOD submodules" -C "$SRC" submodule update --init --recursive
   actual_commit=$(git -C "$SRC" rev-parse HEAD)
   [ -z "${VMOD_EXPECTED_COMMIT:-}" ] || [ "$actual_commit" = "$VMOD_EXPECTED_COMMIT" ] \
     || { echo "checked out $actual_commit, expected $VMOD_EXPECTED_COMMIT" >&2; exit 1; }
@@ -214,15 +303,19 @@ prepare_cargo() {
   case "${RUST_BOOTSTRAP:?}" in
     rustup)
       if [ ! -x "$CARGO_HOME/bin/rustup" ]; then
-        curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
-          | sh -s -- -y --profile minimal --default-toolchain "$RUSTUP_TOOLCHAIN" --no-modify-path
+        RUSTUP_INIT="/work/tmp/$TAG-rustup-init.sh"
+        download_retry https://sh.rustup.rs "$RUSTUP_INIT"
+        retry_command 3 "rustup bootstrap" sh "$RUSTUP_INIT" \
+          -y --profile minimal --default-toolchain "$RUSTUP_TOOLCHAIN" --no-modify-path
+        rm -f "$RUSTUP_INIT"
       fi
       ;;
     *) echo "unsupported Rust bootstrap: $RUST_BOOTSTRAP" >&2; exit 1 ;;
   esac
   export PATH="$CARGO_HOME/bin:$PATH"
   if ! rustup run "$RUSTUP_TOOLCHAIN" rustc --version >/dev/null 2>&1; then
-    rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+    retry_command 3 "install Rust toolchain $RUSTUP_TOOLCHAIN" rustup toolchain install \
+      "$RUSTUP_TOOLCHAIN" --profile minimal
   fi
   rustc --version | grep -F "rustc $RUST_VERSION "
   cargo --version | grep -F "cargo $RUST_VERSION "
@@ -233,10 +326,7 @@ prepare_cargo() {
   cargo metadata --locked --offline --no-deps >/dev/null
 
   step cargo-fetch
-  if ! cargo fetch --locked; then
-    echo "cargo fetch failed; retrying once"
-    cargo fetch --locked
-  fi
+  retry_command 3 "cargo fetch" cargo fetch --locked
 }
 
 # Install one engine package pair and any additional packages supplied by the
@@ -249,7 +339,7 @@ install_engine_packages() {
       assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" \
         "$package_dir"/"$ENGINE_RUNTIME_PACKAGE"_*.deb \
         "$package_dir"/"$ENGINE_DEVELOPMENT_PACKAGE"_*.deb "$@"
-      apt-get install -y "$package_dir"/"$ENGINE_RUNTIME_PACKAGE"_*.deb \
+      apt_install_retry "$package_dir"/"$ENGINE_RUNTIME_PACKAGE"_*.deb \
         "$package_dir"/"$ENGINE_DEVELOPMENT_PACKAGE"_*.deb "$@"
       ;;
     rpm)
@@ -280,7 +370,7 @@ if [ "${VMOD_ENGINE_SOURCE:-}" = required ]; then
   rm -rf "$ETREE_ROOT"; mkdir -p "$ETREE_ROOT"
   case "$ENGINE_KIND" in
   release)
-    curl -fsSL "${ENGINE_TARBALL_URL:?}" -o "$ETREE_ROOT/engine.tgz"
+    download_retry "${ENGINE_TARBALL_URL:?}" "$ETREE_ROOT/engine.tgz"
     echo "${ENGINE_SHA256:?}  $ETREE_ROOT/engine.tgz" | sha256sum -c -
     tar -xzf "$ETREE_ROOT/engine.tgz" -C "$ETREE_ROOT"
     rm "$ETREE_ROOT/engine.tgz"

@@ -903,25 +903,58 @@ def cell_key(cell: dict) -> str:
 
 def load_state(path: Path) -> dict:
     if not path.is_file():
-        return {"schema": STATE_SCHEMA, "cells": {}}
+        return {"schema": STATE_SCHEMA, "cells": {}, "infra_failures": {}}
     data = json.loads(path.read_text(encoding="utf-8"))
     if data.get("schema") != STATE_SCHEMA:
         raise CatalogError(f"{path}: schema must be {STATE_SCHEMA!r}, got {data.get('schema')!r}")
     if not isinstance(data.get("cells"), dict):
         raise CatalogError(f"{path}: 'cells' must be an object")
+    if "infra_failures" not in data:
+        data["infra_failures"] = {}
+    if not isinstance(data["infra_failures"], dict):
+        raise CatalogError(f"{path}: 'infra_failures' must be an object")
     return data
 
 
 def merge_cells(state: dict, cells: list) -> int:
-    """Newest finished_at per (row, engine, target, mode) wins; ties go to the
-    incoming cell. Returns how many cells were applied."""
+    """Merge observations without letting infrastructure hide conclusions.
+
+    The newest conclusive observation wins in ``cells``. A newer infra failure
+    is retained separately for diagnosis; it occupies ``cells`` only when the
+    key has never had a conclusive result. Returns how many observations were
+    applied.
+    """
+    infra_failures = state.setdefault("infra_failures", {})
     applied = 0
     for cell in cells:
         key = cell_key(cell)
         existing = state["cells"].get(key)
-        if existing is None or cell["finished_at"] >= existing["finished_at"]:
+        if cell["status"] == "infra_failed":
+            if existing is None or existing["status"] == "infra_failed":
+                if existing is None or cell["finished_at"] >= existing["finished_at"]:
+                    state["cells"][key] = cell
+                    applied += 1
+            elif cell["finished_at"] > existing["finished_at"]:
+                recorded = infra_failures.get(key)
+                if recorded is None or cell["finished_at"] >= recorded["finished_at"]:
+                    infra_failures[key] = cell
+                    applied += 1
+            continue
+        if existing is not None and existing["status"] == "infra_failed":
+            if existing["finished_at"] > cell["finished_at"]:
+                recorded = infra_failures.get(key)
+                if recorded is None or existing["finished_at"] >= recorded["finished_at"]:
+                    infra_failures[key] = existing
             state["cells"][key] = cell
             applied += 1
+        elif existing is None or cell["finished_at"] >= existing["finished_at"]:
+            state["cells"][key] = cell
+            applied += 1
+        else:
+            continue
+        recorded = infra_failures.get(key)
+        if recorded is not None and recorded["finished_at"] <= cell["finished_at"]:
+            del infra_failures[key]
     return applied
 
 
@@ -1031,6 +1064,13 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
                     line += f" — {cell['detail']}"
                 line += f" ({cell['finished_at']})"
                 lines.append(line)
+                interrupted = state.get("infra_failures", {}).get(cell_key(cell))
+                if interrupted is not None and interrupted["finished_at"] > cell["finished_at"]:
+                    interruption = f"{cell['mode']}: A newer attempt could not be tested (infra_failed)"
+                    if interrupted.get("detail"):
+                        interruption += f" — {interrupted['detail']}"
+                    interruption += f" ({interrupted['finished_at']})"
+                    lines.append(interruption)
             grid_cells[(row_id, col)] = {
                 "bucket": bucket,
                 "text": _SHORT_STATUS[top["status"]],

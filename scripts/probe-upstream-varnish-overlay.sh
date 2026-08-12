@@ -25,21 +25,22 @@ write_inner_prologue "$INNER" "$TAG"
 cat >> "$INNER" <<'EOF'
 
 step upstream-repository
-apt-get update -qq
-apt-get install -y --no-install-recommends ca-certificates curl gpg
+apt_update_retry
+apt_install_retry ca-certificates curl gpg
 mkdir -p /etc/apt/keyrings
-curl -fsSL https://packages.varnish-software.com/varnish/varnish.pub.asc \
-  | gpg --dearmor -o /etc/apt/keyrings/varnish.gpg
+download_retry https://packages.varnish-software.com/varnish/varnish.pub.asc /tmp/varnish.pub.asc
+gpg --dearmor -o /etc/apt/keyrings/varnish.gpg /tmp/varnish.pub.asc
+rm -f /tmp/varnish.pub.asc
 . /etc/os-release
 printf 'deb [signed-by=/etc/apt/keyrings/varnish.gpg] https://packages.varnish-software.com/varnish/%s %s main\n' \
   "$ID" "$VERSION_CODENAME" > /etc/apt/sources.list.d/varnish.list
-apt-get update -qq
+apt_update_retry
 
 step upstream-cohort
 UPSTREAM_VERSION=$(apt-cache madison varnish | awk -v prefix="$ENGINE_VERSION-" '$3 ~ ("^" prefix) { print $3; exit }')
 [ -n "$UPSTREAM_VERSION" ] \
   || { echo "upstream repository offers no varnish $ENGINE_VERSION package" >&2; exit 1; }
-apt-get install -y --no-install-recommends \
+apt_install_retry \
   "varnish=$UPSTREAM_VERSION" "varnish-dev=$UPSTREAM_VERSION" \
   build-essential automake autoconf autoconf-archive libtool pkg-config git python3-docutils
 STRICT_ABI=$(dpkg-query -W -f='${Provides}\n' varnish \
@@ -100,7 +101,7 @@ python3 /repo/tools/package_contract.py \
   --modules $VMOD_MODULES
 
 step assembled-cohort
-apt-get install -y "$PACKAGE"
+apt_install_retry "$PACKAGE"
 printf 'vcl 4.1;\nimport %s;\nbackend default none;\n' "$VMOD_ID" > /tmp/overlay.vcl
 INSTANCE=$(mktemp -d)
 varnishd -j none -F -a 127.0.0.1:0 -n "$INSTANCE" -f /tmp/overlay.vcl > /tmp/overlay.log 2>&1 &
