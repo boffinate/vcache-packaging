@@ -44,7 +44,7 @@ Amend `SCOPE.md` and `DESIGN.md` in `vcache-packaging` before implementing the s
 
 `DESIGN.md` must:
 
-- add a new dated decision which explicitly supersedes decision 3 with this producer/distributor boundary, without rewriting the historical decision;
+- replace decision 3 with this producer/distributor boundary;
 - define the release-asset interface below;
 - add the package revision to the version contract; and
 - state that replacing a GitHub Release with changed package bytes requires a new package revision before repository publication.
@@ -296,14 +296,6 @@ Disposable-container tests use a temporary archive key, one real `.deb` and one 
 The post-publication smoke job uses the target's native platform, verifies the downloaded public-key fingerprint, configures the signed repository without insecure options, and installs every package name derived from native package metadata.
 
 Do not duplicate catalog-aware VCL load tests in the sibling. The source release cannot exist without the producer's install and load proof.
-
-## Effect on the APT prototype branch
-
-The `feat/signed-apt-r2-repository` branch proves signed APT publication is feasible, but its signing and R2 code are on the wrong side of the boundary.
-
-Do not merge that branch as written. Adapt only its strict checksum parsing, temporary-key handling, `reprepro` publication, ordered R2 upload and clean-client smoke logic in the sibling. Keep all repository credentials and instructions out of `vcache-packaging`.
-
-This document supersedes the in-repository plan dated 2026-08-11 at `docs/20260811-apt-rpm-repository-plan.md`.
 
 ## Deliberately absent
 
