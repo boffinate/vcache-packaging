@@ -770,13 +770,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
     else:
         pairs += [("ENGINE_GIT_URL", source["git_url"]), ("ENGINE_BRANCH", source["branch"])]
     if engine["packages"] == "true":
-        epv = engine_package_version(engine)
-        pairs += [
-            ("ENGINE_PACKAGE_REVISION", engine["package_revision"]),
-            ("ENGINE_DEB_VERSION", epv["deb"]),
-            ("ENGINE_RPM_VERSION", ev),
-            ("ENGINE_RPM_RELEASE", engine["package_revision"]),
-        ]
+        pairs += [("ENGINE_PACKAGE_REVISION", engine["package_revision"])]
     if target_id is not None:
         if target_id not in engine["targets"]:
             raise CatalogError(

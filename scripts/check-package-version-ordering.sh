@@ -13,7 +13,6 @@ docker run --rm debian:13 bash -ec '
 '
 
 docker run --rm almalinux:10 bash -ec '
-  dnf -y -q install rpmdevtools >/dev/null
-  rpmdev-vercmp "6.5-1.example42.3.7.1.el10" "6.5-1.example42.3.7.2.el10" | grep -Fq " < "
-  rpmdev-vercmp "6.5-1.example42.3.7.2.el10" "6.5-1.example42.3.8.1.el10" | grep -Fq " < "
+  test "$(rpm --eval '\''%[v"6.5-1.example42.3.7.1.el10" < v"6.5-1.example42.3.7.2.el10" ? 1 : 0]'\'')" = 1
+  test "$(rpm --eval '\''%[v"6.5-1.example42.3.7.2.el10" < v"6.5-1.example42.3.8.1.el10" ? 1 : 0]'\'')" = 1
 '

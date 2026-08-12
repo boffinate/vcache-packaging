@@ -999,8 +999,6 @@ def env_output_is_sh_sourceable():
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
         eq(values["ENGINE_VERSION"], "'9.0.1'", "ENGINE_VERSION")
         eq(values["ENGINE_PACKAGE_REVISION"], "'1'", "ENGINE_PACKAGE_REVISION")
-        eq(values["ENGINE_DEB_VERSION"], "'9.0.1-1'", "ENGINE_DEB_VERSION")
-        eq(values["ENGINE_RPM_RELEASE"], "'1'", "ENGINE_RPM_RELEASE")
         eq(values["ENGINE_TARBALL_URL"], "'https://example.org/vinyl-cache-9.0.1.tgz'", "tarball url")
         eq(values["ENGINE_RUNTIME_PACKAGE"], "'vinyl-cache'", "runtime package comes from family")
         eq(values["ENGINE_DEVELOPMENT_PACKAGE"], "'vinyl-cache-devel'", "target development package comes from family")
