@@ -97,16 +97,16 @@ EOF
 
 # clone_branch URL BRANCH DESTINATION
 # Prefer a shallow checkout for the normal smart-HTTP case, but retry without
-# depth when an upstream only exposes Git's dumb HTTP transport.  The latter
-# cannot advertise shallow-clone capabilities (as code.vinyl-cache.org does).
+# depth when an upstream only exposes Git's dumb HTTP transport. Initialize
+# submodules in both cases: trunk engine configure scripts can require them.
 clone_branch() {
   local url=$1 branch=$2 destination=$3
-  if git clone --depth 1 --branch "$branch" "$url" "$destination"; then
+  if git clone --depth 1 --recurse-submodules --branch "$branch" "$url" "$destination"; then
     return 0
   fi
   rm -rf "$destination"
   echo "shallow clone unavailable; retrying full clone" >&2
-  git clone --branch "$branch" "$url" "$destination"
+  git clone --recurse-submodules --branch "$branch" "$url" "$destination"
 }
 
 # Clone and resolve the selected VMOD source into the standard container path.
