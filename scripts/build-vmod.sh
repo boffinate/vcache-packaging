@@ -99,9 +99,15 @@ export PATH="$PREFIX/bin:$PREFIX/sbin:$PATH"
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 export LD_LIBRARY_PATH="$PREFIX/lib"
 export ACLOCAL_PATH="$PREFIX/share/aclocal"
-# ACLOCAL_AMFLAGS in many VMODs expands these; unset they become '-I /aclocal'.
+# Some upstream Makefiles use the other engine family's variable in
+# ACLOCAL_AMFLAGS. Point both aliases at the selected engine's macro
+# directory so an incompatible engine reports its real configure error,
+# rather than trying the invalid '/aclocal' directory.
+ENGINE_API_DATAROOTDIR=$(pkg-config --variable=datarootdir "$ENGINE_API" 2>/dev/null || true)
 VARNISHAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir varnishapi 2>/dev/null || true)
 VINYLAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir vinylapi 2>/dev/null || true)
+VARNISHAPI_DATAROOTDIR=${VARNISHAPI_DATAROOTDIR:-$ENGINE_API_DATAROOTDIR}
+VINYLAPI_DATAROOTDIR=${VINYLAPI_DATAROOTDIR:-$ENGINE_API_DATAROOTDIR}
 export VARNISHAPI_DATAROOTDIR VINYLAPI_DATAROOTDIR
 export LIBVARNISHAPI_DATAROOTDIR="$VARNISHAPI_DATAROOTDIR" LIBVINYLAPI_DATAROOTDIR="$VINYLAPI_DATAROOTDIR"
 DAEMON="$PREFIX/sbin/$ENGINE_DAEMON"

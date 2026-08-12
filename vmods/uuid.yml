@@ -18,10 +18,12 @@ package:
   license: BSD-2-Clause
   build_deps:
     debian:
-      - uuid-dev
+      # uuid-dev is util-linux's UUID library; upstream requires the OSSP
+      # implementation advertised as ossp-uuid.pc.
+      - libossp-uuid-dev
     rpm:
-      # EL packages OSSP UUID as uuid-devel (the historical
-      # ossp-uuid-devel name is not present in EL10).
+      # EL packages OSSP UUID as uuid-devel (there is no
+      # ossp-uuid-devel package in EL10).
       - uuid-devel
   families:
     - varnish
