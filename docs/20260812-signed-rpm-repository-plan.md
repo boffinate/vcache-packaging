@@ -1,72 +1,61 @@
 # Signed package repository plan
 
-Status: revised proposal for a sibling repository; no repository publisher is implemented under this design. Date: 2026-08-12.
+Status: simplified proposal for a sibling repository; not yet implemented. Date: 2026-08-12.
 
 ## Decision
 
-Create a sibling repository, provisionally named `vcache-repository`, that turns green GitHub Releases from `vcache-packaging` into signed APT and DNF repositories on R2.
+Create a sibling repository, provisionally named `vcache-repository`, which turns a green GitHub Release from `vcache-packaging` into signed APT and DNF repositories on Cloudflare R2.
 
-`vcache-packaging` remains the producer. It builds native `.deb` and `.rpm` packages, installs and load-tests them in target containers, applies the all-or-nothing release gate, assigns their package-set revision, writes a release manifest and `SHA256SUMS`, attests the final bytes, and publishes the green pair as a GitHub Release.
+`vcache-packaging` remains the producer. It builds native packages, installs and load-tests them, applies the release gate, writes `SHA256SUMS`, and publishes the unsigned packages as a GitHub Release.
 
-`vcache-repository` is the distributor. It downloads one completed GitHub Release, verifies its checksums, manifest, attestations and package metadata, signs what each repository format requires, generates repository metadata, publishes to R2, and tests installation through APT or DNF.
+`vcache-repository` is the distributor. It downloads one completed release, verifies it, signs what APT and RPM require, creates repository metadata, uploads it to R2, and tests installation through the public repository.
 
-The distributor never consumes raw GitHub Actions artifacts. Its input is a public GitHub Release whose package set has already passed the producer's gate.
+The distributor consumes GitHub Releases, not raw Actions artifacts. GitHub Releases remain the checksummed fallback if repository publication fails.
 
-The public repositories are family-scoped current channels. Each root contains the newest published package set for one engine family and target. Package payload objects are immutable in both formats; signed indexes and client configuration are replaceable.
+## Boundary
 
-This boundary keeps GPG and R2 credentials out of the build repository and keeps signing, repository state, caching policy and client configuration out of the build workflows.
+The following stay in `vcache-packaging`:
 
-## What stays in `vcache-packaging`
+- the catalog and compatibility matrix;
+- source acquisition, build containers and package recipes;
+- native package construction and version assignment;
+- package installation and VCL load checks;
+- the per-`(engine, target)` release gate; and
+- GitHub Releases containing the complete package set and `SHA256SUMS`.
 
-- The engine and VMOD catalog.
-- Source acquisition and build containers.
-- Debian recipes and RPM spec templates.
-- Package construction and version assignment.
-- Package installation and VCL load checks.
-- The per-`(engine, target)` completeness gate.
-- Replaceable GitHub Releases containing unsigned packages, `release.json` and `SHA256SUMS`.
-- Provenance attestations for the final release files.
+Package construction stays with the build proof. Moving it would force the distributor to import the catalog, dependency rules and build logic, defeating the split.
 
-Package construction stays here because it is part of the build proof. The recipes encode dependencies, engine/VMOD relationships, file ownership and installation paths, and the existing jobs prove that those packages install and load. Moving that work would make the distributor import the catalog and build rules, erasing the boundary and exposing the signing job to much more code.
+The following belong only in `vcache-repository`:
 
-The handoff unit is a native package, not a raw prefix, tarball or collection of binaries.
+- the archive signing key and R2 credentials;
+- APT metadata generation and signing;
+- RPM payload and metadata signing;
+- repository layout and publication order;
+- public key and client configuration; and
+- clean-client APT and DNF smoke tests.
 
-Direct GitHub Release downloads retain the existing contract: `.deb` and `.rpm` files are unsigned convenience artifacts accompanied by checksums and provenance. Signed repository clients use the sibling repository.
+The sibling contains no source pins, VMOD catalog, compatibility matrix, package recipes or build scripts.
 
-## What moves to `vcache-repository`
+## Producer contract changes
 
-- Archive-key policy and the CI signing subkey.
-- The R2 credential, endpoint, custom domain and cache rules.
-- APT metadata generation and signing.
-- RPM payload signing.
-- RPM metadata generation and signing.
-- Public key and client configuration publication.
-- Repository update order and current-channel policy.
-- Clean-client APT and DNF smoke tests.
+Amend `SCOPE.md` and `DESIGN.md` in `vcache-packaging` before implementing the sibling.
 
-The sibling contains no upstream pins, package recipes, VMOD catalog, compatibility matrix, source checkout or build scripts.
-
-## Required producer contract changes
-
-Amend `SCOPE.md` and `DESIGN.md` in `vcache-packaging` before writing sibling code.
-
-`SCOPE.md` should continue to exclude signing and repository publication from this repository, while its Publication section names the external handoff: green GitHub Releases are the producer's final output and may be consumed by the sibling signing repository. Remove the suggestion that a managed service is the expected next step.
+`SCOPE.md` should continue to exclude package signing and repository publication from this repository, while naming green GitHub Releases as the handoff to the external distributor. Remove the suggestion that a managed repository service is the expected next step.
 
 `DESIGN.md` must:
 
-- replace decision 3 with the producer/distributor boundary;
-- amend decision 13 so a replaceable GitHub Release may feed immutable repository package objects only through a package revision;
-- add the release-asset interface defined below;
-- make the package-set revision part of the engine and VMOD version contract; and
-- state that attestations establish build provenance but are neither package signatures nor evidence that the contents are safe.
+- replace decision 3 with this producer/distributor boundary;
+- define the release-asset interface below;
+- add the package revision to the version contract; and
+- state that replacing a GitHub Release with changed package bytes requires a new package revision before repository publication.
 
-Signing keys and R2 settings must not appear in `vcache-packaging`.
+No signing key, R2 setting or repository publisher belongs in `vcache-packaging`.
 
-## Package-set revision
+## Package revision
 
-Add one required positive decimal `package_revision` to every package-enabled release engine. It starts at `"1"` and applies to the engine package and every VMOD in that engine's release set.
+Add one positive decimal `package_revision` to every package-enabled release engine. It starts at `1` and applies to the engine package and every VMOD in that engine's release set.
 
-Bump it whenever a rebuild intended for repository publication would change any package bytes without changing the upstream package version. This includes a packaging fix, a changed moving source ref, or another non-reproducible rebuild that differs from bytes already published under the same package identity.
+Bump it whenever a rebuild intended for repository publication could change package bytes without changing the upstream version. This includes packaging fixes, changed moving refs and non-reproducible rebuilds.
 
 The version rules become:
 
@@ -77,73 +66,31 @@ RPM engine:    <engine-version>-<package-revision>%{?dist}
 RPM VMOD:      <upstream-version>-<package-revision>.<family-marker><engine-version>%{?dist}
 ```
 
-The same revision across the set preserves the exact engine dependencies and makes a revision bump an all-package rebuild. There is no per-package counter and no counter in the sibling repository.
+One revision for the whole set preserves the exact engine dependencies and makes a revision bump an all-package rebuild. There is no per-package counter and no counter in the sibling.
 
-The sibling fails with a request to bump `package_revision` if an existing package object has the same package identity but a different producer SHA-256. It never overwrites that object.
+Package object keys are immutable. A collision with different package contents fails with a request to bump `package_revision`; the distributor never overwrites the object.
 
-## Release-asset interface
+## Release handoff
 
-The handoff tag remains:
+The source tag remains:
 
 ```text
 <engine-id>-<target-id>
 ```
 
-The release is non-draft and non-prerelease. Its target commit is the exact `vcache-packaging` commit used by the release workflow.
+The release must be non-draft and non-prerelease. Its assets are exactly the complete `.deb` or `.rpm` package set for the green pair plus one `SHA256SUMS`.
 
-Its assets are exactly:
+`SHA256SUMS` covers every package and not itself. Each line is a lowercase 64-character digest, two spaces, and a basename with no slash. Its filename set must exactly match the package assets.
 
-- the complete package set for the green `(engine, target)` pair;
-- one `release.json`; and
-- one `SHA256SUMS`.
+The public source repository is fixed in the sibling workflow. The distributor resolves one release, records its release ID and target commit, and downloads every asset by asset ID into a new temporary directory. It then:
 
-`release.json` uses a versioned schema and contains only handoff facts:
+1. enforces the exact asset and checksum contract;
+2. verifies every checksum;
+3. matches the tag suffix to one allowed target;
+4. inspects native package metadata and requires one format, the target architecture, one engine family and one package revision; and
+5. completes validation before signing credentials are available or R2 is changed.
 
-```json
-{
-  "schema": "vcache-release/1",
-  "engine": "vinyl-9.0.1",
-  "family": "vinyl",
-  "target": "el10-x86_64",
-  "format": "rpm",
-  "architecture": "x86_64",
-  "package_revision": "1",
-  "source_commit": "<40-hex commit>",
-  "packages": ["<sorted package filename>"]
-}
-```
-
-`SHA256SUMS` covers every package and `release.json`, but not itself. Each line is a lowercase 64-character digest, two spaces, and a basename with no slash. The filename set must match the package files plus `release.json` exactly.
-
-The release workflow generates provenance attestations over every package and `release.json` after staging and before upload. It grants only the permissions needed by the attestation action, pins that action to a full commit SHA, and uses GitHub-hosted runners.
-
-The stable release may still be deleted and recreated after a failed build is fixed. Its package revision must be bumped if the replacement changes bytes already admitted to the signed repository under the same package identity.
-
-## Source release verification
-
-The sibling workflow accepts one manual input:
-
-```text
-source_tag = <engine-id>-<target-id>
-```
-
-The public source repository is fixed in the workflow. It is not an arbitrary dispatch input, and fetching it needs no cross-repository credential.
-
-For the selected release, the fetch job must:
-
-1. Resolve one non-draft, non-prerelease GitHub Release and record its release ID and target commit.
-2. List and download every asset by asset ID into a new temporary directory.
-3. Re-resolve the tag after download and require the same release ID and target commit, failing if a replacement raced the fetch.
-4. Enforce the exact asset interface above.
-5. Parse `SHA256SUMS` strictly and verify every covered file.
-6. Validate `release.json`, including its schema, source commit, family, target, format, architecture, revision and sorted package filename set; require the tag's engine and target to match it.
-7. Verify the attestation for every package and `release.json` against the exact source repository, `.github/workflows/release.yml`, `refs/heads/main`, target commit and GitHub-hosted runner policy.
-8. Inspect native package metadata and require it to agree with the manifest's format, architecture, revision and package filenames.
-9. Complete all local validation before making signing credentials available or changing R2.
-
-`SHA256SUMS` detects corruption and gives direct-download users a standard integrity check. It does not authenticate itself. The attestation binds each final file to the expected producer workflow and commit. Neither mechanism proves that the source or package is free of defects.
-
-An attestation API or verification failure stops publication and can be retried. There is no unauthenticated fallback in the distributor.
+`SHA256SUMS` detects corruption and release mixing. It is not provenance: write access to the producer repository and release workflow is part of the trust boundary. V1 adds no second manifest, attestation API or cross-repository credential.
 
 ## Archive model
 
@@ -161,19 +108,17 @@ vinyl-cache/rpm/vinyl/el10-aarch64/
 vinyl-cache/rpm/varnish/<target>/
 ```
 
-A fresh tree generated from one release intentionally replaces the index for that family and target. A new Vinyl publication cannot unlist Varnish, and a new Varnish publication cannot unlist Vinyl. A newer engine version in the same family replaces the older version in the advertised current channel.
+A fresh tree from one release replaces the index for that family and target. A Vinyl publication cannot unlist Varnish, and the reverse is also true. A newer engine version in the same family replaces the older version in the current channel.
 
-Old package objects remain in R2 but are not promised to remain indexed or installable. They are accepted storage residue, not a hidden archive, rollback service or publication ledger.
+Old package objects remain in R2 but are not promised to stay indexed. They are storage residue, not an archive, rollback service or ledger. Do not download and merge the previous repository tree.
 
-Do not download and merge the previous repository tree. A cumulative archive would add persistent state, retention promises and conflict handling that this project does not need.
-
-`REPOSITORY_PUBLIC_URL` is the custom-domain URL corresponding to the `vinyl-cache` prefix. The shared public certificate is:
+`REPOSITORY_PUBLIC_URL` is the production custom-domain URL corresponding to the `vinyl-cache` prefix. The public key is always:
 
 ```text
 vinyl-cache/vcache-archive-keyring.asc
 ```
 
-## Sibling repository shape
+## Sibling shape
 
 Keep the sibling small:
 
@@ -182,92 +127,52 @@ README.md
 SCOPE.md
 DESIGN.md
 routes.tsv
-keys/
-  vcache-archive-keyring.asc
-scripts/
-  fetch-release.sh
-  publish-key.sh
-  publish-apt.sh
-  publish-rpm.sh
-  smoke-apt.sh
-  smoke-rpm.sh
-tools/
-  selftest.py
-.github/workflows/
-  publish.yml
-  publish-key.yml
+keys/vcache-archive-keyring.asc
+scripts/fetch-release.sh
+scripts/publish-apt.sh
+scripts/publish-rpm.sh
+scripts/smoke-apt.sh
+scripts/smoke-rpm.sh
+tools/selftest.py
+.github/workflows/publish.yml
 ```
 
-The checked-in key is public. No private key file may exist in the checkout or an Actions artifact.
+`routes.tsv` is a distributor-owned allow-list. It contains only the target ID, format, package architecture, native container image and Docker platform. Package files remain authoritative for package identity, family, version and revision. Adding a target is deliberately a two-repository change: the producer learns to build it, and the distributor separately chooses to advertise it.
 
-`routes.tsv` is a distributor-owned allow-list and routing table. It contains the allowed target ID, publisher/smoke container and APT suite/component where applicable. Format, architecture, engine, family, version and revision remain authoritative in the producer's manifest and package metadata. The sibling cross-checks any route implication against both.
+## Signing key
 
-Adding a target is deliberately a two-repository change: the producer learns how to build and test it; the distributor separately chooses to advertise and route it.
+Use one dedicated archive key, not a maintainer's personal key. Keep its private key only as a secret in the protected publishing environment. Keep an encrypted offline backup and a revocation certificate outside GitHub.
 
-## Signing-key custody
+The sibling checks in the public certificate and records its full primary fingerprint. Every run imports the private key into a temporary mode-0700 `GNUPGHOME`, requires exactly that primary fingerprint and signing capability, and removes the directory on exit.
 
-Create one archive primary key offline and keep it offline. Store at least one encrypted offline backup and its revocation certificate separately. Put only a dedicated signing subkey in the protected GitHub environment.
+The public key object is written only when absent. If it already exists, the publisher downloads it and requires the same bytes and fingerprint as the checked-in certificate.
 
-The sibling records two full fingerprints:
+Keeping the dedicated archive key in protected CI is an explicit simplicity trade-off. An offline-primary/online-subkey hierarchy would make recovery easier after CI compromise, but it would also introduce the key-lifecycle machinery deliberately omitted from v1.
 
-```text
-REPOSITORY_GPG_PRIMARY_FINGERPRINT
-REPOSITORY_GPG_SIGNING_SUBKEY_FINGERPRINT
-```
+V1 has no subkey lifecycle, automated key workflow, rollover or keyring package. Replacing or revoking the archive key is a manual trust-root migration and requires a new design decision and client instructions. This limitation is recorded before commissioning the key rather than hidden behind incomplete rotation machinery.
 
-The private secret is:
+## Workflow and secrets
 
-```text
-REPOSITORY_GPG_SIGNING_SUBKEY_B64
-```
+Start with one manually dispatched `publish.yml`. Releases happen a few times a year, so an automatic cross-repository trigger is not justified yet.
 
-This secret is an armored or base64-encoded `gpg --export-secret-subkeys` bundle containing the primary public stub and exactly one secret signing subkey, not a bare subkey packet and not the secret primary key.
+The workflow must:
 
-Every signing run must require the configured primary certificate and exactly the configured usable secret signing subkey, verify signing capability, and reject an expired or revoked key. The signer imports them into a temporary mode-0700 `GNUPGHOME` that is removed by a trap.
+1. run host-safe self-tests;
+2. fetch and verify `source_tag` in a job with no signing or R2 secret;
+3. pass the verified files through one internal workflow artifact;
+4. enter a `main`-only protected environment that requires a reviewer before releasing secrets;
+5. recheck the package checksums after the cross-job transfer;
+6. build and verify the complete local repository tree;
+7. upload under one repository-wide, non-cancelling concurrency group; and
+8. run a clean native-client smoke job through the public URL.
 
-Set and document an expiry policy before commissioning the key. Record the renewal date somewhere maintained outside CI. Generate the revocation certificate at key creation, not after a loss.
+Pin third-party actions to full commit SHAs. No pull-request job may enter the publishing environment.
 
-Ordinary package publication never replaces the public key object. A maintainer uses the offline primary key to create, renew or revoke a subkey, exports the updated public certificate, verifies it offline, and commits only that public certificate to `keys/vcache-archive-keyring.asc`. `publish-key.yml` does not create or revoke keys. It verifies the checked-in primary and subkey fingerprints, requires the primary fingerprint in R2 to be absent or unchanged, and uploads the reviewed certificate to `vinyl-cache/vcache-archive-keyring.asc` through a protected key-maintenance environment. It receives the R2 credential and public fingerprints but never the private signing-subkey secret.
-
-Publish the updated certificate before using a new signing subkey.
-
-Every package publisher requires the R2 certificate to contain the configured primary and active signing subkey before changing any repository object. Initial repository commissioning therefore starts with `publish-key.yml`.
-
-Primary-key replacement is a new trust root and requires explicit client action. It is not disguised as ordinary publication.
-
-Without a keyring package, clients must refresh the public certificate before an ordinary signing-subkey renewal takes effect. The README documents that manual step and the renewal announcement gives clients time to complete it before the old subkey expires.
-
-The compromise procedure is short and written before launch: stop publication, remove the CI secret, revoke the affected subkey offline, publish the updated certificate and an advisory, replace the CI subkey, bump package revisions for any packages that must be re-signed, and tell clients how to refresh the key. Primary-key loss or compromise requires a new key and manual client migration.
-
-Revocation deliberately overrides availability. Metadata and RPMs signed by a revoked subkey may stop verifying; the maintainer removes them from current indexes and republishes revised package identities with the replacement subkey. The ordinary guarantee that stale metadata remains usable applies only while its signing subkey remains trusted.
-
-This is a manual lifecycle, not automated rollover machinery or a keyring package.
-
-## Publication workflow and secrets
-
-Start with manually dispatched workflows. Releases happen a few times a year, so cross-repository dispatch credentials and trigger plumbing are not justified initially.
-
-`publish.yml` must:
-
-1. Run host-safe self-tests.
-2. Fetch and verify the selected source release in a job with no signing or R2 secret.
-3. Pass only the verified files and recorded release identity to the publisher job through one internal workflow artifact.
-4. Enter a protected `production` environment restricted to `main` and requiring a reviewer before secrets are released.
-5. Recheck the checksums, manifest, attestations and native package metadata after the cross-job transfer and before importing the signing subkey.
-6. Build and verify the complete local repository tree.
-7. Publish under one repository-wide, non-cancelling concurrency group shared with `publish-key.yml`.
-8. Run a clean native-client smoke job after publication.
-
-Pin every third-party action to a full commit SHA. No pull-request job may enter the production environment.
-
-Do not commission the repository on an account configuration that cannot enforce the main-only environment and approval gate. Use an equivalent external secret-release approval if GitHub cannot provide it.
-
-The production environment holds only:
+The protected environment holds only:
 
 ```text
-REPOSITORY_GPG_SIGNING_SUBKEY_B64
-REPOSITORY_GPG_PRIMARY_FINGERPRINT
-REPOSITORY_GPG_SIGNING_SUBKEY_FINGERPRINT
+REPOSITORY_GPG_PRIVATE_KEY_B64
+REPOSITORY_GPG_FINGERPRINT
 REPOSITORY_PUBLIC_URL
 R2_ACCOUNT_ID
 R2_BUCKET
@@ -275,82 +180,79 @@ R2_ACCESS_KEY_ID
 R2_SECRET_ACCESS_KEY
 ```
 
-Use a dedicated bucket-scoped R2 credential with the least privilege Cloudflare supports. The publisher does not need to delete objects.
+Use a dedicated bucket-scoped R2 credential. The publisher needs no delete permission. Fetch, self-test and smoke jobs receive neither private signing material nor R2 credentials.
 
-Only the package publisher receives the private signing subkey. Package publication and key maintenance receive R2 credentials through separate protected environments, and key maintenance receives only public-key fingerprints. Fetch, validation and smoke jobs receive neither signing nor R2 credentials.
+## Immutable payload retries
 
-Automatic dispatch from `vcache-packaging` may be added later if manual publication becomes a recurring nuisance. It would require a narrowly scoped dispatch credential but no access to the signing key or R2. Do not add polling, a publication ledger or a state branch.
+Object keys are scoped by format, family and target. APT payloads use the relative `pool/` path produced by the fresh `reprepro` tree:
 
-## Immutable package objects
+```text
+vinyl-cache/apt/<family>/<target>/<pool-relative-path>
+```
 
-Package objects are immutable by object key in both formats. Mutable repository indexes are rebuilt from verified local bytes and uploaded after all referenced package objects exist.
+RPM payloads use:
+
+```text
+vinyl-cache/rpm/<family>/<target>/Packages/<package-filename>
+```
+
+The package filename contains its version, revision and architecture. Collision checks use the complete object key, so packages cannot be reused across format, family or target roots.
 
 For a Debian package object:
 
-- if absent, upload it with its producer SHA-256 in object metadata;
-- if present with the same producer SHA-256, leave it untouched; and
-- if present with a different or missing producer SHA-256, fail and request a package-revision bump.
+- upload it if absent;
+- if present, download it and require its whole-file SHA-256 to equal `SHA256SUMS`, then reuse it; and
+- otherwise fail and request a package-revision bump.
 
-For an RPM package object:
+Signing changes an RPM's signature header, so its signed bytes cannot be compared directly with the unsigned release asset. For each RPM, record the NEVRA, `SHA256HEADER` and `PAYLOADDIGEST` before signing. If the object:
 
-- sign a copied source RPM only when the object does not exist;
-- store its producer SHA-256, signed SHA-256, primary fingerprint and signing-subkey fingerprint as object metadata;
-- if the source SHA-256 already exists at that key, download the first signed object, verify its stored digest and signature against the current public certificate, and use those exact bytes for `createrepo_c`; and
-- if the source SHA-256 differs or the existing signature is no longer valid, fail and request a package-revision bump.
+- is absent, sign a copy, verify it and upload it;
+- is present, download it, verify its archive-key signature and require the same NEVRA, `SHA256HEADER` and `PAYLOADDIGEST`, then reuse those exact signed bytes; or
+- differs, fail and request a package-revision bump.
 
-Reusing the first signed RPM makes a retry idempotent despite OpenPGP signature timestamps. A subkey change does not rewrite old RPMs that remain valid under the current public certificate.
+An AlmaLinux 10 proof confirmed that `SHA256HEADER` and `PAYLOADDIGEST` remain unchanged when `rpmsign` adds the signature header. This makes retries idempotent without R2 object metadata or a publication ledger.
 
 Never use `sync --delete` and never overwrite a package payload.
 
-## APT route
+## APT publication
 
-APT publication leaves `.deb` payloads unchanged and signs the repository metadata.
+APT leaves `.deb` payloads unchanged and signs repository metadata.
 
 For one verified Debian-family release, `publish-apt.sh` must:
 
-1. Enforce the immutable package-object rule.
-2. Build a fresh single-architecture `reprepro` tree for the manifest's family and target.
-3. Use `Codename: stable`, `Suite: stable`, `Components: main`, the manifest architecture and `SignWith` set to the active signing subkey.
-4. Require `Release`, `Release.gpg` and `InRelease` and verify them locally against the checked-in public certificate.
-5. Generate a deb822 client file for the exact family and target.
-6. Upload package objects before repository metadata, with `InRelease` last and the client file after it.
+1. apply the immutable payload rule;
+2. build a fresh single-architecture `reprepro` tree for the family and target;
+3. use `Codename: stable`, `Suite: stable`, `Components: main`, the package architecture and `SignWith` set to the archive fingerprint;
+4. require and locally verify `Release`, `Release.gpg` and `InRelease`; and
+5. upload packages before generated metadata, with `InRelease` last.
 
-The generated client file is equivalent to:
+The README provides a deb822 source equivalent to:
 
 ```text
 Types: deb
 URIs: <REPOSITORY_PUBLIC_URL>/apt/<family>/<target>
 Suites: stable
 Components: main
-Architectures: <manifest-architecture>
+Architectures: <package-architecture>
 Signed-By: /etc/apt/keyrings/vcache-archive-keyring.asc
 ```
 
-Publish it as:
+It gives the key URL, expected full fingerprint and exact installation commands. It never uses `apt-key`, `trusted=yes` or an insecure APT option.
 
-```text
-vinyl-cache/apt/<family>/<target>/vcache-<family>.sources
-```
+## RPM publication
 
-The README gives the key URL, expected full primary fingerprint and exact installation commands. It never uses `apt-key`, `trusted=yes` or an insecure APT option.
-
-The disposable integration fixture must prove the exact `SignWith` selector accepted by the pinned Debian 13 `reprepro`/GPGME combination and require the resulting `InRelease` issuer fingerprint to equal `REPOSITORY_GPG_SIGNING_SUBKEY_FINGERPRINT`.
-
-## Signed RPM route
-
-RPM publication signs copied package payloads and repository metadata. There is no unsigned repository mode.
+RPM publication signs copied package payloads and repository metadata. There is no unsigned mode.
 
 For one verified EL10 release, `publish-rpm.sh` must:
 
-1. Apply the immutable RPM rule above, signing only absent objects with `rpmsign --addsign` in an AlmaLinux 10 utility container.
-2. Import the public certificate into a temporary RPM database and require `rpmkeys --checksig --verbose` to report a valid signature and digests for every RPM.
-3. Place the exact signed or reused RPM bytes under a fresh `Packages/` directory.
-4. Run `createrepo_c` over the complete current package set.
-5. Create `repodata/repomd.xml.asc` as an armored detached signature and verify it locally.
-6. Generate one family-specific `.repo` file.
-7. Upload package objects before metadata, then upload `repomd.xml`, its detached signature and the `.repo` file in that order.
+1. apply the immutable RPM rule, signing absent objects with `rpmsign --addsign` in an AlmaLinux 10 utility container;
+2. import the public key into a temporary RPM database and require `rpmkeys --checksig --verbose` to verify every RPM;
+3. place the exact signed or reused bytes under a fresh `Packages/` directory;
+4. run `createrepo_c` over the complete current package set;
+5. create and locally verify an armored detached `repodata/repomd.xml.asc`; and
+6. upload packages before metadata, then `repomd.xml`, its signature and the client file.
 
-The generated repository file is equivalent to:
+Publish one family-specific client file equivalent to:
 
 ```ini
 [vcache-<family>]
@@ -361,129 +263,91 @@ gpgcheck=1
 repo_gpgcheck=1
 gpgkey=<REPOSITORY_PUBLIC_URL>/vcache-archive-keyring.asc
 sslverify=1
-metadata_expire=3600
 ```
 
-Publish it as:
+Its object path is `vinyl-cache/rpm/<family>/vcache-<family>.repo`.
 
-```text
-vinyl-cache/rpm/<family>/vcache-<family>.repo
-```
+## R2 publication
 
-AlmaLinux 10 currently ships DNF 4.20.0 and RPM 4.19.1.1. The smoke job records `dnf --version` so a future base-image change triggers a deliberate compatibility check rather than an assumption that DNF4 remains forever.
+Production clients use a custom domain. The rate-limited `r2.dev` endpoint is for development only.
 
-An AlmaLinux 10 proof on 2026-08-12 signed and verified a real project RPM, generated and signed repository metadata, and completed DNF metadata verification with both GPG checks enabled.
+For v1, configure one Cloudflare cache-bypass rule for the entire `vinyl-cache/` prefix. Do not add extension-specific TTLs or try to optimise cache hit rates before the repository works reliably.
 
-## R2 and cache policy
+Build and verify a complete local tree before changing R2. Upload the public key if needed, package payloads next, ordinary generated metadata next, and signed top-level metadata last. There is no atomic multi-object swap, so clients must fail closed and retry a transient metadata/signature mismatch. Old signed metadata remains safe because referenced payload objects are immutable.
 
-Production clients use a custom domain. The rate-limited `r2.dev` endpoint is for development only and is not an advertised repository URL.
+## Tests
 
-Configure Cloudflare cache rules for both APT and RPM prefixes:
+Host-safe tests cover strict asset/checksum parsing, the route allow-list, secret isolation, the protected environment, upload ordering and absence of insecure client options.
 
-- package payloads under APT `pool/` and RPM `Packages/` are immutable and receive `Cache-Control: public,max-age=31536000,immutable`;
-- signed indexes, compressed metadata, public keys, `.sources` and `.repo` files receive `Cache-Control: no-store` and match an explicit cache-bypass rule; and
-- no Edge TTL rule may override those origin policies.
+Disposable-container tests use a temporary archive key, one real `.deb` and one real `.rpm`. They prove:
 
-The explicit metadata bypass matters because compressed `.gz`, `.bz2` and `.zst` files are among Cloudflare's default cached extensions.
+- authenticated APT update and installation succeeds;
+- authenticated DNF refresh and installation succeeds with both GPG checks enabled;
+- changed contents at an existing package identity are rejected;
+- corrupted `InRelease` is rejected by APT; and
+- unsigned or tampered RPM payloads and `repomd.xml` are rejected by DNF.
 
-DNF's local metadata cache is separate from HTTP caching. `metadata_expire=3600` limits discovery delay for a new current release; immutable package objects ensure stale metadata still references valid bytes.
+The post-publication smoke job uses the target's native platform, verifies the downloaded public-key fingerprint, configures the signed repository without insecure options, and installs every package name derived from native package metadata.
 
-Build and verify a complete tree before changing R2. Upload packages first, ordinary generated metadata next, and the signed top-level metadata last. There is no atomic multi-object swap: a client can observe a transient `repomd.xml`/signature mismatch and must fail closed and retry. Stale signed metadata continues to reference immutable bytes.
+Do not duplicate catalog-aware VCL load tests in the sibling. The source release cannot exist without the producer's install and load proof.
 
-## Client smoke tests
+## Effect on the APT prototype branch
 
-Repository smoke tests prove distribution, not builds. The producer has already proved that each package installs and its VMODs load before the source release exists.
+The `feat/signed-apt-r2-repository` branch proves signed APT publication is feasible, but its signing and R2 code are on the wrong side of the boundary.
 
-APT smoke jobs use the target's native architecture, download the public key, require its full primary fingerprint, place it under `/etc/apt/keyrings`, install the generated deb822 source, run `apt-get update` without insecure flags, and install every package name derived from the verified `.deb` metadata.
+Do not merge that branch as written. Adapt only its strict checksum parsing, temporary-key handling, `reprepro` publication, ordered R2 upload and clean-client smoke logic in the sibling. Keep all repository credentials and instructions out of `vcache-packaging`.
 
-DNF smoke jobs use clean native EL10 x86_64 and aarch64 containers, install the generated family `.repo`, assert both GPG checks, TLS verification and the metadata expiry, run `dnf makecache` without weakening overrides, and install every package name derived from the verified RPM metadata.
-
-Do not duplicate catalog-aware VCL load tests in the sibling. Signing changes RPM headers, not payload files, and the source release could not exist without the producer's install/load proof.
-
-## Failure tests
-
-Host-safe tests check the release schema, strict asset/checksum matching, route allow-list, workflow permissions, secret isolation, key fingerprints, upload order, cache policy and absence of insecure options.
-
-Disposable-container tests use a temporary archive key, one real `.deb` and one real `.rpm`. In addition to the successful path, they must prove at least:
-
-- a changed source package at an existing package identity is rejected with a package-revision error;
-- an identical RPM source reuses the first signed bytes;
-- a tampered RPM cannot be installed;
-- `repomd.xml.asc` signed by the wrong key makes DNF metadata refresh fail;
-- a corrupted `InRelease` makes `apt-get update` fail;
-- a missing attestation or wrong manifest commit, target, architecture, signer workflow, source ref or attestation identity fails before the signing job;
-- an expired or revoked signing subkey cannot publish;
-- stale DNF metadata remains usable after an ordinary revision update and refreshes to the new revision; and
-- unsafe, duplicate or path-containing asset names are rejected.
-
-These fixtures do not contact R2. Static forbidden-string checks may supplement them but do not replace behavioural failure tests.
-
-## Effect on the current APT branch
-
-The `feat/signed-apt-r2-repository` branch proves that signed APT publication is feasible, but its publisher, R2 settings, signing secret and client smoke workflow are on the wrong side of the boundary.
-
-If this design is accepted:
-
-1. Do not merge that branch as it stands.
-2. Create `vcache-repository` and adapt only the useful format-specific publication logic.
-3. Keep `vcache-packaging` at the green GitHub Release boundary, adding only the package revision, manifest, checksums, attestations and normative contract changes described here.
-4. Keep repository user instructions and client smoke tests in the sibling.
-5. Retain GitHub Releases as the checksummed fallback when R2 publication fails.
-
-The earlier in-repository APT/RPM plan is superseded by this document.
+This document supersedes the earlier in-repository APT/RPM plan.
 
 ## Deliberately absent
 
 - no raw Actions-artifact input;
-- no source builds, package recipes or catalog import in the sibling;
+- no build, package recipe or catalog import in the sibling;
+- no extra release manifest or provenance-attestation machinery;
 - no unsigned APT metadata, RPM payload or RPM metadata path;
-- no cumulative archive, snapshot path or historic-installability promise;
+- no cumulative archive, snapshots or historic-installability promise;
 - no source-package repository;
-- no distribution targets beyond the current Debian 13, Ubuntu 26.04 and EL10 pairs;
-- no updateinfo, comps, modules, delta RPMs or mirror lists;
-- no per-package counter or distributor-owned revision ledger;
-- no automated key rollover or keyring package;
-- no Worker, custom repository server or managed repository service;
-- no deletion, retention, rollback, polling or publication ledger; and
-- no automated cross-repository trigger until manual dispatch is demonstrably burdensome.
+- no updateinfo, comps, modules, delta RPMs or mirror list;
+- no R2 object-metadata ledger or distributor-owned revision counter;
+- no automated key maintenance, rollover or keyring package;
+- no Worker, server or managed repository service;
+- no delete, retention, rollback, polling or publication ledger;
+- no fine-grained CDN cache policy; and
+- no automatic cross-repository trigger until manual publication becomes burdensome.
 
-## Size expectation
+## Size limit
 
-The sibling should remain roughly 650–1,100 code lines across fetch, key maintenance, APT, RPM, smoke, workflow and tests. `vcache-packaging` gains only the revision, manifest and attestation handoff and should lose all repository-specific code from the prototype branch.
+The original `vcache-packaging` baseline at commit `a895af3` is 4,729 `cloc` code lines, so the requested 50% growth ceiling is 2,364 added code lines. The producer-side revision and contract work should add fewer than 200. Check the final producer diff against the baseline; do not add a LOC-counting workflow.
 
-If the sibling needs engine versions, VMOD IDs, dependency expressions, build scripts or package recipes, the boundary has failed and the design must be reconsidered.
+Target 400–700 nonblank code lines in the sibling across fetch, APT, RPM, smoke, workflow and tests. This is a review budget, not an excuse to omit authentication or fail-closed checks.
+
+If the sibling needs an engine version, VMOD ID, dependency expression, source pin or package recipe, the boundary has failed.
 
 ## Definition of done
 
-This split is complete when:
+The split is complete when:
 
-- the producer's normative scope, version and release-asset contracts have landed;
-- `vcache-packaging` produces a checksummed and attested green GitHub Release without GPG or R2 credentials;
-- the sibling rejects a wrong source repository, workflow, ref, commit, target, architecture, revision, asset set, checksum or attestation before signing;
-- publishing one family cannot remove the other family from its advertised roots;
-- publishing revision N+1 leaves stale revision N metadata able to fetch its immutable package bytes unless an emergency key revocation intentionally invalidated them;
-- a retry of an unchanged RPM release reuses the first signed RPM bytes;
-- changed bytes at an existing package identity fail with a package-revision error;
-- the offline primary, signing subkey, backup, revocation certificate, expiry policy and compromise procedure exist before the public key is commissioned;
-- each published APT root has locally verified signed metadata and a working deb822 client file;
-- each published RPM and `repomd.xml` has a locally verified signature and a family-specific `.repo` with both GPG checks enabled;
-- clean native clients install every package advertised by each published root;
-- tampered packages and metadata fail closed in container tests;
-- the production custom domain and cache rules match the immutable-payload/mutable-metadata policy;
-- a failed distributor run leaves the source GitHub Release and previously published repository usable; and
+- the producer's scope, version and release-asset contracts have landed;
+- `vcache-packaging` publishes a complete checksummed GitHub Release without GPG or R2 credentials and remains below the 50% growth ceiling;
+- the sibling rejects a wrong asset set, checksum, target, architecture, family or revision before signing;
+- publishing one family cannot unlist another family;
+- changed contents at an existing package identity fail with a package-revision error;
+- an unchanged retry reuses existing `.deb` and signed `.rpm` bytes without an object-metadata ledger;
+- every APT root has locally verified signed metadata;
+- every RPM and `repomd.xml` has a locally verified signature;
+- clean native clients install every advertised package with signature checking enabled;
+- corrupt packages and metadata fail closed;
+- the dedicated archive key, offline backup, revocation certificate and protected environment exist before publication;
+- a failed distributor run leaves the source GitHub Release and previous signed repository usable; and
 - no engine version string, VMOD ID or dependency expression exists in the sibling checkout.
 
 ## References
 
 - [Cloudflare's R2 APT/YUM walkthrough](https://blog.cloudflare.com/using-cloudflare-r2-as-an-apt-yum-repository/)
-- [Cloudflare's current package publisher](https://raw.githubusercontent.com/cloudflare/cloudflared/master/release_pkgs.py)
-- [GitHub artifact attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
-- [`gh attestation verify`](https://cli.github.com/manual/gh_attestation_verify)
-- [GitHub environments and protected secrets](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
+- [Cloudflare's package publisher](https://raw.githubusercontent.com/cloudflare/cloudflared/master/release_pkgs.py)
+- [GitHub environments](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
 - [RPM `rpmsign` manual](https://rpm.org/docs/6.1.x/man/rpmsign.1)
 - [RHEL 10 packaging and distributing software](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/html/packaging_and_distributing_software/)
-- [DNF configuration reference](https://dnf.readthedocs.io/en/latest/conf_ref.html)
 - [Debian deb822 source configuration](https://manpages.debian.org/trixie/apt/sources.list.5.en.html)
 - [R2 public buckets and custom domains](https://developers.cloudflare.com/r2/buckets/public-buckets/)
 - [R2 consistency and custom-domain caching](https://developers.cloudflare.com/r2/reference/consistency/)
-- [Cloudflare default cache behaviour](https://developers.cloudflare.com/cache/concepts/default-cache-behavior/)
