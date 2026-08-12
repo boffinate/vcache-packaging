@@ -3,7 +3,8 @@ name: trunk
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 5 * * 1,4" # Monday and Thursday, unconditional (no change-gating)
+    # Runs after the stable matrix and normally completes before 06:00 UTC.
+    - cron: "30 5 1-31/2 * *" # odd-numbered days, 05:30 UTC; unconditional (no change-gating)
 
 permissions:
   contents: read
