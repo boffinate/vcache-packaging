@@ -109,12 +109,28 @@ clone_branch() {
   git clone --recurse-submodules --branch "$branch" "$url" "$destination"
 }
 
+# clone_vmod URL DESTINATION
+# VMOD source hosts can temporarily reject a burst of concurrent clone
+# requests (for example, GitHub's HTTP 429 response). Retry a bounded number
+# of times so such transport failures do not immediately fail a matrix cell.
+clone_vmod() {
+  local url=$1 destination=$2 attempt
+  for attempt in 1 2 3; do
+    rm -rf "$destination"
+    if git clone "$url" "$destination"; then
+      return 0
+    fi
+    [ "$attempt" -lt 3 ] || return 1
+    echo "VMOD clone failed; retrying in $((attempt * 5)) seconds ($attempt/3)" >&2
+    sleep $((attempt * 5))
+  done
+}
+
 # Clone and resolve the selected VMOD source into the standard container path.
 checkout_vmod() {
   step clone
   SRC="/work/tmp/$TAG-src"
-  rm -rf "$SRC"
-  git clone "${VMOD_GIT:?}" "$SRC"
+  clone_vmod "${VMOD_GIT:?}" "$SRC"
   step checkout
   git -C "$SRC" checkout --detach "$VMOD_REF" 2>/dev/null \
     || git -C "$SRC" checkout --detach "origin/$VMOD_REF"

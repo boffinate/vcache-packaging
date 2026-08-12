@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -1139,6 +1140,40 @@ def container_image_pull_retries_transient_registry_failures():
     ok("docker pull --platform \"$2\" \"$1\"" in library,
        "container runner explicitly pulls a missing image")
     ok("for attempt in 1 2 3" in library, "container runner bounds pull retries")
+
+
+@test
+def vmod_clone_retries_transient_failures():
+    root = Path(__file__).resolve().parent.parent
+    library = (root / "scripts" / "lib.sh").read_text()
+    ok("clone_vmod()" in library, "shared library wraps VMOD source clones")
+    ok("for attempt in 1 2 3" in library, "VMOD clone retries are bounded")
+    ok('clone_vmod "${VMOD_GIT:?}" "$SRC"' in library,
+       "VMOD checkout uses the retried clone helper")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        fake_bin = tmp / "bin"
+        fake_bin.mkdir()
+        attempts = tmp / "attempts"
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            "#!/usr/bin/env bash\n"
+            "attempt=$(cat \"$CLONE_ATTEMPTS\" 2>/dev/null || echo 0)\n"
+            "attempt=$((attempt + 1))\n"
+            "printf '%s\\n' \"$attempt\" > \"$CLONE_ATTEMPTS\"\n"
+            "if [ \"$attempt\" -lt 3 ]; then exit 1; fi\n"
+            "mkdir -p \"$3\"\n"
+        )
+        fake_git.chmod(0o755)
+        result = subprocess.run(
+            ["bash", "-c", 'source "$1"; sleep() { :; }; clone_vmod "$2" "$3"',
+             "bash", str(root / "scripts" / "lib.sh"), "https://example.test/vmod.git", str(tmp / "src")],
+            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}", "CLONE_ATTEMPTS": str(attempts)},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, "VMOD clone succeeds after transient failures")
+        eq(attempts.read_text().strip(), "3", "VMOD clone retries twice before succeeding")
+        ok((tmp / "src").is_dir(), "successful retry leaves the cloned destination")
 
 
 @test
