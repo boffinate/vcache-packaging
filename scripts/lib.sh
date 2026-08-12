@@ -95,6 +95,20 @@ assert_target_platform "\${TARGET_PLATFORM:?}"
 EOF
 }
 
+# clone_branch URL BRANCH DESTINATION
+# Prefer a shallow checkout for the normal smart-HTTP case, but retry without
+# depth when an upstream only exposes Git's dumb HTTP transport.  The latter
+# cannot advertise shallow-clone capabilities (as code.vinyl-cache.org does).
+clone_branch() {
+  local url=$1 branch=$2 destination=$3
+  if git clone --depth 1 --branch "$branch" "$url" "$destination"; then
+    return 0
+  fi
+  rm -rf "$destination"
+  echo "shallow clone unavailable; retrying full clone" >&2
+  git clone --branch "$branch" "$url" "$destination"
+}
+
 # Clone and resolve the selected VMOD source into the standard container path.
 checkout_vmod() {
   step clone
@@ -179,7 +193,8 @@ install_engine_packages() {
 # Append the engine-source provisioning step to a generated container script
 # (DESIGN.md decision 14). When the manifest sets engine_source: required,
 # fetch the engine's own source pin (release: sha256-checked dist tarball;
-# trunk: shallow clone), regenerate the VSC headers the dist archive omits
+# trunk: shallow-first clone with a full-clone fallback), regenerate the VSC
+# headers the dist archive omits
 # using the installed engine's vsctool, and export VINYLSRC/VARNISHSRC for
 # the VMOD's configure. Entries without the key skip the whole block. A
 # failure here is the harness breaking (infra), like deps or unpack-engine.
@@ -198,7 +213,7 @@ if [ "${VMOD_ENGINE_SOURCE:-}" = required ]; then
     rm "$ETREE_ROOT/engine.tgz"
     ;;
   trunk)
-    git clone --depth 1 --branch "${ENGINE_BRANCH:?}" "${ENGINE_GIT_URL:?}" "$ETREE_ROOT/tree"
+    clone_branch "${ENGINE_GIT_URL:?}" "${ENGINE_BRANCH:?}" "$ETREE_ROOT/tree"
     ;;
   esac
   ENGINE_TREE=""

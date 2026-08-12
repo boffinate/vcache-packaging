@@ -86,7 +86,7 @@ if [ "${ENGINE_KIND:?}" = release ]; then
   tar -xzf "/work/tmp/$TAG.tar.gz" -C "$SRC" --strip-components=1
 else
   step clone
-  git clone --depth 1 --branch "${ENGINE_BRANCH:?}" "${ENGINE_GIT_URL:?}" "$SRC"
+  clone_branch "${ENGINE_GIT_URL:?}" "${ENGINE_BRANCH:?}" "$SRC"
   COMMIT=$(git -C "$SRC" rev-parse HEAD)
 fi
 printf '%s\n' "$COMMIT" > "/work/tmp/$TAG.commit"
