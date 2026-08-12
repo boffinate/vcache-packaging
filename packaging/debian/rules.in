@@ -21,7 +21,7 @@ override_dh_auto_test:
 override_dh_auto_install:
 	python3 /repo/tools/cargo-artifacts.py \
 	  --release-dir "$${CARGO_TARGET_DIR:?}/release" \
-	  --destination "debian/@PACKAGE_NAME@/usr/lib/@VMOD_DIR_COMPONENT@/vmods" \
+	  --destination "debian/@PACKAGE_NAME@$$(pkg-config --variable=vmoddir @ENGINE_API@)" \
 	  @CARGO_ARTIFACT_ARGS@
 
 else

@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import jsonschema_gen  # noqa: E402
 import matrix  # noqa: E402
+import package_contract  # noqa: E402
 import recipe  # noqa: E402
 import release_gate  # noqa: E402
 import yaml_subset  # noqa: E402
@@ -125,10 +126,12 @@ FIXTURE_DICT = textwrap.dedent(
       head: master
       default:
         ref: v1.7
+        commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
         version: "1.7"
       by_series:
         varnish-9.0:
           ref: v1.8
+          commit: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
           version: "1.8"
     package:
       summary: Dictionary look-up VMOD
@@ -669,6 +672,30 @@ def catalog_promoted_and_package_targets_fields():
                              "non-empty list", "package targets must be a list")
 
 
+@test
+def catalog_promoted_sources_require_immutable_commits():
+    without_default = must_replace(
+        FIXTURE_DICT, "    commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", ""
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        expect_catalog_error(
+            write_fixture(Path(tmp), vmods={"dict": without_default}),
+            "sources.default.commit must be a full lowercase 40-character Git commit",
+            "promoted default source without commit",
+        )
+    bad_commit = must_replace(
+        FIXTURE_DICT,
+        "    commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        "    commit: ABC123\n",
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        expect_catalog_error(write_fixture(Path(tmp), vmods={"dict": bad_commit}),
+                             "commit must match", "malformed promoted source commit")
+    unpromoted = must_replace(without_default, '  promoted: "true"\n', "")
+    with tempfile.TemporaryDirectory() as tmp:
+        matrix.load_catalog(write_fixture(Path(tmp), vmods={"dict": unpromoted}))
+
+
 # ---------------------------------------------------------------------------
 # Editor JSON Schemas (DESIGN.md decision 11) - generated outputs, so what
 # these tests guard is that they cannot drift from the validator.
@@ -771,11 +798,13 @@ def resolution_rule():
         varnish = matrix.find_engine(catalog, "varnish-9.0.3")
         trunk = matrix.find_engine(catalog, "vinyl-trunk")
         eq(matrix.resolve_source(vmod, release),
-           {"source": "default", "ref": "v1.7", "version": "1.7"}, "default")
+           {"source": "default", "ref": "v1.7", "version": "1.7",
+            "commit": "a" * 40}, "default")
         eq(matrix.resolve_source(vmod, varnish),
-           {"source": "by_series", "ref": "v1.8", "version": "1.8"}, "by_series")
+           {"source": "by_series", "ref": "v1.8", "version": "1.8",
+            "commit": "b" * 40}, "by_series")
         eq(matrix.resolve_source(vmod, trunk),
-           {"source": "head", "ref": "master", "version": ""}, "head")
+           {"source": "head", "ref": "master", "version": "", "commit": ""}, "head")
         eq(matrix.engine_version(release), "9.0.1", "engine version")
         eq(matrix.engine_version(trunk), "trunk", "trunk engine version")
         eq(matrix.engine_package_version(release), {"deb": "9.0.1-1", "rpm": "9.0.1-1%{?dist}"},
@@ -962,17 +991,20 @@ def expand_trunk_lane_and_github_format():
         code, out, _ = run_cli(["expand", "--lane", "trunk", "--format", "github", "--root", root])
         eq(code, 0, "expand exit code")
         lines = out.strip().split("\n")
-        eq(len(lines), 3, "github format is exactly three lines")
+        eq(len(lines), 4, "github format includes the package-pair cohort matrix")
         ok(lines[0].startswith("engines=") and lines[1].startswith("vmods=")
-           and lines[2].startswith("vmod_shards="), "github output keys")
+           and lines[2].startswith("vmod_shards=") and lines[3].startswith("package_pairs="),
+           "github output keys")
         engines = json.loads(lines[0][len("engines="):])
         vmods = json.loads(lines[1][len("vmods="):])
         shards = json.loads(lines[2][len("vmod_shards="):])
+        package_pairs = json.loads(lines[3][len("package_pairs="):])
         ok(engines and vmods, "neither github array is empty")
         ok(all(set(r) >= {"engine", "target", "runner"} for r in engines), "engines= row shape")
         ok(all(r["row"] != r["engine"] for r in vmods), "vmods= excludes engine rows")
         eq([row for shard in shards for row in json.loads(shard["items"])], vmods,
            "vmod_shards preserves every VMOD row")
+        eq(package_pairs, [], "trunk has no publishable package cohorts")
         code, _, err = run_cli(["expand", "--lane", "trunk", "--mode", "package", "--root", root])
         eq(code, 1, "trunk+package is an error")
         ok("no package cells" in err, "trunk+package error message")
@@ -1015,6 +1047,8 @@ def env_output_is_sh_sourceable():
         eq(values["ENGINE_RECIPE_DIR"], "'packaging/engine/vinyl'", "recipe directory comes from family")
         eq(values["TARGET_ID"], "'el10-x86_64'", "TARGET_ID")
         eq(values["VMOD_REF"], "'v1.7'", "VMOD_REF")
+        eq(values["VMOD_EXPECTED_COMMIT"], "'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
+           "promoted release source commit")
         eq(values["VMOD_DEB_VERSION"], "'1.7-1~vinyl9.0.1.1'", "VMOD_DEB_VERSION")
         eq(values["VMOD_PACKAGE_NAME"], "'vinyl-vmod-dict'", "VMOD_PACKAGE_NAME")
         eq(values["VMOD_BUILD_DEPS"], "'redhat-rpm-config python3-docutils'",
@@ -1041,6 +1075,7 @@ def env_output_is_sh_sourceable():
         eq(values["ENGINE_BRANCH"], "'main'", "trunk branch")
         eq(values["ENGINE_VERSION"], "'trunk'", "trunk engine version placeholder")
         eq(values["VMOD_REF"], "'master'", "trunk vmod ref is head")
+        eq(values["VMOD_EXPECTED_COMMIT"], "''", "trunk source deliberately remains moving")
         eq(values["VMOD_BUILD_DEPS"], "'python3-docutils'",
            "no --target falls back to the engine's first target's format")
         ok("VMOD_DEB_VERSION" not in values, "no package version for a trunk engine")
@@ -1067,6 +1102,20 @@ def env_emits_tests_and_modules():
         eq(values["VMOD_TESTS"], "''", "no tests declared -> empty VMOD_TESTS")
         eq(values["VMOD_ENGINE_SOURCE"], "''", "no engine_source declared -> empty VMOD_ENGINE_SOURCE")
         eq(values["VMOD_MODULES"], "'dict'", "VMOD_MODULES defaults to the id")
+
+
+@test
+def cohort_env_is_generated_from_the_promoted_catalog():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = str(write_fixture(Path(tmp)))
+        code, out, _ = run_cli(["cohort-env", "--engine", "vinyl-9.0.1",
+                                "--target", "debian-13-amd64", "--root", root])
+        eq(code, 0, "cohort-env exit code")
+        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        eq(values["COHORT_PACKAGE_NAMES"],
+           "'vinyl-cache vinyl-cache-dev vinyl-vmod-dict'",
+           "cohort contains engine, development package and promoted VMOD")
+        eq(values["COHORT_MODULES"], "'dict'", "cohort imports every declared module")
 
 
 @test
@@ -1097,6 +1146,8 @@ def cargo_status_map_preserves_existing_failure_meanings():
     eq(shell_status_for_step("cargo-test"), "test_failed", "Cargo test failure is a test failure")
     eq(shell_status_for_step("load"), "load_failed", "load failure meaning is preserved")
     eq(shell_status_for_step("pkg-build"), "package_failed", "package failure meaning is preserved")
+    eq(shell_status_for_step("pkg-verify"), "package_failed",
+       "native metadata and payload mismatch is a package failure")
     eq(shell_status_for_step("pkg-install"), "install_failed", "install failure meaning is preserved")
     eq(shell_status_for_step("cargo-preflight", "package"), "package_failed",
        "Cargo package preflight is a package failure")
@@ -1451,6 +1502,33 @@ def stable_release_keeps_green_pairs_independent():
        "a failed pair reports red only after all independently green pairs publish")
     ok(workflow.index('sys.exit(1)', gate_failure) > gate_failure,
        "a failed pair still makes the release workflow fail")
+    ok("needs: [expand, engine, vmod, cohort]" in workflow,
+       "publication cannot run before the full package cohort smoke test")
+    cohort_script = (Path(__file__).resolve().parent.parent / "scripts" /
+                     "test-package-cohort.sh").read_text()
+    ok("for module in $COHORT_MODULES" in cohort_script,
+       "cohort VCL is generated from authoritative package.modules metadata")
+    ok('kill -0 "$PID"' in cohort_script,
+       "cohort smoke proves the daemon survives actual startup")
+    ok("cohort_results.get((engine, target), \"missing result\")" in workflow,
+       "the pair gate consumes the cohort result instead of trusting job topology")
+
+
+@test
+def upstream_varnish_overlay_is_strictly_non_publishing_evidence():
+    root = Path(__file__).resolve().parent.parent
+    workflow = (root / ".github" / "workflows" / "upstream-varnish-overlay.yml").read_text()
+    probe = (root / "scripts" / "probe-upstream-varnish-overlay.sh").read_text()
+    ok("workflow_dispatch:" in workflow and "schedule:" in workflow,
+       "upstream overlay proof is manually runnable and monitored")
+    ok("gh release" not in workflow and "release.yml" not in workflow,
+       "experimental overlay workflow has no publication path")
+    ok("STRICT_ABI=$(dpkg-query" in probe and "varnishd-abi-" in probe,
+       "overlay discovers the strict ABI from the installed upstream package")
+    ok("Depends: varnish (= ${UPSTREAM_VERSION}), ${STRICT_ABI}" in probe,
+       "overlay proof package binds exact upstream version and strict ABI")
+    ok('"published": False' in probe and '"schema": "external-cohort/1"' in probe,
+       "overlay evidence explicitly records its non-publishing status")
 
 
 # ---------------------------------------------------------------------------
@@ -1770,6 +1848,8 @@ def recipe_cargo_debian_and_rpm_mapping():
         ok("cargo build --release --locked --offline" in rules, "Cargo Debian build")
         ok("--mapping reqwest=libvmod_reqwest.so" in rules, "Cargo Debian artifact mapping")
         ok("/repo/tools/cargo-artifacts.py" in rules, "Cargo Debian shared artifact helper")
+        ok("pkg-config --variable=vmoddir vinylapi" in rules,
+           "Cargo Debian install follows the selected engine's pkg-config VMOD directory")
 
         rpm_out = tmp / "rpm-out"
         written = recipe.generate(root, "reqwest", "vinyl-9.0.1", "el10-x86_64", rpm_out,
@@ -1779,6 +1859,30 @@ def recipe_cargo_debian_and_rpm_mapping():
            "Cargo RPM native dependencies")
         ok("cargo build --release --locked --offline" in spec, "Cargo RPM build")
         ok("--mapping reqwest=libvmod_reqwest.so" in spec, "Cargo RPM artifact mapping")
+
+
+@test
+def native_package_contract_normalizes_payload_and_exact_dependencies():
+    paths = [
+        "./usr/lib/vinyl-cache/vmods/libvmod_beta_2.so",
+        "/usr/share/doc/example/changelog.gz",
+        "usr/lib/vinyl-cache/vmods/libvmod_alpha.so",
+        "/usr/lib/.build-id/aa/bb",
+    ]
+    eq(package_contract.normalized_vmod_payload(paths), [
+        "/usr/lib/vinyl-cache/vmods/libvmod_alpha.so",
+        "/usr/lib/vinyl-cache/vmods/libvmod_beta_2.so",
+    ], "native payload normalization ignores package-manager housekeeping")
+    eq(package_contract.expected_vmod_payload("/usr/lib/vinyl-cache/vmods", ["beta_2", "alpha"]), [
+        "/usr/lib/vinyl-cache/vmods/libvmod_alpha.so",
+        "/usr/lib/vinyl-cache/vmods/libvmod_beta_2.so",
+    ], "expected module manifest is deterministic")
+    ok(package_contract.deb_exact_dependency(
+        "libc6 (>= 2.38), vinyl-cache (= 9.0.1-1), zlib1g", "vinyl-cache", "9.0.1-1"
+    ), "Debian exact dependency is recognized")
+    ok(not package_contract.deb_exact_dependency(
+        "vinyl-cache (>= 9.0.1-1)", "vinyl-cache", "9.0.1-1"
+    ), "a lower-bound dependency cannot masquerade as the exact engine cohort")
 
 
 @test

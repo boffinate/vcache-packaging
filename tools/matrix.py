@@ -105,6 +105,7 @@ MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 ARTIFACT_BASENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.so$")
 RUST_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 PACKAGE_REVISION_RE = re.compile(r"^[1-9][0-9]*$")
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 # Mapping keys the parser accepts; also the by_series key charset (DESIGN.md).
 MAPPING_KEY_RE = re.compile(r"^[a-z0-9_.-]+$")
 
@@ -123,7 +124,7 @@ KEYS = {
     "vmod_doc": ({"schema", "id", "upstream", "sources", "package"}, {"build", "tests", "engine_source"}),
     "vmod_upstream": ({"git"}, {"homepage"}),
     "vmod_sources": ({"head", "default"}, {"by_series"}),
-    "vmod_source_entry": ({"ref", "version"}, set()),
+    "vmod_source_entry": ({"ref", "version"}, {"commit"}),
     "vmod_package": (
         {"summary", "description", "license"},
         {"build_deps", "build_target", "modules", "artifacts", "families", "promoted", "targets"},
@@ -455,6 +456,21 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, toolchains: dict, e
                 errors.append(
                     f'{ctx}: package.promoted must be "true" or "false", got {promoted!r}'
                 )
+            if promoted == "true" and isinstance(sources, dict):
+                entries = [("sources.default", sources.get("default"))]
+                entries.extend(
+                    (f"sources.by_series[{series!r}]", entry)
+                    for series, entry in (sources.get("by_series") or {}).items()
+                )
+                for label, entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    commit = entry.get("commit")
+                    if not isinstance(commit, str) or not COMMIT_RE.match(commit):
+                        errors.append(
+                            f"{ctx}: {label}.commit must be a full lowercase 40-character "
+                            "Git commit when package.promoted is \"true\""
+                        )
             pkg_targets = package.get("targets")
             if pkg_targets is not None:
                 # Absent means every target, so an explicit empty list is
@@ -477,6 +493,10 @@ def _check_source_entry(entry: dict, ctx: str, errors: list) -> None:
     _expect(entry, "vmod_source_entry", ctx, errors)
     _str_value(entry, "ref", ctx, errors)
     _str_value(entry, "version", ctx, errors)
+    if "commit" in entry:
+        commit = _str_value(entry, "commit", ctx, errors)
+        if commit and not COMMIT_RE.match(commit):
+            errors.append(f"{ctx}: commit must match {COMMIT_RE.pattern!r}, got {commit!r}")
 
 
 def load_catalog(root) -> dict:
@@ -630,13 +650,15 @@ def resolve_source(vmod: dict, engine: dict) -> dict:
     if present, else ``sources.default``.
     """
     if engine["kind"] == "trunk":
-        return {"source": "head", "ref": vmod["sources"]["head"], "version": ""}
+        return {"source": "head", "ref": vmod["sources"]["head"], "version": "", "commit": ""}
     by_series = vmod["sources"].get("by_series") or {}
     entry = by_series.get(engine["series"])
     if entry is not None:
-        return {"source": "by_series", "ref": entry["ref"], "version": entry["version"]}
+        return {"source": "by_series", "ref": entry["ref"], "version": entry["version"],
+                "commit": entry.get("commit", "")}
     default = vmod["sources"]["default"]
-    return {"source": "default", "ref": default["ref"], "version": default["version"]}
+    return {"source": "default", "ref": default["ref"], "version": default["version"],
+            "commit": default.get("commit", "")}
 
 
 # ---------------------------------------------------------------------------
@@ -665,6 +687,22 @@ def engine_targets(engine: dict, lane: str, mode: str) -> list:
     return targets
 
 
+def package_eligible(vmod: dict, engine: dict, target: str) -> bool:
+    """Whether one VMOD belongs to an engine/target package cohort."""
+    families = vmod["package"].get("families")
+    if families is not None and engine["family"] not in families:
+        return False
+    if vmod["package"].get("promoted") != "true":
+        return False
+    package_targets = vmod["package"].get("targets")
+    return package_targets is None or target in package_targets
+
+
+def package_vmods(catalog: dict, engine: dict, target: str) -> list[dict]:
+    return [vmod for vmod in catalog["vmods"].values()
+            if package_eligible(vmod, engine, target)]
+
+
 def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
     """Expand one lane into engine build pairs and VMOD cell rows.
 
@@ -686,30 +724,20 @@ def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
         if lane == "release" and engine["packages"] == "true" and mode in ("package", "all"):
             for target in engine["targets"]:
                 runner = find_target(catalog, target)["runner"]
-                for vid, vmod in catalog["vmods"].items():
-                    # package.families gates package cells only (DESIGN.md
-                    # decision 13); absent means every family. Compat cells
-                    # above are deliberately untouched: an incompatible
-                    # pairing still renders its honest red.
-                    families = vmod["package"].get("families")
-                    if families is not None and engine["family"] not in families:
-                        continue
-                    # Promotion gate (decision 15): package cells exist only
-                    # once the catalog says promoted: "true", so an unproven
-                    # entry can never block the all-or-nothing release gate.
-                    if vmod["package"].get("promoted") != "true":
-                        continue
-                    # package.targets restricts where packaging can work at
-                    # all (e.g. an x86_64-only VMOD); absent = every target.
-                    pkg_targets = vmod["package"].get("targets")
-                    if pkg_targets is not None and target not in pkg_targets:
-                        continue
-                    vmod_rows.append({"row": vid, "engine": engine["id"], "target": target, "mode": "package", "runner": runner})
+                for vmod in package_vmods(catalog, engine, target):
+                    vmod_rows.append({"row": vmod["id"], "engine": engine["id"], "target": target,
+                                      "mode": "package", "runner": runner})
     engine_rows = [
         {"row": pair["engine"], "engine": pair["engine"], "target": pair["target"], "mode": "engine", "runner": pair["runner"]}
         for pair in engine_pairs
     ]
-    return {"engines": engine_pairs, "vmods": vmod_rows, "rows": engine_rows + vmod_rows}
+    packaged_engines = {engine["id"] for engine in catalog["engines"]
+                        if engine["packages"] == "true"}
+    package_pairs = [pair for pair in engine_pairs
+                     if lane == "release" and mode in ("package", "all")
+                     and pair["engine"] in packaged_engines]
+    return {"engines": engine_pairs, "vmods": vmod_rows, "package_pairs": package_pairs,
+            "rows": engine_rows + vmod_rows}
 
 
 def shard_vmods(rows: list, size: int = VMOD_SHARD_SIZE) -> list:
@@ -802,6 +830,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("VMOD_GIT", vmod["upstream"]["git"]),
             ("VMOD_SOURCE", resolved["source"]),
             ("VMOD_REF", resolved["ref"]),
+            ("VMOD_EXPECTED_COMMIT", resolved["commit"]),
             ("VMOD_VERSION", resolved["version"]),
             ("VMOD_BUILD_DEPS", " ".join(deps)),
             ("VMOD_BUILD", vmod_build(vmod)),
@@ -822,6 +851,23 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
                 ("VMOD_RPM_VERSION", pv["rpm_version"]),
                 ("VMOD_RPM_RELEASE", pv["rpm_release"]),
             ]
+    return pairs
+
+
+def cohort_env_pairs(catalog: dict, engine_id: str, target_id: str) -> list:
+    engine = find_engine(catalog, engine_id)
+    if engine["packages"] != "true":
+        raise CatalogError(f"engine {engine_id!r} does not publish a package cohort")
+    pairs = env_pairs(catalog, engine_id, target_id=target_id)
+    vmods = package_vmods(catalog, engine, target_id)
+    package_names = [engine_runtime_package(engine),
+                     engine_development_package(engine, find_target(catalog, target_id)["format"])]
+    package_names.extend(engine_vmod_package_name(engine, vmod["id"]) for vmod in vmods)
+    modules = [module for vmod in vmods for module in vmod_modules(vmod)]
+    pairs += [
+        ("COHORT_PACKAGE_NAMES", " ".join(package_names)),
+        ("COHORT_MODULES", " ".join(modules)),
+    ]
     return pairs
 
 
@@ -1187,13 +1233,14 @@ def cmd_expand(args) -> int:
     if not expansion["engines"] or not expansion["vmods"]:
         raise CatalogError(f"lane {args.lane!r} expanded to an empty matrix; the catalog has no engines or vmods for it")
     if args.format == "github":
-        # Three `key=<json>` lines, appended verbatim to $GITHUB_OUTPUT.
+        # Four `key=<json>` lines, appended verbatim to $GITHUB_OUTPUT.
         # Engine rows are excluded from vmods= (they would become bogus VMOD
         # jobs). vmod_shards= is the outer matrix for the reusable VMOD
         # workflow; each item contains at most VMOD_SHARD_SIZE inner rows.
         print("engines=" + json.dumps(expansion["engines"], separators=(",", ":")))
         print("vmods=" + json.dumps(expansion["vmods"], separators=(",", ":")))
         print("vmod_shards=" + json.dumps(shard_vmods(expansion["vmods"]), separators=(",", ":")))
+        print("package_pairs=" + json.dumps(expansion["package_pairs"], separators=(",", ":")))
     else:
         print(json.dumps(expansion["rows"], indent=2))
     return 0
@@ -1212,6 +1259,13 @@ def cmd_resolve(args) -> int:
 def cmd_env(args) -> int:
     catalog = load_catalog(args.root)
     for name, value in env_pairs(catalog, args.engine, args.vmod, args.target):
+        print(f"{name}={sh_quote(value)}")
+    return 0
+
+
+def cmd_cohort_env(args) -> int:
+    catalog = load_catalog(args.root)
+    for name, value in cohort_env_pairs(catalog, args.engine, args.target):
         print(f"{name}={sh_quote(value)}")
     return 0
 
@@ -1301,6 +1355,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--target")
     add_root(p)
     p.set_defaults(func=cmd_env)
+
+    p = sub.add_parser("cohort-env", help="print the expected package cohort and runtime smoke contract")
+    p.add_argument("--engine", required=True)
+    p.add_argument("--target", required=True)
+    add_root(p)
+    p.set_defaults(func=cmd_cohort_env)
 
     p = sub.add_parser("merge", help="fold cell result JSONs into the state file")
     p.add_argument("--results-dir", required=True)

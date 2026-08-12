@@ -285,7 +285,6 @@ deb)
   (cd "$SRC" && dpkg-buildpackage -us -uc -b)
   step collect
   cp /work/tmp/"$VMOD_PACKAGE_NAME"_*.deb "$OUT/"
-  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$OUT"/*.deb
   ;;
 rpm)
   NAMEDIR="$VMOD_PACKAGE_NAME-${VMOD_VERSION:?}"
@@ -297,9 +296,27 @@ rpm)
   rpmbuild -bb --define "_topdir $TOPD" "/work/tmp/$TAG-recipe/$VMOD_PACKAGE_NAME.spec"
   step collect
   cp "$TOPD"/RPMS/*/"$VMOD_PACKAGE_NAME"-*.rpm "$OUT/"
-  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$OUT"/*.rpm
   ;;
 esac
+
+step pkg-verify
+VMOD_DIR=$(pkg-config --variable=vmoddir "$ENGINE_API")
+[ -n "$VMOD_DIR" ] || { echo "$ENGINE_API reports an empty VMOD directory" >&2; exit 1; }
+case "$PKGFMT" in
+deb) PACKAGE_FILE=$(find "$OUT" -maxdepth 1 -type f -name "$VMOD_PACKAGE_NAME"'_*.deb') ;;
+rpm) PACKAGE_FILE=$(find "$OUT" -maxdepth 1 -type f -name "$VMOD_PACKAGE_NAME"'-*.rpm') ;;
+esac
+[ "$(printf '%s\n' "$PACKAGE_FILE" | grep -c .)" = 1 ] \
+  || { echo "expected exactly one native VMOD package in $OUT" >&2; exit 1; }
+python3 /repo/tools/package_contract.py \
+  --format "$PKGFMT" \
+  --package "$PACKAGE_FILE" \
+  --name "$VMOD_PACKAGE_NAME" \
+  --arch "$TARGET_PACKAGE_ARCH" \
+  --engine-package "$ENGINE_RUNTIME_PACKAGE" \
+  --vmod-dir "$VMOD_DIR" \
+  --manifest-out "$OUT/PACKAGE-CONTRACT.json" \
+  --modules $VMOD_MODULES
 EOF
 
 LOG="$WORKDIR/logs/$TAG.log"

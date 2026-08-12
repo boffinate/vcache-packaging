@@ -13,6 +13,7 @@ jobs:
     outputs:
       engines: ${{ steps.expand.outputs.engines }}
       vmod_shards: ${{ steps.expand.outputs.vmod_shards }}
+      package_pairs: ${{ steps.expand.outputs.package_pairs }}
     steps:
       - uses: actions/checkout@v7
       - id: expand
@@ -59,8 +60,66 @@ jobs:
       items: ${{ matrix.items }}
       upload_packages: true
 
-  release:
+  cohort:
     needs: [expand, engine, vmod]
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.expand.outputs.package_pairs) }}
+    name: package cohort ${{ matrix.engine }} on ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: engine-${{ matrix.engine }}-${{ matrix.target }}
+          path: work/cohort-packages
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: packages-*-${{ matrix.engine }}-${{ matrix.target }}
+          merge-multiple: true
+          path: work/cohort-packages
+      - id: smoke
+        continue-on-error: true
+        run: scripts/test-package-cohort.sh "${{ matrix.engine }}" "${{ matrix.target }}" work/cohort-packages work
+      - if: always()
+        env:
+          ENGINE: ${{ matrix.engine }}
+          TARGET: ${{ matrix.target }}
+          OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          mkdir -p work/results
+          python3 - <<'PY'
+          import json, os
+          result = {
+              "schema": "cohort/1",
+              "engine": os.environ["ENGINE"],
+              "target": os.environ["TARGET"],
+              "status": "pass" if os.environ["OUTCOME"] == "success" else "failed",
+          }
+          with open(f"work/results/cohort--{result['engine']}--{result['target']}.json", "w") as f:
+              json.dump(result, f, indent=2, sort_keys=True)
+              f.write("\n")
+          PY
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-cohort-${{ matrix.engine }}-${{ matrix.target }}
+          path: work/results/
+          if-no-files-found: error
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cohort-${{ matrix.engine }}-${{ matrix.target }}
+          path: work/logs/
+          if-no-files-found: ignore
+
+  release:
+    needs: [expand, engine, vmod, cohort]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     concurrency:
       group: release-stable
@@ -113,9 +172,13 @@ jobs:
           expected = expansion["rows"]
 
           results = {}
+          cohort_results = {}
           for path in glob.glob("results/**/*.json", recursive=True):
               with open(path) as f:
                   cell = json.load(f)
+              if cell.get("schema") == "cohort/1":
+                  cohort_results[(cell["engine"], cell["target"])] = cell["status"]
+                  continue
               results[(cell["row"], cell["engine"], cell["target"], cell["mode"])] = cell["status"]
 
           pairs = {}
@@ -127,6 +190,11 @@ jobs:
           prepared = []
           for (engine, target), cells in sorted(pairs.items()):
               tag = f"{engine}-{target}"
+              cohort_status = cohort_results.get((engine, target), "missing result")
+              if cohort_status != "pass":
+                  gate_failed = True
+                  print(f"gate FAILED for {tag} — package cohort: {cohort_status}")
+                  continue
               bad = [(c, results.get((c["row"], engine, target, c["mode"]), "missing result"))
                      for c in cells]
               bad = [(c, status) for c, status in bad if status != "pass"]

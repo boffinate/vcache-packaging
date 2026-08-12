@@ -29,6 +29,15 @@ python3 tools/matrix.py merge --results-dir work/results --state-file work/state
 python3 tools/matrix.py render --state-file work/state.json --out work/index.html
 ```
 
+The release workflow also installs each complete engine/target package cohort
+in one fresh container and starts the family daemon with a generated VCL that
+imports every promoted module. The experimental, non-publishing upstream
+Varnish overlay proof can be run on a native amd64 host with:
+
+```sh
+scripts/probe-upstream-varnish-overlay.sh work/
+```
+
 ## Adding a VMOD
 
 Copy an existing `vmods/<id>.yml` (keeping its modeline first line), edit it with the schema guiding you, run `matrix.py validate`, commit. That's the whole process. If it doesn't build against an engine, the matrix will show it red — that's a result, not a problem.

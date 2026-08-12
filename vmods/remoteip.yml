@@ -9,6 +9,7 @@ sources:
   head: master
   default:
     ref: v2.5
+    commit: b4290fbd656e0afed3fe114b6957eca106e93c50
     version: "2.5"
 package:
   summary: Client IP address lookup VMOD for Vinyl Cache

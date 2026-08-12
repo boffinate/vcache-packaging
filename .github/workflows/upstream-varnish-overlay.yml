@@ -1,0 +1,27 @@
+name: experimental upstream Varnish overlay
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Evidence only: it uploads an experimental package and manifest but never
+    # publishes a release or repository artifact.
+    - cron: "15 5 * * 2"
+
+permissions:
+  contents: read
+
+jobs:
+  debian-13-amd64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/probe-upstream-varnish-overlay.sh work
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: experimental-upstream-varnish-overlay-debian-13-amd64
+          path: |
+            work/packages/upstream-varnish-overlay/
+            work/logs/
+          if-no-files-found: error

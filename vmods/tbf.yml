@@ -9,6 +9,7 @@ sources:
   head: master
   default:
     ref: v2.8
+    commit: 42da01e18bd67d32bd891c87c166e967d47dee3c
     version: "2.8"
 package:
   summary: Token bucket rate-limiting VMOD for Vinyl Cache
