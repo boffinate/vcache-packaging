@@ -104,6 +104,7 @@ ENGINE_SOURCE_VALUES = ("required",)
 MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 ARTIFACT_BASENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.so$")
 RUST_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+PACKAGE_REVISION_RE = re.compile(r"^[1-9][0-9]*$")
 # Mapping keys the parser accepts; also the by_series key charset (DESIGN.md).
 MAPPING_KEY_RE = re.compile(r"^[a-z0-9_.-]+$")
 
@@ -114,7 +115,7 @@ MAPPING_KEY_RE = re.compile(r"^[a-z0-9_.-]+$")
 KEYS = {
     "engines_doc": ({"schema", "targets", "engines"}, {"toolchains"}),
     "target": ({"image", "format", "runner", "platform", "package_arch"}, set()),
-    "engine": ({"id", "family", "series", "kind", "source", "targets"}, {"packages"}),
+    "engine": ({"id", "family", "series", "kind", "source", "targets"}, {"packages", "package_revision"}),
     "engine_source_release": ({"tarball_url", "sha256"}, set()),
     "engine_source_trunk": ({"git_url", "branch"}, set()),
     "toolchains": ({"rust"}, set()),
@@ -237,6 +238,16 @@ def _load_engines(path: Path, errors: list) -> tuple[list, dict, dict]:
         if packages == "true":
             if kind != "release":
                 errors.append(f'{ectx}: packages "true" requires kind release')
+            if "package_revision" not in engine:
+                errors.append(f"{ectx}: packages \"true\" requires package_revision")
+            package_revision = _str_value(engine, "package_revision", ectx, errors)
+            if package_revision and not PACKAGE_REVISION_RE.match(package_revision):
+                errors.append(
+                    f"{ectx}: package_revision must match {PACKAGE_REVISION_RE.pattern!r}, "
+                    f"got {package_revision!r}"
+                )
+        elif "package_revision" in engine:
+            errors.append(f'{ectx}: package_revision is valid only when packages is "true"')
         source = engine.get("source")
         if not isinstance(source, dict):
             errors.append(f"{ectx}: 'source' must be a mapping")
@@ -573,13 +584,14 @@ def engine_version(engine: dict) -> str:
 def engine_package_version(engine: dict) -> dict:
     """The engine package's own version, as each format's dependency writes it.
 
-    The engine packages are always revision 1 of their upstream version
-    (there is exactly one packaging of each pinned engine release). The RPM
-    string carries ``%{?dist}`` so a spec's exact-version Requires matches the
-    dist-tagged release the engine spec produces in the same buildroot.
+    The catalog's package_revision is part of the published package identity.
+    The RPM string carries ``%{?dist}`` so a spec's exact-version Requires
+    matches the dist-tagged release the engine spec produces in the same
+    buildroot.
     """
     version = engine_version(engine)
-    return {"deb": f"{version}-1", "rpm": f"{version}-1%{{?dist}}"}
+    revision = engine["package_revision"]
+    return {"deb": f"{version}-{revision}", "rpm": f"{version}-{revision}%{{?dist}}"}
 
 
 def vmod_modules(vmod: dict) -> list:
@@ -599,13 +611,14 @@ def vmod_artifacts(vmod: dict) -> list:
 
 
 def vmod_package_version(upstream_version: str, engine: dict) -> dict:
-    """DESIGN.md naming: family-marked Debian and RPM package versions."""
+    """DESIGN.md naming: family-, engine-, and revision-marked package versions."""
     ev = engine_version(engine)
     marker = family_contract(engine["family"])["version_marker"]
+    revision = engine["package_revision"]
     return {
-        "deb": f"{upstream_version}-1~{marker}{ev}",
+        "deb": f"{upstream_version}-1~{marker}{ev}.{revision}",
         "rpm_version": upstream_version,
-        "rpm_release": f"1.{marker}{ev}",
+        "rpm_release": f"1.{marker}{ev}.{revision}",
     }
 
 
@@ -757,7 +770,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
     else:
         pairs += [("ENGINE_GIT_URL", source["git_url"]), ("ENGINE_BRANCH", source["branch"])]
     if engine["packages"] == "true":
-        pairs += [("ENGINE_DEB_VERSION", f"{ev}-1"), ("ENGINE_RPM_VERSION", ev), ("ENGINE_RPM_RELEASE", "1")]
+        pairs += [("ENGINE_PACKAGE_REVISION", engine["package_revision"])]
     if target_id is not None:
         if target_id not in engine["targets"]:
             raise CatalogError(
@@ -802,7 +815,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
         if vmod_build(vmod) == "cargo":
             rust = catalog["toolchains"]["rust"]
             pairs += [("RUST_VERSION", rust["version"]), ("RUST_BOOTSTRAP", rust["bootstrap"])]
-        if resolved["version"]:
+        if resolved["version"] and engine["packages"] == "true":
             pv = vmod_package_version(resolved["version"], engine)
             pairs += [
                 ("VMOD_DEB_VERSION", pv["deb"]),

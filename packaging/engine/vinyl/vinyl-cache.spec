@@ -2,11 +2,11 @@
 # Simplified from v1 recipes/el9/vinyl-cache.spec.in: no ABI/cohort provides,
 # no external dependency generator, no systemd integration, no hardening
 # ceremony. Identity is stamped at build time by scripts/build-engine.sh:
-#   rpmbuild -bb --define "engine_version 9.0.1" [--define "engine_release 1"]
+#   rpmbuild -bb --define "engine_version 9.0.1" --define "engine_release <package-revision>"
 #            [--define "engine_srcdir <tarball top dir>"]
 #            [--define "build_date $(date '+%a %b %d %Y')"]
 %{!?engine_version:%{error:pass --define "engine_version <ver>"}}
-%{!?engine_release:%global engine_release 1}
+%{!?engine_release:%{error:pass --define "engine_release <package-revision>"}}
 %{!?engine_srcdir:%global engine_srcdir vinyl-cache-%{engine_version}}
 %{!?build_date:%global build_date Thu Jan 01 1970}
 

@@ -3,7 +3,7 @@
 # archive layout and normalized payload remain target-container proof; this
 # recipe is deliberately not publishable while engines.yml says packages false.
 %{!?engine_version:%{error:pass --define "engine_version <ver>"}}
-%{!?engine_release:%global engine_release 1}
+%{!?engine_release:%{error:pass --define "engine_release <package-revision>"}}
 %{!?engine_srcdir:%global engine_srcdir varnish-%{engine_version}}
 %{!?build_date:%global build_date Thu Jan 01 1970}
 
