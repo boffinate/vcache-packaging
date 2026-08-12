@@ -283,6 +283,8 @@ case "$PKGFMT" in
 deb)
   cp -R "/work/tmp/$TAG-recipe/debian" "$SRC/debian"
   (cd "$SRC" && dpkg-buildpackage -us -uc -b)
+  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" \
+    /work/tmp/"$VMOD_PACKAGE_NAME"*.deb
   step collect
   cp /work/tmp/"$VMOD_PACKAGE_NAME"_*.deb "$OUT/"
   ;;
@@ -294,6 +296,7 @@ rpm)
   cp -a "$SRC" "/work/tmp/$NAMEDIR"
   tar -C /work/tmp -czf "$TOPD/SOURCES/$NAMEDIR.tar.gz" "$NAMEDIR"
   rpmbuild -bb --define "_topdir $TOPD" "/work/tmp/$TAG-recipe/$VMOD_PACKAGE_NAME.spec"
+  assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$TOPD"/RPMS/*/*.rpm
   step collect
   cp "$TOPD"/RPMS/*/"$VMOD_PACKAGE_NAME"-*.rpm "$OUT/"
   ;;

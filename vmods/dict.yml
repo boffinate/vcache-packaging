@@ -9,7 +9,7 @@ sources:
   head: master
   default:
     ref: v1.7
-    commit: 784584d272894a39cf995377618aad551a196424
+    commit: "784584d272894a39cf995377618aad551a196424"
     version: "1.7"
 package:
   summary: Dictionary look-up VMOD for Vinyl Cache

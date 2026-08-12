@@ -809,6 +809,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("TARGET_ID", target_id),
             ("TARGET_IMAGE", target["image"]),
             ("TARGET_FORMAT", target["format"]),
+            ("TARGET_RUNNER", target["runner"]),
             ("TARGET_PLATFORM", target["platform"]),
             ("TARGET_PACKAGE_ARCH", target["package_arch"]),
             ("ENGINE_DEVELOPMENT_PACKAGE", engine_development_package(engine, target["format"])),
@@ -1270,6 +1271,18 @@ def cmd_cohort_env(args) -> int:
     return 0
 
 
+def cmd_select_engine(args) -> int:
+    catalog = load_catalog(args.root)
+    matches = [engine["id"] for engine in catalog["engines"]
+               if engine["family"] == args.family and engine["kind"] == args.kind]
+    if len(matches) != 1:
+        raise CatalogError(
+            f"expected exactly one {args.kind} engine in family {args.family!r}, got {matches!r}"
+        )
+    print(matches[0])
+    return 0
+
+
 def cmd_merge(args) -> int:
     results_dir = Path(args.results_dir)
     if not results_dir.is_dir():
@@ -1361,6 +1374,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--target", required=True)
     add_root(p)
     p.set_defaults(func=cmd_cohort_env)
+
+    p = sub.add_parser("select-engine", help="select the unique engine matching a family and kind")
+    p.add_argument("--family", required=True, choices=FAMILIES)
+    p.add_argument("--kind", required=True, choices=KINDS)
+    add_root(p)
+    p.set_defaults(func=cmd_select_engine)
 
     p = sub.add_parser("merge", help="fold cell result JSONs into the state file")
     p.add_argument("--results-dir", required=True)

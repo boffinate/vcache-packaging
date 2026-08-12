@@ -6,10 +6,10 @@
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
-[ $# -eq 1 ] || die "usage: probe-upstream-varnish-overlay.sh <workdir>"
-WORKDIR=$(prepare_workdir "$1")
-ENGINE_ID=varnish-9.0.3
-TARGET=debian-13-amd64
+[ $# -eq 3 ] || die "usage: probe-upstream-varnish-overlay.sh <engine-id> <target> <workdir>"
+ENGINE_ID=$1
+TARGET=$2
+WORKDIR=$(prepare_workdir "$3")
 VMOD_ID=basicauth
 OVERLAY_PACKAGE_NAME="varnish-overlay-vmod-$VMOD_ID"
 TAG="upstream-overlay-$ENGINE_ID-$TARGET-$VMOD_ID"

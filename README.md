@@ -29,13 +29,10 @@ python3 tools/matrix.py merge --results-dir work/results --state-file work/state
 python3 tools/matrix.py render --state-file work/state.json --out work/index.html
 ```
 
-The release workflow also installs each complete engine/target package cohort
-in one fresh container and starts the family daemon with a generated VCL that
-imports every promoted module. The experimental, non-publishing upstream
-Varnish overlay proof can be run on a native amd64 host with:
+The release workflow also installs each complete engine/target package cohort in one fresh container and starts the family daemon with a generated VCL that imports every promoted module. The experimental, non-publishing upstream Varnish overlay proof can be run on a native amd64 host with:
 
 ```sh
-scripts/probe-upstream-varnish-overlay.sh work/
+scripts/probe-upstream-varnish-overlay.sh "$(python3 tools/matrix.py select-engine --family varnish --kind release)" debian-13-amd64 work/
 ```
 
 ## Adding a VMOD

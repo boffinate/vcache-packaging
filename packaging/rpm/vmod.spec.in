@@ -3,7 +3,7 @@
 
 # The VMOD is a dlopen()ed plugin, not a system library: suppress its
 # automatic soname Provides while leaving Requires generation intact.
-%global vmoddir %{_libdir}/@VMOD_DIR_COMPONENT@/vmods
+%global vmoddir %(pkg-config --variable=vmoddir @ENGINE_API@)
 %global __provides_exclude_from ^%{vmoddir}/.*\\.so$
 
 # Serial build: VMOD vmodtool.py make rules race under -j (duplicate vcc_if

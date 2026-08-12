@@ -392,6 +392,7 @@ def catalog_target_registry_drives_metadata_and_rejects_bad_entries():
         eq(target["format"], "rpm", "target format comes from registry")
         eq(target["runner"], "ubuntu-24.04", "target runner comes from registry")
         pairs = dict(matrix.env_pairs(catalog, "vinyl-9.0.1", target_id="el10-x86_64"))
+        eq(pairs["TARGET_RUNNER"], "ubuntu-24.04", "target runner is exported")
         eq(pairs["TARGET_PLATFORM"], "linux/amd64", "target platform is exported")
         eq(pairs["TARGET_PACKAGE_ARCH"], "x86_64", "target package architecture is exported")
     with tempfile.TemporaryDirectory() as tmp:
@@ -1046,6 +1047,7 @@ def env_output_is_sh_sourceable():
         eq(values["ENGINE_RPM_ARCHIVE_STEM"], "'vinyl-cache'", "RPM archive identity comes from family")
         eq(values["ENGINE_RECIPE_DIR"], "'packaging/engine/vinyl'", "recipe directory comes from family")
         eq(values["TARGET_ID"], "'el10-x86_64'", "TARGET_ID")
+        eq(values["TARGET_RUNNER"], "'ubuntu-24.04'", "TARGET_RUNNER")
         eq(values["VMOD_REF"], "'v1.7'", "VMOD_REF")
         eq(values["VMOD_EXPECTED_COMMIT"], "'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
            "promoted release source commit")
@@ -1082,6 +1084,11 @@ def env_output_is_sh_sourceable():
         code, _, err = run_cli(["env", "--engine", "vinyl-trunk", "--target", "el10-x86_64", "--root", root])
         eq(code, 1, "target not in engine targets is an error")
         ok("not a target of engine" in err, "target error message")
+
+        code, out, _ = run_cli(["select-engine", "--family", "varnish", "--kind", "release",
+                                "--root", root])
+        eq(code, 0, "select-engine exit code")
+        eq(out.strip(), "varnish-9.0.3", "select-engine returns the unique catalog match")
 
 
 @test
@@ -1392,6 +1399,8 @@ def vmod_package_collection_and_install_use_family_names():
         ok(expected in combined, f"VMOD package flow uses {expected}")
     ok(script.count('install_engine_packages "$ENGINE_PKGDIR"') == 3,
        "build and fresh-install paths share engine package installation")
+    ok('/work/tmp/"$VMOD_PACKAGE_NAME"*.deb' in script and '"$TOPD"/RPMS/*/*.rpm' in script,
+       "every binary emitted by a VMOD recipe gets a native architecture check")
     ok('for c in vinyld varnishd' not in script, "VMOD load checks use the family daemon")
 
 
@@ -1519,8 +1528,10 @@ def upstream_varnish_overlay_is_strictly_non_publishing_evidence():
     root = Path(__file__).resolve().parent.parent
     workflow = (root / ".github" / "workflows" / "upstream-varnish-overlay.yml").read_text()
     probe = (root / "scripts" / "probe-upstream-varnish-overlay.sh").read_text()
-    ok("workflow_dispatch:" in workflow and "schedule:" in workflow,
-       "upstream overlay proof is manually runnable and monitored")
+    ok("workflow_dispatch:" in workflow and "schedule:" not in workflow,
+       "upstream overlay proof is manual evidence, not fleet surveillance")
+    ok("select-engine --family varnish --kind release" in workflow and "TARGET_RUNNER" in workflow,
+       "overlay engine and runner are selected from the catalog")
     ok("gh release" not in workflow and "release.yml" not in workflow,
        "experimental overlay workflow has no publication path")
     ok("STRICT_ABI=$(dpkg-query" in probe and "varnishd-abi-" in probe,
@@ -1826,7 +1837,8 @@ def recipe_varnish_family_generation():
         eq([path.name for path in written], ["varnish-vmod-dict.spec"], "Varnish RPM spec filename")
         spec = written[0].read_text()
         eq(recipe.TOKEN_RE.findall(spec), [], "unresolved tokens in Varnish RPM spec")
-        ok("%global vmoddir %{_libdir}/varnish/vmods" in spec, "Varnish RPM VMOD directory")
+        ok("%global vmoddir %(pkg-config --variable=vmoddir varnishapi)" in spec,
+           "Varnish RPM VMOD directory follows the selected engine API")
         ok("Requires:       varnish%{?_isa} = 9.0.3-1%{?dist}" in spec,
            "Varnish exact RPM runtime dependency")
         ok("BuildRequires:  varnish-devel = 9.0.3-1%{?dist}" in spec,
@@ -1859,6 +1871,8 @@ def recipe_cargo_debian_and_rpm_mapping():
            "Cargo RPM native dependencies")
         ok("cargo build --release --locked --offline" in spec, "Cargo RPM build")
         ok("--mapping reqwest=libvmod_reqwest.so" in spec, "Cargo RPM artifact mapping")
+        ok("%global vmoddir %(pkg-config --variable=vmoddir vinylapi)" in spec,
+           "Cargo RPM install follows the selected engine's pkg-config VMOD directory")
 
 
 @test
