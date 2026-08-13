@@ -440,6 +440,13 @@ def catalog_basicauth_tracks_its_real_head_branch():
 
 
 @test
+def catalog_dispatch_declares_its_required_engine_source():
+    catalog = matrix.load_catalog(matrix.default_root())
+    eq(catalog["vmods"]["dispatch"].get("engine_source"), "required",
+       "dispatch receives VINYLSRC because upstream configure requires it")
+
+
+@test
 def catalog_promoted_vinyl_vmods_are_not_implicitly_varnish_promoted():
     catalog = matrix.load_catalog(matrix.default_root())
     for vmod_id in ("cachetag", "dict", "pesi", "remoteip", "tbf"):

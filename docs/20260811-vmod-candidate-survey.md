@@ -46,7 +46,7 @@ All autotools with a `bootstrap` script, actively maintained (2026 commits), Fre
 
 ## Group 2 — uplex, add with eyes open (4 entries)
 
-- **pesi** (parallel ESI VDP), **tus** (resumable uploads), **zipflow** (ZIP streaming VDP): the v1 sweep — run in July 2026, after the Vinylize commits — classified all three `needs-source-tree`: configure demands the engine's source tree, which the harness does not provide. They will be permanently red at configure on every cell until upstream changes that. Red is information, but these reds are structural. pesi (real 1.3.2 release, 2024) is the one worth re-verifying first in case the verdict is stale.
+- **dispatch** (integer-driven VCL dispatch), **pesi** (parallel ESI VDP), **tus** (resumable uploads), **zipflow** (ZIP streaming VDP): upstream configure demands the engine's source tree. The shared `engine_source: required` provisioning path supplies it; without that catalog declaration the failure is structural rather than compatibility evidence.
 - **file** (libvmod-file, re-read files at intervals): not vinylized; updated 2025-09 for Varnish 8.0. Sweep: green on Varnish 9.0.3, red on vinyl (`VRT_synth_page` removed). Add with `families: varnish`.
 
 ### Group 2 verification (2026-08-11, same day)

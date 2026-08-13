@@ -19,6 +19,7 @@ sources:
   default:
     ref: master
     version: "0~master"
+engine_source: required
 package:
   summary: Dispatch to VCL labels or subroutines by integer id for Vinyl Cache
   description:
