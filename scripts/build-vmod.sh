@@ -285,7 +285,8 @@ deb)
   (cd "$SRC" && dpkg-buildpackage -us -uc -b)
   assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" /work/tmp/*.deb
   step collect
-  cp /work/tmp/"$VMOD_PACKAGE_NAME"_*.deb "$OUT/"
+  PACKAGE_FILE=$(select_native_package deb "$VMOD_PACKAGE_NAME" /work/tmp/*.deb)
+  cp "$PACKAGE_FILE" "$OUT/"
   ;;
 rpm)
   NAMEDIR="$VMOD_PACKAGE_NAME-${VMOD_VERSION:?}"
@@ -297,19 +298,15 @@ rpm)
   rpmbuild -bb --define "_topdir $TOPD" "/work/tmp/$TAG-recipe/$VMOD_PACKAGE_NAME.spec"
   assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$TOPD"/RPMS/*/*.rpm
   step collect
-  cp "$TOPD"/RPMS/*/"$VMOD_PACKAGE_NAME"-*.rpm "$OUT/"
+  PACKAGE_FILE=$(select_native_package rpm "$VMOD_PACKAGE_NAME" "$TOPD"/RPMS/*/*.rpm)
+  cp "$PACKAGE_FILE" "$OUT/"
   ;;
 esac
 
 step pkg-verify
 VMOD_DIR=$(pkg-config --variable=vmoddir "$ENGINE_API")
 [ -n "$VMOD_DIR" ] || { echo "$ENGINE_API reports an empty VMOD directory" >&2; exit 1; }
-case "$PKGFMT" in
-deb) PACKAGE_FILE=$(find "$OUT" -maxdepth 1 -type f -name "$VMOD_PACKAGE_NAME"'_*.deb') ;;
-rpm) PACKAGE_FILE=$(find "$OUT" -maxdepth 1 -type f -name "$VMOD_PACKAGE_NAME"'-*.rpm') ;;
-esac
-[ "$(printf '%s\n' "$PACKAGE_FILE" | grep -c .)" = 1 ] \
-  || { echo "expected exactly one native VMOD package in $OUT" >&2; exit 1; }
+PACKAGE_FILE=$(select_native_package "$PKGFMT" "$VMOD_PACKAGE_NAME" "$OUT"/*)
 python3 /repo/tools/package_contract.py \
   --format "$PKGFMT" \
   --package "$PACKAGE_FILE" \

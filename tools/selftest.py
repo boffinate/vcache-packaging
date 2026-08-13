@@ -1639,8 +1639,8 @@ def vmod_package_collection_and_install_use_family_names():
         'ENGINE_DEVELOPMENT_PACKAGE=${ENGINE_DEVELOPMENT_PACKAGE:?}',
         'NAMEDIR="$VMOD_PACKAGE_NAME-${VMOD_VERSION:?}"',
         '"/work/tmp/$TAG-recipe/$VMOD_PACKAGE_NAME.spec"',
-        '"$VMOD_PACKAGE_NAME"_*.deb',
-        '"$VMOD_PACKAGE_NAME"-*.rpm',
+        'select_native_package deb "$VMOD_PACKAGE_NAME" /work/tmp/*.deb',
+        'select_native_package rpm "$VMOD_PACKAGE_NAME" "$TOPD"/RPMS/*/*.rpm',
         '"$ENGINE_RUNTIME_PACKAGE"_*.deb',
         '"$ENGINE_DEVELOPMENT_PACKAGE"_*.deb',
         '"$ENGINE_RUNTIME_PACKAGE"-*.rpm',
@@ -1653,6 +1653,41 @@ def vmod_package_collection_and_install_use_family_names():
     ok('/work/tmp/*.deb' in script and '"$TOPD"/RPMS/*/*.rpm' in script,
        "every binary emitted by a VMOD recipe gets a native architecture check")
     ok('for c in vinyld varnishd' not in script, "VMOD load checks use the family daemon")
+
+
+@test
+def rpm_collection_selects_the_main_package_by_metadata():
+    root = Path(__file__).resolve().parent.parent
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        fake_bin = tmp / "bin"
+        packages = tmp / "packages"
+        fake_bin.mkdir()
+        packages.mkdir()
+        rpm = fake_bin / "rpm"
+        rpm.write_text(textwrap.dedent("""\
+            #!/bin/sh
+            case "$4" in
+              *-debuginfo-*) printf '%s\n' vinyl-vmod-dict-debuginfo ;;
+              *-debugsource-*) printf '%s\n' vinyl-vmod-dict-debugsource ;;
+              *) printf '%s\n' vinyl-vmod-dict ;;
+            esac
+            """))
+        rpm.chmod(0o755)
+        main = packages / "vinyl-vmod-dict-1.7-1.el10.x86_64.rpm"
+        debuginfo = packages / "vinyl-vmod-dict-debuginfo-1.7-1.el10.x86_64.rpm"
+        debugsource = packages / "vinyl-vmod-dict-debugsource-1.7-1.el10.x86_64.rpm"
+        for package in (main, debuginfo, debugsource):
+            package.touch()
+        result = subprocess.run(
+            ["bash", "-c",
+             'source "$1"; select_native_package rpm vinyl-vmod-dict "$2"/*.rpm',
+             "bash", str(root / "scripts" / "lib.sh"), str(packages)],
+            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, "RPM selection accepts one main package beside debug packages")
+        eq(result.stdout.strip(), str(main), "RPM selection returns only the declared package name")
 
 
 @test

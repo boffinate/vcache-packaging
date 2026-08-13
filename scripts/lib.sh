@@ -352,6 +352,32 @@ install_engine_packages() {
   esac
 }
 
+# select_native_package FORMAT EXPECTED_NAME PACKAGE...
+# Print the one binary package whose native metadata declares EXPECTED_NAME.
+# Filename prefixes are insufficient for RPM because rpmbuild also emits
+# <name>-debuginfo and <name>-debugsource packages by default.
+select_native_package() {
+  local format=$1 expected_name=$2
+  shift 2
+  local package actual_name selected="" matches=0
+  for package in "$@"; do
+    [ -f "$package" ] || continue
+    case "$format" in
+      deb) actual_name=$(dpkg-deb -f "$package" Package) || return ;;
+      rpm) actual_name=$(rpm -qp --qf '%{NAME}\n' "$package") || return ;;
+      *) die "unknown package format: $format" ;;
+    esac
+    [ "$actual_name" = "$expected_name" ] || continue
+    selected=$package
+    matches=$((matches + 1))
+  done
+  [ "$matches" -eq 1 ] || {
+    echo "expected exactly one native package named $expected_name, found $matches" >&2
+    return 1
+  }
+  printf '%s\n' "$selected"
+}
+
 # Preserve generated daemon-private headers in the relocatable engine prefix.
 # Upstream install rules are not a stable source for these files on trunk, but
 # engine_source VMODs must compile against the headers from the actual engine
