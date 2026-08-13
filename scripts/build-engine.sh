@@ -103,6 +103,11 @@ step make
 make -j"$(nproc)"
 make install
 
+# Carry generated daemon-private headers with the prefix artifact. Trunk's
+# install rules do not reliably install these, while deep-integration VMODs
+# need the headers produced by this exact engine build.
+preserve_engine_private_headers "$SRC" "$PREFIX" "$ENGINE_DAEMON"
+
 step daemon
 [ -x "$PREFIX/sbin/$ENGINE_DAEMON" ] \
   || { echo "no $ENGINE_DAEMON in $PREFIX/sbin" >&2; exit 1; }

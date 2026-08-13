@@ -433,6 +433,13 @@ def catalog_real_targets_use_native_runners():
 
 
 @test
+def catalog_basicauth_tracks_its_real_head_branch():
+    catalog = matrix.load_catalog(matrix.default_root())
+    eq(catalog["vmods"]["basicauth"]["sources"]["head"], "master",
+       "basicauth trunk source follows the upstream default branch")
+
+
+@test
 def catalog_promoted_vinyl_vmods_are_not_implicitly_varnish_promoted():
     catalog = matrix.load_catalog(matrix.default_root())
     for vmod_id in ("cachetag", "dict", "pesi", "remoteip", "tbf"):
@@ -1418,6 +1425,40 @@ def immutable_downloads_retry_transient_failures():
         eq(attempts.read_text().strip(), "5", "download attempts are bounded at five")
         ok(not exhausted.exists() and not Path(f"{exhausted}.part").exists(),
            "exhausted download publishes neither a destination nor a partial file")
+
+
+@test
+def engine_artifact_carries_and_restores_generated_private_headers():
+    root = Path(__file__).resolve().parent.parent
+    engine_script = (root / "scripts" / "build-engine.sh").read_text()
+    library = (root / "scripts" / "lib.sh").read_text()
+    ok('preserve_engine_private_headers "$SRC" "$PREFIX" "$ENGINE_DAEMON"' in engine_script,
+       "engine builds preserve their generated private headers before archiving")
+    ok('seed_engine_private_headers "$PREFIX" "$ENGINE_TREE" "$ENGINE_DAEMON"' in library,
+       "VMOD source provisioning restores private headers from the engine artifact")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        source = tmp / "source"
+        prefix = tmp / "prefix"
+        provisioned = tmp / "provisioned"
+        source_cache = source / "bin" / "vinyld" / "cache"
+        source_cache.mkdir(parents=True)
+        (source_cache / "cache_vinyld.h").write_text("generated trunk header\n")
+        (source_cache / "cache_main.c").write_text("engine source\n")
+        result = subprocess.run(
+            ["bash", "-c",
+             'source "$1"; preserve_engine_private_headers "$2" "$3" vinyld; '
+             'seed_engine_private_headers "$3" "$4" vinyld vinyl-cache vinylapi',
+             "bash", str(root / "scripts" / "lib.sh"), str(source), str(prefix), str(provisioned)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, "private-header artifact round trip succeeds")
+        restored = provisioned / "bin" / "vinyld" / "cache" / "cache_vinyld.h"
+        eq(restored.read_text(), "generated trunk header\n",
+           "the provisioned source tree receives the engine build's generated header")
+        ok(not (prefix / "share" / "vcache-packaging" / "engine-source" / "vinyld" /
+                "cache" / "cache_main.c").exists(),
+           "the engine artifact carries headers rather than the complete build tree")
 
 
 @test

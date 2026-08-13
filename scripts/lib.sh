@@ -352,6 +352,42 @@ install_engine_packages() {
   esac
 }
 
+# Preserve generated daemon-private headers in the relocatable engine prefix.
+# Upstream install rules are not a stable source for these files on trunk, but
+# engine_source VMODs must compile against the headers from the actual engine
+# build rather than a separately cloned source tree.
+preserve_engine_private_headers() {
+  local source_tree=$1 prefix=$2 daemon=$3
+  local source_cache="$source_tree/bin/$daemon/cache"
+  [ -d "$source_cache" ] || return 0
+  local artifact_dir="$prefix/share/vcache-packaging/engine-source/$daemon/cache"
+  mkdir -p "$artifact_dir"
+  local header
+  for header in "$source_cache"/*.h; do
+    [ -f "$header" ] || continue
+    cp -a "$header" "$artifact_dir/"
+  done
+}
+
+# Seed a provisioned engine source tree from the exact engine build artifact,
+# falling back to installed development headers for older prefix artifacts.
+seed_engine_private_headers() {
+  local prefix=$1 engine_tree=$2 daemon=$3 source_name=$4 api=$5
+  local includedir=""
+  includedir=$(pkg-config --variable=includedir "$api" 2>/dev/null || true)
+  local cache_dir
+  for cache_dir in \
+    "$prefix/share/vcache-packaging/engine-source/$daemon/cache" \
+    "$includedir/cache" \
+    "$prefix/include/$source_name/cache"; do
+    if [ -d "$cache_dir" ]; then
+      mkdir -p "$engine_tree/bin/$daemon/cache"
+      cp -a "$cache_dir/." "$engine_tree/bin/$daemon/cache/"
+      return 0
+    fi
+  done
+}
+
 # write_engine_source_step PATH
 # Append the engine-source provisioning step to a generated container script
 # (DESIGN.md decision 14). When the manifest sets engine_source: required,
@@ -394,20 +430,10 @@ if [ "${VMOD_ENGINE_SOURCE:-}" = required ]; then
        if [ -f "$vsc" ]; then python3 "$VSCTOOL" -h "$vsc"; fi
      done)
   fi
-  # Trunk source clones do not contain the generated daemon-private headers
-  # that deep-integration VMODs include (for example
-  # bin/vinyld/cache/cache_vinyld.h). The installed engine development
-  # prefix does contain them, so seed the source tree from that authoritative
-  # build output. Release archives already carry these files; copying the
-  # installed versions is harmless and keeps both paths consistent.
-  ENGINE_INCLUDEDIR=$(pkg-config --variable=includedir "$ENGINE_API" 2>/dev/null || true)
-  for includedir in "$ENGINE_INCLUDEDIR" "$PREFIX/include/$ENGINE_SOURCE_NAME"; do
-    if [ -d "$includedir/cache" ]; then
-      mkdir -p "$ENGINE_TREE/bin/$ENGINE_DAEMON/cache"
-      cp -a "$includedir/cache/." "$ENGINE_TREE/bin/$ENGINE_DAEMON/cache/"
-      break
-    fi
-  done
+  # Restore daemon-private headers captured from the exact engine build, with
+  # an installed-header fallback for older artifacts.
+  seed_engine_private_headers "$PREFIX" "$ENGINE_TREE" "$ENGINE_DAEMON" \
+    "$ENGINE_SOURCE_NAME" "$ENGINE_API"
   export VINYLSRC="$ENGINE_TREE" VARNISHSRC="$ENGINE_TREE"
   echo "engine source tree provisioned at $ENGINE_TREE"
 fi

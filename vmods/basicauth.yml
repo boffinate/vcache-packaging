@@ -6,7 +6,7 @@ upstream:
   git: https://git.gnu.org.ua/vmod-basicauth.git
   homepage: https://git.gnu.org.ua/vmod-basicauth
 sources:
-  head: main
+  head: master
   default:
     ref: v2.2
     version: "2.2"
