@@ -47,6 +47,9 @@ override_dh_auto_test:
 
 override_dh_auto_install:
 	dh_auto_install
-	find debian/@PACKAGE_NAME@ \( -name '*.la' -o -name '*.a' \) -delete
+	python3 /repo/tools/vmod-artifacts.py \
+	  --stage-root "debian/@PACKAGE_NAME@" \
+	  --vmod-dir "$$(pkg-config --variable=vmoddir @ENGINE_API@)" \
+	  --modules @VMOD_MODULES@
 
 endif

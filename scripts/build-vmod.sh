@@ -154,9 +154,25 @@ build_autotools() {
   make -j1 ${VMOD_BUILD_TARGET:-all}
 
   step modules
-  SOS=$(find . -path '*/.libs/libvmod_*.so' | sort)
-  [ -n "$SOS" ] || { echo "build produced no libvmod_*.so" >&2; exit 1; }
-  load_modules $SOS
+  # package.modules is the public module contract. Some projects also build
+  # test-only libvmod_*.so files with the same VCL identity (for example
+  # Slash's witness build); loading every matching file would misidentify
+  # those as separate VMODs and turn a good build into a false red cell.
+  built_sos=()
+  while IFS= read -r -d '' so; do built_sos+=("$so"); done < <(find . -path '*/.libs/libvmod_*.so' -type f -print0)
+  sos=()
+  for mod in ${VMOD_MODULES:-$VMOD_ID}; do
+    matches=()
+    for so in "${built_sos[@]}"; do
+      [ "${so##*/}" = "libvmod_$mod.so" ] && matches+=("$so")
+    done
+    [ "${#matches[@]}" -eq 1 ] || {
+      echo "expected exactly one public libvmod_$mod.so, found ${#matches[@]}" >&2
+      exit 1
+    }
+    sos+=("${matches[0]}")
+  done
+  load_modules "${sos[@]}"
 
   step check
   # Upstream's own suite, only when the manifest says so (tests: make-check).

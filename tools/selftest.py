@@ -2265,6 +2265,33 @@ def cargo_artifact_helper_accepts_rers_mapping():
 
 
 @test
+def vmod_artifact_helper_keeps_only_declared_modules():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        stage = tmp / "stage"
+        vmod_dir = "/usr/lib/vinyl-cache/vmods"
+        destination = stage / vmod_dir.lstrip("/")
+        destination.mkdir(parents=True)
+        (destination / "libvmod_slash.so").write_bytes(b"public shared object")
+        (destination / "libvmod_slashwitness.so").write_bytes(b"test shared object")
+        (stage / "usr/bin").mkdir(parents=True)
+        (stage / "usr/bin/slashmap").write_bytes(b"utility")
+        command = [
+            sys.executable, str(Path(__file__).resolve().parent / "vmod-artifacts.py"),
+            "--stage-root", str(stage), "--vmod-dir", vmod_dir, "--modules", "slash",
+        ]
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        eq(result.returncode, 0, "VMOD artifact helper accepts the declared public module")
+        eq([path.relative_to(stage).as_posix() for path in stage.rglob("*") if path.is_file()],
+           ["usr/lib/vinyl-cache/vmods/libvmod_slash.so"],
+           "VMOD artifact helper removes test modules and upstream utilities")
+        (destination / "libvmod_slash.so").unlink()
+        missing = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        ok(missing.returncode != 0 and "missing or empty" in missing.stderr,
+           "VMOD artifact helper fails before accepting an incomplete staged payload")
+
+
+@test
 def recipe_refusals_and_unresolved_tokens():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)

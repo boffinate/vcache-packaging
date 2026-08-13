@@ -150,6 +150,7 @@ def build_tokens(vmod: dict, engine: dict, maintainer: tuple, now: datetime) -> 
         "VMOD_BUILD": build,
         "CARGO_BUILD": "1" if build == "cargo" else "0",
         "CARGO_ARTIFACT_ARGS": " ".join(f"--mapping {module}={artifact}" for module, artifact in zip(modules, artifacts)),
+        "VMOD_MODULES": " ".join(modules),
         "BUILD_TARGET": package.get("build_target", "all"),
         "MAINTAINER_NAME": maintainer[0],
         "MAINTAINER_EMAIL": maintainer[1],

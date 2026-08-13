@@ -60,10 +60,10 @@ python3 /repo/tools/cargo-artifacts.py \
   @CARGO_ARTIFACT_ARGS@
 %else
 %make_install
-# Ship the VMOD shared object and nothing else: upstream-installed docs and
-# man pages would otherwise fail the build as installed-but-unpackaged.
-rm -rf %{buildroot}%{_docdir} %{buildroot}%{_mandir}
-find %{buildroot} \( -name '*.la' -o -name '*.a' \) -delete
+python3 /repo/tools/vmod-artifacts.py \
+  --stage-root "%{buildroot}" \
+  --vmod-dir "%{vmoddir}" \
+  --modules @VMOD_MODULES@
 %endif
 
 %files

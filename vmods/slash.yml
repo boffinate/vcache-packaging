@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# SLASH/ Vinyl Cache storage engines (schema vmod/1, DESIGN.md).
+#
+# Upstream master tracks Vinyl Cache main / 9.0 and explicitly supports Vinyl
+# only. Its configure.ac requires VINYLSRC, then includes daemon-private and
+# libvsc headers to implement the buddy and Fellow stevedores. The shared
+# engine_source: required path supplies that source tree from the selected
+# Vinyl engine artifact; Varnish compatibility cells remain an honest red.
+#
+# The tree also builds libvmod_slashwitness.so for its upstream test suite.
+# It has the same VCL module identity as slash and is deliberately not a
+# public module or packaged payload.
+schema: vmod/1
+id: slash
+upstream:
+  git: https://code.uplex.de/uplex-varnish/slash.git
+  homepage: https://code.uplex.de/uplex-varnish/slash
+sources:
+  head: master
+  default:
+    ref: master
+    commit: 7be4126892dbc58a03f701632e076f312e0332ed
+    version: "1.0.0~rc3+trunk"
+package:
+  summary: Buddy and Fellow storage engines for Vinyl Cache
+  description:
+    - SLASH provides the buddy and Fellow storage engines for Vinyl Cache,
+    - plus loadmasters that route objects across multiple storage instances.
+    - Buddy is an in-memory allocator with fair waiting allocations, while
+    - Fellow persists objects to flash storage or disks and loads them on
+    - demand. Both are configured through the slash VMOD.
+  license: LGPL-2.1 AND BSD-2-Clause
+  build_deps:
+    debian:
+      - libncurses-dev
+      - libpcre2-dev
+      - liburing-dev
+      - libxxhash-dev
+      - python3
+      - python3-docutils
+    rpm:
+      - liburing-devel
+      - ncurses-devel
+      - pcre2-devel
+      - python3
+      - python3-docutils
+      - xxhash-devel
+  families:
+    - vinyl
+engine_source: required
