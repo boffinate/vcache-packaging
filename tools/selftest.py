@@ -1943,7 +1943,22 @@ def merge_rejects_malformed_cells():
 def render_smoke():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        root = write_fixture(tmp / "repo")
+        engines = must_replace(
+            FIXTURE_ENGINES,
+            "  - id: vinyl-trunk\n",
+            "  - id: varnish-trunk\n"
+            "    family: varnish\n"
+            "    series: varnish-trunk\n"
+            "    kind: trunk\n"
+            "    source:\n"
+            "      git_url: https://example.org/varnish.git\n"
+            "      branch: main\n"
+            "    packages: \"false\"\n"
+            "    targets:\n"
+            "      - debian-13-amd64\n"
+            "  - id: vinyl-trunk\n",
+        )
+        root = write_fixture(tmp / "repo", engines=engines)
         results = tmp / "results"
         results.mkdir()
         cells = [
@@ -1996,7 +2011,9 @@ def render_smoke():
         eq(el10_grid["cells"][("dict", "vinyl-9.0.1")]["bucket"], "FAIL", "EL10 failure stays separate")
         eq(debian_grid["cells"][("(engine)", "vinyl-9.0.1")]["bucket"], "PASS", "engine cell on the (engine) row")
         eq(debian_grid["rows"][0], "(engine)", "engine row renders first")
-        eq(debian_grid["columns"], ["vinyl-9.0.1", "varnish-9.0.3", "vinyl-trunk"], "Debian column order from catalog")
+        eq(debian_grid["columns"],
+           ["varnish-9.0.3", "varnish-trunk", "vinyl-9.0.1", "vinyl-trunk"],
+           "Debian columns group numbered and trunk engines by family")
         eq(el10_grid["columns"], ["vinyl-9.0.1"], "EL10 excludes unsupported engines")
         ok(debian_grid["counts"]["MISSING"] > 0, "cells without data count as missing")
 

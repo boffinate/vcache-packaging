@@ -71,6 +71,7 @@ FAMILY_CONTRACTS = {
     },
 }
 KINDS = ("release", "trunk")
+MATRIX_FAMILY_ORDER = ("varnish", "vinyl")
 LANES = ("release", "trunk")
 TARGET_FORMATS = ("deb", "rpm")
 TARGET_PLATFORMS = ("linux/amd64", "linux/arm64")
@@ -1016,16 +1017,21 @@ def matrix_targets(state: dict, catalog: dict = None) -> list:
 def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
     """Pivot one target's merged cells into one visual cell per row and engine.
 
-    Axis order comes from the catalog when it is loadable (columns: release
-    engines then trunk engines, in engines.yml order; rows: the engine build
-    row, then VMODs in catalog order). Only engines configured for ``target``
-    are shown. Anything present only in the state is appended sorted, so stale
-    state still renders instead of erroring.
+    Axis order comes from the catalog when it is loadable (columns: Varnish
+    release then trunk, followed by Vinyl release then trunk; rows: the engine
+    build row, then VMODs in catalog order). Only engines configured for
+    ``target`` are shown. Anything present only in the state is appended
+    sorted, so stale state still renders instead of erroring.
     """
     cells = [cell for cell in state["cells"].values() if cell["target"] == target]
     if catalog is not None:
-        columns = [e["id"] for e in catalog["engines"] if e["kind"] == "release" and target in e["targets"]]
-        columns += [e["id"] for e in catalog["engines"] if e["kind"] == "trunk" and target in e["targets"]]
+        columns = [
+            engine["id"]
+            for family in MATRIX_FAMILY_ORDER
+            for kind in KINDS
+            for engine in catalog["engines"]
+            if engine["family"] == family and engine["kind"] == kind and target in engine["targets"]
+        ]
         row_ids = ["(engine)"] + list(catalog["vmods"])
         row_urls = {row_id: vmod["upstream"].get("homepage", "") for row_id, vmod in catalog["vmods"].items()}
     else:
