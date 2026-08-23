@@ -37,7 +37,16 @@ jobs:
         with:
           name: engine-${{ matrix.engine }}-${{ matrix.target }}
           path: work/engine/artifacts
+      - uses: actions/download-artifact@v8
+        # Keep running when acquisition failed so the cell records a specific
+        # infra_failed result instead of disappearing from the report.
+        continue-on-error: true
+        with:
+          name: ${{ matrix.source_artifact }}
+          path: work/vmod-source
       - run: scripts/build-vmod.sh "${{ matrix.row }}" "${{ matrix.engine }}" "${{ matrix.target }}" "${{ matrix.mode }}" work
+        env:
+          VCACHE_REQUIRE_PREFETCHED_VMOD_SOURCE: "1"
       - if: ${{ always() && inputs.upload_packages && matrix.mode == 'package' }}
         uses: actions/upload-artifact@v7
         with:

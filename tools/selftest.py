@@ -267,6 +267,10 @@ def make_cell(row, engine, target, mode, status, finished, **extra):
     return cell
 
 
+def without_source_artifacts(rows: list) -> list:
+    return [{key: value for key, value in row.items() if key != "source_artifact"} for row in rows]
+
+
 def shell_failure_detail(log: Path, step: str = "pkg-build") -> str:
     """Run the host-safe shell classifier without invoking a container build."""
     lib = Path(__file__).resolve().parent.parent / "scripts" / "lib.sh"
@@ -918,7 +922,7 @@ def expand_release_lane():
             {"engine": "vinyl-9.0.1", "target": "el10-x86_64", "runner": "ubuntu-24.04"},
             {"engine": "varnish-9.0.3", "target": "debian-13-amd64", "runner": "ubuntu-24.04"},
         ], "engine pairs")
-        eq(expansion["vmods"], [
+        eq(without_source_artifacts(expansion["vmods"]), [
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"},
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "compat", "runner": "ubuntu-24.04"},
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "package", "runner": "ubuntu-24.04"},
@@ -935,7 +939,7 @@ def expand_release_lane():
             {"engine": "vinyl-9.0.1", "target": "el10-x86_64", "runner": "ubuntu-24.04"},
             {"engine": "varnish-9.0.3", "target": "debian-13-amd64", "runner": "ubuntu-24.04"},
         ], "compat engine pairs use every target")
-        eq(compat_only["vmods"], [
+        eq(without_source_artifacts(compat_only["vmods"]), [
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"},
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "el10-x86_64", "mode": "compat", "runner": "ubuntu-24.04"},
             {"row": "dict", "engine": "varnish-9.0.3", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"},
@@ -1000,21 +1004,24 @@ def expand_trunk_lane_and_github_format():
         catalog = matrix.load_catalog(root)
         expansion = matrix.expand(catalog, "trunk", "all")
         eq(expansion["engines"], [{"engine": "vinyl-trunk", "target": "debian-13-amd64", "runner": "ubuntu-24.04"}], "trunk engines")
-        eq(expansion["vmods"],
+        eq(without_source_artifacts(expansion["vmods"]),
            [{"row": "dict", "engine": "vinyl-trunk", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"}],
            "trunk vmod rows are compat only")
         code, out, _ = run_cli(["expand", "--lane", "trunk", "--format", "github", "--root", root])
         eq(code, 0, "expand exit code")
         lines = out.strip().split("\n")
-        eq(len(lines), 4, "github format includes the package-pair cohort matrix")
+        eq(len(lines), 5, "github format includes source and package-pair matrices")
         ok(lines[0].startswith("engines=") and lines[1].startswith("vmods=")
-           and lines[2].startswith("vmod_shards=") and lines[3].startswith("package_pairs="),
+           and lines[2].startswith("vmod_sources=") and lines[3].startswith("vmod_shards=")
+           and lines[4].startswith("package_pairs="),
            "github output keys")
         engines = json.loads(lines[0][len("engines="):])
         vmods = json.loads(lines[1][len("vmods="):])
-        shards = json.loads(lines[2][len("vmod_shards="):])
-        package_pairs = json.loads(lines[3][len("package_pairs="):])
+        sources = json.loads(lines[2][len("vmod_sources="):])
+        shards = json.loads(lines[3][len("vmod_shards="):])
+        package_pairs = json.loads(lines[4][len("package_pairs="):])
         ok(engines and vmods, "neither github array is empty")
+        eq(len(sources), 1, "one trunk source feeds every matching VMOD cell")
         ok(all(set(r) >= {"engine", "target", "runner"} for r in engines), "engines= row shape")
         ok(all(r["row"] != r["engine"] for r in vmods), "vmods= excludes engine rows")
         eq([row for shard in shards for row in json.loads(shard["items"])], vmods,
@@ -1023,6 +1030,29 @@ def expand_trunk_lane_and_github_format():
         code, _, err = run_cli(["expand", "--lane", "trunk", "--mode", "package", "--root", root])
         eq(code, 1, "trunk+package is an error")
         ok("no package cells" in err, "trunk+package error message")
+
+
+@test
+def expand_deduplicates_resolved_vmod_sources():
+    with tempfile.TemporaryDirectory() as tmp:
+        catalog = matrix.load_catalog(write_fixture(Path(tmp)))
+        expansion = matrix.expand(catalog, "release", "all")
+        sources = expansion["sources"]
+        eq(len(sources), 2, "default and by-series refs are fetched independently")
+        ok(all(set(source) == {"row", "engine", "source_artifact"} for source in sources),
+           "source rows contain only fetch-job inputs")
+        artifacts = {source["source_artifact"] for source in sources}
+        eq(len(artifacts), 2, "distinct resolved sources have distinct artifacts")
+        ok(all(artifact.startswith("vmod-source-dict-") for artifact in artifacts),
+           "source artifacts retain a readable VMOD identity")
+        vinyl_artifacts = {row["source_artifact"] for row in expansion["vmods"]
+                           if row["engine"] == "vinyl-9.0.1"}
+        varnish_artifacts = {row["source_artifact"] for row in expansion["vmods"]
+                             if row["engine"] == "varnish-9.0.3"}
+        eq(len(vinyl_artifacts), 1, "compat and package cells share one default source")
+        eq(len(varnish_artifacts), 1, "all cells for one by-series ref share its source")
+        ok(vinyl_artifacts.isdisjoint(varnish_artifacts),
+           "different resolved refs cannot consume each other's artifact")
 
 
 @test
@@ -1504,8 +1534,10 @@ def vmod_clone_retries_transient_failures():
     library = (root / "scripts" / "lib.sh").read_text()
     ok("clone_vmod()" in library, "shared library wraps VMOD source clones")
     ok('retry_command 3 "git clone $url"' in library, "VMOD clone uses the shared retry runner")
-    ok('clone_vmod "${VMOD_GIT:?}" "$SRC"' in library,
-       "VMOD checkout uses the retried clone helper")
+    ok('materialize_vmod_source "$VMOD_GIT" "$VMOD_REF"' in library,
+       "local VMOD checkout retains a direct-clone fallback")
+    ok('restore_vmod_source "$VMOD_SOURCE_ARTIFACT"' in library,
+       "CI VMOD checkout restores its workflow source artifact")
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         fake_bin = tmp / "bin"
@@ -1533,6 +1565,71 @@ def vmod_clone_retries_transient_failures():
 
 
 @test
+def prefetched_vmod_source_round_trips_without_upstream():
+    root = Path(__file__).resolve().parent.parent
+    library = root / "scripts" / "lib.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        upstream = tmp / "upstream"
+        upstream.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(upstream)], check=True)
+        subprocess.run(["git", "-C", str(upstream), "config", "user.name", "Source Test"], check=True)
+        subprocess.run(["git", "-C", str(upstream), "config", "user.email", "source@example.test"], check=True)
+        (upstream / "payload.txt").write_text("source payload\n")
+        subprocess.run(["git", "-C", str(upstream), "add", "payload.txt"], check=True)
+        subprocess.run(["git", "-C", str(upstream), "commit", "-q", "-m", "fixture"], check=True)
+        commit = subprocess.run(
+            ["git", "-C", str(upstream), "rev-parse", "HEAD"],
+            check=True, stdout=subprocess.PIPE, text=True,
+        ).stdout.strip()
+        fetched = tmp / "fetched"
+        artifact = tmp / "artifact"
+        commit_file = tmp / "fetched.commit"
+        result = subprocess.run(
+            ["bash", "-c",
+             'source "$1"; materialize_vmod_source "$2" main "$3" "$4" "$5"; '
+             'archive_vmod_source "$4" "$6" fixture "$2" main "$3"',
+             "bash", str(library), str(upstream), commit, str(fetched), str(commit_file), str(artifact)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, "source acquisition and archiving succeeds")
+        upstream.rename(tmp / "upstream-offline")
+        restored = tmp / "restored"
+        restored_commit = tmp / "restored.commit"
+        result = subprocess.run(
+            ["bash", "-c",
+             'source "$1"; restore_vmod_source "$2" "$3" fixture "$4" main "$5" "$6"',
+             "bash", str(library), str(artifact), str(restored), str(upstream), commit, str(restored_commit)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, "source artifact restores after its upstream becomes unavailable")
+        eq((restored / "payload.txt").read_text(), "source payload\n", "restored source payload")
+        eq(restored_commit.read_text().strip(), commit, "restored commit remains pinned")
+
+
+@test
+def workflow_prefetches_each_vmod_source_for_build_cells():
+    root = Path(__file__).resolve().parent.parent
+    for name in ("matrix.yml", "trunk.yml", "release.yml"):
+        workflow = (root / ".github" / "workflows" / name).read_text()
+        ok("vmod_sources: ${{ steps.expand.outputs.vmod_sources }}" in workflow,
+           f"{name} exports the deduplicated source matrix")
+        ok("scripts/fetch-vmod-source.sh" in workflow,
+           f"{name} fetches each resolved VMOD source")
+        ok("name: ${{ matrix.source_artifact }}" in workflow,
+           f"{name} publishes source artifacts under their matrix identity")
+        ok("needs: [expand, engine, vmod_source]" in workflow,
+           f"{name} waits for source acquisition before starting VMOD cells")
+    shard = (root / ".github" / "workflows" / "vmod-shard.yml").read_text()
+    ok("name: ${{ matrix.source_artifact }}" in shard,
+       "VMOD cells download their resolved source artifact")
+    ok("VCACHE_REQUIRE_PREFETCHED_VMOD_SOURCE: \"1\"" in shard,
+       "CI cells cannot silently fall back to upstream clones")
+    ok((root / "scripts" / "fetch-vmod-source.sh").is_file(),
+       "the source acquisition job has a host-safe script entry point")
+
+
+@test
 def remaining_script_network_boundaries_use_shared_retries():
     root = Path(__file__).resolve().parent.parent
     library = (root / "scripts" / "lib.sh").read_text()
@@ -1540,8 +1637,8 @@ def remaining_script_network_boundaries_use_shared_retries():
     overlay = (root / "scripts" / "probe-upstream-varnish-overlay.sh").read_text()
     ordering = (root / "scripts" / "check-package-version-ordering.sh").read_text()
     for expected in (
-        'git_retry "fetch VMOD ref $VMOD_REF" -C "$SRC" fetch --depth 1 origin "$VMOD_REF"',
-        'git_retry "update VMOD submodules" -C "$SRC" submodule update --init --recursive',
+        'git_retry "fetch VMOD ref $ref" -C "$destination" fetch --depth 1 origin "$ref"',
+        'git_retry "update VMOD submodules" -C "$destination" submodule update --init --recursive',
         'download_retry https://sh.rustup.rs "$RUSTUP_INIT"',
         'retry_command 3 "rustup bootstrap" sh "$RUSTUP_INIT"',
         'retry_command 3 "install Rust toolchain $RUSTUP_TOOLCHAIN" rustup toolchain install',

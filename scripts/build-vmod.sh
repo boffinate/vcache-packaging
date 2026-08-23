@@ -51,10 +51,19 @@ ENGINE_ART="/work/engine/artifacts"
 [ -d "$WORKDIR/engine/artifacts" ] || ENGINE_ART="/work/artifacts"
 ENGINE_ART_HOST=${ENGINE_ART/#\/work/$WORKDIR}
 
+VMOD_SOURCE_ARTIFACT=""
+if [ -f "$WORKDIR/vmod-source/source.tar.gz" ]; then
+  VMOD_SOURCE_ARTIFACT=/work/vmod-source
+elif [ "${VCACHE_REQUIRE_PREFETCHED_VMOD_SOURCE:-}" = 1 ]; then
+  infra_cell "$WORKDIR" "$VMOD_ID" "$ENGINE_ID" "$TARGET" "$MODE" "$VMOD_REF" \
+    "prefetched VMOD source artifact is missing"
+fi
+
 {
   printf "TAG='%s'\nTARGET='%s'\nPKGFMT='%s'\nPREFIX='%s'\nMODE='%s'\n" \
     "$TAG" "$TARGET" "$PKGFMT" "$PREFIX" "$MODE"
   printf "ENGINE_ID='%s'\nVMOD_ID='%s'\nENGINE_ART='%s'\n" "$ENGINE_ID" "$VMOD_ID" "$ENGINE_ART"
+  printf "VMOD_SOURCE_ARTIFACT='%s'\n" "$VMOD_SOURCE_ARTIFACT"
 } >> "$ENVFILE"
 
 # ---------------------------------------------------------------- compat ----

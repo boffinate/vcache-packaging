@@ -22,6 +22,7 @@ Standard library only. Builds nothing, touches no network.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html as _html
 import json
 import re
@@ -704,12 +705,32 @@ def package_vmods(catalog: dict, engine: dict, target: str) -> list[dict]:
             if package_eligible(vmod, engine, target)]
 
 
+def vmod_source_artifact(vmod: dict, resolved: dict) -> str:
+    identity = "\0".join((vmod["upstream"]["git"], resolved["ref"], resolved["commit"]))
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
+    return f"vmod-source-{vmod['id']}-{digest}"
+
+
+def vmod_matrix_row(vmod: dict, engine: dict, target: str, mode: str, runner: str) -> dict:
+    resolved = resolve_source(vmod, engine)
+    return {
+        "row": vmod["id"],
+        "engine": engine["id"],
+        "target": target,
+        "mode": mode,
+        "runner": runner,
+        "source_artifact": vmod_source_artifact(vmod, resolved),
+    }
+
+
 def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
     """Expand one lane into engine build pairs and VMOD cell rows.
 
     Returns ``{"engines": [{engine, target, runner}...], "vmods": [{row,
-    engine, target, mode, runner}...], "rows": [...]}`` where ``rows`` is the full cell list
-    including the engines' own build cells (mode ``engine``).
+    engine, target, mode, runner, source_artifact}...], "sources": [{row,
+    engine, source_artifact}...], "rows": [...]}`` where ``sources`` contains
+    one representative fetch job per resolved source and ``rows`` is the full
+    cell list including the engines' own build cells (mode ``engine``).
     """
     engine_pairs = []
     vmod_rows = []
@@ -721,13 +742,13 @@ def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
             for target in engine["targets"]:
                 runner = find_target(catalog, target)["runner"]
                 for vid in catalog["vmods"]:
-                    vmod_rows.append({"row": vid, "engine": engine["id"], "target": target, "mode": "compat", "runner": runner})
+                    vmod_rows.append(vmod_matrix_row(
+                        catalog["vmods"][vid], engine, target, "compat", runner))
         if lane == "release" and engine["packages"] == "true" and mode in ("package", "all"):
             for target in engine["targets"]:
                 runner = find_target(catalog, target)["runner"]
                 for vmod in package_vmods(catalog, engine, target):
-                    vmod_rows.append({"row": vmod["id"], "engine": engine["id"], "target": target,
-                                      "mode": "package", "runner": runner})
+                    vmod_rows.append(vmod_matrix_row(vmod, engine, target, "package", runner))
     engine_rows = [
         {"row": pair["engine"], "engine": pair["engine"], "target": pair["target"], "mode": "engine", "runner": pair["runner"]}
         for pair in engine_pairs
@@ -737,7 +758,17 @@ def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
     package_pairs = [pair for pair in engine_pairs
                      if lane == "release" and mode in ("package", "all")
                      and pair["engine"] in packaged_engines]
-    return {"engines": engine_pairs, "vmods": vmod_rows, "package_pairs": package_pairs,
+    source_rows = []
+    seen_sources = set()
+    for row in vmod_rows:
+        artifact = row["source_artifact"]
+        if artifact in seen_sources:
+            continue
+        seen_sources.add(artifact)
+        source_rows.append({"row": row["row"], "engine": row["engine"],
+                            "source_artifact": artifact})
+    return {"engines": engine_pairs, "vmods": vmod_rows, "sources": source_rows,
+            "package_pairs": package_pairs,
             "rows": engine_rows + vmod_rows}
 
 
@@ -1274,12 +1305,13 @@ def cmd_expand(args) -> int:
     if not expansion["engines"] or not expansion["vmods"]:
         raise CatalogError(f"lane {args.lane!r} expanded to an empty matrix; the catalog has no engines or vmods for it")
     if args.format == "github":
-        # Four `key=<json>` lines, appended verbatim to $GITHUB_OUTPUT.
+        # Five `key=<json>` lines, appended verbatim to $GITHUB_OUTPUT.
         # Engine rows are excluded from vmods= (they would become bogus VMOD
         # jobs). vmod_shards= is the outer matrix for the reusable VMOD
         # workflow; each item contains at most VMOD_SHARD_SIZE inner rows.
         print("engines=" + json.dumps(expansion["engines"], separators=(",", ":")))
         print("vmods=" + json.dumps(expansion["vmods"], separators=(",", ":")))
+        print("vmod_sources=" + json.dumps(expansion["sources"], separators=(",", ":")))
         print("vmod_shards=" + json.dumps(shard_vmods(expansion["vmods"]), separators=(",", ":")))
         print("package_pairs=" + json.dumps(expansion["package_pairs"], separators=(",", ":")))
     else:

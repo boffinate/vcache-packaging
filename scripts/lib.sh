@@ -244,44 +244,102 @@ clone_branch() {
 
 # clone_vmod URL DESTINATION
 # VMOD source hosts can temporarily reject a burst of concurrent clone
-# requests (for example, GitHub's HTTP 429 response). Retry a bounded number
+# requests with HTTP 429. Retry a bounded number
 # of times so such transport failures do not immediately fail a matrix cell.
 clone_vmod() {
   local url=$1 destination=$2
   git_clone_retry "$url" "$destination"
 }
 
-# Clone and resolve the selected VMOD source into the standard container path.
-checkout_vmod() {
-  step clone
-  SRC="/work/tmp/$TAG-src"
-  clone_vmod "${VMOD_GIT:?}" "$SRC"
-  step checkout
+materialize_vmod_source() {
+  local url=$1 ref=$2 expected_commit=$3 destination=$4 commit_file=$5
+  local checkout resolved_commit actual_commit
+  clone_vmod "$url" "$destination"
   # A branch named by the catalog is not guaranteed to be materialised as a
   # local branch by `git clone` (GNU's Git transport is one example). Fetch
   # the ref explicitly and detach at FETCH_HEAD; this also works for tags and
   # avoids Git's ambiguous `checkout --detach <name>` path handling.
-  if ! git -C "$SRC" rev-parse --verify "${VMOD_REF}^{commit}" >/dev/null 2>&1; then
-    git_retry "fetch VMOD ref $VMOD_REF" -C "$SRC" fetch --depth 1 origin "$VMOD_REF"
-    VMOD_CHECKOUT=FETCH_HEAD
+  if ! git -C "$destination" rev-parse --verify "${ref}^{commit}" >/dev/null 2>&1; then
+    git_retry "fetch VMOD ref $ref" -C "$destination" fetch --depth 1 origin "$ref"
+    checkout=FETCH_HEAD
   else
-    VMOD_CHECKOUT="${VMOD_REF}^{commit}"
+    checkout="${ref}^{commit}"
   fi
-  resolved_commit=$(git -C "$SRC" rev-parse "$VMOD_CHECKOUT")
-  if [ -n "${VMOD_EXPECTED_COMMIT:-}" ]; then
-    git -C "$SRC" cat-file -e "$VMOD_EXPECTED_COMMIT^{commit}" 2>/dev/null \
-      || { echo "pinned commit $VMOD_EXPECTED_COMMIT is unavailable from source ref $VMOD_REF" >&2; exit 1; }
-    VMOD_CHECKOUT="$VMOD_EXPECTED_COMMIT^{commit}"
-    if [ "$resolved_commit" != "$VMOD_EXPECTED_COMMIT" ]; then
-      echo "source ref $VMOD_REF moved to $resolved_commit; building pinned commit $VMOD_EXPECTED_COMMIT" >&2
+  resolved_commit=$(git -C "$destination" rev-parse "$checkout")
+  if [ -n "$expected_commit" ]; then
+    git -C "$destination" cat-file -e "$expected_commit^{commit}" 2>/dev/null \
+      || { echo "pinned commit $expected_commit is unavailable from source ref $ref" >&2; return 1; }
+    checkout="$expected_commit^{commit}"
+    if [ "$resolved_commit" != "$expected_commit" ]; then
+      echo "source ref $ref moved to $resolved_commit; building pinned commit $expected_commit" >&2
     fi
   fi
-  git -C "$SRC" checkout --detach "$VMOD_CHECKOUT"
-  git_retry "update VMOD submodules" -C "$SRC" submodule update --init --recursive
-  actual_commit=$(git -C "$SRC" rev-parse HEAD)
-  [ -z "${VMOD_EXPECTED_COMMIT:-}" ] || [ "$actual_commit" = "$VMOD_EXPECTED_COMMIT" ] \
-    || { echo "checked out $actual_commit, expected $VMOD_EXPECTED_COMMIT" >&2; exit 1; }
-  printf '%s\n' "$actual_commit" > "/work/tmp/$TAG.commit"
+  git -C "$destination" checkout --detach "$checkout"
+  git_retry "update VMOD submodules" -C "$destination" submodule update --init --recursive
+  actual_commit=$(git -C "$destination" rev-parse HEAD)
+  [ -z "$expected_commit" ] || [ "$actual_commit" = "$expected_commit" ] \
+    || { echo "checked out $actual_commit, expected $expected_commit" >&2; return 1; }
+  printf '%s\n' "$actual_commit" > "$commit_file"
+}
+
+archive_vmod_source() {
+  local source=$1 artifact_dir=$2 vmod_id=$3 url=$4 ref=$5 commit=$6
+  mkdir -p "$artifact_dir"
+  # macOS bsdtar otherwise emits AppleDouble files for extended attributes;
+  # those names collide with Git pack indexes when Linux extracts the archive.
+  COPYFILE_DISABLE=1 tar -czf "$artifact_dir/source.tar.gz.part" -C "$source" .
+  mv -f "$artifact_dir/source.tar.gz.part" "$artifact_dir/source.tar.gz"
+  printf '%s\n' "$vmod_id" > "$artifact_dir/vmod-id"
+  printf '%s\n' "$url" > "$artifact_dir/url"
+  printf '%s\n' "$ref" > "$artifact_dir/ref"
+  printf '%s\n' "$commit" > "$artifact_dir/commit"
+}
+
+restore_vmod_source() {
+  local artifact_dir=$1 destination=$2 expected_id=$3 expected_url=$4 expected_ref=$5
+  local expected_commit=$6 commit_file=$7 artifact_commit submodule_status
+  for file in source.tar.gz vmod-id url ref commit; do
+    [ -f "$artifact_dir/$file" ] || { echo "prefetched VMOD source is missing $file" >&2; return 1; }
+  done
+  [ "$(cat "$artifact_dir/vmod-id")" = "$expected_id" ] \
+    || { echo "prefetched VMOD source has the wrong VMOD id" >&2; return 1; }
+  [ "$(cat "$artifact_dir/url")" = "$expected_url" ] \
+    || { echo "prefetched VMOD source has the wrong repository URL" >&2; return 1; }
+  [ "$(cat "$artifact_dir/ref")" = "$expected_ref" ] \
+    || { echo "prefetched VMOD source has the wrong ref" >&2; return 1; }
+  artifact_commit=$(cat "$artifact_dir/commit")
+  [ -z "$expected_commit" ] || [ "$artifact_commit" = "$expected_commit" ] \
+    || { echo "prefetched VMOD source commit $artifact_commit does not match pin $expected_commit" >&2; return 1; }
+  rm -rf "$destination"
+  mkdir -p "$destination"
+  tar -xzf "$artifact_dir/source.tar.gz" -C "$destination"
+  [ -d "$destination/.git" ] \
+    || { echo "prefetched VMOD source has no Git metadata" >&2; return 1; }
+  [ "$(git -C "$destination" rev-parse HEAD)" = "$artifact_commit" ] \
+    || { echo "prefetched VMOD source archive does not match its commit metadata" >&2; return 1; }
+  submodule_status=$(git -C "$destination" submodule status --recursive) || return
+  if printf '%s\n' "$submodule_status" | grep -Eq '^[-+U]'; then
+    echo "prefetched VMOD source contains an unmaterialised submodule" >&2
+    return 1
+  fi
+  [ -z "$(git -C "$destination" status --porcelain --untracked-files=all --ignore-submodules=none)" ] \
+    || { echo "prefetched VMOD source archive does not match its Git tree" >&2; return 1; }
+  printf '%s\n' "$artifact_commit" > "$commit_file"
+}
+
+# Resolve the selected VMOD source into the standard container path. CI uses
+# a workflow artifact so build fan-out cannot amplify traffic to upstream.
+checkout_vmod() {
+  SRC="/work/tmp/$TAG-src"
+  if [ -n "${VMOD_SOURCE_ARTIFACT:-}" ]; then
+    step source-artifact
+    restore_vmod_source "$VMOD_SOURCE_ARTIFACT" "$SRC" "$VMOD_ID" "$VMOD_GIT" \
+      "$VMOD_REF" "${VMOD_EXPECTED_COMMIT:-}" "/work/tmp/$TAG.commit"
+    return
+  fi
+  step clone
+  materialize_vmod_source "$VMOD_GIT" "$VMOD_REF" "${VMOD_EXPECTED_COMMIT:-}" \
+    "$SRC" "/work/tmp/$TAG.commit"
 }
 
 # Install the pinned Rust toolchain, validate the lockfile, and fetch once.

@@ -15,11 +15,32 @@ jobs:
     timeout-minutes: 10
     outputs:
       engines: ${{ steps.expand.outputs.engines }}
+      vmod_sources: ${{ steps.expand.outputs.vmod_sources }}
       vmod_shards: ${{ steps.expand.outputs.vmod_shards }}
     steps:
       - uses: actions/checkout@v7
       - id: expand
         run: python3 tools/matrix.py expand --lane release --mode all --format github >> "$GITHUB_OUTPUT"
+
+  vmod_source:
+    needs: expand
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      max-parallel: 10
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.expand.outputs.vmod_sources) }}
+    name: source ${{ matrix.row }} for ${{ matrix.engine }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/fetch-vmod-source.sh "${{ matrix.row }}" "${{ matrix.engine }}" work/vmod-source
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.source_artifact }}
+          path: work/vmod-source/
+          if-no-files-found: error
+          retention-days: 1
 
   engine:
     needs: expand
@@ -48,7 +69,7 @@ jobs:
           path: work/results/
 
   vmod:
-    needs: [expand, engine]
+    needs: [expand, engine, vmod_source]
     if: ${{ !cancelled() }}
     strategy:
       # Run one shard at a time; the called workflow controls the individual
