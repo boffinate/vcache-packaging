@@ -315,14 +315,17 @@ restore_vmod_source() {
   tar -xzf "$artifact_dir/source.tar.gz" -C "$destination"
   [ -d "$destination/.git" ] \
     || { echo "prefetched VMOD source has no Git metadata" >&2; return 1; }
-  [ "$(git -C "$destination" rev-parse HEAD)" = "$artifact_commit" ] \
+  # Artifact extraction can retain the uploader's UID. Trust only this checked
+  # out path while verifying the archive; a global exception would trust any
+  # repository owned by an unrelated user.
+  [ "$(git -c safe.directory="$destination" -C "$destination" rev-parse HEAD)" = "$artifact_commit" ] \
     || { echo "prefetched VMOD source archive does not match its commit metadata" >&2; return 1; }
-  submodule_status=$(git -C "$destination" submodule status --recursive) || return
+  submodule_status=$(git -c safe.directory="$destination" -C "$destination" submodule status --recursive) || return
   if printf '%s\n' "$submodule_status" | grep -Eq '^[-+U]'; then
     echo "prefetched VMOD source contains an unmaterialised submodule" >&2
     return 1
   fi
-  [ -z "$(git -C "$destination" status --porcelain --untracked-files=all --ignore-submodules=none)" ] \
+  [ -z "$(git -c safe.directory="$destination" -C "$destination" status --porcelain --untracked-files=all --ignore-submodules=none)" ] \
     || { echo "prefetched VMOD source archive does not match its Git tree" >&2; return 1; }
   printf '%s\n' "$artifact_commit" > "$commit_file"
 }

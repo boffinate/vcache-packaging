@@ -14,6 +14,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1643,15 +1644,33 @@ def prefetched_vmod_source_round_trips_without_upstream():
         upstream.rename(tmp / "upstream-offline")
         restored = tmp / "restored"
         restored_commit = tmp / "restored.commit"
+        fake_bin = tmp / "bin"
+        fake_bin.mkdir()
+        git_args = tmp / "git-args"
+        real_git = shutil.which("git")
+        ok(real_git is not None, "Git is available for the source artifact test")
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf '%s\\n' \"$*\" >> \"$GIT_ARGS\"\n"
+            "exec \"$REAL_GIT\" \"$@\"\n"
+        )
+        fake_git.chmod(0o755)
         result = subprocess.run(
             ["bash", "-c",
              'source "$1"; restore_vmod_source "$2" "$3" fixture "$4" main "$5" "$6"',
              "bash", str(library), str(artifact), str(restored), str(upstream), commit, str(restored_commit)],
+            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                 "GIT_ARGS": str(git_args), "REAL_GIT": real_git},
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         eq(result.returncode, 0, "source artifact restores after its upstream becomes unavailable")
         eq((restored / "payload.txt").read_text(), "source payload\n", "restored source payload")
         eq(restored_commit.read_text().strip(), commit, "restored commit remains pinned")
+        trusted = f"-c safe.directory={restored} -C {restored}"
+        git_calls = git_args.read_text()
+        eq(git_calls.count(trusted), 3,
+           "artifact verification trusts only its exact extracted source path")
 
 
 @test
