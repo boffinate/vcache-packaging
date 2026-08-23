@@ -1667,10 +1667,12 @@ def prefetched_vmod_source_round_trips_without_upstream():
         eq(result.returncode, 0, "source artifact restores after its upstream becomes unavailable")
         eq((restored / "payload.txt").read_text(), "source payload\n", "restored source payload")
         eq(restored_commit.read_text().strip(), commit, "restored commit remains pinned")
-        trusted = f"-c safe.directory={restored} -C {restored}"
         git_calls = git_args.read_text()
-        eq(git_calls.count(trusted), 3,
-           "artifact verification trusts only its exact extracted source path")
+        eq(git_calls.count("safe.directory"), 0,
+           "an owned tree needs no per-command ownership exception")
+        st = (restored / ".git").stat()
+        eq((st.st_uid, st.st_gid), (os.getuid(), os.getgid()),
+           "restore chowns the extracted tree to the build user")
 
 
 @test

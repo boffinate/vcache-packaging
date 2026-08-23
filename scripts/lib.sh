@@ -315,17 +315,21 @@ restore_vmod_source() {
   tar -xzf "$artifact_dir/source.tar.gz" -C "$destination"
   [ -d "$destination/.git" ] \
     || { echo "prefetched VMOD source has no Git metadata" >&2; return 1; }
-  # Artifact extraction can retain the uploader's UID. Trust only this checked
-  # out path while verifying the archive; a global exception would trust any
-  # repository owned by an unrelated user.
-  [ "$(git -c safe.directory="$destination" -C "$destination" rev-parse HEAD)" = "$artifact_commit" ] \
+  # Artifact extraction retains the uploader's UID, and Git refuses to read a
+  # repository owned by another user ("dubious ownership", exit 128). A
+  # per-command safe.directory exception covered verification here but not the
+  # build itself, where upstream `git describe` version files (gnu.org.ua's
+  # vmod_vcs_version.txt) silently came out missing and broke the deb install
+  # step. Owning the tree makes a restored source behave like a fresh clone.
+  chown -R "$(id -u):$(id -g)" "$destination"
+  [ "$(git -C "$destination" rev-parse HEAD)" = "$artifact_commit" ] \
     || { echo "prefetched VMOD source archive does not match its commit metadata" >&2; return 1; }
-  submodule_status=$(git -c safe.directory="$destination" -C "$destination" submodule status --recursive) || return
+  submodule_status=$(git -C "$destination" submodule status --recursive) || return
   if printf '%s\n' "$submodule_status" | grep -Eq '^[-+U]'; then
     echo "prefetched VMOD source contains an unmaterialised submodule" >&2
     return 1
   fi
-  [ -z "$(git -c safe.directory="$destination" -C "$destination" status --porcelain --untracked-files=all --ignore-submodules=none)" ] \
+  [ -z "$(git -C "$destination" status --porcelain --untracked-files=all --ignore-submodules=none)" ] \
     || { echo "prefetched VMOD source archive does not match its Git tree" >&2; return 1; }
   printf '%s\n' "$artifact_commit" > "$commit_file"
 }
