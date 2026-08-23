@@ -723,7 +723,33 @@ def vmod_matrix_row(vmod: dict, engine: dict, target: str, mode: str, runner: st
     }
 
 
-def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
+def release_package_target_filter(catalog: dict, selector: str) -> set | None:
+    """Validate a comma-separated release target selector against package pairs."""
+    if not selector:
+        return None
+    selected = selector.split(",")
+    if any(not target or target != target.strip() for target in selected):
+        raise CatalogError("--targets must be a comma-separated list of target ids without whitespace")
+    if len(set(selected)) != len(selected):
+        raise CatalogError("--targets must not repeat a target id")
+    available = {
+        target
+        for engine in lane_engines(catalog, "release")
+        if engine["packages"] == "true"
+        for target in engine_targets(engine, "release", "package")
+    }
+    unknown = [target for target in selected if target not in available]
+    if unknown:
+        raise CatalogError(
+            "--targets contains target(s) without a package-enabled release pair: "
+            + ", ".join(unknown)
+            + "; available: "
+            + ", ".join(sorted(available))
+        )
+    return set(selected)
+
+
+def expand(catalog: dict, lane: str, mode: str = "all", targets: set | None = None) -> dict:
     """Expand one lane into engine build pairs and VMOD cell rows.
 
     Returns ``{"engines": [{engine, target, runner}...], "vmods": [{row,
@@ -736,16 +762,22 @@ def expand(catalog: dict, lane: str, mode: str = "all") -> dict:
     vmod_rows = []
     for engine in lane_engines(catalog, lane):
         for target in engine_targets(engine, lane, mode):
+            if targets is not None and target not in targets:
+                continue
             runner = find_target(catalog, target)["runner"]
             engine_pairs.append({"engine": engine["id"], "target": target, "runner": runner})
         if mode in ("compat", "all"):
             for target in engine["targets"]:
+                if targets is not None and target not in targets:
+                    continue
                 runner = find_target(catalog, target)["runner"]
                 for vid in catalog["vmods"]:
                     vmod_rows.append(vmod_matrix_row(
                         catalog["vmods"][vid], engine, target, "compat", runner))
         if lane == "release" and engine["packages"] == "true" and mode in ("package", "all"):
             for target in engine["targets"]:
+                if targets is not None and target not in targets:
+                    continue
                 runner = find_target(catalog, target)["runner"]
                 for vmod in package_vmods(catalog, engine, target):
                     vmod_rows.append(vmod_matrix_row(vmod, engine, target, "package", runner))
@@ -1301,7 +1333,10 @@ def cmd_expand(args) -> int:
     catalog = load_catalog(args.root)
     if args.lane == "trunk" and args.mode == "package":
         raise CatalogError("the trunk lane has no package cells; use --mode compat or all")
-    expansion = expand(catalog, args.lane, args.mode)
+    if args.targets and (args.lane != "release" or args.mode != "package"):
+        raise CatalogError("--targets is only supported with --lane release --mode package")
+    targets = release_package_target_filter(catalog, args.targets) if args.targets else None
+    expansion = expand(catalog, args.lane, args.mode, targets)
     if not expansion["engines"] or not expansion["vmods"]:
         raise CatalogError(f"lane {args.lane!r} expanded to an empty matrix; the catalog has no engines or vmods for it")
     if args.format == "github":
@@ -1425,6 +1460,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lane", required=True, choices=LANES)
     p.add_argument("--mode", default="all", choices=("compat", "package", "all"))
     p.add_argument("--format", default="github", choices=("github", "json"))
+    p.add_argument("--targets", default="", help="comma-separated package-enabled release target ids")
     add_root(p)
     p.set_defaults(func=cmd_expand)
 

@@ -2,6 +2,11 @@ name: release
 
 on:
   workflow_dispatch:
+    inputs:
+      targets:
+        description: Comma-separated package-enabled target IDs; empty builds every target.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -18,7 +23,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: expand
-        run: python3 tools/matrix.py expand --lane release --mode package --format github >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_TARGETS: ${{ inputs.targets }}
+        run: |
+          args=(--lane release --mode package --format github)
+          if [ -n "$RELEASE_TARGETS" ]; then
+            args+=(--targets "$RELEASE_TARGETS")
+          fi
+          python3 tools/matrix.py expand "${args[@]}" >> "$GITHUB_OUTPUT"
 
   vmod_source:
     needs: expand
@@ -174,6 +186,7 @@ jobs:
       - name: gate, stage, and publish the green pairs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TARGETS: ${{ inputs.targets }}
         run: |
           set -eu
           python3 - <<'EOF'
@@ -187,7 +200,8 @@ jobs:
           catalog = matrix.load_catalog(".")
           # The same expansion the build jobs ran: every expected cell of the
           # release lane in package mode, engine rows (mode "engine") included.
-          expansion = matrix.expand(catalog, "release", "package")
+          targets = matrix.release_package_target_filter(catalog, os.environ.get("RELEASE_TARGETS", ""))
+          expansion = matrix.expand(catalog, "release", "package", targets)
           if not expansion["engines"] or not expansion["vmods"]:
               sys.exit("release package matrix is empty")
           expected = expansion["rows"]

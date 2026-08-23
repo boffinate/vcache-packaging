@@ -998,6 +998,53 @@ def expand_package_rows_honour_promotion_and_targets():
 
 
 @test
+def release_package_target_filter_limits_every_matrix_output():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = str(write_fixture(Path(tmp)))
+        catalog = matrix.load_catalog(root)
+        targets = matrix.release_package_target_filter(catalog, "el10-x86_64")
+        expansion = matrix.expand(catalog, "release", "package", targets)
+        eq({pair["target"] for pair in expansion["engines"]}, {"el10-x86_64"},
+           "target filter limits engine builds")
+        eq({row["target"] for row in expansion["vmods"]}, {"el10-x86_64"},
+           "target filter limits VMOD builds")
+        eq({pair["target"] for pair in expansion["package_pairs"]}, {"el10-x86_64"},
+           "target filter limits cohort and publication pairs")
+        eq([row for shard in matrix.shard_vmods(expansion["vmods"])
+            for row in json.loads(shard["items"])], expansion["vmods"],
+           "target filter limits every reusable-workflow shard")
+        for selector, expected in (
+            ("missing", "without a package-enabled release pair"),
+            ("el10-x86_64,el10-x86_64", "must not repeat"),
+            ("el10-x86_64, debian-13-amd64", "without whitespace"),
+        ):
+            try:
+                matrix.release_package_target_filter(catalog, selector)
+            except matrix.CatalogError as exc:
+                ok(expected in str(exc), f"{selector!r} reports its selector error")
+            else:
+                raise AssertionError(f"{selector!r} must be rejected")
+        code, _, err = run_cli([
+            "expand", "--lane", "release", "--mode", "package", "--targets", "missing", "--root", root,
+        ])
+        eq(code, 1, "CLI rejects a target outside the package release matrix")
+        ok("without a package-enabled release pair" in err, "CLI preserves the strict target error")
+        code, _, err = run_cli([
+            "expand", "--lane", "release", "--mode", "compat", "--targets", "el10-x86_64", "--root", root,
+        ])
+        eq(code, 1, "CLI rejects target filtering outside package release dispatches")
+        ok("only supported" in err, "CLI explains the release package restriction")
+        workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" / "release.yml").read_text()
+        ok("inputs:\n      targets:" in workflow, "release dispatch accepts an optional target selector")
+        ok('args+=(--targets "$RELEASE_TARGETS")' in workflow,
+           "release expansion passes the optional selector without shell interpolation")
+        ok('RELEASE_TARGETS: ${{ inputs.targets }}' in workflow,
+           "release expansion and publication gate receive the same selector")
+        ok('matrix.release_package_target_filter(catalog, os.environ.get("RELEASE_TARGETS", ""))' in workflow,
+           "publication gate re-expands the filtered target cohort")
+
+
+@test
 def expand_trunk_lane_and_github_format():
     with tempfile.TemporaryDirectory() as tmp:
         root = str(write_fixture(Path(tmp)))
