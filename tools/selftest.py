@@ -1904,7 +1904,7 @@ def engine_family_recipes_and_script_use_the_contract():
 def missing_engine_artifact_reaches_vmod_classifier():
     workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
                 "vmod-shard.yml").read_text()
-    start = workflow.index("      - uses: actions/download-artifact@v8")
+    start = workflow.index("      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1")
     end = workflow.index("      - run: scripts/build-vmod.sh", start)
     download_step = workflow[start:end]
     ok("continue-on-error: true" in download_step,

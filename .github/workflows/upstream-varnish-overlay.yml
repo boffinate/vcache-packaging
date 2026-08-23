@@ -14,7 +14,7 @@ jobs:
       runner: ${{ steps.catalog.outputs.runner }}
       target: ${{ steps.catalog.outputs.target }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: catalog
         run: |
           engine=$(python3 tools/matrix.py select-engine --family varnish --kind release)
@@ -30,10 +30,10 @@ jobs:
     runs-on: ${{ needs.select.outputs.runner }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: scripts/probe-upstream-varnish-overlay.sh "${{ needs.select.outputs.engine }}" "${{ needs.select.outputs.target }}" work
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: experimental-upstream-varnish-overlay-${{ needs.select.outputs.target }}
           path: |
