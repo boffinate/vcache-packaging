@@ -8636,11 +8636,11 @@
       "commit": "b4290fbd656e0afed3fe114b6957eca106e93c50",
       "detail": "",
       "engine": "varnish-trunk",
-      "finished_at": "2026-08-21T06:13:40Z",
+      "finished_at": "2026-08-23T08:43:39Z",
       "mode": "compat",
       "ref": "master",
       "row": "remoteip",
-      "run_url": "https://github.com/boffinate/vcache-packaging/actions/runs/32452604946",
+      "run_url": "https://github.com/boffinate/vcache-packaging/actions/runs/32621623738",
       "schema": "cell/1",
       "status": "pass",
       "target": "debian-13-amd64"
@@ -11831,20 +11831,6 @@
       "target": "el10-x86_64"
     }
   },
-  "infra_failures": {
-    "remoteip/varnish-trunk/debian-13-amd64/compat": {
-      "commit": "",
-      "detail": "step 'clone' failed: git clone https://git.gnu.org.ua/vmod-remoteip.git failed; retrying in 2 seconds (2/3) Cloning into '/work/tmp/vmod-remoteip-varnish-trunk-debian-13-amd64-compat-src'... fatal: unable to access 'https://git.gnu.org.ua/vmod-remoteip.git/': The requested URL returned error: 429",
-      "engine": "varnish-trunk",
-      "finished_at": "2026-08-23T06:19:48Z",
-      "mode": "compat",
-      "ref": "master",
-      "row": "remoteip",
-      "run_url": "https://github.com/boffinate/vcache-packaging/actions/runs/32621623738",
-      "schema": "cell/1",
-      "status": "infra_failed",
-      "target": "debian-13-amd64"
-    }
-  },
+  "infra_failures": {},
   "schema": "matrix-state/1"
 }
