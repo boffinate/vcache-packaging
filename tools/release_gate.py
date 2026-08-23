@@ -20,6 +20,13 @@ class PayloadError(Exception):
     """A release pair does not contain exactly the packages it promises."""
 
 
+def github_release_asset_name(path: Path) -> str:
+    """Return the filename GitHub will retain for a release asset."""
+    # GitHub replaces tildes in uploaded release asset names with dots. Stage
+    # the same spelling that users and downstream checksum validators download.
+    return path.name.replace("~", ".")
+
+
 def _metadata(path: Path) -> tuple[str, str]:
     """Read package name and architecture using the native package tool."""
     try:
@@ -99,8 +106,8 @@ def validate_pair_payload(
         stage = Path(stage_dir)
         stage.mkdir(parents=True, exist_ok=True)
         for artifact in verified:
-            destination = stage / artifact.name
+            destination = stage / github_release_asset_name(artifact)
             if destination.exists():
-                raise PayloadError(f"duplicate staged filename {artifact.name}")
+                raise PayloadError(f"duplicate staged release asset name {destination.name}")
             shutil.copy2(artifact, destination)
     return verified

@@ -1954,6 +1954,29 @@ def release_payload_gate_rejects_missing_artifact():
 
 
 @test
+def release_payload_gate_stages_github_asset_names():
+    engine = {"id": "vinyl-9.0.1", "family": "vinyl"}
+    target = {"format": "deb", "package_arch": "amd64"}
+    cells = [
+        {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "package"},
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        pkgdl = Path(tmp) / "pkgdl"
+        source = pkgdl / "packages-dict-vinyl-9.0.1-debian-13-amd64"
+        source.mkdir(parents=True)
+        artifact = source / "vinyl-vmod-dict_1.7-1~vinyl9.0.1.1_amd64.deb"
+        artifact.write_bytes(b"native package placeholder")
+        staged = Path(tmp) / "dist"
+        release_gate.validate_pair_payload(
+            pkgdl, engine, target, cells,
+            metadata_reader=lambda path: ("vinyl-vmod-dict", "amd64"), stage_dir=staged,
+        )
+        eq(sorted(path.name for path in staged.iterdir()),
+           ["vinyl-vmod-dict_1.7-1.vinyl9.0.1.1_amd64.deb"],
+           "release checksums use GitHub's retained asset name")
+
+
+@test
 def stable_release_keeps_green_pairs_independent():
     workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
                 "release.yml").read_text()
