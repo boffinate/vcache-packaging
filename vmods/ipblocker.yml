@@ -20,6 +20,7 @@ sources:
   head: main
   default:
     ref: main
+    commit: "e1e98408a7ee28dcf63a0505a698b7a96ec9f3e3"
     version: "0~main"
 package:
   summary: Dynamic IP blocklist VMOD for Vinyl Cache
@@ -40,3 +41,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

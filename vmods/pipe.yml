@@ -17,6 +17,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "41117d266a030ff281dd6b5cff21eab120784248"
     version: "0~master"
 package:
   summary: Delivery processor piping response bodies through external commands for Vinyl Cache
@@ -37,3 +38,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

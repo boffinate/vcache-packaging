@@ -22,6 +22,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "c009a80895cc4a5fa88bd4c1433d8e6955521be7"
     version: "0~master"
 package:
   summary: Google RE2 linear-time regular expressions for Vinyl Cache
@@ -49,3 +50,4 @@ package:
       - re2-devel
   families:
     - vinyl
+  promoted: "true"

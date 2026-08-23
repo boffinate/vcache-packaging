@@ -21,6 +21,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "0b6cb770ab0fc134bcd7c02ea09bd6dddfe53736"
     version: "0~master"
 package:
   summary: Asymmetric cryptographic signature VMOD for Vinyl Cache
@@ -45,3 +46,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

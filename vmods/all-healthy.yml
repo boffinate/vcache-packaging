@@ -20,6 +20,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "084aa2a96a27a41a8d9ade98478b6860ec0a71f4"
     version: "0~master"
 package:
   summary: All-backends-healthy director VMOD for Vinyl Cache
@@ -43,3 +44,4 @@ package:
     - all_healthy
   families:
     - vinyl
+  promoted: "true"

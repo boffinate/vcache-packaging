@@ -47,4 +47,5 @@ package:
       - xxhash-devel
   families:
     - vinyl
+  promoted: "true"
 engine_source: required

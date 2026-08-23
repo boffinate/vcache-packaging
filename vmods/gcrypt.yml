@@ -20,6 +20,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "a308e9ceac2a14be395cccc0d5441f99457c695e"
     version: "0~master"
 package:
   summary: libgcrypt cryptography VMOD for Vinyl Cache
@@ -43,3 +44,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

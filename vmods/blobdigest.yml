@@ -18,6 +18,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "e14147c3bc94da201139d39735bab8ade1b0428a"
     version: "0~master"
 package:
   summary: Message digest, checksum and HMAC VMOD for Vinyl Cache
@@ -42,3 +43,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

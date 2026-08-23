@@ -17,6 +17,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "c0c83c1748bca037f1fdc84986cfa56697b8e158"
     version: "0~master"
 package:
   summary: Fixed-string and pattern matching VMOD for Vinyl Cache
@@ -40,3 +41,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

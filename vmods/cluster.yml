@@ -17,6 +17,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "316d6ee2f9a34c3529a93b4b384a04f733ae10ac"
     version: "0~master"
 package:
   summary: Cache clustering and sharding director VMOD for Vinyl Cache
@@ -40,3 +41,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

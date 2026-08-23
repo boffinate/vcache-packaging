@@ -9,6 +9,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "85db591fb9b991faca4f50a6aae17fdff21f56ac"
     version: "0~master"
 package:
   summary: DNS lookup VMOD for Vinyl Cache
@@ -18,3 +19,4 @@ package:
   license: Apache-2.0
   families:
     - vinyl
+  promoted: "true"

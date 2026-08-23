@@ -15,6 +15,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "2bf8de8bd7d53d22ad7397fc9a13b05ebaec23ca"
     version: "0~master"
 package:
   summary: Akamai SecureHD Policy token VMOD for Vinyl Cache
@@ -36,3 +37,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

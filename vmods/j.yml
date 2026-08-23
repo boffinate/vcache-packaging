@@ -23,6 +23,7 @@ sources:
   head: trunk
   default:
     ref: trunk
+    commit: "76d71b6b8f22068503ca4c3adce2fe1d0a96072d"
     version: "0~trunk"
 package:
   summary: JSON formatting VMOD for Vinyl Cache
@@ -43,3 +44,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

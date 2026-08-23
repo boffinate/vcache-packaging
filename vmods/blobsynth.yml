@@ -18,6 +18,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "c45561b37f08c780fce9d7ae7be834a70e4fb857"
     version: "0~master"
 package:
   summary: BLOB synthetic response body VMOD for Vinyl Cache
@@ -37,3 +38,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

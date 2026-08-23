@@ -20,6 +20,7 @@ sources:
   head: master
   default:
     ref: master
+    commit: "faf0cbfc4fca23d8f6b38800f8cce9cbd8d67661"
     version: "0~master"
 package:
   summary: JSON parsing VMOD for Vinyl Cache
@@ -41,3 +42,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"

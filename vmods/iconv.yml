@@ -19,6 +19,7 @@ sources:
   head: trunk
   default:
     ref: trunk
+    commit: "6e4ed7b7573fa6f3ea69c22eb61eeae563423251"
     version: "0~trunk"
 package:
   summary: Character set conversion VMOD for Vinyl Cache
@@ -39,3 +40,4 @@ package:
       - python3-docutils
   families:
     - vinyl
+  promoted: "true"
