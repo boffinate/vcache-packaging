@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# vmod-oidc is a Cargo VMOD whose Varnish bindings are gated by its vmod
+# feature. The catalog passes that feature to every build path so the produced
+# shared object exposes the declared oidc VCL import.
+schema: vmod/1
+id: oidc
+upstream:
+  git: https://github.com/perbu/vmod_oidc.git
+  homepage: https://github.com/perbu/vmod_oidc
+sources:
+  head: main
+  default:
+    ref: v0.2.0
+    version: "0.2.0"
+build: cargo
+package:
+  summary: OpenID Connect authentication VMOD for Varnish Cache
+  description:
+    - vmod-oidc lets Varnish act as an OpenID Connect relying party.
+    - It uses encrypted, stateless cookies for sessions and validates
+    - provider-issued ID tokens before VCL serves protected content.
+  license: MIT
+  build_deps:
+    debian:
+      - libssl-dev
+    rpm:
+      - openssl-devel
+  modules:
+    - oidc
+  artifacts:
+    - libvmod_oidc.so
+  cargo_features:
+    - vmod
+  families:
+    - varnish

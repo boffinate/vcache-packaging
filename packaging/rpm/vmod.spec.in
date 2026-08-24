@@ -37,7 +37,7 @@ ref @VMOD_REF@.
 
 %build
 %if @CARGO_BUILD@
-cargo build --release --locked --offline
+cargo build --release --locked --offline @CARGO_FEATURE_ARGS@
 %else
 # Same bootstrap ladder as the compat harness (scripts/build-vmod.sh): prefer
 # upstream's own bootstrap/autogen.sh, because it knows how to locate the

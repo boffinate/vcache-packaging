@@ -123,6 +123,7 @@ def build_tokens(vmod: dict, engine: dict, maintainer: tuple, now: datetime) -> 
     rpm_reqs = rpm_base + [f"{rpm_development_package} = {epv['rpm']}"] + list(build_deps.get("rpm", []))
     modules = matrix.vmod_modules(vmod)
     artifacts = matrix.vmod_artifacts(vmod)
+    cargo_features = matrix.vmod_cargo_features(vmod)
     return {
         "PACKAGE_NAME": matrix.engine_vmod_package_name(engine, vmod["id"]),
         "VMOD_ID": vmod["id"],
@@ -150,6 +151,7 @@ def build_tokens(vmod: dict, engine: dict, maintainer: tuple, now: datetime) -> 
         "VMOD_BUILD": build,
         "CARGO_BUILD": "1" if build == "cargo" else "0",
         "CARGO_ARTIFACT_ARGS": " ".join(f"--mapping {module}={artifact}" for module, artifact in zip(modules, artifacts)),
+        "CARGO_FEATURE_ARGS": f"--features {','.join(cargo_features)}" if cargo_features else "",
         "VMOD_MODULES": " ".join(modules),
         "BUILD_TARGET": package.get("build_target", "all"),
         "MAINTAINER_NAME": maintainer[0],

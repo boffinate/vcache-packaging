@@ -197,6 +197,8 @@ FIXTURE_CARGO = textwrap.dedent(
         - reqwest
       artifacts:
         - libvmod_reqwest.so
+      cargo_features:
+        - vmod
     """
 )
 
@@ -590,6 +592,7 @@ def catalog_cargo_contract_requires_pinned_ordered_artifacts():
         vmod = catalog["vmods"]["reqwest"]
         eq(matrix.vmod_build(vmod), "cargo", "Cargo build is carried through")
         eq(matrix.vmod_artifacts(vmod), ["libvmod_reqwest.so"], "Cargo artifact is carried through")
+        eq(matrix.vmod_cargo_features(vmod), ["vmod"], "Cargo features are carried through")
         eq(catalog["toolchains"]["rust"], {"version": "1.90.0", "bootstrap": "rustup"},
            "Cargo toolchain pin is carried through")
     with tempfile.TemporaryDirectory() as tmp:
@@ -607,6 +610,10 @@ def catalog_cargo_contract_requires_pinned_ordered_artifacts():
         vmod = must_replace(FIXTURE_CARGO, "    - libvmod_reqwest.so\n", "    - ../libvmod_reqwest.so\n")
         expect_catalog_error(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": vmod}),
                              "must be a basename ending in .so", "Cargo artifact is basename only")
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_CARGO, "    - vmod\n", "    - vmod\n    - vmod\n")
+        expect_catalog_error(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": vmod}),
+                             "package.cargo_features contains duplicates", "Cargo features are unique")
     with tempfile.TemporaryDirectory() as tmp:
         vmod = must_replace(FIXTURE_CARGO, "    - reqwest\n", "    - reqwest\n    - extra\n")
         expect_catalog_error(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": vmod}),
@@ -2398,6 +2405,8 @@ def recipe_cargo_debian_and_rpm_mapping():
         rules = (deb_out / "debian" / "rules").read_text()
         ok("clang" in control and "libclang-dev" in control, "Cargo Debian native dependencies")
         ok("cargo build --release --locked --offline" in rules, "Cargo Debian build")
+        ok("cargo build --release --locked --offline --features vmod" in rules,
+           "Cargo Debian build enables declared features")
         ok("--mapping reqwest=libvmod_reqwest.so" in rules, "Cargo Debian artifact mapping")
         ok("/repo/tools/cargo-artifacts.py" in rules, "Cargo Debian shared artifact helper")
         ok("pkg-config --variable=vmoddir vinylapi" in rules,
@@ -2410,6 +2419,8 @@ def recipe_cargo_debian_and_rpm_mapping():
         ok("BuildRequires:  clang" in spec and "BuildRequires:  clang-devel" in spec,
            "Cargo RPM native dependencies")
         ok("cargo build --release --locked --offline" in spec, "Cargo RPM build")
+        ok("cargo build --release --locked --offline --features vmod" in spec,
+           "Cargo RPM build enables declared features")
         ok("--mapping reqwest=libvmod_reqwest.so" in spec, "Cargo RPM artifact mapping")
         ok("%global vmoddir %(pkg-config --variable=vmoddir vinylapi)" in spec,
            "Cargo RPM install follows the selected engine's pkg-config VMOD directory")

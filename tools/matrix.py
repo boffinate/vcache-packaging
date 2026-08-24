@@ -105,6 +105,7 @@ ENGINE_SOURCE_VALUES = ("required",)
 # (varnish-modules); module names may not.
 MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 ARTIFACT_BASENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.so$")
+CARGO_FEATURE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 RUST_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 PACKAGE_REVISION_RE = re.compile(r"^[1-9][0-9]*$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -129,7 +130,7 @@ KEYS = {
     "vmod_source_entry": ({"ref", "version"}, {"commit"}),
     "vmod_package": (
         {"summary", "description", "license"},
-        {"build_deps", "build_target", "modules", "artifacts", "families", "promoted", "targets"},
+        {"build_deps", "build_target", "modules", "artifacts", "cargo_features", "families", "promoted", "targets"},
     ),
     "vmod_build_deps": (set(), {"debian", "rpm"}),
 }
@@ -418,6 +419,7 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, toolchains: dict, e
                     " module name to default to"
                 )
             artifacts = package.get("artifacts")
+            cargo_features = package.get("cargo_features")
             if build == "cargo":
                 if "rust" not in toolchains:
                     errors.append(f"{ctx}: build cargo requires engines.yml toolchains.rust")
@@ -438,8 +440,19 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, toolchains: dict, e
                         errors.append(f"{ctx}: package.artifacts contains duplicates")
                     if modules is not None and len(names) != len(artifact_names):
                         errors.append(f"{ctx}: package.modules and package.artifacts must have equal lengths")
+                if cargo_features is not None:
+                    feature_names = _str_list(cargo_features, f"{ctx}: package.cargo_features", errors)
+                    for i, feature in enumerate(feature_names):
+                        if not CARGO_FEATURE_RE.match(feature):
+                            errors.append(
+                                f"{ctx}: package.cargo_features[{i}]: {feature!r} is not a valid Cargo feature name"
+                            )
+                    if len(feature_names) != len(set(feature_names)):
+                        errors.append(f"{ctx}: package.cargo_features contains duplicates")
             elif artifacts is not None:
                 errors.append(f"{ctx}: package.artifacts is legal only for build cargo")
+            elif cargo_features is not None:
+                errors.append(f"{ctx}: package.cargo_features is legal only for build cargo")
             families = package.get("families")
             if families is not None:
                 # Absent means every family, so an explicit empty list is
@@ -630,6 +643,11 @@ def vmod_build(vmod: dict) -> str:
 def vmod_artifacts(vmod: dict) -> list:
     """Return Cargo's declared release artifacts (empty for Autotools VMODs)."""
     return vmod["package"].get("artifacts", [])
+
+
+def vmod_cargo_features(vmod: dict) -> list:
+    """Return declared Cargo features (empty for VMODs without feature gates)."""
+    return vmod["package"].get("cargo_features", [])
 
 
 def vmod_package_version(upstream_version: str, engine: dict) -> dict:
@@ -902,6 +920,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("VMOD_BUILD_TARGET", package.get("build_target", "all")),
             ("VMOD_MODULES", " ".join(vmod_modules(vmod))),
             ("VMOD_ARTIFACTS", " ".join(vmod_artifacts(vmod))),
+            ("VMOD_CARGO_FEATURES", " ".join(vmod_cargo_features(vmod))),
             ("VMOD_TESTS", vmod.get("tests", "")),
             ("VMOD_ENGINE_SOURCE", vmod.get("engine_source", "")),
             ("VMOD_PACKAGE_NAME", engine_vmod_package_name(engine, vmod["id"])),

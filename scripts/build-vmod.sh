@@ -203,9 +203,13 @@ build_autotools() {
 
 build_cargo() {
   prepare_cargo
+  cargo_feature_args=()
+  if [ -n "${VMOD_CARGO_FEATURES:-}" ]; then
+    cargo_feature_args=(--features "$VMOD_CARGO_FEATURES")
+  fi
 
   step cargo-build
-  cargo build --release --locked --offline
+  cargo build --release --locked --offline "${cargo_feature_args[@]}"
 
   step cargo-artifacts
   modules=( $VMOD_MODULES )
@@ -225,9 +229,9 @@ build_cargo() {
 
   step cargo-test
   if [ "${VMOD_TESTS:-}" = cargo-test ]; then
-    if ! cargo test --release --locked --offline; then
+    if ! cargo test --release --locked --offline "${cargo_feature_args[@]}"; then
       echo "cargo test failed; retrying once"
-      cargo test --release --locked --offline
+      cargo test --release --locked --offline "${cargo_feature_args[@]}"
     fi
   else
     echo "no Cargo test suite declared; skipping"

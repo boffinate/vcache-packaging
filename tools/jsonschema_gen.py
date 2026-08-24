@@ -349,6 +349,14 @@ def build_vmod() -> dict:
                     "description": "A distinct basename-only release shared library ending in .so.",
                 },
             ),
+            "cargo_features": _string_list(
+                "Cargo features required to build the VMOD. Legal only for build: cargo.",
+                items={
+                    "type": "string",
+                    "pattern": matrix.CARGO_FEATURE_RE.pattern,
+                    "description": "A Cargo feature enabled for every build and test invocation.",
+                },
+            ),
             "families": _string_list(
                 "Engine families this VMOD's build system supports. Gates "
                 "package-mode expansion only; absent means no restriction, and "

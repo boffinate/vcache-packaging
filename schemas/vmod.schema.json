@@ -210,6 +210,16 @@
           },
           "description": "Cargo release shared libraries, in the same order as modules. Required for build: cargo."
         },
+        "cargo_features": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "A Cargo feature enabled for every build and test invocation."
+          },
+          "description": "Cargo features required to build the VMOD. Legal only for build: cargo."
+        },
         "families": {
           "type": "array",
           "minItems": 1,

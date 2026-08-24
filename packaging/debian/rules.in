@@ -13,7 +13,7 @@ override_dh_auto_configure:
 	:
 
 override_dh_auto_build:
-	cargo build --release --locked --offline
+	cargo build --release --locked --offline @CARGO_FEATURE_ARGS@
 
 override_dh_auto_test:
 	:
