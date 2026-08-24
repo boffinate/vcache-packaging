@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+schema: vmod/1
+id: k8s_endpoint
+upstream:
+  git: https://github.com/varnish-rs/vmod-k8s_endpoint.git
+  homepage: https://github.com/varnish-rs/vmod-k8s_endpoint
+sources:
+  head: main
+  default:
+    ref: v0.1.0
+    version: "0.1.0"
+build: cargo
+package:
+  summary: Kubernetes endpoint director VMOD for Varnish Cache
+  description:
+    - vmod-k8s_endpoint watches Kubernetes EndpointSlices and exposes a
+    - director that selects among the active service backends.
+  license: MIT
+  modules:
+    - k8s_endpoint
+  artifacts:
+    - libvmod_k8s_endpoint.so
+  families:
+    - varnish

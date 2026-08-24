@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-jq checks for the Varnish API by name, so the unpatched source is
+# restricted to Varnish package builds while compatibility cells still record
+# the Vinyl result.
+schema: vmod/1
+id: jq
+upstream:
+  git: https://github.com/varnishcache-friends/libvmod-jq.git
+  homepage: https://github.com/varnishcache-friends/libvmod-jq
+sources:
+  head: devel
+  default:
+    ref: 4051a7d08dc3a4ca90d9e8319d5a3a132793e1da
+    version: "0.3.0"
+package:
+  summary: JSON processing VMOD for Varnish Cache
+  description:
+    - libvmod-jq parses and queries JSON values from VCL through the jq
+    - library.
+  license: BSD-2-Clause
+  build_deps:
+    debian:
+      - libjq-dev
+      - python3-docutils
+    rpm:
+      - jq-devel
+      - python3-docutils
+  families:
+    - varnish
