@@ -13,6 +13,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import vmod_cache
+
 
 REQUIRED_ROW_KEYS = {"row", "engine", "target", "mode", "runner", "source_artifact"}
 
@@ -80,14 +82,34 @@ def cleanup_timed_out_containers(cell: Path) -> None:
             subprocess.run(["docker", "rm", "-f", container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
 
-def run_batch(items: list[dict], engine_artifacts: Path, sources: Path, workdir: Path, repo_root: Path, cell_timeout: float = 3600) -> int:
+def write_cache_report(path: Path | None, report: dict) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, sort_keys=True) + "\n")
+
+
+def run_batch(items: list[dict], engine_artifacts: Path, sources: Path, workdir: Path, repo_root: Path,
+              cell_timeout: float = 3600, cache_dir: Path | None = None, cache_report: Path | None = None) -> int:
     validate_items(items)
     results = workdir / "results"
     packages = workdir / "packages"
     results.mkdir(parents=True, exist_ok=True)
     packages.mkdir(parents=True, exist_ok=True)
+    key_report = {}
+    manifests = {}
+    if cache_dir is not None or cache_report is not None:
+        key_report, manifests = vmod_cache.batch_key(items, engine_artifacts, sources, repo_root)
+    cached_cells = []
+    built_cells = []
     failed = False
     for index, item in enumerate(items, 1):
+        cell_key = vmod_cache.cache_cell_id(item)
+        if cache_dir is not None and vmod_cache.restore_cell(cache_dir, workdir, item, manifests[cell_key]):
+            print(f"::notice::cache hit: {cell_key}", flush=True)
+            cached_cells.append(cell_key)
+            continue
+        built_cells.append(cell_key)
         cell_id = f"{index:02d}-{item['row']}-{item['mode']}"
         cell = workdir / "cells" / cell_id
         (cell / "engine" / "artifacts").mkdir(parents=True, exist_ok=True)
@@ -127,6 +149,19 @@ def run_batch(items: list[dict], engine_artifacts: Path, sources: Path, workdir:
                 packages / f"packages-{item['row']}-{item['engine']}-{item['target']}",
             )
             print("::endgroup::", flush=True)
+        if cache_dir is not None:
+            vmod_cache.save_cell(cache_dir, workdir, item, manifests[cell_key])
+    if cache_dir is not None or cache_report is not None:
+        statuses = {vmod_cache.cache_cell_id(item): vmod_cache.expected_result_status(workdir, item) for item in items}
+        cacheable = vmod_cache.results_cacheable(workdir, items)
+        report = {
+            **key_report,
+            "cached_cells": cached_cells,
+            "built_cells": built_cells,
+            "statuses": statuses,
+            "cacheable": cacheable,
+        }
+        write_cache_report(cache_report, report)
     return 1 if failed else 0
 
 
@@ -137,6 +172,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workdir", type=Path, required=True)
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--cell-timeout", type=float, default=3600)
+    parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--cache-report", type=Path)
     args = parser.parse_args(argv)
     try:
         items = json.loads(os.environ["VMOD_BATCH_ITEMS"])
@@ -144,7 +181,8 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("VMOD_BATCH_ITEMS must be a JSON array of objects")
         if args.cell_timeout <= 0:
             raise ValueError("--cell-timeout must be positive")
-        return run_batch(items, args.engine_artifacts, args.sources, args.workdir, args.repo_root, args.cell_timeout)
+        return run_batch(items, args.engine_artifacts, args.sources, args.workdir, args.repo_root,
+                         args.cell_timeout, args.cache_dir, args.cache_report)
     except (KeyError, ValueError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

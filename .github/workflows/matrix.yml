@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   expand:
@@ -56,9 +57,45 @@ jobs:
     name: ${{ matrix.batch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: python3 tools/engine_batch.py
+      - id: engine-cache-key
+        name: calculate release engine cache key
+        run: python3 tools/engine_cache.py key --items "$ENGINE_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
         env:
           ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+      - id: engine-cache-restore
+        name: restore release engine cache
+        continue-on-error: true
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            work/artifacts
+            work/results
+          key: ${{ steps.engine-cache-key.outputs.key }}
+      - id: restored-engine-cacheable
+        name: validate restored release engine cache
+        run: python3 tools/engine_cache.py cacheable --items "$ENGINE_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
+        env:
+          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+      - id: engine-batch
+        if: steps.restored-engine-cacheable.outputs.cacheable != 'true'
+        continue-on-error: true
+        run: python3 tools/engine_batch.py
+        env:
+          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+      - id: engine-cacheable
+        if: always()
+        run: python3 tools/engine_cache.py cacheable --items "$ENGINE_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
+        env:
+          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+      - if: always() && steps.engine-cacheable.outputs.cacheable == 'true' && steps.engine-cache-restore.outputs.cache-hit != 'true'
+        name: save release engine cache
+        continue-on-error: true
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            work/artifacts
+            work/results
+          key: ${{ steps.engine-cache-key.outputs.key }}
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -70,6 +107,9 @@ jobs:
         with:
           name: results-${{ matrix.batch }}
           path: work/results/
+      - if: steps.engine-batch.outcome == 'failure'
+        name: report engine batch failure
+        run: exit 1
 
   vmod:
     needs: [expand, engine, vmod_source]

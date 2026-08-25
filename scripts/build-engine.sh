@@ -8,6 +8,8 @@
 # are correct by construction). When the catalog says packages "true", also
 # builds the selected family's runtime/development .deb or .rpm set into
 #   <workdir>/artifacts/engine-<id>-<target>-pkgs/   (consumed by build-vmod)
+# The artifact set also records the resolved trunk commit so downstream cache
+# keys cannot outlive the engine source they describe.
 # Package identity comes from the selected engine family contract in matrix.py env.
 # Writes the engine's own cell result: row = engine id, mode = "engine".
 set -euo pipefail
@@ -169,5 +171,6 @@ run_in_container "$IMAGE" "$TARGET_PLATFORM" "$WORKDIR" "$TAG.sh" "$LOG" \
   || fail_cell "$WORKDIR" "$ENGINE_ID" "$ENGINE_ID" "$TARGET" engine "$REF" "$TAG"
 
 COMMIT=$(cat "$WORKDIR/tmp/$TAG.commit" 2>/dev/null || true)
+printf '%s\n' "$COMMIT" > "$WORKDIR/artifacts/engine-source-commit"
 emit_result "$WORKDIR" "$ENGINE_ID" "$ENGINE_ID" "$TARGET" engine "$REF" "$COMMIT" pass ""
 echo "OK: engine $ENGINE_ID on $TARGET (prefix tarball$( [ "${ENGINE_PACKAGES:-false}" = true ] && echo ' + packages' ))"

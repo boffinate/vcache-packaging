@@ -25,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import engine_batch  # noqa: E402
+import engine_cache  # noqa: E402
 import jsonschema_gen  # noqa: E402
 import matrix  # noqa: E402
 import package_contract  # noqa: E402
@@ -32,7 +33,9 @@ import recipe  # noqa: E402
 import release_gate  # noqa: E402
 import source_api_normalize  # noqa: E402
 import source_batch  # noqa: E402
+import source_digest  # noqa: E402
 import vmod_batch  # noqa: E402
+import vmod_cache  # noqa: E402
 import yaml_subset  # noqa: E402
 
 TESTS: list = []
@@ -1612,6 +1615,131 @@ def prefetched_vmod_source_round_trips_without_upstream():
         st = (restored / ".git").stat()
         eq((st.st_uid, st.st_gid), (os.getuid(), os.getgid()),
            "restore chowns the extracted tree to the build user")
+
+
+@test
+def source_digest_is_stable_across_checkout_metadata_and_tar_noise():
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        roots = [tmp / "first", tmp / "second"]
+        for index, root in enumerate(roots):
+            (root / "nested").mkdir(parents=True)
+            (root / "nested" / "payload.txt").write_text("payload\n")
+            executable = root / "run.sh"
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+            os.symlink("nested/payload.txt", root / "link")
+            (root / ".git").mkdir()
+            (root / ".git" / f"transport-{index}").write_text("different checkout metadata\n")
+            os.utime(root / "nested" / "payload.txt", (index + 1, index + 1))
+        first = source_digest.digest_tree(roots[0])
+        eq(source_digest.digest_tree(roots[1]), first,
+           "source identity ignores Git transport metadata and timestamps")
+        (roots[1] / "run.sh").chmod(0o644)
+        ok(source_digest.digest_tree(roots[1]) != first,
+           "source identity includes executable bits")
+        (roots[1] / "run.sh").chmod(0o755)
+        (roots[1] / "link").unlink()
+        os.symlink("run.sh", roots[1] / "link")
+        ok(source_digest.digest_tree(roots[1]) != first,
+           "source identity includes symlink targets")
+
+
+@test
+def vmod_cache_reuses_only_matching_conclusive_cells():
+    root = Path(__file__).resolve().parent.parent
+    item = {
+        "row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64",
+        "mode": "compat", "runner": "ubuntu-24.04", "source_artifact": "fixture-source",
+    }
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        engine = tmp / "engine"
+        engine.mkdir()
+        (engine / "engine-vinyl-9.0.1-debian-13-amd64-prefix.tar.gz").write_bytes(b"engine")
+        source = tmp / "sources" / item["source_artifact"]
+        source.mkdir(parents=True)
+        (source / "source.tar.gz").write_bytes(b"checkout archive")
+        (source / "source-sha256").write_text("a" * 64 + "\n")
+        (source / "vmod-id").write_text("dict\n")
+        (source / "url").write_text("https://example.invalid/dict.git\n")
+        (source / "ref").write_text("main\n")
+        (source / "commit").write_text("b" * 40 + "\n")
+        manifest = vmod_cache.cell_manifest(item, engine, tmp / "sources", root)
+        work = tmp / "work"
+        result = work / "results" / vmod_cache.result_filename(item)
+        result.parent.mkdir(parents=True)
+        result.write_text(json.dumps({
+            "schema": "cell/1", "row": item["row"], "engine": item["engine"],
+            "target": item["target"], "mode": item["mode"], "status": "configure_failed",
+        }) + "\n")
+        cache = tmp / "cache"
+        ok(vmod_cache.save_cell(cache, work, item, manifest),
+           "a conclusive incompatibility is cacheable")
+        result.unlink()
+        ok(vmod_cache.restore_cell(cache, work, item, manifest),
+           "a matching conclusive cell is restored")
+        result.unlink()
+        (source / "commit").write_text("c" * 40 + "\n")
+        changed = vmod_cache.cell_manifest(item, engine, tmp / "sources", root)
+        ok(not vmod_cache.restore_cell(cache, work, item, changed),
+           "a changed source commit invalidates the cell")
+        other = {**item, "row": "cachetag"}
+        first_key, _ = vmod_cache.batch_key([item], engine, tmp / "sources", root)
+        other_key, _ = vmod_cache.batch_key([other], engine, tmp / "sources", root)
+        ok(first_key["restore_prefix"] != other_key["restore_prefix"],
+           "fallback snapshots cannot cross batch membership")
+        package_item = {**item, "mode": "package"}
+        engine_packages = engine / "engine-vinyl-9.0.1-debian-13-amd64-pkgs"
+        engine_packages.mkdir()
+        (engine_packages / "vinyl-cache.deb").write_bytes(b"engine package")
+        package_manifest = vmod_cache.cell_manifest(package_item, engine, tmp / "sources", root)
+        package_result = work / "results" / vmod_cache.result_filename(package_item)
+        package_result.write_text(json.dumps({
+            "schema": "cell/1", "row": package_item["row"], "engine": package_item["engine"],
+            "target": package_item["target"], "mode": package_item["mode"], "status": "pass",
+        }) + "\n")
+        ok(not vmod_cache.save_cell(cache, work, package_item, package_manifest),
+           "a passing package cell without a package payload is not cacheable")
+        package_payload = work / "packages" / vmod_cache.package_directory_name(package_item)
+        package_payload.mkdir(parents=True)
+        (package_payload / "vinyl-vmod-dict.deb").write_bytes(b"VMOD package")
+        ok(vmod_cache.save_cell(cache, work, package_item, package_manifest),
+           "a passing package cell with its payload is cacheable")
+        trunk_item = {**item, "engine": "vinyl-trunk"}
+        (engine / "engine-vinyl-trunk-debian-13-amd64-prefix.tar.gz").write_bytes(b"trunk engine")
+        engine_commit = engine / "engine-source-commit"
+        engine_commit.write_text("d" * 40 + "\n")
+        trunk_manifest = vmod_cache.cell_manifest(trunk_item, engine, tmp / "sources", root)
+        engine_commit.write_text("e" * 40 + "\n")
+        moved_trunk_manifest = vmod_cache.cell_manifest(trunk_item, engine, tmp / "sources", root)
+        ok(vmod_cache.fingerprint(trunk_manifest) != vmod_cache.fingerprint(moved_trunk_manifest),
+           "a moved trunk engine commit invalidates VMOD conclusions")
+
+
+@test
+def engine_cache_requires_complete_passing_outputs():
+    item = {"engine": "vinyl-9.0.1", "target": "debian-13-amd64", "runner": "ubuntu-24.04"}
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = write_fixture(Path(tmp_name))
+        pair = tmp / "work" / "artifacts" / "engine-vinyl-9.0.1-debian-13-amd64"
+        pair.mkdir(parents=True)
+        (pair / "engine-vinyl-9.0.1-debian-13-amd64-prefix.tar.gz").write_bytes(b"prefix")
+        packages = pair / "engine-vinyl-9.0.1-debian-13-amd64-pkgs"
+        packages.mkdir()
+        (packages / "vinyl-cache.deb").write_bytes(b"package")
+        result = tmp / "work" / "results" / "vinyl-9.0.1--vinyl-9.0.1--debian-13-amd64--engine.json"
+        result.parent.mkdir(parents=True)
+        result.write_text(json.dumps({
+            "schema": "cell/1", "row": item["engine"], "engine": item["engine"],
+            "target": item["target"], "mode": "engine", "status": "pass",
+        }) + "\n")
+        ok(engine_cache.cacheable(tmp, [item]), "complete passing engine outputs are cacheable")
+        result.write_text(json.dumps({
+            "schema": "cell/1", "row": "wrong", "engine": item["engine"],
+            "target": item["target"], "mode": "engine", "status": "pass",
+        }) + "\n")
+        ok(not engine_cache.cacheable(tmp, [item]), "engine result identity is validated")
 
 
 @test

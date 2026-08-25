@@ -293,6 +293,7 @@ materialize_vmod_source() {
 
 archive_vmod_source() {
   local source=$1 artifact_dir=$2 vmod_id=$3 url=$4 ref=$5 commit=$6
+  local source_digest
   mkdir -p "$artifact_dir"
   # macOS bsdtar otherwise emits AppleDouble files for extended attributes;
   # those names collide with Git pack indexes when Linux extracts the archive.
@@ -302,12 +303,14 @@ archive_vmod_source() {
   printf '%s\n' "$url" > "$artifact_dir/url"
   printf '%s\n' "$ref" > "$artifact_dir/ref"
   printf '%s\n' "$commit" > "$artifact_dir/commit"
+  source_digest=$(python3 "$REPO_ROOT/tools/source_digest.py" "$source")
+  printf '%s\n' "$source_digest" > "$artifact_dir/source-sha256"
 }
 
 restore_vmod_source() {
   local artifact_dir=$1 destination=$2 expected_id=$3 expected_url=$4 expected_ref=$5
-  local expected_commit=$6 commit_file=$7 artifact_commit submodule_status
-  for file in source.tar.gz vmod-id url ref commit; do
+  local expected_commit=$6 commit_file=$7 artifact_commit source_digest actual_digest submodule_status
+  for file in source.tar.gz vmod-id url ref commit source-sha256; do
     [ -f "$artifact_dir/$file" ] || { echo "prefetched VMOD source is missing $file" >&2; return 1; }
   done
   [ "$(cat "$artifact_dir/vmod-id")" = "$expected_id" ] \
@@ -317,11 +320,17 @@ restore_vmod_source() {
   [ "$(cat "$artifact_dir/ref")" = "$expected_ref" ] \
     || { echo "prefetched VMOD source has the wrong ref" >&2; return 1; }
   artifact_commit=$(cat "$artifact_dir/commit")
+  source_digest=$(cat "$artifact_dir/source-sha256")
+  printf '%s' "$source_digest" | grep -Eq '^[0-9a-f]{64}$' \
+    || { echo "prefetched VMOD source has an invalid source digest" >&2; return 1; }
   [ -z "$expected_commit" ] || [ "$artifact_commit" = "$expected_commit" ] \
     || { echo "prefetched VMOD source commit $artifact_commit does not match pin $expected_commit" >&2; return 1; }
   rm -rf "$destination"
   mkdir -p "$destination"
   tar -xzf "$artifact_dir/source.tar.gz" -C "$destination"
+  actual_digest=$(python3 "$REPO_ROOT/tools/source_digest.py" "$destination")
+  [ "$actual_digest" = "$source_digest" ] \
+    || { echo "prefetched VMOD source archive does not match its source digest" >&2; return 1; }
   [ -d "$destination/.git" ] \
     || { echo "prefetched VMOD source has no Git metadata" >&2; return 1; }
   # Artifact extraction retains the uploader's UID, and Git refuses to read a
