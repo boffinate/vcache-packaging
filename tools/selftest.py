@@ -29,6 +29,7 @@ import matrix  # noqa: E402
 import package_contract  # noqa: E402
 import recipe  # noqa: E402
 import release_gate  # noqa: E402
+import source_api_normalize  # noqa: E402
 import yaml_subset  # noqa: E402
 
 TESTS: list = []
@@ -172,6 +173,7 @@ FIXTURE_MULTI = textwrap.dedent(
         - beta_2
     tests: make-check
     engine_source: required
+    source_api_family: varnish
     """
 )
 
@@ -388,6 +390,24 @@ def catalog_rejects_unknown_key():
         engines = must_replace(FIXTURE_ENGINES, "    packages: \"true\"\n",
                                "    packages: \"true\"\n    surprise: x\n")
         expect_catalog_error(write_fixture(Path(tmp), engines=engines), "unknown key 'surprise'", "unknown key")
+
+
+@test
+def catalog_source_api_family_is_autotools_only():
+    with tempfile.TemporaryDirectory() as tmp:
+        vmod = must_replace(FIXTURE_DICT, "id: dict\n", "id: dict\nsource_api_family: other\n")
+        expect_catalog_error(
+            write_fixture(Path(tmp), vmods={"dict": vmod}),
+            "source_api_family must be one of",
+            "unknown source API family",
+        )
+    with tempfile.TemporaryDirectory() as tmp:
+        cargo = must_replace(FIXTURE_CARGO, "id: reqwest\n", "id: reqwest\nsource_api_family: varnish\n")
+        expect_catalog_error(
+            write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": cargo}),
+            "source_api_family is only supported for build autotools",
+            "Cargo normalization",
+        )
 
 
 @test
@@ -1200,6 +1220,7 @@ def env_emits_tests_and_modules():
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
         eq(values["VMOD_TESTS"], "'make-check'", "VMOD_TESTS from the manifest")
         eq(values["VMOD_ENGINE_SOURCE"], "'required'", "VMOD_ENGINE_SOURCE from the manifest")
+        eq(values["VMOD_SOURCE_API_FAMILY"], "'varnish'", "VMOD_SOURCE_API_FAMILY from the manifest")
         eq(values["VMOD_MODULES"], "'alpha beta_2'", "VMOD_MODULES space-separated")
         code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "dict",
                                 "--target", "debian-13-amd64", "--root", root])
@@ -1207,7 +1228,36 @@ def env_emits_tests_and_modules():
         values = dict(line.split("=", 1) for line in out.strip().split("\n"))
         eq(values["VMOD_TESTS"], "''", "no tests declared -> empty VMOD_TESTS")
         eq(values["VMOD_ENGINE_SOURCE"], "''", "no engine_source declared -> empty VMOD_ENGINE_SOURCE")
+        eq(values["VMOD_SOURCE_API_FAMILY"], "''", "no source_api_family -> empty VMOD_SOURCE_API_FAMILY")
         eq(values["VMOD_MODULES"], "'dict'", "VMOD_MODULES defaults to the id")
+
+
+@test
+def source_api_normalization_is_directional_and_preserves_vtc_syntax():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "configure.ac").write_bytes(
+            b"PKG_CHECK_MODULES([VARNISHAPI], [varnishapi])\nAC_SUBST([VARNISHSRC])\n"
+        )
+        (root / "test.vtc").write_bytes(b"varnishtest test\nserver s1 -start\nvarnish v1 -vcl+backend {}\n")
+        (root / "private.c").write_bytes(b'#include "cache/cache_varnishd.h"\nvarnishadm\n')
+        (root / "binary").write_bytes(b"varnishapi\0unchanged")
+        (root / ".git").mkdir()
+        (root / ".git" / "config").write_bytes(b"varnishapi")
+
+        changed, totals = source_api_normalize.normalize_tree(root, "varnish", "vinyl")
+
+        eq([str(path) for path, _ in changed], ["configure.ac", "private.c", "test.vtc"], "changed files")
+        eq((root / "configure.ac").read_text(), "PKG_CHECK_MODULES([VINYLAPI], [vinylapi])\nAC_SUBST([VINYLSRC])\n", "build spellings")
+        eq((root / "private.c").read_text(), '#include "cache/cache_vinyld.h"\nvinyladm\n', "header and CLI")
+        eq((root / "test.vtc").read_text(), "varnishtest test\nserver s1 -start\nvinyl v1 -vcl+backend {}\n", "VTC syntax")
+        eq((root / "binary").read_bytes(), b"varnishapi\0unchanged", "binary skipped")
+        eq((root / ".git" / "config").read_bytes(), b"varnishapi", ".git skipped")
+        ok(totals["varnishapi -> vinylapi"] == 1, "replacement totals")
+
+        reverse, _ = source_api_normalize.normalize_tree(root, "vinyl", "varnish")
+        ok(reverse, "reverse normalization changes files")
+        eq((root / "test.vtc").read_text().splitlines()[0], "varnishtest test", "VTC header remains stable")
 
 
 @test
@@ -1254,6 +1304,8 @@ def cargo_status_map_preserves_existing_failure_meanings():
     eq(shell_status_for_step("pkg-install"), "install_failed", "install failure meaning is preserved")
     eq(shell_status_for_step("cargo-preflight", "package"), "package_failed",
        "Cargo package preflight is a package failure")
+    eq(shell_status_for_step("source-api-normalize"), "build_failed",
+       "source normalization is an honest source build failure")
 
 
 @test
@@ -1809,6 +1861,7 @@ def package_load_failure_reports_the_end_of_compiler_output():
 @test
 def vmod_package_collection_and_install_use_family_names():
     script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
+    ok('rm -rf "$SRC/debian"' in script, "generated Debian recipe replaces upstream packaging")
     library = (Path(__file__).resolve().parent.parent / "scripts" / "lib.sh").read_text()
     combined = script + library
     ok("vinyl-vmod-" not in combined, "VMOD package collection has no Vinyl literal")
@@ -2127,6 +2180,12 @@ def merge_rejects_malformed_cells():
         code, _, err = run_cli(["merge", "--results-dir", str(results), "--state-file", str(tmp / "s.json")])
         eq(code, 1, "unknown mode fails merge")
         ok("mode must be one of" in err, "mode error message")
+        (results / "bad.json").write_text(json.dumps(
+            make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "pass",
+                      "2026-08-09T00:00:00Z", source_api_normalization="varnish-to-squid")))
+        code, _, err = run_cli(["merge", "--results-dir", str(results), "--state-file", str(tmp / "s.json")])
+        eq(code, 1, "unknown source normalization fails merge")
+        ok("source_api_normalization must be one of" in err, "source normalization error message")
 
 
 # ---------------------------------------------------------------------------
@@ -2159,9 +2218,11 @@ def render_smoke():
         cells = [
             make_cell("vinyl-9.0.1", "vinyl-9.0.1", "debian-13-amd64", "engine", "pass",
                       "2026-08-09T00:00:00Z"),
-            make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "pass", "2026-08-09T00:00:00Z"),
-            make_cell("dict", "vinyl-9.0.1", "el10-x86_64", "package", "package_failed",
-                      "2026-08-09T01:00:00Z", detail="rpmbuild exited 1"),
+            make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "pass", "2026-08-09T00:00:00Z",
+                      source_api_normalization="varnish-to-vinyl"),
+            make_cell("dict", "vinyl-9.0.1", "el10-x86_64", "package", "build_failed",
+                      "2026-08-09T01:00:00Z", detail="source normalization found no API spellings",
+                      source_api_normalization="varnish-to-vinyl", failure_step="source-api-normalize"),
             make_cell("dict", "varnish-9.0.3", "debian-13-amd64", "compat", "infra_failed",
                       "2026-08-09T00:00:00Z"),
         ]
@@ -2175,9 +2236,12 @@ def render_smoke():
         eq(code, 0, "render exit code (failed cells are still a success)")
         html_text = out_file.read_text()
         for needle in ("vinyl-9.0.1", "varnish-9.0.3", "vinyl-trunk", "engine build", "dict",
-                       'class="cell PASS"', 'class="cell FAIL"', 'class="cell INFRA"',
-                       'class="cell MISSING"', "rpmbuild exited 1", "prefers-color-scheme",
+                       'class="cell PASS"', 'class="cell PASS NORMALIZED"',
+                       'class="cell FAIL NORMALIZED"', 'class="cell INFRA"',
+                       'class="cell MISSING"', "source normalization found no API spellings", "prefers-color-scheme",
                        "data-theme", "https://example.org/runs/1",
+                       matrix.SOURCE_NORMALIZATION_HELP,
+                       matrix.SOURCE_NORMALIZATION_LEGEND,
                        'class="github-badge" href="https://github.com/boffinate/vcache-packaging/"',
                        'aria-label="View vcache-packaging on GitHub"',
                        'class="target-matrices"',
@@ -2193,8 +2257,8 @@ def render_smoke():
            in html_text, "page heading names both cache projects on compact lines")
         ok('header.page{display:flex;flex-wrap:wrap;align-items:center;min-height:65px;' in html_text,
            "two-line heading keeps the existing header height")
-        ok('<time datetime="2026-08-10T00:00:00Z">10 August 2026 at 00:00 UTC</time>' in html_text,
-           "generated timestamp is a human-readable time element")
+        ok('as at <time datetime="2026-08-10T00:00:00Z">10 August 2026 at 00:00 UTC</time>' in html_text,
+           "as-at timestamp is a human-readable time element")
         ok('<td class="rid"><a href="https://example.org/dict" target="_blank" rel="noopener">dict</a></td>'
            in html_text, "VMOD row links to its configured homepage")
         state = json.loads(state_file.read_text())
@@ -2203,7 +2267,16 @@ def render_smoke():
         debian_grid = matrix.build_grid(state, "debian-13-amd64", catalog)
         el10_grid = matrix.build_grid(state, "el10-x86_64", catalog)
         eq(debian_grid["cells"][("dict", "vinyl-9.0.1")]["bucket"], "PASS", "Debian status stays separate")
+        eq(debian_grid["cells"][("dict", "vinyl-9.0.1")]["modifier"], "NORMALIZED",
+           "normalized pass retains its distinct treatment")
+        eq(debian_grid["cells"][("dict", "vinyl-9.0.1")]["text"], "pass",
+           "normalized pass keeps the outcome label compact")
         eq(el10_grid["cells"][("dict", "vinyl-9.0.1")]["bucket"], "FAIL", "EL10 failure stays separate")
+        eq(el10_grid["cells"][("dict", "vinyl-9.0.1")]["text"], "translate",
+           "normalizer failure is distinct from a later build failure")
+        ok("Source translated from Varnish API to Vinyl API." in
+           debian_grid["cells"][("dict", "vinyl-9.0.1")]["title"],
+           "normalized tooltip records the direction")
         eq(debian_grid["cells"][("(engine)", "vinyl-9.0.1")]["bucket"], "PASS", "engine cell on the (engine) row")
         eq(debian_grid["rows"][0], "(engine)", "engine row renders first")
         eq(debian_grid["columns"],
@@ -2237,6 +2310,18 @@ def test_failed_cell_merges_and_renders_red():
         html_text = out_file.read_text()
         ok('class="cell FAIL"' in html_text, "test_failed cell gets the FAIL class")
         ok("FAIL: tests/x01.vtc" in html_text, "failing test names survive into the tooltip")
+
+
+@test
+def translated_build_failure_keeps_its_outcome_label():
+    cell = make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "build_failed",
+                     "2026-08-09T00:00:00Z", source_api_normalization="varnish-to-vinyl",
+                     failure_step="make")
+    state = {"schema": matrix.STATE_SCHEMA, "cells": {matrix.cell_key(cell): cell}, "infra_failures": {}}
+    cell_view = matrix.build_grid(state, "debian-13-amd64")["cells"][("dict", "vinyl-9.0.1")]
+    eq(cell_view["bucket"], "FAIL", "a later failure stays a failure")
+    eq(cell_view["modifier"], "NORMALIZED", "the source intervention remains visible")
+    eq(cell_view["text"], "build", "the amber edge carries the modifier without lengthening the outcome label")
 
 
 @test
@@ -2278,7 +2363,8 @@ def key_line_is_exact_and_tooltips_speak_human():
         html_text = out_file.read_text()
         eq(html_text.count('class="matrix-key"'), 1, "the key line renders exactly once")
         ok('<p class="matrix-key">Rows are modules, columns are engine versions. Green: works. '
-           "Red: doesn't — usually upstream doesn't support that engine yet. Grey: not tested.</p>"
+           "Red: doesn't — usually upstream doesn't support that engine yet. Amber edge: source translated "
+           "between Vinyl and Varnish APIs. Grey: not tested.</p>"
            in html_text, "key line is exactly the contract text")
         ok('class="cell FAIL"' in html_text, "mixed cell td keeps the worst-fold class")
 

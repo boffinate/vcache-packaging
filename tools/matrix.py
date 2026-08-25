@@ -101,6 +101,10 @@ RUST_BOOTSTRAPS = ("rustup",)
 # key (decision 14): configure needs the engine source tree (VINYLSRC), which
 # the build scripts then provision from the engine's own source pin.
 ENGINE_SOURCE_VALUES = ("required",)
+SOURCE_API_FAMILIES = FAMILIES
+SOURCE_API_NORMALIZATIONS = tuple(
+    f"{source}-to-{target}" for source in SOURCE_API_FAMILIES for target in SOURCE_API_FAMILIES if source != target
+)
 # VCL import names (package.modules entries). VMOD ids may contain hyphens
 # (varnish-modules); module names may not.
 MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -124,7 +128,10 @@ KEYS = {
     "engine_source_trunk": ({"git_url", "branch"}, set()),
     "toolchains": ({"rust"}, set()),
     "rust_toolchain": ({"version", "bootstrap"}, set()),
-    "vmod_doc": ({"schema", "id", "upstream", "sources", "package"}, {"build", "tests", "engine_source"}),
+    "vmod_doc": (
+        {"schema", "id", "upstream", "sources", "package"},
+        {"build", "tests", "engine_source", "source_api_family"},
+    ),
     "vmod_upstream": ({"git"}, {"homepage"}),
     "vmod_sources": ({"head", "default"}, {"by_series"}),
     "vmod_source_entry": ({"ref", "version"}, {"commit"}),
@@ -383,6 +390,13 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, toolchains: dict, e
             errors.append(
                 f"{ctx}: engine_source must be one of {ENGINE_SOURCE_VALUES}, got {doc.get('engine_source')!r}"
             )
+        source_api_family = doc.get("source_api_family")
+        if source_api_family is not None and source_api_family not in SOURCE_API_FAMILIES:
+            errors.append(
+                f"{ctx}: source_api_family must be one of {SOURCE_API_FAMILIES}, got {source_api_family!r}"
+            )
+        if source_api_family is not None and build != "autotools":
+            errors.append(f"{ctx}: source_api_family is only supported for build autotools")
         package = doc.get("package")
         if not isinstance(package, dict):
             errors.append(f"{ctx}: 'package' must be a mapping")
@@ -923,6 +937,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("VMOD_CARGO_FEATURES", " ".join(vmod_cargo_features(vmod))),
             ("VMOD_TESTS", vmod.get("tests", "")),
             ("VMOD_ENGINE_SOURCE", vmod.get("engine_source", "")),
+            ("VMOD_SOURCE_API_FAMILY", vmod.get("source_api_family", "")),
             ("VMOD_PACKAGE_NAME", engine_vmod_package_name(engine, vmod["id"])),
         ]
         if vmod_build(vmod) == "cargo":
@@ -954,7 +969,7 @@ def cohort_env_pairs(catalog: dict, engine_id: str, target_id: str) -> list:
 # ---------------------------------------------------------------------------
 
 CELL_REQUIRED = ("schema", "row", "engine", "target", "mode", "status", "finished_at")
-CELL_OPTIONAL = ("ref", "commit", "detail", "run_url")
+CELL_OPTIONAL = ("ref", "commit", "detail", "run_url", "source_api_normalization", "failure_step")
 
 
 def load_cell(path: Path) -> dict:
@@ -977,6 +992,11 @@ def load_cell(path: Path) -> dict:
     for key in CELL_OPTIONAL:
         value = data.get(key, "")
         cell[key] = value if isinstance(value, str) else ""
+    if cell["source_api_normalization"] not in ("", *SOURCE_API_NORMALIZATIONS):
+        raise CatalogError(
+            f"{path}: source_api_normalization must be one of {SOURCE_API_NORMALIZATIONS}, "
+            f"got {cell['source_api_normalization']!r}"
+        )
     return cell
 
 
@@ -1070,6 +1090,10 @@ _MODE_SENTENCE = {
     ("package", "FAIL"): "The ready-to-install package (.deb/.rpm) failed to build or install.",
     ("package", "INFRA"): "The ready-to-install package (.deb/.rpm) could not be tested (harness problem).",
 }
+SOURCE_NORMALIZATION_LEGEND = "compat: Vinyl ↔ Varnish"
+SOURCE_NORMALIZATION_HELP = (
+    "We had to rewrite the VMOD source code from the Vinyl API to the Varnish API, or vice versa."
+)
 
 
 def classify(status: str) -> str:
@@ -1139,10 +1163,18 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
             # newest cell supplies the label and link.
             top = max(group, key=lambda c: (_BUCKET_RANK[classify(c["status"])], c["finished_at"]))
             bucket = classify(top["status"])
+            normalization = top.get("source_api_normalization", "")
             lines = []
             for cell in sorted(group, key=lambda c: (c["target"], c["mode"])):
                 sentence = _MODE_SENTENCE[cell["mode"], classify(cell["status"])]
                 line = f"{cell['mode']}: {sentence} ({cell['status']})"
+                if cell.get("source_api_normalization"):
+                    direction = cell["source_api_normalization"]
+                    if "-to-" in direction:
+                        source, destination = direction.split("-to-", 1)
+                        line += f" Source translated from {source.title()} API to {destination.title()} API."
+                    else:
+                        line += f" Source translation: {direction}."
                 if cell.get("ref"):
                     line += f" [{cell['ref']}"
                     if cell.get("commit"):
@@ -1161,7 +1193,12 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
                     lines.append(interruption)
             grid_cells[(row_id, col)] = {
                 "bucket": bucket,
-                "text": _SHORT_STATUS[top["status"]],
+                "modifier": "NORMALIZED" if normalization else "",
+                "text": (
+                    "translate"
+                    if normalization and top.get("failure_step") == "source-api-normalize"
+                    else _SHORT_STATUS[top["status"]]
+                ),
                 "title": "\n".join(lines),
                 "run_url": top.get("run_url", ""),
             }
@@ -1177,19 +1214,19 @@ _STYLE = """
 :root{
   --bg:#ffffff; --surface:#ffffff; --surface-2:#f1f3f4; --ink:#202124;
   --muted:#5f6368; --line:#dadce0; --line-2:#c4c7c5;
-  --pass:#1e8e3e; --fail:#d93025; --na:#bdc1c6;
+  --pass:#1e8e3e; --fail:#d93025; --na:#bdc1c6; --fix:#f9ab00;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#202124; --surface:#292a2d; --surface-2:#35363a; --ink:#e8eaed;
   --muted:#9aa0a6; --line:#3c4043; --line-2:#5f6368;
-  --pass:#1e8e3e; --fail:#d93025; --na:#5f6368;
+  --pass:#1e8e3e; --fail:#d93025; --na:#5f6368; --fix:#fbbc04;
 }}
 :root[data-theme="dark"]{
   --bg:#202124; --surface:#292a2d; --surface-2:#35363a; --ink:#e8eaed;
   --muted:#9aa0a6; --line:#3c4043; --line-2:#5f6368;
-  --pass:#1e8e3e; --fail:#d93025; --na:#5f6368;
+  --pass:#1e8e3e; --fail:#d93025; --na:#5f6368; --fix:#fbbc04;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
@@ -1203,8 +1240,10 @@ header.page .gen{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .legend{display:flex;gap:14px;align-items:center;margin-left:auto;font-family:var(--mono);font-size:11.5px;
   color:var(--muted);flex-wrap:wrap}
 .legend span{display:inline-flex;align-items:center;gap:5px}
+.legend .legend-help{cursor:help;text-decoration:underline dotted;text-underline-offset:3px}
 .swatch{width:13px;height:13px;display:inline-block}
 .sw-pass{background:var(--pass)}.sw-fail{background:var(--fail)}.sw-infra{background:var(--na)}
+.sw-translation{width:5px;background:var(--fix)}
 .sw-missing{background:repeating-linear-gradient(45deg,var(--na),var(--na) 2px,transparent 2px,transparent 5px)}
 main{padding:20px clamp(16px,3vw,40px) 60px}
 .target-matrices{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,580px),1fr));gap:30px;align-items:start}
@@ -1225,6 +1264,7 @@ td.cell a,td.cell span.v{display:flex;align-items:center;justify-content:center;
 td.cell.PASS{background:var(--pass);color:#fff}
 td.cell.FAIL{background:var(--fail);color:#fff}
 td.cell.INFRA{background:var(--na);color:var(--bg)}
+td.cell.NORMALIZED{background-image:none;box-shadow:inset 5px 0 0 var(--fix)}
 td.cell.MISSING{color:var(--na);
   background-image:repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2) 3px,transparent 3px,transparent 7px)}
 .matrix-key{margin:0 0 20px;max-width:75em;font-size:13px;color:var(--muted)}
@@ -1269,7 +1309,8 @@ def _cell_html(cell) -> str:
         if cell["run_url"]
         else f'<span class="v">{text}</span>'
     )
-    return f'<td class="cell {cell["bucket"]}" title="{_esc(cell["title"])}">{inner}</td>'
+    classes = " ".join(part for part in ("cell", cell["bucket"], cell.get("modifier", "")) if part)
+    return f'<td class="{classes}" title="{_esc(cell["title"])}">{inner}</td>'
 
 
 def _grid_html(grid: dict) -> str:
@@ -1308,10 +1349,11 @@ def render_html(grids: list, generated_at: str) -> str:
 <body>
 <header class="page">
   <h1><span>Vinyl Cache and Varnish Cache</span><span class="title-context">VMOD compatibility matrix</span></h1>
-  <span class="gen">generated <time datetime="{_esc(generated_at)}">{_esc(human_time(generated_at))}</time></span>
+  <span class="gen">as at <time datetime="{_esc(generated_at)}">{_esc(human_time(generated_at))}</time></span>
   <div class="legend">
     <span><i class="swatch sw-pass"></i>pass</span>
     <span><i class="swatch sw-fail"></i>fail</span>
+    <span class="legend-help" title="{_esc(SOURCE_NORMALIZATION_HELP)}"><i class="swatch sw-translation"></i>{_esc(SOURCE_NORMALIZATION_LEGEND)}</span>
     <span><i class="swatch sw-infra"></i>infra</span>
     <span><i class="swatch sw-missing"></i>no data</span>
   </div>
@@ -1323,7 +1365,7 @@ def render_html(grids: list, generated_at: str) -> str:
   </a>
 </header>
 <main>
-  <p class="matrix-key">Rows are modules, columns are engine versions. Green: works. Red: doesn't — usually upstream doesn't support that engine yet. Grey: not tested.</p>
+  <p class="matrix-key">Rows are modules, columns are engine versions. Green: works. Red: doesn't — usually upstream doesn't support that engine yet. Amber edge: source translated between Vinyl and Varnish APIs. Grey: not tested.</p>
   <div class="target-matrices">
     {"".join(_grid_html(grid) for grid in grids)}
   </div>

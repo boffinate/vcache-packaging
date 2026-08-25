@@ -2,6 +2,7 @@
 # libvmod-cfg (schema vmod/1, DESIGN.md).
 schema: vmod/1
 id: cfg
+source_api_family: varnish
 upstream:
   git: https://github.com/carlosabalde/libvmod-cfg.git
   homepage: https://github.com/carlosabalde/libvmod-cfg
@@ -19,10 +20,12 @@ package:
   build_deps:
     debian:
       - libcurl4-openssl-dev
+      - libjemalloc-dev
       - libluajit-5.1-dev
       - xxd
     rpm:
       - libcurl-devel
+      - jemalloc-devel
       - luajit-devel
       - xxd
   families:

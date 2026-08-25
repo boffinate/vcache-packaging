@@ -541,7 +541,7 @@ EOF
 status_for_step() {
   local step=$1 mode=${2:-}
   case "$1" in
-    digest|checkout|daemon|modules|cargo-build|cargo-artifacts) echo build_failed ;;
+    digest|checkout|daemon|modules|source-api-normalize|cargo-build|cargo-artifacts) echo build_failed ;;
     cargo-preflight) [ "$mode" = package ] && echo package_failed || echo build_failed ;;
     bootstrap|configure)            echo configure_failed ;;
     make)                           echo build_failed ;;
@@ -554,12 +554,17 @@ status_for_step() {
   esac
 }
 
-# emit_result WORKDIR ROW ENGINE TARGET MODE REF COMMIT STATUS DETAIL
+read_source_api_normalization() {
+  cat "$1/tmp/$2.source-api-normalization" 2>/dev/null || true
+}
+
+# emit_result WORKDIR ROW ENGINE TARGET MODE REF COMMIT STATUS DETAIL [FAILURE_STEP]
 # Writes <workdir>/results/<row>--<engine>--<target>--<mode>.json (cell/1).
 emit_result() {
   mkdir -p "$1/results"
   RES_ROW="$2" RES_ENGINE="$3" RES_TARGET="$4" RES_MODE="$5" \
   RES_REF="$6" RES_COMMIT="$7" RES_STATUS="$8" RES_DETAIL="$9" \
+  RES_SOURCE_API_NORMALIZATION="${SOURCE_API_NORMALIZATION:-}" RES_FAILURE_STEP="${10:-}" \
   RES_TS="$(date -u +%FT%TZ)" \
   RES_RUN_URL="${GITHUB_RUN_ID:+${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-}/actions/runs/${GITHUB_RUN_ID}}" \
   RES_OUT="$1/results/$2--$3--$4--$5.json" \
@@ -573,6 +578,8 @@ with open(e["RES_OUT"], "w") as f:
         "target": e["RES_TARGET"], "mode": e["RES_MODE"],
         "ref": e["RES_REF"], "commit": e["RES_COMMIT"],
         "status": e["RES_STATUS"], "detail": e["RES_DETAIL"],
+        "source_api_normalization": e["RES_SOURCE_API_NORMALIZATION"],
+        "failure_step": e["RES_FAILURE_STEP"],
         "run_url": e["RES_RUN_URL"], "finished_at": e["RES_TS"],
     }, f)
     f.write("\n")
@@ -644,11 +651,12 @@ failure_detail() {
 fail_cell() {
   local workdir=$1 row=$2 engine=$3 target=$4 mode=$5 ref=$6 tag=$7 ctag=${8:-$7}
   local commit step status detail
+  SOURCE_API_NORMALIZATION=$(read_source_api_normalization "$workdir" "$ctag")
   commit=$(cat "$workdir/tmp/$ctag.commit" 2>/dev/null || true)
   step=$(cat "$workdir/tmp/$tag.step" 2>/dev/null || echo unknown)
   status=$(status_for_step "$step" "$mode")
   detail="step '$step' failed: $(failure_detail "$workdir/logs/$tag.log" "$step" | tr '\n' ' ' | cut -c1-300 || true)"
-  emit_result "$workdir" "$row" "$engine" "$target" "$mode" "$ref" "$commit" "$status" "$detail"
+  emit_result "$workdir" "$row" "$engine" "$target" "$mode" "$ref" "$commit" "$status" "$detail" "$step"
   if [ "$status" = infra_failed ]; then
     printf 'E: infra failure at step %s; see %s\n' "$step" "$workdir/logs/$tag.log" >&2
     exit 1

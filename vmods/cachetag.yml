@@ -2,6 +2,7 @@
 # libvmod-cachetag (schema vmod/1, DESIGN.md).
 schema: vmod/1
 id: cachetag
+source_api_family: vinyl
 upstream:
   git: https://github.com/boffinate/libvmod-cachetag.git
   homepage: https://github.com/boffinate/libvmod-cachetag

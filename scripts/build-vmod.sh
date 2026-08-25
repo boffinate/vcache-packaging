@@ -31,6 +31,9 @@ python3 "$REPO_ROOT/tools/matrix.py" env --engine "$ENGINE_ARG" --vmod "$VMOD_AR
 . "$ENVFILE"
 IMAGE=${TARGET_IMAGE:?}
 PKGFMT=${TARGET_FORMAT:?}
+# Result provenance comes from the inner build marker so an earlier harness
+# failure does not claim that source code was changed.
+SOURCE_API_NORMALIZATION=""
 assert_target_platform "${TARGET_PLATFORM:?}" \
   || infra_cell "$WORKDIR" "$VMOD_ARG" "$ENGINE_ARG" "$TARGET" "$MODE" "" "target platform does not match this host"
 
@@ -239,6 +242,12 @@ build_cargo() {
 }
 
 checkout_vmod
+if [ -n "${VMOD_SOURCE_API_FAMILY:-}" ] && [ "$VMOD_SOURCE_API_FAMILY" != "$ENGINE_FAMILY" ]; then
+  step source-api-normalize
+  printf '%s-to-%s\n' "$VMOD_SOURCE_API_FAMILY" "$ENGINE_FAMILY" > "/work/tmp/$TAG.source-api-normalization"
+  python3 /repo/tools/source_api_normalize.py \
+    --source-family "$VMOD_SOURCE_API_FAMILY" --target-family "$ENGINE_FAMILY" "$SRC"
+fi
 case "${VMOD_BUILD:-autotools}" in
 autotools) build_autotools ;;
 cargo) build_cargo ;;
@@ -249,6 +258,7 @@ EOF
   LOG="$WORKDIR/logs/$TAG.log"
   run_in_container "$IMAGE" "$TARGET_PLATFORM" "$WORKDIR" "$TAG.sh" "$LOG" \
     || fail_cell "$WORKDIR" "$VMOD_ID" "$ENGINE_ID" "$TARGET" compat "$VMOD_REF" "$TAG"
+  SOURCE_API_NORMALIZATION=$(read_source_api_normalization "$WORKDIR" "$TAG")
   COMMIT=$(cat "$WORKDIR/tmp/$TAG.commit" 2>/dev/null || true)
   emit_result "$WORKDIR" "$VMOD_ID" "$ENGINE_ID" "$TARGET" compat "$VMOD_REF" "$COMMIT" pass ""
   echo "OK: $VMOD_ID compat against $ENGINE_ID on $TARGET"
@@ -301,6 +311,13 @@ cat >> "$INNER" <<'EOF'
 
 checkout_vmod
 
+if [ -n "${VMOD_SOURCE_API_FAMILY:-}" ] && [ "$VMOD_SOURCE_API_FAMILY" != "$ENGINE_FAMILY" ]; then
+  step source-api-normalize
+  printf '%s-to-%s\n' "$VMOD_SOURCE_API_FAMILY" "$ENGINE_FAMILY" > "/work/tmp/$TAG.source-api-normalization"
+  python3 /repo/tools/source_api_normalize.py \
+    --source-family "$VMOD_SOURCE_API_FAMILY" --target-family "$ENGINE_FAMILY" "$SRC"
+fi
+
 if [ "${VMOD_BUILD:-autotools}" = cargo ]; then
   prepare_cargo
 fi
@@ -310,6 +327,10 @@ OUT="/work/packages/$VMOD_PACKAGE_NAME-$ENGINE_ID-$TARGET"
 rm -rf "$OUT"; mkdir -p "$OUT"
 case "$PKGFMT" in
 deb)
+  # The generated recipe is authoritative; copying it over an upstream
+  # debian/ directory would nest it and silently build with upstream's engine
+  # dependencies instead of this cell's family-specific contract.
+  rm -rf "$SRC/debian"
   cp -R "/work/tmp/$TAG-recipe/debian" "$SRC/debian"
   (cd "$SRC" && dpkg-buildpackage -us -uc -b)
   assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" /work/tmp/*.deb
@@ -405,5 +426,6 @@ run_in_container "$IMAGE" "$TARGET_PLATFORM" "$WORKDIR" "$TAG2.sh" "$LOG2" \
   || fail_cell "$WORKDIR" "$VMOD_ID" "$ENGINE_ID" "$TARGET" package "$VMOD_REF" "$TAG2" "$TAG"
 
 COMMIT=$(cat "$WORKDIR/tmp/$TAG.commit" 2>/dev/null || true)
+SOURCE_API_NORMALIZATION=$(read_source_api_normalization "$WORKDIR" "$TAG")
 emit_result "$WORKDIR" "$VMOD_ID" "$ENGINE_ID" "$TARGET" package "$VMOD_REF" "$COMMIT" pass ""
 echo "OK: $VMOD_ID packaged and install-checked against $ENGINE_ID on $TARGET"
