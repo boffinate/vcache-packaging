@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   expand:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     outputs:
       engines: ${{ steps.expand.outputs.engines }}
@@ -24,7 +24,7 @@ jobs:
 
   vmod_source:
     needs: expand
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     strategy:
       max-parallel: 10
@@ -85,7 +85,7 @@ jobs:
   publish:
     needs: [expand, engine, vmod]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     # Shared with matrix.yml: both push ci-state/matrix and deploy the same
     # Pages site, so their publishes must never race.

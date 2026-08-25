@@ -34,7 +34,7 @@ Local runs write under `work/` (gitignored). CI artifact/layout contracts (resul
 
 ## Container facts learned the hard way (2026-08-10 proof runs)
 
-- **Native vs emulated matters a lot on this arm64 host**: cachetag's 52-VTC suite took ~60 min under qemu/amd64 but minutes native. Engine prefix tarballs are arch-specific — never mix an amd64 prefix into a native arm64 run. The target registry selects native x64 and ARM GitHub runners, and the scripts reject a platform mismatch.
+- **Native vs emulated matters a lot on this arm64 host**: cachetag's 52-VTC suite took ~60 min under qemu/amd64 but minutes native. Engine prefix tarballs are arch-specific — never mix an amd64 prefix into a native arm64 run. The target registry selects native x64 and ARM Blacksmith runners, and the scripts reject a platform mismatch.
 - Engine builds: vinyl-9.0.1 ~7 min, varnish-9.0.3 ~5 min (amd64/Rosetta). Varnish 9.0.3 configure requires libssl; vinyl does not.
 - The engine prefix ships the daemon but not its shared-lib deps — compat containers must install the engine's library set (libedit, jemalloc, ncurses, pcre2, libunwind) or the load check dies on `libjemalloc.so.2`.
 - vmod-dict keeps automake boilerplate in a git submodule (`acvmod`) — checkout must `submodule update --init --recursive`.

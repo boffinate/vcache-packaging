@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   render:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     # Share the publishing lock with matrix.yml and trunk.yml: this workflow
     # reads the same state branch and deploys the same Pages site.
