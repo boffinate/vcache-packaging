@@ -26,6 +26,7 @@
           "description": "One target's complete build and package architecture contract.",
           "additionalProperties": false,
           "required": [
+            "build_runner",
             "format",
             "image",
             "package_arch",
@@ -50,7 +51,12 @@
             "runner": {
               "type": "string",
               "minLength": 1,
-              "description": "GitHub Actions runner label for this target."
+              "description": "Default GitHub Actions runner label for this target."
+            },
+            "build_runner": {
+              "type": "string",
+              "minLength": 1,
+              "description": "GitHub Actions runner label for CPU-intensive builds on this target."
             },
             "platform": {
               "type": "string",
@@ -70,7 +76,7 @@
         }
       },
       "additionalProperties": false,
-      "description": "Target registry: image, package format, native runner, and architecture."
+      "description": "Target registry: image, package format, default and build runners, and architecture."
     },
     "toolchains": {
       "type": "object",

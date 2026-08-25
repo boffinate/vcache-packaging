@@ -54,13 +54,15 @@ targets:
   debian-13-amd64:
     image: debian:13
     format: deb
-    runner: ubuntu-24.04
+    runner: blacksmith-2vcpu-ubuntu-2404
+    build_runner: blacksmith-4vcpu-ubuntu-2404
     platform: linux/amd64
     package_arch: amd64
   debian-13-arm64:
     image: debian:13
     format: deb
-    runner: ubuntu-24.04-arm
+    runner: blacksmith-2vcpu-ubuntu-2404-arm
+    build_runner: blacksmith-4vcpu-ubuntu-2404-arm
     platform: linux/arm64
     package_arch: arm64
 engines:
@@ -78,7 +80,7 @@ engines:
     targets: [debian-13-amd64, debian-13-arm64, el10-x86_64, el10-aarch64]
 ```
 
-Rules: each top-level target is the complete execution contract: image, package format, native GitHub runner, Docker platform, and expected binary-package architecture. Engine rows only select its target ids. `kind: release` requires `tarball_url` + `sha256`; `kind: trunk` requires `git_url` + `branch` and forces `packages: "false"`. Trunk engines carry a self-named `series` (`vinyl-trunk`); the resolution rule never consults `series` for trunk engines. `packages: "true"` requires a release engine and quoted `package_revision` matching `[1-9][0-9]*`; it is valid for either family. The one revision applies to the engine package and every VMOD in that engine's release set. `toolchains.rust`, when Cargo VMODs exist, is the one exact Rust version and bootstrap contract for every target. Compat and package jobs run on every listed target.
+Rules: each top-level target is the complete execution contract: image, package format, native default and build Blacksmith runners, Docker platform, and expected binary-package architecture. Engine and Cargo VMOD rows use `build_runner`; Autotools VMOD and package-cohort rows use `runner`. `TARGET_RUNNER` exposes the default runner for fixed target-specific workflows. Engine rows only select their target ids. `kind: release` requires `tarball_url` + `sha256`; `kind: trunk` requires `git_url` + `branch` and forces `packages: "false"`. Trunk engines carry a self-named `series` (`vinyl-trunk`); the resolution rule never consults `series` for trunk engines. `packages: "true"` requires a release engine and quoted `package_revision` matching `[1-9][0-9]*`; it is valid for either family. The one revision applies to the engine package and every VMOD in that engine's release set. `toolchains.rust`, when Cargo VMODs exist, is the one exact Rust version and bootstrap contract for every target. Compat and package jobs run on every listed target.
 
 Initial contents: `vinyl-9.0.1` (release, packages, both targets — pin from v1 `recipes/debian-13/pins.env`), `varnish-9.0.3` (release, currently matrix-only, Debian target — pin from v1 `survey/harness/pins.env`), `vinyl-trunk` and `varnish-trunk` (trunk, matrix-only — git URLs/branches from v1 `tools/upstream_watch.py` constants).
 
