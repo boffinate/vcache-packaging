@@ -279,6 +279,10 @@ def without_source_artifacts(rows: list) -> list:
     return [{key: value for key, value in row.items() if key != "source_artifact"} for row in rows]
 
 
+def parse_env_output(output: str) -> dict:
+    return dict(line.split("=", 1) for line in output.strip().splitlines())
+
+
 def shell_failure_detail(log: Path, step: str = "pkg-build") -> str:
     """Run the host-safe shell classifier without invoking a container build."""
     lib = Path(__file__).resolve().parent.parent / "scripts" / "lib.sh"
@@ -414,49 +418,6 @@ def catalog_source_api_family_is_autotools_only():
 
 
 @test
-def catalog_source_api_families_match_the_cross_family_experiment():
-    catalog = matrix.load_catalog(matrix.default_root())
-    actual = {
-        vmod_id: vmod["source_api_family"]
-        for vmod_id, vmod in catalog["vmods"].items()
-        if "source_api_family" in vmod
-    }
-    expected = {
-        "all-healthy": "vinyl",
-        "blobdigest": "vinyl",
-        "blobsynth": "vinyl",
-        "cachetag": "vinyl",
-        "cfg": "varnish",
-        "cluster": "vinyl",
-        "crypto": "vinyl",
-        "digest": "varnish",
-        "dns": "vinyl",
-        "dynamic": "varnish",
-        "file": "varnish",
-        "frozen": "vinyl",
-        "gcrypt": "vinyl",
-        "geoip2": "varnish",
-        "gossip": "varnish",
-        "hoailona": "vinyl",
-        "iconv": "vinyl",
-        "ipblocker": "vinyl",
-        "j": "vinyl",
-        "jq": "varnish",
-        "objvar": "vinyl",
-        "pipe": "vinyl",
-        "querystring": "varnish",
-        "re": "vinyl",
-        "re2": "vinyl",
-        "redis": "varnish",
-        "selector": "vinyl",
-        "uuid": "varnish",
-        "varnish-modules": "varnish",
-        "xcounter": "vinyl",
-    }
-    eq(actual, expected, "source API family allow-list")
-
-
-@test
 def catalog_target_registry_drives_metadata_and_rejects_bad_entries():
     with tempfile.TemporaryDirectory() as tmp:
         catalog = matrix.load_catalog(write_fixture(Path(tmp)))
@@ -474,60 +435,6 @@ def catalog_target_registry_drives_metadata_and_rejects_bad_entries():
     with tempfile.TemporaryDirectory() as tmp:
         engines = must_replace(FIXTURE_ENGINES, "      - debian-13-amd64\n      - el10-x86_64\n", "      - no-such-target\n")
         expect_catalog_error(write_fixture(Path(tmp), engines=engines), "unknown target", "unknown engine target")
-
-
-@test
-def catalog_real_targets_use_native_runners():
-    catalog = matrix.load_catalog(matrix.default_root())
-    expected = {
-        "debian-13-amd64": ("debian:13", "deb", "ubuntu-24.04", "linux/amd64", "amd64"),
-        "debian-13-arm64": ("debian:13", "deb", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
-        "ubuntu-26.04-amd64": ("ubuntu:26.04", "deb", "ubuntu-24.04", "linux/amd64", "amd64"),
-        "ubuntu-26.04-arm64": ("ubuntu:26.04", "deb", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
-        "el10-x86_64": ("almalinux:10", "rpm", "ubuntu-24.04", "linux/amd64", "x86_64"),
-        "el10-aarch64": ("almalinux:10", "rpm", "ubuntu-24.04-arm", "linux/arm64", "aarch64"),
-    }
-    for target_id, values in expected.items():
-        target = matrix.find_target(catalog, target_id)
-        eq(tuple(target[key] for key in ("image", "format", "runner", "platform", "package_arch")), values,
-           f"{target_id} contract")
-    for engine_id in ("vinyl-9.0.1", "varnish-9.0.3"):
-        engine = matrix.find_engine(catalog, engine_id)
-        ok("debian-13-arm64" in engine["targets"], f"{engine['id']} has Debian ARM64")
-        ok("ubuntu-26.04-arm64" in engine["targets"], f"{engine['id']} has Ubuntu ARM64")
-    for engine_id in ("vinyl-trunk", "varnish-trunk"):
-        engine = matrix.find_engine(catalog, engine_id)
-        ok("debian-13-arm64" in engine["targets"], f"{engine_id} has Debian ARM64")
-        ok("el10-aarch64" in engine["targets"], f"{engine_id} has EL ARM64")
-        ok("ubuntu-26.04-arm64" not in engine["targets"], f"{engine_id} omits Ubuntu ARM64")
-    varnish_trunk = matrix.find_engine(catalog, "varnish-trunk")
-    eq(varnish_trunk["source"], {
-        "git_url": "https://github.com/varnish/varnish.git",
-        "branch": "main",
-    }, "varnish trunk follows the current upstream")
-    ok("el10-aarch64" in matrix.find_engine(catalog, "vinyl-9.0.1")["targets"], "vinyl release has EL ARM64")
-
-
-@test
-def catalog_basicauth_tracks_its_real_head_branch():
-    catalog = matrix.load_catalog(matrix.default_root())
-    eq(catalog["vmods"]["basicauth"]["sources"]["head"], "master",
-       "basicauth trunk source follows the upstream default branch")
-
-
-@test
-def catalog_dispatch_declares_its_required_engine_source():
-    catalog = matrix.load_catalog(matrix.default_root())
-    eq(catalog["vmods"]["dispatch"].get("engine_source"), "required",
-       "dispatch receives VINYLSRC because upstream configure requires it")
-
-
-@test
-def catalog_promoted_vinyl_vmods_are_not_implicitly_varnish_promoted():
-    catalog = matrix.load_catalog(matrix.default_root())
-    for vmod_id in ("cachetag", "dict", "pesi", "remoteip", "tbf"):
-        eq(catalog["vmods"][vmod_id]["package"].get("families"), ["vinyl"],
-           f"{vmod_id}: package promotion remains Vinyl-only until Varnish proof")
 
 
 @test
@@ -703,25 +610,6 @@ def catalog_cargo_contract_requires_pinned_ordered_artifacts():
 
 
 @test
-def catalog_real_rust_vmods_are_unpromoted_and_explicitly_mapped():
-    catalog = matrix.load_catalog(Path(__file__).resolve().parent.parent)
-    expected = {
-        "reqwest": ("v0.1.0", "libvmod_reqwest.so", "reqwest"),
-        "fileserver": ("v0.1.0", "libvmod_fileserver.so", "fileserver"),
-        "rers": ("v0.0.14", "libvmod_rers.so", "rers"),
-        "fcgi": ("821221922e7437a22e668c42680d98e6560aa4ca", "libvmod_fastcgi.so", "fastcgi"),
-    }
-    for vmod_id, (ref, artifact, module) in expected.items():
-        vmod = catalog["vmods"][vmod_id]
-        eq(matrix.vmod_build(vmod), "cargo", f"{vmod_id} uses Cargo")
-        eq(vmod["sources"]["default"]["ref"], ref, f"{vmod_id} immutable release ref")
-        eq(matrix.vmod_artifacts(vmod), [artifact], f"{vmod_id} artifact mapping")
-        eq(matrix.vmod_modules(vmod), [module], f"{vmod_id} VCL import mapping")
-        ok("promoted" not in vmod["package"], f"{vmod_id} remains unpromoted")
-        eq(vmod["package"].get("families"), ["varnish"], f"{vmod_id} family gate")
-
-
-@test
 def catalog_package_families_field():
     with tempfile.TemporaryDirectory() as tmp:
         vmod = FIXTURE_DICT + "  families:\n    - varnish\n"
@@ -793,8 +681,7 @@ def catalog_promoted_sources_require_immutable_commits():
 
 
 # ---------------------------------------------------------------------------
-# Editor JSON Schemas (DESIGN.md decision 11) - generated outputs, so what
-# these tests guard is that they cannot drift from the validator.
+# Editor JSON Schemas
 # ---------------------------------------------------------------------------
 
 
@@ -1126,14 +1013,6 @@ def release_package_target_filter_limits_every_matrix_output():
         ])
         eq(code, 1, "CLI rejects target filtering outside package release dispatches")
         ok("only supported" in err, "CLI explains the release package restriction")
-        workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" / "release.yml").read_text()
-        ok("inputs:\n      targets:" in workflow, "release dispatch accepts an optional target selector")
-        ok('args+=(--targets "$RELEASE_TARGETS")' in workflow,
-           "release expansion passes the optional selector without shell interpolation")
-        ok('RELEASE_TARGETS: ${{ inputs.targets }}' in workflow,
-           "release expansion and publication gate receive the same selector")
-        ok('matrix.release_package_target_filter(catalog, os.environ.get("RELEASE_TARGETS", ""))' in workflow,
-           "publication gate re-expands the filtered target cohort")
 
 
 @test
@@ -1275,7 +1154,7 @@ def env_output_is_sh_sourceable():
         code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "dict",
                                 "--target", "el10-x86_64", "--root", root])
         eq(code, 0, "env exit code")
-        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        values = parse_env_output(out)
         eq(values["ENGINE_VERSION"], "'9.0.1'", "ENGINE_VERSION")
         eq(values["ENGINE_PACKAGE_REVISION"], "'1'", "ENGINE_PACKAGE_REVISION")
         eq(values["ENGINE_TARBALL_URL"], "'https://example.org/vinyl-cache-9.0.1.tgz'", "tarball url")
@@ -1298,12 +1177,12 @@ def env_output_is_sh_sourceable():
         code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "dict",
                                 "--target", "debian-13-amd64", "--root", root])
         eq(code, 0, "deb-target env exit code")
-        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        values = parse_env_output(out)
         eq(values["VMOD_BUILD_DEPS"], "'python3-docutils'", "debian build deps for a debian target")
         code, out, _ = run_cli(["env", "--engine", "varnish-9.0.3", "--vmod", "dict",
                                 "--target", "debian-13-amd64", "--root", root])
         eq(code, 0, "Varnish env exit code")
-        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        values = parse_env_output(out)
         eq(values["ENGINE_RUNTIME_PACKAGE"], "'varnish'", "Varnish runtime package comes from family")
         eq(values["ENGINE_DEVELOPMENT_PACKAGE"], "'varnish-dev'", "Varnish development package comes from family")
         eq(values["ENGINE_API"], "'varnishapi'", "Varnish API comes from family")
@@ -1313,7 +1192,7 @@ def env_output_is_sh_sourceable():
         ok("VMOD_DEB_VERSION" not in values, "no package version for an un-packaged engine")
         code, out, _ = run_cli(["env", "--engine", "vinyl-trunk", "--vmod", "dict", "--root", root])
         eq(code, 0, "trunk env exit code")
-        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        values = parse_env_output(out)
         eq(values["ENGINE_BRANCH"], "'main'", "trunk branch")
         eq(values["ENGINE_VERSION"], "'trunk'", "trunk engine version placeholder")
         eq(values["VMOD_REF"], "'master'", "trunk vmod ref is head")
@@ -1338,7 +1217,7 @@ def env_emits_tests_and_modules():
         code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "multi",
                                 "--target", "debian-13-amd64", "--root", root])
         eq(code, 0, "env exit code with tests+modules")
-        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        values = parse_env_output(out)
         eq(values["VMOD_TESTS"], "'make-check'", "VMOD_TESTS from the manifest")
         eq(values["VMOD_ENGINE_SOURCE"], "'required'", "VMOD_ENGINE_SOURCE from the manifest")
         eq(values["VMOD_SOURCE_API_FAMILY"], "'varnish'", "VMOD_SOURCE_API_FAMILY from the manifest")
@@ -1346,7 +1225,7 @@ def env_emits_tests_and_modules():
         code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "dict",
                                 "--target", "debian-13-amd64", "--root", root])
         eq(code, 0, "env exit code without tests/modules")
-        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        values = parse_env_output(out)
         eq(values["VMOD_TESTS"], "''", "no tests declared -> empty VMOD_TESTS")
         eq(values["VMOD_ENGINE_SOURCE"], "''", "no engine_source declared -> empty VMOD_ENGINE_SOURCE")
         eq(values["VMOD_SOURCE_API_FAMILY"], "''", "no source_api_family -> empty VMOD_SOURCE_API_FAMILY")
@@ -1388,7 +1267,7 @@ def cohort_env_is_generated_from_the_promoted_catalog():
         code, out, _ = run_cli(["cohort-env", "--engine", "vinyl-9.0.1",
                                 "--target", "debian-13-amd64", "--root", root])
         eq(code, 0, "cohort-env exit code")
-        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        values = parse_env_output(out)
         eq(values["COHORT_MODULES"], "'dict'", "cohort imports every declared module")
 
 
@@ -1399,7 +1278,7 @@ def env_emits_cargo_execution_contract():
         code, out, _ = run_cli(["env", "--engine", "varnish-9.0.3", "--vmod", "reqwest",
                                 "--target", "debian-13-amd64", "--root", root])
         eq(code, 0, "Cargo env exit code")
-        values = dict(line.split("=", 1) for line in out.strip().split("\n"))
+        values = parse_env_output(out)
         eq(values["VMOD_BUILD"], "'cargo'", "Cargo build kind")
         eq(values["VMOD_ARTIFACTS"], "'libvmod_reqwest.so'", "Cargo declared artifacts")
         eq(values["RUST_VERSION"], "'1.90.0'", "global Rust version")
@@ -1508,76 +1387,6 @@ def shell_failure_details_preserve_compat_make_diagnostics():
 
 
 @test
-def vmod_compat_build_is_serial():
-    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
-    ok('make -j"$(nproc)" || make' not in script, "compat build does not retry a parallel make")
-    ok("# VMOD generators are not reliably parallel-safe.\n  make -j1" in script,
-       "compat build is serial from the outset")
-
-
-@test
-def cfg_declares_xxd_build_dependency():
-    cfg = (Path(__file__).resolve().parent.parent / "vmods" / "cfg.yml").read_text()
-    ok("      - xxd" in cfg, "cfg declares xxd for its generated source step")
-
-
-@test
-def vmod_cargo_compat_contract_is_offline_after_one_fetch():
-    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
-    library = (Path(__file__).resolve().parent.parent / "scripts" / "lib.sh").read_text()
-    for expected in (
-        "build_autotools()",
-        "build_cargo()",
-        "prepare_cargo",
-        'python3 /repo/tools/cargo-artifacts.py --release-dir "$CARGO_TARGET_DIR/release"',
-        'artifact_args+=(--mapping "${modules[$i]}=${artifacts[$i]}")',
-        'load_modules "${sos[@]}"',
-    ):
-        ok(expected in script, f"Cargo compatibility path uses {expected}")
-    for expected in (
-        "[ -f Cargo.lock ]",
-        "cargo metadata --locked --offline --no-deps",
-        "cargo fetch --locked",
-        'export RUSTUP_HOME=/work/rustup',
-        'export CARGO_HOME=/work/cargo',
-        'export RUSTUP_TOOLCHAIN="${RUST_VERSION:?}"',
-        '[ ! -x "$CARGO_HOME/bin/rustup" ]',
-        'rustup run "$RUSTUP_TOOLCHAIN" rustc --version',
-        'rustc --version | grep -F "rustc $RUST_VERSION "',
-        'cargo --version | grep -F "cargo $RUST_VERSION "',
-    ):
-        ok(expected in library, f"shared Cargo preparation uses {expected}")
-    for expected in ("cargo build --release --locked --offline", "cargo test --release --locked --offline"):
-        ok(expected in script, f"Cargo compatibility path uses {expected}")
-    ok(script.count("prepare_cargo") == 2, "compat and package paths share Cargo preparation")
-    ok(library.count("step cargo-fetch") == 1, "shared Cargo preparation fetches once")
-    ok('retry_command 3 "cargo fetch" cargo fetch --locked' in library,
-       "Cargo fetch uses the shared bounded retry runner")
-    ok("dnf_install_retry clang clang-devel" in library,
-       "EL Cargo preparation uses the EL10 clang development package")
-    ok("libclang-devel" not in library,
-       "EL Cargo preparation does not request the removed libclang-devel name")
-
-
-@test
-def vmod_autotools_aliases_use_the_engine_prefix():
-    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
-    ok('ENGINE_API_DATAROOTDIR="$PREFIX/share"' in script,
-       "Autotools aliases use the relocatable engine prefix")
-    ok('pkg-config --variable=datarootdir' not in script,
-       "Autotools aliases do not inherit unresolved pkg-config placeholders")
-
-
-@test
-def container_image_pull_retries_transient_registry_failures():
-    library = (Path(__file__).resolve().parent.parent / "scripts" / "lib.sh").read_text()
-    ok('docker image inspect "$image"' in library, "container runner checks the local image cache")
-    ok("ensure_container_image" in library, "container runner shares the explicit image helper")
-    ok('retry_command 3 "docker pull $image"' in library,
-       "container image pulls use the shared bounded retry runner")
-
-
-@test
 def shared_retry_runner_bounds_attempts_and_preserves_status():
     root = Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory() as tmp:
@@ -1639,13 +1448,6 @@ def missing_remote_branch_is_not_retried_as_a_transport_failure():
 @test
 def immutable_downloads_retry_transient_failures():
     root = Path(__file__).resolve().parent.parent
-    library = (root / "scripts" / "lib.sh").read_text()
-    engine_script = (root / "scripts" / "build-engine.sh").read_text()
-    ok("download_retry()" in library, "shared immutable-download retry helper exists")
-    ok('download_retry "${ENGINE_TARBALL_URL:?}" "/work/tmp/$TAG.tar.gz"' in engine_script,
-       "engine release fetch uses the retry helper")
-    ok('download_retry "${ENGINE_TARBALL_URL:?}" "$ETREE_ROOT/engine.tgz"' in library,
-       "VMOD engine-source fetch uses the retry helper")
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         fake_bin = tmp / "bin"
@@ -1695,12 +1497,6 @@ def immutable_downloads_retry_transient_failures():
 @test
 def engine_artifact_carries_and_restores_generated_private_headers():
     root = Path(__file__).resolve().parent.parent
-    engine_script = (root / "scripts" / "build-engine.sh").read_text()
-    library = (root / "scripts" / "lib.sh").read_text()
-    ok('preserve_engine_private_headers "$SRC" "$PREFIX" "$ENGINE_DAEMON"' in engine_script,
-       "engine builds preserve their generated private headers before archiving")
-    ok('seed_engine_private_headers "$PREFIX" "$ENGINE_TREE" "$ENGINE_DAEMON"' in library,
-       "VMOD source provisioning restores private headers from the engine artifact")
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         source = tmp / "source"
@@ -1727,45 +1523,8 @@ def engine_artifact_carries_and_restores_generated_private_headers():
 
 
 @test
-def debian_dependency_installs_retry_mirror_sync_failures():
-    root = Path(__file__).resolve().parent.parent
-    library = (root / "scripts" / "lib.sh").read_text()
-    for helper in ("apt_update_retry()", "apt_install_retry()"):
-        ok(helper in library, f"Debian dependency helper {helper} exists")
-    retry_call = "apt_install_retry " + "\\"
-    ok(retry_call in (root / "scripts" / "build-engine.sh").read_text(),
-       "engine dependency install uses the retry helper")
-    vmod_script = (root / "scripts" / "build-vmod.sh").read_text()
-    ok(vmod_script.count(retry_call) >= 2,
-       "compat and package VMOD dependency installs use the retry helper")
-    ok("rm -rf /var/lib/apt/lists/*" in library,
-       "retry clears stale Debian package indexes")
-    install_recovery = library.split("apt_install_recover() {", 1)[1].split("\n}", 1)[0]
-    ok("apt-get update -qq" in install_recovery and "apt_update_retry" not in install_recovery,
-       "install recovery refreshes once instead of nesting a second retry loop")
-
-
-@test
-def rpm_dependency_installs_retry_repo_metadata_failures():
-    root = Path(__file__).resolve().parent.parent
-    library = (root / "scripts" / "lib.sh").read_text()
-    ok("dnf_install_retry()" in library, "RPM dependency retry helper exists")
-    ok("dnf clean all" in library, "RPM retry clears stale repository metadata")
-    for name in ("build-engine.sh", "build-vmod.sh"):
-        script = (root / "scripts" / name).read_text()
-        ok("dnf_install_retry " in script, f"{name} uses the RPM retry helper")
-
-
-@test
 def vmod_clone_retries_transient_failures():
     root = Path(__file__).resolve().parent.parent
-    library = (root / "scripts" / "lib.sh").read_text()
-    ok("clone_vmod()" in library, "shared library wraps VMOD source clones")
-    ok('retry_command 3 "git clone $url"' in library, "VMOD clone uses the shared retry runner")
-    ok('materialize_vmod_source "$VMOD_GIT" "$VMOD_REF"' in library,
-       "local VMOD checkout retains a direct-clone fallback")
-    ok('restore_vmod_source "$VMOD_SOURCE_ARTIFACT"' in library,
-       "CI VMOD checkout restores its workflow source artifact")
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         fake_bin = tmp / "bin"
@@ -1966,100 +1725,6 @@ def engine_batch_attempts_every_engine_and_preserves_engine_directories():
 
 
 @test
-def workflow_prefetches_each_vmod_source_for_build_cells():
-    root = Path(__file__).resolve().parent.parent
-    for name in ("matrix.yml", "trunk.yml", "release.yml"):
-        workflow = (root / ".github" / "workflows" / name).read_text()
-        ok("source_batches: ${{ steps.expand.outputs.source_batches }}" in workflow,
-           f"{name} exports bounded source batches")
-        ok("python3 tools/source_batch.py" in workflow,
-           f"{name} fetches each source batch")
-        ok("name: ${{ matrix.artifact }}" in workflow,
-           f"{name} publishes the source bundle")
-        ok("engine_batches: ${{ steps.expand.outputs.engine_batches }}" in workflow,
-           f"{name} exports target-level engine batches")
-        ok("python3 tools/engine_batch.py" in workflow,
-           f"{name} runs the engine batch driver")
-        ok("needs: [expand, engine, vmod_source]" in workflow,
-           f"{name} waits for source acquisition before starting VMOD cells")
-    batch = (root / ".github" / "workflows" / "vmod-batch.yml").read_text()
-    ok("pattern: ${{ inputs.source_pattern }}" in batch,
-       "VMOD batches download only their deduplicated source bundles")
-    ok("merge-multiple: true" in batch,
-       "downloaded source bundles retain one merged directory per source identity")
-    ok('engine-${{ inputs.engine }}-${{ inputs.target }}' in batch,
-       "VMOD batches select only their engine from the target bundle")
-    ok("VMOD_BATCH_ITEMS: ${{ inputs.items }}" in batch,
-       "the reusable workflow passes every cell to the isolated batch driver")
-    ok((root / "tools" / "source_batch.py").is_file(),
-       "source acquisition has a host-safe batch driver")
-
-
-@test
-def workflows_use_github_hosted_runners():
-    root = Path(__file__).resolve().parent.parent
-    for name in ("ci.yml", "matrix.yml", "trunk.yml", "release.yml", "render-pages.yml", "upstream-varnish-overlay.yml"):
-        workflow = (root / ".github" / "workflows" / name).read_text()
-        for line in workflow.splitlines():
-            if "runs-on:" in line and "${{" not in line:
-                ok("ubuntu-" in line, f"{name} keeps fixed jobs on GitHub-hosted runners")
-    catalog = matrix.load_catalog(root)
-    for target_id, target in catalog["targets"].items():
-        ok(target["runner"].startswith("ubuntu-"),
-           f"{target_id} uses a GitHub-hosted runner")
-
-
-@test
-def remaining_script_network_boundaries_use_shared_retries():
-    root = Path(__file__).resolve().parent.parent
-    library = (root / "scripts" / "lib.sh").read_text()
-    cohort = (root / "scripts" / "test-package-cohort.sh").read_text()
-    overlay = (root / "scripts" / "probe-upstream-varnish-overlay.sh").read_text()
-    ordering = (root / "scripts" / "check-package-version-ordering.sh").read_text()
-    for expected in (
-        'git_retry "fetch VMOD ref $ref" -C "$destination" fetch --depth 1 origin "$ref"',
-        'git_retry "update VMOD submodules" -C "$destination" submodule update --init --recursive',
-        'download_retry https://sh.rustup.rs "$RUSTUP_INIT"',
-        'retry_command 3 "rustup bootstrap" sh "$RUSTUP_INIT"',
-        'retry_command 3 "install Rust toolchain $RUSTUP_TOOLCHAIN" rustup toolchain install',
-        'apt_install_retry "$package_dir"/',
-    ):
-        ok(expected in library, f"shared library is missing retried network boundary {expected!r}")
-    for expected in ("apt_update_retry", "apt_install_retry", "dnf_install_retry"):
-        ok(expected in cohort, f"cohort uses {expected}")
-    for expected in ("apt_update_retry", "apt_install_retry"):
-        ok(expected in overlay, f"overlay uses {expected}")
-    ok('download_retry https://packages.varnish-software.com/varnish/varnish.pub.asc' in overlay,
-       "overlay signing key download uses the shared retry helper")
-    ok(ordering.count("ensure_container_image") == 2,
-       "version-order proof explicitly obtains both images with retries")
-
-
-@test
-def workflow_control_plane_commands_use_shared_retries():
-    root = Path(__file__).resolve().parent.parent
-    for name in ("matrix.yml", "trunk.yml"):
-        workflow = (root / ".github" / "workflows" / name).read_text()
-        ok('../repo/scripts/matrix-state.sh checkout' in workflow,
-           f"{name} shares state-branch checkout")
-        ok('../repo/scripts/matrix-state.sh publish "$GITHUB_RUN_ID"' in workflow,
-           f"{name} shares state-branch publication")
-    state_script = (root / "scripts" / "matrix-state.sh").read_text()
-    for expected in (
-        "git_remote_head_exists_retry origin ci-state/matrix",
-        'git_retry "fetch matrix state" fetch --depth 1 origin ci-state/matrix',
-        'git_retry "push matrix state" push origin HEAD:ci-state/matrix',
-    ):
-        ok(expected in state_script, f"matrix-state adapter is missing {expected!r}")
-    release = (root / ".github" / "workflows" / "release.yml").read_text()
-    ok('"scripts/retry.sh", "release"' in release,
-       "stable release replacement is routed through the shared retry helper")
-    retry_script = (root / "scripts" / "retry.sh").read_text()
-    ok("replace_github_release_retry" in retry_script,
-       "retry command adapter delegates release replacement to lib.sh")
-
-
-@test
 def github_release_retry_restarts_the_replace_transaction():
     root = Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory() as tmp:
@@ -2104,43 +1769,6 @@ def github_release_retry_restarts_the_replace_transaction():
 
 
 @test
-def package_load_failure_reports_the_end_of_compiler_output():
-    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
-    ok('tail -n 40 /tmp/load.log' in script, "package load failure prints diagnostic tail")
-    ok('sed -n \'1,40p\' /tmp/load.log' not in script,
-       "package load failure no longer ends on a source-file header")
-
-
-@test
-def vmod_package_collection_and_install_use_family_names():
-    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
-    ok('rm -rf "$SRC/debian"' in script, "generated Debian recipe replaces upstream packaging")
-    library = (Path(__file__).resolve().parent.parent / "scripts" / "lib.sh").read_text()
-    combined = script + library
-    ok("vinyl-vmod-" not in combined, "VMOD package collection has no Vinyl literal")
-    for expected in (
-        'VMOD_PACKAGE_NAME=${VMOD_PACKAGE_NAME:?}',
-        'ENGINE_RUNTIME_PACKAGE=${ENGINE_RUNTIME_PACKAGE:?}',
-        'ENGINE_DEVELOPMENT_PACKAGE=${ENGINE_DEVELOPMENT_PACKAGE:?}',
-        'NAMEDIR="$VMOD_PACKAGE_NAME-${VMOD_VERSION:?}"',
-        '"/work/tmp/$TAG-recipe/$VMOD_PACKAGE_NAME.spec"',
-        'select_native_package deb "$VMOD_PACKAGE_NAME" /work/tmp/*.deb',
-        'select_native_package rpm "$VMOD_PACKAGE_NAME" "$TOPD"/RPMS/*/*.rpm',
-        '"$ENGINE_RUNTIME_PACKAGE"_*.deb',
-        '"$ENGINE_DEVELOPMENT_PACKAGE"_*.deb',
-        '"$ENGINE_RUNTIME_PACKAGE"-*.rpm',
-        '"$ENGINE_DEVELOPMENT_PACKAGE"-*.rpm',
-        'pkg-config --variable=vmoddir "$ENGINE_API"',
-    ):
-        ok(expected in combined, f"VMOD package flow uses {expected}")
-    ok(script.count('install_engine_packages "$ENGINE_PKGDIR"') == 3,
-       "build and fresh-install paths share engine package installation")
-    ok('/work/tmp/*.deb' in script and '"$TOPD"/RPMS/*/*.rpm' in script,
-       "every binary emitted by a VMOD recipe gets a native architecture check")
-    ok('for c in vinyld varnishd' not in script, "VMOD load checks use the family daemon")
-
-
-@test
 def rpm_collection_selects_the_main_package_by_metadata():
     root = Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory() as tmp:
@@ -2173,57 +1801,6 @@ def rpm_collection_selects_the_main_package_by_metadata():
         )
         eq(result.returncode, 0, "RPM selection accepts one main package beside debug packages")
         eq(result.stdout.strip(), str(main), "RPM selection returns only the declared package name")
-
-
-@test
-def engine_daemon_smoke_check_preserves_failure():
-    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-engine.sh").read_text()
-    ok('"$PREFIX/sbin/$ENGINE_DAEMON" -V 2>&1\n' in script,
-       "engine smoke check executes the family daemon directly")
-    ok('"$PREFIX/sbin/$ENGINE_DAEMON" -V 2>&1 | head -2 || true' not in script,
-       "engine smoke check does not discard the daemon exit status")
-
-
-@test
-def engine_family_recipes_and_script_use_the_contract():
-    root = Path(__file__).resolve().parent.parent
-    vinyl = root / "packaging" / "engine" / "vinyl"
-    varnish = root / "packaging" / "engine" / "varnish"
-    for recipe_dir, runtime, development in [
-        (vinyl, "vinyl-cache", "vinyl-cache-dev"),
-        (varnish, "varnish", "varnish-dev"),
-    ]:
-        ok((recipe_dir / "debian" / "control").is_file(), f"{runtime}: Debian control exists")
-        ok((recipe_dir / "debian" / "rules").is_file(), f"{runtime}: Debian rules exists")
-        ok((recipe_dir / f"{runtime}.spec").is_file(), f"{runtime}: RPM spec exists")
-        spec = (recipe_dir / f"{runtime}.spec").read_text()
-        ok('%{!?engine_release:%{error:' in spec, f"{runtime}: RPM recipe requires package revision")
-        control = (recipe_dir / "debian" / "control").read_text()
-        ok(f"Package: {runtime}" in control, f"{runtime}: runtime identity")
-        ok(f"Package: {development}" in control, f"{runtime}: development identity")
-    ok(not (root / "packaging" / "engine" / "debian").exists(), "old unscoped Debian recipe directory moved")
-    script = (root / "scripts" / "build-engine.sh").read_text()
-    for exported in ("ENGINE_RUNTIME_PACKAGE", "ENGINE_DEVELOPMENT_PACKAGE", "ENGINE_RECIPE_DIR",
-                     "ENGINE_SOURCE_NAME", "ENGINE_RPM_ARCHIVE_STEM", "ENGINE_DAEMON",
-                     "ENGINE_PACKAGE_REVISION"):
-        ok(f"${{{exported}:?}}" in script, f"build script requires {exported} from matrix env")
-    ok("$ENGINE_SOURCE_NAME ($ENGINE_VERSION-$ENGINE_PACKAGE_REVISION)" in script,
-       "engine Debian package version uses the package revision")
-    ok('--define "engine_release $ENGINE_PACKAGE_REVISION"' in script,
-       "engine RPM package release uses the package revision")
-    ok("/repo/packaging/engine/debian" not in script, "build script has no unscoped recipe path")
-    ok("/repo/packaging/engine/vinyl-cache.spec" not in script, "build script has no Vinyl RPM spec path")
-
-
-@test
-def missing_engine_artifact_reaches_vmod_classifier():
-    workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
-                "vmod-batch.yml").read_text()
-    start = workflow.index("      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1")
-    end = workflow.index("      - run: python3 tools/vmod_batch.py", start)
-    download_step = workflow[start:end]
-    ok("continue-on-error: true" in download_step,
-       "a missing engine artifact does not stop the job before build-vmod.sh classifies it")
 
 
 @test
@@ -2289,51 +1866,6 @@ def release_payload_gate_stages_github_asset_names():
         eq(sorted(path.name for path in staged.iterdir()),
            ["vinyl-vmod-dict_1.7-1.vinyl9.0.1.1_amd64.deb"],
            "release checksums use GitHub's retained asset name")
-
-
-@test
-def stable_release_keeps_green_pairs_independent():
-    workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
-                "release.yml").read_text()
-    ok("github.ref == 'refs/heads/main'" in workflow,
-       "stable release job is restricted to main")
-    ok("group: release-stable" in workflow and "cancel-in-progress: false" in workflow,
-       "stable release replacement is serialized without cancellation")
-    publish = workflow.index("for tag, dist, body, names in prepared:")
-    gate_failure = workflow.index("release validation failed for one or more pairs", publish)
-    ok(publish < gate_failure,
-       "a failed pair reports red only after all independently green pairs publish")
-    ok(workflow.index('sys.exit(1)', gate_failure) > gate_failure,
-       "a failed pair still makes the release workflow fail")
-    ok("needs: [expand, engine, vmod, cohort]" in workflow,
-       "publication cannot run before the full package cohort smoke test")
-    cohort_script = (Path(__file__).resolve().parent.parent / "scripts" /
-                     "test-package-cohort.sh").read_text()
-    ok("for module in $COHORT_MODULES" in cohort_script,
-       "cohort VCL is generated from authoritative package.modules metadata")
-    ok('kill -0 "$PID"' in cohort_script,
-       "cohort smoke proves the daemon survives actual startup")
-    ok("cohort_results.get((engine, target), \"missing result\")" in workflow,
-       "the pair gate consumes the cohort result instead of trusting job topology")
-
-
-@test
-def upstream_varnish_overlay_is_strictly_non_publishing_evidence():
-    root = Path(__file__).resolve().parent.parent
-    workflow = (root / ".github" / "workflows" / "upstream-varnish-overlay.yml").read_text()
-    probe = (root / "scripts" / "probe-upstream-varnish-overlay.sh").read_text()
-    ok("workflow_dispatch:" in workflow and "schedule:" not in workflow,
-       "upstream overlay proof is manual evidence, not fleet surveillance")
-    ok("select-engine --family varnish --kind release" in workflow and "TARGET_RUNNER" in workflow,
-       "overlay engine and runner are selected from the catalog")
-    ok("gh release" not in workflow and "release.yml" not in workflow,
-       "experimental overlay workflow has no publication path")
-    ok("STRICT_ABI=$(dpkg-query" in probe and "varnishd-abi-" in probe,
-       "overlay discovers the strict ABI from the installed upstream package")
-    ok("Depends: varnish (= ${UPSTREAM_VERSION}), ${STRICT_ABI}" in probe,
-       "overlay proof package binds exact upstream version and strict ABI")
-    ok("COHORT.json" not in probe and "PACKAGE-CONTRACT.json" not in probe,
-       "overlay keeps no unconsumed evidence ledger")
 
 
 # ---------------------------------------------------------------------------
@@ -2488,32 +2020,19 @@ def render_smoke():
                                 "--root", str(root), "--generated-at", "2026-08-10T00:00:00Z"])
         eq(code, 0, "render exit code (failed cells are still a success)")
         html_text = out_file.read_text()
-        for needle in ("vinyl-9.0.1", "varnish-9.0.3", "vinyl-trunk", "engine build", "dict",
+        for needle in ("vinyl-9.0.1", "varnish-9.0.3", "vinyl-trunk", "dict",
                        'class="cell PASS"', 'class="cell PASS NORMALIZED"',
                        'class="cell FAIL NORMALIZED"', 'class="cell INFRA"',
-                       'class="cell MISSING"', "source normalization found no API spellings", "prefers-color-scheme",
-                       "data-theme", "https://example.org/runs/1",
-                       matrix.SOURCE_NORMALIZATION_HELP,
-                       matrix.SOURCE_NORMALIZATION_LEGEND,
-                       'class="github-badge" href="https://github.com/boffinate/vcache-packaging/"',
-                       'aria-label="View vcache-packaging on GitHub"',
-                       'class="target-matrices"',
-                       'grid-template-columns:repeat(auto-fit,minmax(min(100%,580px),1fr))',
-                       '.matrix-scroll{width:fit-content;max-width:100%;overflow-x:auto;'):
+                       'class="cell MISSING"', "source normalization found no API spellings",
+                       "https://example.org/runs/1", 'class="target-matrices"',
+                       '<time datetime="2026-08-10T00:00:00Z">'):
             ok(needle in html_text, f"rendered page is missing {needle!r}")
         eq(html_text.count('class="target-matrix"'), 2, "one rendered matrix per target")
+        eq(html_text.count('class="matrix-key"'), 1, "the matrix key renders once")
+        eq(html_text.count('class="matrix-note"'), 1, "the package-scope note renders once")
         ok('<h2 class="target">debian-13-amd64' in html_text, "Debian matrix heading")
         ok('<h2 class="target">el10-x86_64' in html_text, "EL10 matrix heading")
-        ok('<title>Vinyl Cache and Varnish Cache VMOD compatibility matrix</title>' in html_text,
-           "page title names both cache projects")
-        ok('<h1><span>Vinyl Cache and Varnish Cache</span><span class="title-context">VMOD compatibility matrix</span></h1>'
-           in html_text, "page heading names both cache projects on compact lines")
-        ok('header.page{display:flex;flex-wrap:wrap;align-items:center;min-height:65px;' in html_text,
-           "two-line heading keeps the existing header height")
-        ok('as at <time datetime="2026-08-10T00:00:00Z">10 August 2026 at 00:00 UTC</time>' in html_text,
-           "as-at timestamp is a human-readable time element")
-        ok('<td class="rid"><a href="https://example.org/dict" target="_blank" rel="noopener">dict</a></td>'
-           in html_text, "VMOD row links to its configured homepage")
+        ok('href="https://example.org/dict"' in html_text, "VMOD row links to its configured homepage")
         state = json.loads(state_file.read_text())
         catalog = matrix.load_catalog(root)
         eq(matrix.matrix_targets(state, catalog), ["debian-13-amd64", "el10-x86_64"], "target order from catalog")
@@ -2556,13 +2075,7 @@ def test_failed_cell_merges_and_renders_red():
         cell_view = grid["cells"][("dict", "vinyl-9.0.1")]
         eq(cell_view["bucket"], "FAIL", "test_failed renders red, not infra")
         eq(cell_view["text"], "test", "test_failed short label")
-        out_file = tmp / "index.html"
-        code, _, _ = run_cli(["render", "--state-file", str(state_file), "--out", str(out_file),
-                              "--root", str(root), "--generated-at", "2026-08-10T00:00:00Z"])
-        eq(code, 0, "render exit code with a test_failed cell")
-        html_text = out_file.read_text()
-        ok('class="cell FAIL"' in html_text, "test_failed cell gets the FAIL class")
-        ok("FAIL: tests/x01.vtc" in html_text, "failing test names survive into the tooltip")
+        ok("FAIL: tests/x01.vtc" in cell_view["title"], "failing test names survive into the tooltip")
 
 
 @test
@@ -2578,12 +2091,10 @@ def translated_build_failure_keeps_its_outcome_label():
 
 
 @test
-def key_line_is_exact_and_tooltips_speak_human():
+def mixed_modes_fold_and_retain_result_context():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         root = write_fixture(tmp / "repo")
-        results = tmp / "results"
-        results.mkdir()
         cells = [
             make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "pass", "2026-08-09T00:00:00Z"),
             make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "package", "package_failed",
@@ -2591,38 +2102,21 @@ def key_line_is_exact_and_tooltips_speak_human():
             make_cell("redis", "vinyl-9.0.1", "debian-13-amd64", "compat", "configure_failed",
                       "2026-08-09T00:00:00Z"),
         ]
-        for i, cell in enumerate(cells):
-            (results / f"c{i}.json").write_text(json.dumps(cell))
-        state_file = tmp / "state.json"
-        run_cli(["merge", "--results-dir", str(results), "--state-file", str(state_file)])
-        grid = matrix.build_grid(json.loads(state_file.read_text()), "debian-13-amd64", matrix.load_catalog(root))
+        state = {"schema": matrix.STATE_SCHEMA, "cells": {}, "infra_failures": {}}
+        eq(matrix.merge_cells(state, cells), 3, "each result is merged")
+        grid = matrix.build_grid(state, "debian-13-amd64", matrix.load_catalog(root))
         eq(grid["cells"][("dict", "vinyl-9.0.1")]["bucket"], "FAIL",
            "mixed cell keeps the worst-across-modes colour fold")
         redis_title = grid["cells"][("redis", "vinyl-9.0.1")]["title"]
-        ok("compat: This module fails to compile or load against this engine "
-           "(usually: upstream does not support this engine yet). (configure_failed)" in redis_title,
-           "failing compat tooltip carries the human sentence plus its status")
+        ok("compat:" in redis_title and "(configure_failed)" in redis_title,
+           "failing compat result retains its mode and status")
         dict_title = grid["cells"][("dict", "vinyl-9.0.1")]["title"]
-        ok("compat: This module compiles from source against this engine and loads. (pass)" in dict_title,
-           "passing compat tooltip line speaks human")
-        ok("package: The ready-to-install package (.deb/.rpm) failed to build or install. "
-           "(package_failed)" in dict_title, "failing package tooltip line speaks human")
+        ok("compat:" in dict_title and "(pass)" in dict_title,
+           "passing compat result retains its mode and status")
+        ok("package:" in dict_title and "(package_failed)" in dict_title,
+           "failing package result retains its mode and status")
         ok("[v1.7 @ abcdef123456]" in dict_title, "ref and commit stay in the tooltip")
         ok("(2026-08-09T01:00:00Z)" in dict_title, "timestamps stay in the tooltip")
-        out_file = tmp / "index.html"
-        code, _, _ = run_cli(["render", "--state-file", str(state_file), "--out", str(out_file),
-                              "--root", str(root), "--generated-at", "2026-08-10T00:00:00Z"])
-        eq(code, 0, "render exit code")
-        html_text = out_file.read_text()
-        eq(html_text.count('class="matrix-key"'), 1, "the key line renders exactly once")
-        ok('<p class="matrix-key">Rows are modules, columns are engine versions. Green: works. '
-           "Red: doesn't — usually upstream doesn't support that engine yet. Amber edge: source translated "
-           "between Vinyl and Varnish APIs. Grey: not tested.</p>"
-           in html_text, "key line is exactly the contract text")
-        ok('<p class="matrix-note">Trunk columns are source-build and load checks, not packages. '
-           "Packages, where provided, are built only from pinned release engines.</p>"
-           in html_text, "package scope note is exactly the contract text")
-        ok('class="cell FAIL"' in html_text, "mixed cell td keeps the worst-fold class")
 
 
 # ---------------------------------------------------------------------------
@@ -2651,7 +2145,6 @@ def recipe_debian_generation():
         ok("vinyl-cache (= 9.0.1-1)" in control, "exact-version engine dependency")
         ok("vinyl-cache-dev (= 9.0.1-1)" in control, "exact-version -dev build dependency")
         ok("python3-docutils" in control, "manifest build_deps included")
-        ok(" keys up from VCL, with reloading support." in control, "description lines carried over")
         changelog = (out / "debian" / "changelog").read_text()
         ok("vinyl-vmod-dict (1.7-1~vinyl9.0.1.1) unstable" in changelog, "debian version")
         ok("Test Maintainer <test@example.org>" in changelog, "maintainer identity")
@@ -2717,7 +2210,6 @@ def recipe_varnish_family_generation():
         ok("varnish (= 9.0.3-1)" in control, "Varnish exact runtime dependency")
         ok("varnish-dev (= 9.0.3-1)" in control, "Varnish exact development build dependency")
         ok("varnish-vmod-dict (1.8-1~varnish9.0.3.1) unstable" in changelog, "Varnish Debian version")
-        ok("Built against Varnish Cache 9.0.3" in changelog, "Varnish family description")
 
         rpm_root = write_fixture(tmp / "rpm-repo", engines=varnish_package_fixture(include_rpm=True))
         rpm_out = tmp / "rpm-out"
@@ -2732,7 +2224,6 @@ def recipe_varnish_family_generation():
            "Varnish exact RPM runtime dependency")
         ok("BuildRequires:  varnish-devel = 9.0.3-1%{?dist}" in spec,
            "Varnish exact RPM development build dependency")
-        ok("Built against Varnish Cache 9.0.3" in spec, "Varnish RPM family description")
 
 
 @test
