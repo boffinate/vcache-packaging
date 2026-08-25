@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   select:
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       engine: ${{ steps.catalog.outputs.engine }}
       runner: ${{ steps.catalog.outputs.runner }}

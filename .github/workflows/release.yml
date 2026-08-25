@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   expand:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     outputs:
       engines: ${{ steps.expand.outputs.engines }}
@@ -34,7 +34,7 @@ jobs:
 
   vmod_source:
     needs: expand
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     strategy:
       max-parallel: 10
@@ -157,7 +157,7 @@ jobs:
     concurrency:
       group: release-stable
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
       contents: write
