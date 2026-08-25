@@ -15,43 +15,43 @@ targets:
   debian-13-amd64:
     image: debian:13
     format: deb
-    runner: blacksmith-2vcpu-ubuntu-2404
+    runner: ubuntu-24.04
     build_runner: blacksmith-4vcpu-ubuntu-2404
     platform: linux/amd64
     package_arch: amd64
   debian-13-arm64:
     image: debian:13
     format: deb
-    runner: blacksmith-2vcpu-ubuntu-2404-arm
-    build_runner: blacksmith-4vcpu-ubuntu-2404-arm
+    runner: ubuntu-24.04-arm
+    build_runner: ubuntu-24.04-arm
     platform: linux/arm64
     package_arch: arm64
   ubuntu-26.04-amd64:
     image: ubuntu:26.04
     format: deb
-    runner: blacksmith-2vcpu-ubuntu-2404
+    runner: ubuntu-24.04
     build_runner: blacksmith-4vcpu-ubuntu-2404
     platform: linux/amd64
     package_arch: amd64
   ubuntu-26.04-arm64:
     image: ubuntu:26.04
     format: deb
-    runner: blacksmith-2vcpu-ubuntu-2404-arm
-    build_runner: blacksmith-4vcpu-ubuntu-2404-arm
+    runner: ubuntu-24.04-arm
+    build_runner: ubuntu-24.04-arm
     platform: linux/arm64
     package_arch: arm64
   el10-x86_64:
     image: almalinux:10
     format: rpm
-    runner: blacksmith-2vcpu-ubuntu-2404
+    runner: ubuntu-24.04
     build_runner: blacksmith-4vcpu-ubuntu-2404
     platform: linux/amd64
     package_arch: x86_64
   el10-aarch64:
     image: almalinux:10
     format: rpm
-    runner: blacksmith-2vcpu-ubuntu-2404-arm
-    build_runner: blacksmith-4vcpu-ubuntu-2404-arm
+    runner: ubuntu-24.04-arm
+    build_runner: ubuntu-24.04-arm
     platform: linux/arm64
     package_arch: aarch64
 engines:

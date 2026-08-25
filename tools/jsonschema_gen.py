@@ -161,8 +161,8 @@ def build_engines() -> dict:
         {
             "image": _string("Container image used to build this target."),
             "format": _string("Package format produced by this target.", enum=list(matrix.TARGET_FORMATS)),
-            "runner": _string("Blacksmith runner label for serial or I/O-bound work on this target."),
-            "build_runner": _string("Blacksmith runner label for CPU-parallel builds on this target."),
+            "runner": _string("Runner label for serial or I/O-bound work on this target."),
+            "build_runner": _string("Runner label for CPU-parallel builds on this target."),
             "platform": _string("Native Docker platform required by this target.", enum=list(matrix.TARGET_PLATFORMS)),
             "package_arch": _string("Architecture reported by the finished package."),
         },
@@ -270,7 +270,7 @@ def build_engines() -> dict:
                 "propertyNames": {"pattern": matrix.MAPPING_KEY_RE.pattern},
                 "patternProperties": {matrix.MAPPING_KEY_RE.pattern: target},
                 "additionalProperties": False,
-                "description": "Target registry: image, package format, standard and CPU-parallel Blacksmith runners, and architecture.",
+                "description": "Target registry: image, package format, standard and CPU-parallel runners, and architecture.",
             },
             "toolchains": toolchains,
             "engines": {

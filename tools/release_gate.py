@@ -78,9 +78,12 @@ def validate_pair_payload(
     suffix = f".{target['format']}"
     verified: list[Path] = []
     for source_name, names in expected.items():
-        source = Path(pkgdl) / source_name
-        if not source.is_dir():
+        sources = [path for path in Path(pkgdl).rglob(source_name) if path.is_dir()]
+        if not sources:
             raise PayloadError(f"missing package artifact directory {source_name}")
+        if len(sources) > 1:
+            raise PayloadError(f"duplicate package artifact directory {source_name}")
+        source = sources[0]
         artifacts = sorted(p for p in source.rglob(f"*{suffix}") if p.is_file())
         if not artifacts:
             raise PayloadError(f"{source_name}: no native {target['format']} artifacts")

@@ -79,10 +79,10 @@ TARGET_PLATFORMS = ("linux/amd64", "linux/arm64")
 # "engine" marks an engine's own build cell (row == engine id); the build
 # scripts write it and the grid shows it on the shared "(engine)" display row.
 MODES = ("compat", "package", "engine")
-# GitHub Actions limits one job matrix to 256 configurations.  Keep shard
-# matrices comfortably below that ceiling so adding a row never makes a
-# workflow invalid, while still preserving one job per VMOD cell.
-VMOD_SHARD_SIZE = 128
+# Six cells recovers most per-job setup and billing overhead while leaving
+# enough independent batches to absorb the large runtime variance between
+# VMODs at the workflow's 20-runner concurrency limit.
+VMOD_BATCH_SIZE = 6
 STATUSES = (
     "pass",
     "configure_failed",
@@ -846,24 +846,35 @@ def expand(catalog: dict, lane: str, mode: str = "all", targets: set | None = No
             "rows": engine_rows + vmod_rows}
 
 
-def shard_vmods(rows: list, size: int = VMOD_SHARD_SIZE) -> list:
-    """Return reusable-workflow matrix rows holding bounded VMOD matrices.
+def batch_vmods(rows: list, size: int = VMOD_BATCH_SIZE) -> list:
+    """Group compatible VMOD cells into bounded runner jobs.
 
-    Each ``items`` value is JSON text because it crosses a workflow_call input
-    boundary.  The caller matrices the shards; the called workflow expands the
-    contained VMOD rows.  Both matrices therefore remain below GitHub's 256
-    configuration limit.
+    A batch shares only the runner-level inputs that are safe to reuse. Each
+    cell still gets its own work directory and disposable build containers.
+    ``items`` remains JSON text because it crosses a workflow_call boundary.
     """
     if size < 1:
-        raise ValueError("VMOD shard size must be positive")
-    shard_count = (len(rows) + size - 1) // size
-    return [
-        {
-            "shard": f"{index + 1}/{shard_count}",
-            "items": json.dumps(rows[start:start + size], separators=(",", ":")),
-        }
-        for index, start in enumerate(range(0, len(rows), size))
-    ]
+        raise ValueError("VMOD batch size must be positive")
+    groups = {}
+    for row in rows:
+        key = (row["engine"], row["target"], row["mode"], row["runner"])
+        groups.setdefault(key, []).append(row)
+    batches = []
+    for key, group in groups.items():
+        for start in range(0, len(group), size):
+            items = group[start:start + size]
+            sources = list(dict.fromkeys(item["source_artifact"] for item in items))
+            source_pattern = sources[0] if len(sources) == 1 else "{" + ",".join(sources) + "}"
+            batches.append({
+                "batch": f"batch-{len(batches) + 1:03d}",
+                "engine": key[0],
+                "target": key[1],
+                "mode": key[2],
+                "runner": key[3],
+                "source_pattern": source_pattern,
+                "items": json.dumps(items, separators=(",", ":")),
+            })
+    return batches
 
 
 # ---------------------------------------------------------------------------
@@ -1413,12 +1424,11 @@ def cmd_expand(args) -> int:
     if args.format == "github":
         # Five `key=<json>` lines, appended verbatim to $GITHUB_OUTPUT.
         # Engine rows are excluded from vmods= (they would become bogus VMOD
-        # jobs). vmod_shards= is the outer matrix for the reusable VMOD
-        # workflow; each item contains at most VMOD_SHARD_SIZE inner rows.
+        # jobs). Each VMOD batch becomes one reusable-workflow runner job.
         print("engines=" + json.dumps(expansion["engines"], separators=(",", ":")))
         print("vmods=" + json.dumps(expansion["vmods"], separators=(",", ":")))
         print("vmod_sources=" + json.dumps(expansion["sources"], separators=(",", ":")))
-        print("vmod_shards=" + json.dumps(shard_vmods(expansion["vmods"]), separators=(",", ":")))
+        print("vmod_batches=" + json.dumps(batch_vmods(expansion["vmods"]), separators=(",", ":")))
         print("package_pairs=" + json.dumps(expansion["package_pairs"], separators=(",", ":")))
     else:
         print(json.dumps(expansion["rows"], indent=2))

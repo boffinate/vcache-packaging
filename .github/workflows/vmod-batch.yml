@@ -1,0 +1,71 @@
+name: vmod batch
+
+on:
+  workflow_call:
+    inputs:
+      batch:
+        required: true
+        type: string
+      engine:
+        required: true
+        type: string
+      target:
+        required: true
+        type: string
+      mode:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      source_pattern:
+        required: true
+        type: string
+      items:
+        description: JSON array of at most six VMOD cells with one execution contract.
+        required: true
+        type: string
+      upload_packages:
+        description: Upload package artifacts for package-mode cells.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  vmod:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 120
+    name: ${{ inputs.batch }} ${{ inputs.engine }} (${{ inputs.mode }}, ${{ inputs.target }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        # The batch driver must run so every cell records a missing engine as
+        # infra_failed instead of disappearing from the matrix.
+        continue-on-error: true
+        with:
+          name: engine-${{ inputs.engine }}-${{ inputs.target }}
+          path: batch-input/engine
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        # Exact Minimatch alternatives download only this batch's deduplicated
+        # source set and retain one directory per source artifact.
+        continue-on-error: true
+        with:
+          pattern: ${{ inputs.source_pattern }}
+          path: batch-input/sources
+      - run: python3 tools/vmod_batch.py --engine-artifacts batch-input/engine --sources batch-input/sources --workdir work
+        env:
+          VMOD_BATCH_ITEMS: ${{ inputs.items }}
+      - if: ${{ always() && inputs.upload_packages && inputs.mode == 'package' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: packages-${{ inputs.batch }}-${{ inputs.engine }}-${{ inputs.target }}
+          path: work/packages/
+          if-no-files-found: ignore
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: results-${{ inputs.batch }}
+          path: work/results/

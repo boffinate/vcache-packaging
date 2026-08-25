@@ -203,11 +203,20 @@ run_in_container() {
   # Docker Hub failure does not turn an otherwise valid build into an
   # infra_failed cell. Once the image is local, avoid another registry hit.
   ensure_container_image "$1" "$2"
-  docker run --rm \
-    --platform "$2" \
-    -v "$3:/work" \
-    -v "$REPO_ROOT:/repo:ro" \
-    "$1" bash "/work/tmp/$4" 2>&1 | tee "$5"
+  local cidfile="$3/tmp/${4%.sh}.cid" status
+  rm -f "$cidfile"
+  if docker run --rm \
+      --cidfile "$cidfile" \
+      --platform "$2" \
+      -v "$3:/work" \
+      -v "$REPO_ROOT:/repo:ro" \
+      "$1" bash "/work/tmp/$4" 2>&1 | tee "$5"; then
+    status=0
+  else
+    status=$?
+  fi
+  rm -f "$cidfile"
+  return "$status"
 }
 
 # write_inner_prologue PATH TAG

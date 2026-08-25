@@ -11,12 +11,12 @@ permissions:
 
 jobs:
   expand:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       engines: ${{ steps.expand.outputs.engines }}
       vmod_sources: ${{ steps.expand.outputs.vmod_sources }}
-      vmod_shards: ${{ steps.expand.outputs.vmod_shards }}
+      vmod_batches: ${{ steps.expand.outputs.vmod_batches }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: expand
@@ -24,7 +24,7 @@ jobs:
 
   vmod_source:
     needs: expand
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       max-parallel: 10
@@ -72,20 +72,24 @@ jobs:
     needs: [expand, engine, vmod_source]
     if: ${{ !cancelled() }}
     strategy:
-      # Run one shard at a time; the called workflow controls the individual
-      # VMOD job concurrency and every one of its matrices stays below 256.
-      max-parallel: 1
+      max-parallel: 20
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.expand.outputs.vmod_shards) }}
-    uses: ./.github/workflows/vmod-shard.yml
+        include: ${{ fromJSON(needs.expand.outputs.vmod_batches) }}
+    uses: ./.github/workflows/vmod-batch.yml
     with:
+      batch: ${{ matrix.batch }}
+      engine: ${{ matrix.engine }}
+      target: ${{ matrix.target }}
+      mode: ${{ matrix.mode }}
+      runner: ${{ matrix.runner }}
+      source_pattern: ${{ matrix.source_pattern }}
       items: ${{ matrix.items }}
 
   publish:
     needs: [expand, engine, vmod]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     # Shared with matrix.yml: both push ci-state/matrix and deploy the same
     # Pages site, so their publishes must never race.

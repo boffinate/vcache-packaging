@@ -30,6 +30,7 @@ import package_contract  # noqa: E402
 import recipe  # noqa: E402
 import release_gate  # noqa: E402
 import source_api_normalize  # noqa: E402
+import vmod_batch  # noqa: E402
 import yaml_subset  # noqa: E402
 
 TESTS: list = []
@@ -437,12 +438,12 @@ def catalog_target_registry_drives_metadata_and_rejects_bad_entries():
 def catalog_real_targets_use_native_runners():
     catalog = matrix.load_catalog(matrix.default_root())
     expected = {
-        "debian-13-amd64": ("debian:13", "deb", "blacksmith-2vcpu-ubuntu-2404", "blacksmith-4vcpu-ubuntu-2404", "linux/amd64", "amd64"),
-        "debian-13-arm64": ("debian:13", "deb", "blacksmith-2vcpu-ubuntu-2404-arm", "blacksmith-4vcpu-ubuntu-2404-arm", "linux/arm64", "arm64"),
-        "ubuntu-26.04-amd64": ("ubuntu:26.04", "deb", "blacksmith-2vcpu-ubuntu-2404", "blacksmith-4vcpu-ubuntu-2404", "linux/amd64", "amd64"),
-        "ubuntu-26.04-arm64": ("ubuntu:26.04", "deb", "blacksmith-2vcpu-ubuntu-2404-arm", "blacksmith-4vcpu-ubuntu-2404-arm", "linux/arm64", "arm64"),
-        "el10-x86_64": ("almalinux:10", "rpm", "blacksmith-2vcpu-ubuntu-2404", "blacksmith-4vcpu-ubuntu-2404", "linux/amd64", "x86_64"),
-        "el10-aarch64": ("almalinux:10", "rpm", "blacksmith-2vcpu-ubuntu-2404-arm", "blacksmith-4vcpu-ubuntu-2404-arm", "linux/arm64", "aarch64"),
+        "debian-13-amd64": ("debian:13", "deb", "ubuntu-24.04", "blacksmith-4vcpu-ubuntu-2404", "linux/amd64", "amd64"),
+        "debian-13-arm64": ("debian:13", "deb", "ubuntu-24.04-arm", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
+        "ubuntu-26.04-amd64": ("ubuntu:26.04", "deb", "ubuntu-24.04", "blacksmith-4vcpu-ubuntu-2404", "linux/amd64", "amd64"),
+        "ubuntu-26.04-arm64": ("ubuntu:26.04", "deb", "ubuntu-24.04-arm", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
+        "el10-x86_64": ("almalinux:10", "rpm", "ubuntu-24.04", "blacksmith-4vcpu-ubuntu-2404", "linux/amd64", "x86_64"),
+        "el10-aarch64": ("almalinux:10", "rpm", "ubuntu-24.04-arm", "ubuntu-24.04-arm", "linux/arm64", "aarch64"),
     }
     for target_id, values in expected.items():
         target = matrix.find_target(catalog, target_id)
@@ -1059,9 +1060,9 @@ def release_package_target_filter_limits_every_matrix_output():
            "target filter limits VMOD builds")
         eq({pair["target"] for pair in expansion["package_pairs"]}, {"el10-x86_64"},
            "target filter limits cohort and publication pairs")
-        eq([row for shard in matrix.shard_vmods(expansion["vmods"])
-            for row in json.loads(shard["items"])], expansion["vmods"],
-           "target filter limits every reusable-workflow shard")
+        eq([row for batch in matrix.batch_vmods(expansion["vmods"])
+            for row in json.loads(batch["items"])], expansion["vmods"],
+           "target filter limits every reusable-workflow batch")
         for selector, expected in (
             ("missing", "without a package-enabled release pair"),
             ("el10-x86_64,el10-x86_64", "must not repeat"),
@@ -1108,20 +1109,20 @@ def expand_trunk_lane_and_github_format():
         lines = out.strip().split("\n")
         eq(len(lines), 5, "github format includes source and package-pair matrices")
         ok(lines[0].startswith("engines=") and lines[1].startswith("vmods=")
-           and lines[2].startswith("vmod_sources=") and lines[3].startswith("vmod_shards=")
+           and lines[2].startswith("vmod_sources=") and lines[3].startswith("vmod_batches=")
            and lines[4].startswith("package_pairs="),
            "github output keys")
         engines = json.loads(lines[0][len("engines="):])
         vmods = json.loads(lines[1][len("vmods="):])
         sources = json.loads(lines[2][len("vmod_sources="):])
-        shards = json.loads(lines[3][len("vmod_shards="):])
+        batches = json.loads(lines[3][len("vmod_batches="):])
         package_pairs = json.loads(lines[4][len("package_pairs="):])
         ok(engines and vmods, "neither github array is empty")
         eq(len(sources), 1, "one trunk source feeds every matching VMOD cell")
         ok(all(set(r) >= {"engine", "target", "runner"} for r in engines), "engines= row shape")
         ok(all(r["row"] != r["engine"] for r in vmods), "vmods= excludes engine rows")
-        eq([row for shard in shards for row in json.loads(shard["items"])], vmods,
-           "vmod_shards preserves every VMOD row")
+        eq([row for batch in batches for row in json.loads(batch["items"])], vmods,
+           "vmod_batches preserves every VMOD row")
         eq(package_pairs, [], "trunk has no publishable package cohorts")
         code, _, err = run_cli(["expand", "--lane", "trunk", "--mode", "package", "--root", root])
         eq(code, 1, "trunk+package is an error")
@@ -1152,14 +1153,36 @@ def expand_deduplicates_resolved_vmod_sources():
 
 
 @test
-def vmod_shards_are_bounded_and_ordered():
-    rows = [{"row": str(index)} for index in range(matrix.VMOD_SHARD_SIZE * 2 + 1)]
-    shards = matrix.shard_vmods(rows)
-    eq([shard["shard"] for shard in shards], ["1/3", "2/3", "3/3"], "shard labels")
-    eq([len(json.loads(shard["items"])) for shard in shards],
-       [matrix.VMOD_SHARD_SIZE, matrix.VMOD_SHARD_SIZE, 1], "shard sizes")
-    eq([row for shard in shards for row in json.loads(shard["items"])], rows,
-       "shards preserve order and rows")
+def vmod_batches_are_homogeneous_bounded_and_ordered():
+    def row(index, engine="vinyl-9.0.1", target="debian-13-amd64", mode="compat", runner="ubuntu-24.04"):
+        return {
+            "row": f"vmod-{index}",
+            "engine": engine,
+            "target": target,
+            "mode": mode,
+            "runner": runner,
+            "source_artifact": f"vmod-source-{index % 2}",
+        }
+
+    first_group = [row(index) for index in range(matrix.VMOD_BATCH_SIZE + 1)]
+    second_group = [row(20, target="el10-x86_64"), row(21, target="el10-x86_64")]
+    rows = first_group + second_group
+    batches = matrix.batch_vmods(rows)
+    eq([batch["batch"] for batch in batches], ["batch-001", "batch-002", "batch-003"],
+       "batch labels")
+    eq([len(json.loads(batch["items"])) for batch in batches], [matrix.VMOD_BATCH_SIZE, 1, 2],
+       "batch sizes")
+    eq([row for batch in batches for row in json.loads(batch["items"])], rows,
+       "batches preserve group and row order")
+    for batch in batches:
+        items = json.loads(batch["items"])
+        eq({(item["engine"], item["target"], item["mode"], item["runner"]) for item in items},
+           {(batch["engine"], batch["target"], batch["mode"], batch["runner"])},
+           "one batch uses one execution contract")
+    eq(batches[0]["source_pattern"], "{vmod-source-0,vmod-source-1}",
+       "batch source pattern deduplicates exact artifact names")
+    eq(batches[1]["source_pattern"], "vmod-source-0",
+       "a one-source batch uses an exact artifact name")
 
 
 # ---------------------------------------------------------------------------
@@ -1756,6 +1779,58 @@ def prefetched_vmod_source_round_trips_without_upstream():
 
 
 @test
+def vmod_batch_isolates_cells_reuses_inputs_and_collects_every_result():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        repo = tmp / "repo"
+        scripts = repo / "scripts"
+        scripts.mkdir(parents=True)
+        fake_build = scripts / "build-vmod.sh"
+        fake_build.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -eu\n"
+            "row=$1; work=$5\n"
+            "test -f \"$work/engine/artifacts/engine.tar.gz\"\n"
+            "test -f \"$work/vmod-source/source.tar.gz\"\n"
+            "if test \"$row\" = slow; then sleep 3; fi\n"
+            "mkdir -p \"$work/results\" \"$work/packages/$row\"\n"
+            "printf '%s\\n' \"$row\" > \"$work/results/$row.json\"\n"
+            "printf '%s\\n' \"$row\" > \"$work/packages/$row/$row.pkg\"\n"
+            "test \"$row\" != broken\n"
+        )
+        fake_build.chmod(0o755)
+        engine = tmp / "input" / "engine"
+        source_a = tmp / "input" / "sources" / "source-a"
+        source_b = tmp / "input" / "sources" / "source-b"
+        engine.mkdir(parents=True)
+        source_a.mkdir(parents=True)
+        source_b.mkdir(parents=True)
+        (engine / "engine.tar.gz").write_bytes(b"engine")
+        (source_a / "source.tar.gz").write_bytes(b"source a")
+        (source_b / "source.tar.gz").write_bytes(b"source b")
+        items = [
+            {"row": "broken", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04", "source_artifact": "source-a"},
+            {"row": "slow", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04", "source_artifact": "source-a"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04", "source_artifact": "source-b"},
+        ]
+        work = tmp / "work"
+        code = vmod_batch.run_batch(items, engine, tmp / "input" / "sources", work, repo, cell_timeout=1)
+        eq(code, 1, "an infrastructure failure makes the batch fail after every cell runs")
+        eq(sorted(path.name for path in (work / "results").iterdir()),
+           ["broken.json", "dict.json", "slow--vinyl-9.0.1--debian-13-amd64--compat.json"],
+           "results from failed and later cells are collected")
+        timeout_result = json.loads((work / "results" / "slow--vinyl-9.0.1--debian-13-amd64--compat.json").read_text())
+        eq(timeout_result["status"], "infra_failed", "a timed-out cell emits explicit infrastructure evidence")
+        ok((work / "packages" / "packages-broken-vinyl-9.0.1-debian-13-amd64" / "broken" / "broken.pkg").is_file(),
+           "packages from the failed cell are retained")
+        ok((work / "packages" / "packages-dict-vinyl-9.0.1-debian-13-amd64" / "dict" / "dict.pkg").is_file(),
+           "the batch continues to later cells")
+        cells = sorted((work / "cells").iterdir())
+        eq(len(cells), 3, "each cell has a distinct work directory")
+        ok(cells[0].stat().st_ino != cells[1].stat().st_ino, "cell work directories are isolated")
+
+
+@test
 def workflow_prefetches_each_vmod_source_for_build_cells():
     root = Path(__file__).resolve().parent.parent
     for name in ("matrix.yml", "trunk.yml", "release.yml"):
@@ -1768,13 +1843,32 @@ def workflow_prefetches_each_vmod_source_for_build_cells():
            f"{name} publishes source artifacts under their matrix identity")
         ok("needs: [expand, engine, vmod_source]" in workflow,
            f"{name} waits for source acquisition before starting VMOD cells")
-    shard = (root / ".github" / "workflows" / "vmod-shard.yml").read_text()
-    ok("name: ${{ matrix.source_artifact }}" in shard,
-       "VMOD cells download their resolved source artifact")
-    ok("VCACHE_REQUIRE_PREFETCHED_VMOD_SOURCE: \"1\"" in shard,
-       "CI cells cannot silently fall back to upstream clones")
+    batch = (root / ".github" / "workflows" / "vmod-batch.yml").read_text()
+    ok("pattern: ${{ inputs.source_pattern }}" in batch,
+       "VMOD batches download only their deduplicated source artifacts")
+    ok("VMOD_BATCH_ITEMS: ${{ inputs.items }}" in batch,
+       "the reusable workflow passes every cell to the isolated batch driver")
     ok((root / "scripts" / "fetch-vmod-source.sh").is_file(),
        "the source acquisition job has a host-safe script entry point")
+
+
+@test
+def workflows_keep_control_plane_and_arm_work_on_github_runners():
+    root = Path(__file__).resolve().parent.parent
+    for name in ("ci.yml", "matrix.yml", "trunk.yml", "release.yml", "render-pages.yml", "upstream-varnish-overlay.yml"):
+        workflow = (root / ".github" / "workflows" / name).read_text()
+        for line in workflow.splitlines():
+            if "runs-on:" in line and "matrix.runner" not in line and "inputs.runner" not in line:
+                ok("blacksmith" not in line, f"{name} keeps fixed orchestration jobs on GitHub-hosted runners")
+    catalog = matrix.load_catalog(root)
+    for target_id, target in catalog["targets"].items():
+        if target["platform"] == "linux/arm64":
+            ok(target["runner"].startswith("ubuntu-") and target["build_runner"].startswith("ubuntu-"),
+               f"{target_id} keeps all ARM work on GitHub-hosted runners")
+        else:
+            ok(target["runner"].startswith("ubuntu-"), f"{target_id} keeps serial x64 work on GitHub-hosted runners")
+            ok(target["build_runner"] == "blacksmith-4vcpu-ubuntu-2404",
+               f"{target_id} sends only CPU-heavy x64 work to Blacksmith")
 
 
 @test
@@ -1986,9 +2080,9 @@ def engine_family_recipes_and_script_use_the_contract():
 @test
 def missing_engine_artifact_reaches_vmod_classifier():
     workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
-                "vmod-shard.yml").read_text()
+                "vmod-batch.yml").read_text()
     start = workflow.index("      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1")
-    end = workflow.index("      - run: scripts/build-vmod.sh", start)
+    end = workflow.index("      - run: python3 tools/vmod_batch.py", start)
     download_step = workflow[start:end]
     ok("continue-on-error: true" in download_step,
        "a missing engine artifact does not stop the job before build-vmod.sh classifies it")
@@ -2005,7 +2099,7 @@ def release_payload_gate_rejects_missing_artifact():
     with tempfile.TemporaryDirectory() as tmp:
         pkgdl = Path(tmp) / "pkgdl"
         engine_dir = pkgdl / "engine-vinyl-9.0.1-debian-13-amd64"
-        vmod_dir = pkgdl / "packages-dict-vinyl-9.0.1-debian-13-amd64"
+        vmod_dir = pkgdl / "packages-batch-001-vinyl-9.0.1-debian-13-amd64" / "packages-dict-vinyl-9.0.1-debian-13-amd64"
         engine_dir.mkdir(parents=True)
         vmod_dir.mkdir(parents=True)
         runtime = engine_dir / "runtime.deb"
