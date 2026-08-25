@@ -2619,6 +2619,9 @@ def key_line_is_exact_and_tooltips_speak_human():
            "Red: doesn't — usually upstream doesn't support that engine yet. Amber edge: source translated "
            "between Vinyl and Varnish APIs. Grey: not tested.</p>"
            in html_text, "key line is exactly the contract text")
+        ok('<p class="matrix-note">Trunk columns are source-build and load checks, not packages. '
+           "Packages, where provided, are built only from pinned release engines.</p>"
+           in html_text, "package scope note is exactly the contract text")
         ok('class="cell FAIL"' in html_text, "mixed cell td keeps the worst-fold class")
 
 

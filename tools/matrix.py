@@ -1327,7 +1327,8 @@ td.cell.INFRA{background:var(--na);color:var(--bg)}
 td.cell.NORMALIZED{background-image:none;box-shadow:inset 5px 0 0 var(--fix)}
 td.cell.MISSING{color:var(--na);
   background-image:repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2) 3px,transparent 3px,transparent 7px)}
-.matrix-key{margin:0 0 20px;max-width:75em;font-size:13px;color:var(--muted)}
+.matrix-key{margin:0;max-width:75em;font-size:13px;color:var(--muted)}
+.matrix-note{margin:4px 0 20px;max-width:75em;font-size:13px;color:var(--muted)}
 .page-foot{font-family:var(--mono);font-size:11px;color:var(--muted);padding:16px clamp(16px,3vw,40px) 30px}
 .theme-btn{font-family:var(--mono);border:1px solid var(--line-2);background:var(--surface);color:var(--ink);
   cursor:pointer;padding:5px 9px;font-size:12px}
@@ -1426,6 +1427,7 @@ def render_html(grids: list, generated_at: str) -> str:
 </header>
 <main>
   <p class="matrix-key">Rows are modules, columns are engine versions. Green: works. Red: doesn't — usually upstream doesn't support that engine yet. Amber edge: source translated between Vinyl and Varnish APIs. Grey: not tested.</p>
+  <p class="matrix-note">Trunk columns are source-build and load checks, not packages. Packages, where provided, are built only from pinned release engines.</p>
   <div class="target-matrices">
     {"".join(_grid_html(grid) for grid in grids)}
   </div>
