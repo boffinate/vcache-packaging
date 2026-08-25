@@ -993,7 +993,7 @@ def expansion_uses_build_runner_only_for_cpu_intensive_builds():
         eq({row["runner"] for row in expansion["vmods"]}, {"ubuntu-24.04-4vcpu"},
            "Cargo VMOD builds use the build runner")
         eq({pair["runner"] for pair in expansion["package_pairs"]}, {"ubuntu-24.04"},
-           "package cohorts use the default runner")
+           "package cohorts use the standard runner")
 
 
 @test

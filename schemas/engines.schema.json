@@ -51,12 +51,12 @@
             "runner": {
               "type": "string",
               "minLength": 1,
-              "description": "Default GitHub Actions runner label for this target."
+              "description": "Blacksmith runner label for serial or I/O-bound work on this target."
             },
             "build_runner": {
               "type": "string",
               "minLength": 1,
-              "description": "GitHub Actions runner label for CPU-intensive builds on this target."
+              "description": "Blacksmith runner label for CPU-parallel builds on this target."
             },
             "platform": {
               "type": "string",
@@ -76,7 +76,7 @@
         }
       },
       "additionalProperties": false,
-      "description": "Target registry: image, package format, default and build runners, and architecture."
+      "description": "Target registry: image, package format, standard and CPU-parallel Blacksmith runners, and architecture."
     },
     "toolchains": {
       "type": "object",
