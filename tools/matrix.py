@@ -123,7 +123,7 @@ MAPPING_KEY_RE = re.compile(r"^[a-z0-9_.-]+$")
 # disagree about which keys exist (DESIGN.md decision 11).
 KEYS = {
     "engines_doc": ({"schema", "targets", "engines"}, {"toolchains"}),
-    "target": ({"image", "format", "runner", "build_runner", "platform", "package_arch"}, set()),
+    "target": ({"image", "format", "runner", "platform", "package_arch"}, set()),
     "engine": ({"id", "family", "series", "kind", "source", "targets"}, {"packages", "package_revision"}),
     "engine_source_release": ({"tarball_url", "sha256"}, set()),
     "engine_source_trunk": ({"git_url", "branch"}, set()),
@@ -744,10 +744,6 @@ def vmod_source_artifact(vmod: dict, resolved: dict) -> str:
     return f"vmod-source-{vmod['id']}-{digest}"
 
 
-def vmod_runner(vmod: dict, target: dict) -> str:
-    return target["build_runner"] if vmod_build(vmod) == "cargo" else target["runner"]
-
-
 def vmod_matrix_row(vmod: dict, engine: dict, target: str, mode: str, runner: str) -> dict:
     resolved = resolve_source(vmod, engine)
     return {
@@ -803,7 +799,7 @@ def expand(catalog: dict, lane: str, mode: str = "all", targets: set | None = No
                 continue
             target_doc = find_target(catalog, target)
             engine_pairs.append({"engine": engine["id"], "target": target,
-                                 "runner": target_doc["build_runner"]})
+                                 "runner": target_doc["runner"]})
         if mode in ("compat", "all"):
             for target in engine["targets"]:
                 if targets is not None and target not in targets:
@@ -812,7 +808,7 @@ def expand(catalog: dict, lane: str, mode: str = "all", targets: set | None = No
                 for vid in catalog["vmods"]:
                     vmod = catalog["vmods"][vid]
                     vmod_rows.append(vmod_matrix_row(
-                        vmod, engine, target, "compat", vmod_runner(vmod, target_doc)))
+                        vmod, engine, target, "compat", target_doc["runner"]))
         if lane == "release" and engine["packages"] == "true" and mode in ("package", "all"):
             for target in engine["targets"]:
                 if targets is not None and target not in targets:
@@ -820,19 +816,16 @@ def expand(catalog: dict, lane: str, mode: str = "all", targets: set | None = No
                 target_doc = find_target(catalog, target)
                 for vmod in package_vmods(catalog, engine, target):
                     vmod_rows.append(vmod_matrix_row(
-                        vmod, engine, target, "package", vmod_runner(vmod, target_doc)))
+                        vmod, engine, target, "package", target_doc["runner"]))
     engine_rows = [
         {"row": pair["engine"], "engine": pair["engine"], "target": pair["target"], "mode": "engine", "runner": pair["runner"]}
         for pair in engine_pairs
     ]
     packaged_engines = {engine["id"] for engine in catalog["engines"]
                         if engine["packages"] == "true"}
-    package_pairs = [
-        {**pair, "runner": find_target(catalog, pair["target"])["runner"]}
-        for pair in engine_pairs
-        if lane == "release" and mode in ("package", "all")
-        and pair["engine"] in packaged_engines
-    ]
+    package_pairs = [pair for pair in engine_pairs
+                     if lane == "release" and mode in ("package", "all")
+                     and pair["engine"] in packaged_engines]
     source_rows = []
     seen_sources = set()
     for row in vmod_rows:

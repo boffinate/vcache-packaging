@@ -70,21 +70,18 @@ FIXTURE_ENGINES = textwrap.dedent(
         image: debian:13
         format: deb
         runner: ubuntu-24.04
-        build_runner: ubuntu-24.04-4vcpu
         platform: linux/amd64
         package_arch: amd64
       ubuntu-26.04-amd64:
         image: ubuntu:26.04
         format: deb
         runner: ubuntu-24.04
-        build_runner: ubuntu-24.04-4vcpu
         platform: linux/amd64
         package_arch: amd64
       el10-x86_64:
         image: almalinux:10
         format: rpm
         runner: ubuntu-24.04
-        build_runner: ubuntu-24.04-4vcpu
         platform: linux/amd64
         package_arch: x86_64
     engines:
@@ -483,16 +480,16 @@ def catalog_target_registry_drives_metadata_and_rejects_bad_entries():
 def catalog_real_targets_use_native_runners():
     catalog = matrix.load_catalog(matrix.default_root())
     expected = {
-        "debian-13-amd64": ("debian:13", "deb", "ubuntu-24.04", "blacksmith-4vcpu-ubuntu-2404", "linux/amd64", "amd64"),
-        "debian-13-arm64": ("debian:13", "deb", "ubuntu-24.04-arm", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
-        "ubuntu-26.04-amd64": ("ubuntu:26.04", "deb", "ubuntu-24.04", "blacksmith-4vcpu-ubuntu-2404", "linux/amd64", "amd64"),
-        "ubuntu-26.04-arm64": ("ubuntu:26.04", "deb", "ubuntu-24.04-arm", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
-        "el10-x86_64": ("almalinux:10", "rpm", "ubuntu-24.04", "blacksmith-4vcpu-ubuntu-2404", "linux/amd64", "x86_64"),
-        "el10-aarch64": ("almalinux:10", "rpm", "ubuntu-24.04-arm", "ubuntu-24.04-arm", "linux/arm64", "aarch64"),
+        "debian-13-amd64": ("debian:13", "deb", "ubuntu-24.04", "linux/amd64", "amd64"),
+        "debian-13-arm64": ("debian:13", "deb", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
+        "ubuntu-26.04-amd64": ("ubuntu:26.04", "deb", "ubuntu-24.04", "linux/amd64", "amd64"),
+        "ubuntu-26.04-arm64": ("ubuntu:26.04", "deb", "ubuntu-24.04-arm", "linux/arm64", "arm64"),
+        "el10-x86_64": ("almalinux:10", "rpm", "ubuntu-24.04", "linux/amd64", "x86_64"),
+        "el10-aarch64": ("almalinux:10", "rpm", "ubuntu-24.04-arm", "linux/arm64", "aarch64"),
     }
     for target_id, values in expected.items():
         target = matrix.find_target(catalog, target_id)
-        eq(tuple(target[key] for key in ("image", "format", "runner", "build_runner", "platform", "package_arch")), values,
+        eq(tuple(target[key] for key in ("image", "format", "runner", "platform", "package_arch")), values,
            f"{target_id} contract")
     for engine_id in ("vinyl-9.0.1", "varnish-9.0.3"):
         engine = matrix.find_engine(catalog, engine_id)
@@ -998,9 +995,9 @@ def expand_release_lane():
         catalog = matrix.load_catalog(write_fixture(Path(tmp)))
         expansion = matrix.expand(catalog, "release", "all")
         eq(expansion["engines"], [
-            {"engine": "vinyl-9.0.1", "target": "debian-13-amd64", "runner": "ubuntu-24.04-4vcpu"},
-            {"engine": "vinyl-9.0.1", "target": "el10-x86_64", "runner": "ubuntu-24.04-4vcpu"},
-            {"engine": "varnish-9.0.3", "target": "debian-13-amd64", "runner": "ubuntu-24.04-4vcpu"},
+            {"engine": "vinyl-9.0.1", "target": "debian-13-amd64", "runner": "ubuntu-24.04"},
+            {"engine": "vinyl-9.0.1", "target": "el10-x86_64", "runner": "ubuntu-24.04"},
+            {"engine": "varnish-9.0.3", "target": "debian-13-amd64", "runner": "ubuntu-24.04"},
         ], "engine pairs")
         eq(without_source_artifacts(expansion["vmods"]), [
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"},
@@ -1012,12 +1009,12 @@ def expand_release_lane():
         engine_rows = [r for r in expansion["rows"] if r["mode"] == "engine"]
         eq(len(engine_rows), 3, "engine rows in the full list")
         eq(engine_rows[0], {"row": "vinyl-9.0.1", "engine": "vinyl-9.0.1",
-                            "target": "debian-13-amd64", "mode": "engine", "runner": "ubuntu-24.04-4vcpu"}, "engine row shape")
+                            "target": "debian-13-amd64", "mode": "engine", "runner": "ubuntu-24.04"}, "engine row shape")
         compat_only = matrix.expand(catalog, "release", "compat")
         eq(compat_only["engines"], [
-            {"engine": "vinyl-9.0.1", "target": "debian-13-amd64", "runner": "ubuntu-24.04-4vcpu"},
-            {"engine": "vinyl-9.0.1", "target": "el10-x86_64", "runner": "ubuntu-24.04-4vcpu"},
-            {"engine": "varnish-9.0.3", "target": "debian-13-amd64", "runner": "ubuntu-24.04-4vcpu"},
+            {"engine": "vinyl-9.0.1", "target": "debian-13-amd64", "runner": "ubuntu-24.04"},
+            {"engine": "vinyl-9.0.1", "target": "el10-x86_64", "runner": "ubuntu-24.04"},
+            {"engine": "varnish-9.0.3", "target": "debian-13-amd64", "runner": "ubuntu-24.04"},
         ], "compat engine pairs use every target")
         eq(without_source_artifacts(compat_only["vmods"]), [
             {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"},
@@ -1028,18 +1025,18 @@ def expand_release_lane():
 
 
 @test
-def expansion_uses_build_runner_only_for_cpu_intensive_builds():
+def expansion_uses_one_native_runner_per_target():
     with tempfile.TemporaryDirectory() as tmp:
         catalog = matrix.load_catalog(write_fixture(
             Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": FIXTURE_CARGO}
         ))
         expansion = matrix.expand(catalog, "release", "all")
-        eq({row["runner"] for row in expansion["engines"]}, {"ubuntu-24.04-4vcpu"},
-           "engine builds use the build runner")
-        eq({row["runner"] for row in expansion["vmods"]}, {"ubuntu-24.04-4vcpu"},
-           "Cargo VMOD builds use the build runner")
+        eq({row["runner"] for row in expansion["engines"]}, {"ubuntu-24.04"},
+           "engine builds use the target runner")
+        eq({row["runner"] for row in expansion["vmods"]}, {"ubuntu-24.04"},
+           "Cargo VMOD builds use the target runner")
         eq({pair["runner"] for pair in expansion["package_pairs"]}, {"ubuntu-24.04"},
-           "package cohorts use the standard runner")
+           "package cohorts use the target runner")
 
 
 @test
@@ -1145,7 +1142,7 @@ def expand_trunk_lane_and_github_format():
         root = str(write_fixture(Path(tmp)))
         catalog = matrix.load_catalog(root)
         expansion = matrix.expand(catalog, "trunk", "all")
-        eq(expansion["engines"], [{"engine": "vinyl-trunk", "target": "debian-13-amd64", "runner": "ubuntu-24.04-4vcpu"}], "trunk engines")
+        eq(expansion["engines"], [{"engine": "vinyl-trunk", "target": "debian-13-amd64", "runner": "ubuntu-24.04"}], "trunk engines")
         eq(without_source_artifacts(expansion["vmods"]),
            [{"row": "dict", "engine": "vinyl-trunk", "target": "debian-13-amd64", "mode": "compat", "runner": "ubuntu-24.04"}],
            "trunk vmod rows are compat only")
@@ -1999,22 +1996,17 @@ def workflow_prefetches_each_vmod_source_for_build_cells():
 
 
 @test
-def workflows_keep_control_plane_and_arm_work_on_github_runners():
+def workflows_use_github_hosted_runners():
     root = Path(__file__).resolve().parent.parent
     for name in ("ci.yml", "matrix.yml", "trunk.yml", "release.yml", "render-pages.yml", "upstream-varnish-overlay.yml"):
         workflow = (root / ".github" / "workflows" / name).read_text()
         for line in workflow.splitlines():
-            if "runs-on:" in line and "matrix.runner" not in line and "inputs.runner" not in line:
-                ok("blacksmith" not in line, f"{name} keeps fixed orchestration jobs on GitHub-hosted runners")
+            if "runs-on:" in line and "${{" not in line:
+                ok("ubuntu-" in line, f"{name} keeps fixed jobs on GitHub-hosted runners")
     catalog = matrix.load_catalog(root)
     for target_id, target in catalog["targets"].items():
-        if target["platform"] == "linux/arm64":
-            ok(target["runner"].startswith("ubuntu-") and target["build_runner"].startswith("ubuntu-"),
-               f"{target_id} keeps all ARM work on GitHub-hosted runners")
-        else:
-            ok(target["runner"].startswith("ubuntu-"), f"{target_id} keeps serial x64 work on GitHub-hosted runners")
-            ok(target["build_runner"] == "blacksmith-4vcpu-ubuntu-2404",
-               f"{target_id} sends only CPU-heavy x64 work to Blacksmith")
+        ok(target["runner"].startswith("ubuntu-"),
+           f"{target_id} uses a GitHub-hosted runner")
 
 
 @test
