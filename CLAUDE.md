@@ -30,7 +30,7 @@ scripts/build-engine.sh <engine-id> <target> <workdir>
 scripts/build-vmod.sh <vmod-id> <engine-id> <target> compat|package <workdir>
 ```
 
-Local runs write under `work/` (gitignored). CI artifact/layout contracts (result filenames `<row>--<engine>--<target>--<mode>.json`, engine artifact re-rooted at `<workdir>/engine/`, packages under `<workdir>/packages/`) are in DESIGN.md.
+Local runs write under `work/` (gitignored). CI artifact/layout contracts (result filenames `<row>--<engine>--<target>--<mode>.json`, source-identity directories inside source bundles, engine×target directories inside native-target bundles, and packages under `<workdir>/packages/`) are in DESIGN.md.
 
 ## Container facts learned the hard way (2026-08-10 proof runs)
 

@@ -8,8 +8,7 @@
 # are correct by construction). When the catalog says packages "true", also
 # builds the selected family's runtime/development .deb or .rpm set into
 #   <workdir>/artifacts/engine-<id>-<target>-pkgs/   (consumed by build-vmod)
-# and mirrors it into <workdir>/packages/ for release collection. Package
-# identity comes from the selected engine family contract in matrix.py env.
+# Package identity comes from the selected engine family contract in matrix.py env.
 # Writes the engine's own cell result: row = engine id, mode = "engine".
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -160,9 +159,6 @@ CHANGELOG
     assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" "$PKGOUT"/*.rpm
     ;;
   esac
-  # Mirror for release collection (release.yml gathers <workdir>/packages/).
-  mkdir -p "/work/packages/engine-$ENGINE_ID-$TARGET"
-  cp "$PKGOUT"/* "/work/packages/engine-$ENGINE_ID-$TARGET/"
 fi
 
 echo "engine build complete"

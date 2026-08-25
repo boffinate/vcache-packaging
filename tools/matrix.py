@@ -83,6 +83,7 @@ MODES = ("compat", "package", "engine")
 # enough independent batches to absorb the large runtime variance between
 # VMODs at the workflow's 20-runner concurrency limit.
 VMOD_BATCH_SIZE = 6
+SOURCE_BATCH_SIZE = 6
 STATUSES = (
     "pass",
     "configure_failed",
@@ -846,7 +847,49 @@ def expand(catalog: dict, lane: str, mode: str = "all", targets: set | None = No
             "rows": engine_rows + vmod_rows}
 
 
-def batch_vmods(rows: list, size: int = VMOD_BATCH_SIZE) -> list:
+def batch_sources(rows: list, groups: dict | None = None, size: int = SOURCE_BATCH_SIZE) -> tuple[list, dict]:
+    """Bundle source fetches while keeping VMOD consumer downloads selective."""
+    if size < 1:
+        raise ValueError("source batch size must be positive")
+    batches = []
+    artifact_by_source = {}
+    grouped = {}
+    for row in rows:
+        grouped.setdefault((groups or {}).get(row["row"], "default"), []).append(row)
+    for group in grouped.values():
+        for start in range(0, len(group), size):
+            items = group[start:start + size]
+            number = len(batches) + 1
+            artifact = f"vmod-sources-{number:03d}"
+            for item in items:
+                artifact_by_source[item["source_artifact"]] = artifact
+            batches.append({
+                "batch": f"source-batch-{number:03d}",
+                "artifact": artifact,
+                "items": json.dumps(items, separators=(",", ":")),
+            })
+    return batches, artifact_by_source
+
+
+def batch_engines(rows: list) -> list:
+    """Build every engine for one native target on the same runner."""
+    groups = {}
+    for row in rows:
+        key = (row["target"], row["runner"])
+        groups.setdefault(key, []).append(row)
+    return [
+        {
+            "batch": f"engine-batch-{target}",
+            "target": target,
+            "runner": runner,
+            "artifact": f"engines-{target}",
+            "items": json.dumps(items, separators=(",", ":")),
+        }
+        for (target, runner), items in groups.items()
+    ]
+
+
+def batch_vmods(rows: list, source_artifacts: dict | None = None, size: int = VMOD_BATCH_SIZE) -> list:
     """Group compatible VMOD cells into bounded runner jobs.
 
     A batch shares only the runner-level inputs that are safe to reuse. Each
@@ -863,7 +906,10 @@ def batch_vmods(rows: list, size: int = VMOD_BATCH_SIZE) -> list:
     for key, group in groups.items():
         for start in range(0, len(group), size):
             items = group[start:start + size]
-            sources = list(dict.fromkeys(item["source_artifact"] for item in items))
+            sources = list(dict.fromkeys(
+                (source_artifacts or {}).get(item["source_artifact"], item["source_artifact"])
+                for item in items
+            ))
             source_pattern = sources[0] if len(sources) == 1 else "{" + ",".join(sources) + "}"
             batches.append({
                 "batch": f"batch-{len(batches) + 1:03d}",
@@ -1422,13 +1468,17 @@ def cmd_expand(args) -> int:
     if not expansion["engines"] or not expansion["vmods"]:
         raise CatalogError(f"lane {args.lane!r} expanded to an empty matrix; the catalog has no engines or vmods for it")
     if args.format == "github":
-        # Five `key=<json>` lines, appended verbatim to $GITHUB_OUTPUT.
+        source_groups = {vmod["id"]: vmod_build(vmod) for vmod in catalog["vmods"].values()}
+        source_batches, source_artifacts = batch_sources(expansion["sources"], source_groups)
+        # Seven `key=<json>` lines, appended verbatim to $GITHUB_OUTPUT.
         # Engine rows are excluded from vmods= (they would become bogus VMOD
         # jobs). Each VMOD batch becomes one reusable-workflow runner job.
         print("engines=" + json.dumps(expansion["engines"], separators=(",", ":")))
+        print("engine_batches=" + json.dumps(batch_engines(expansion["engines"]), separators=(",", ":")))
         print("vmods=" + json.dumps(expansion["vmods"], separators=(",", ":")))
         print("vmod_sources=" + json.dumps(expansion["sources"], separators=(",", ":")))
-        print("vmod_batches=" + json.dumps(batch_vmods(expansion["vmods"]), separators=(",", ":")))
+        print("source_batches=" + json.dumps(source_batches, separators=(",", ":")))
+        print("vmod_batches=" + json.dumps(batch_vmods(expansion["vmods"], source_artifacts), separators=(",", ":")))
         print("package_pairs=" + json.dumps(expansion["package_pairs"], separators=(",", ":")))
     else:
         print(json.dumps(expansion["rows"], indent=2))

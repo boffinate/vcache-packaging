@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      engines: ${{ steps.expand.outputs.engines }}
-      vmod_sources: ${{ steps.expand.outputs.vmod_sources }}
+      engine_batches: ${{ steps.expand.outputs.engine_batches }}
+      source_batches: ${{ steps.expand.outputs.source_batches }}
       vmod_batches: ${{ steps.expand.outputs.vmod_batches }}
       package_pairs: ${{ steps.expand.outputs.package_pairs }}
     steps:
@@ -35,47 +35,50 @@ jobs:
   vmod_source:
     needs: expand
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
-      max-parallel: 10
+      max-parallel: 2
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.expand.outputs.vmod_sources) }}
-    name: source ${{ matrix.row }} for ${{ matrix.engine }}
+        include: ${{ fromJSON(needs.expand.outputs.source_batches) }}
+    name: ${{ matrix.batch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: scripts/fetch-vmod-source.sh "${{ matrix.row }}" "${{ matrix.engine }}" work/vmod-source
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - run: python3 tools/source_batch.py
+        env:
+          SOURCE_BATCH_ITEMS: ${{ matrix.items }}
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ matrix.source_artifact }}
-          path: work/vmod-source/
-          if-no-files-found: error
+          name: ${{ matrix.artifact }}
+          path: work/sources/
+          if-no-files-found: ignore
           retention-days: 1
 
   engine:
     needs: expand
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.expand.outputs.engines) }}
-    name: engine ${{ matrix.engine }} on ${{ matrix.target }}
+        include: ${{ fromJSON(needs.expand.outputs.engine_batches) }}
+    name: ${{ matrix.batch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Exits non-zero only on infra_failed; a classified build failure is a
-      # red cell in the result JSON, not a red job.
-      - run: scripts/build-engine.sh "${{ matrix.engine }}" "${{ matrix.target }}" work
+      - run: python3 tools/engine_batch.py
+        env:
+          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: engine-${{ matrix.engine }}-${{ matrix.target }}
+          name: ${{ matrix.artifact }}
           path: work/artifacts/
           if-no-files-found: ignore
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: results-engine-${{ matrix.engine }}-${{ matrix.target }}
+          name: results-${{ matrix.batch }}
           path: work/results/
 
   vmod:
@@ -112,8 +115,16 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
-          name: engine-${{ matrix.engine }}-${{ matrix.target }}
-          path: work/cohort-packages
+          name: engines-${{ matrix.target }}
+          path: work/engine-bundle
+      - name: select engine packages
+        continue-on-error: true
+        env:
+          ENGINE_ID: ${{ matrix.engine }}
+          TARGET_ID: ${{ matrix.target }}
+        run: |
+          mkdir -p work/cohort-packages
+          cp -R "work/engine-bundle/engine-$ENGINE_ID-$TARGET_ID/engine-$ENGINE_ID-$TARGET_ID-pkgs" work/cohort-packages/
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
@@ -176,7 +187,7 @@ jobs:
       # pkgdl/, so packages can be collected per (engine, target) pair below.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: engine-*
+          pattern: engines-*
           path: pkgdl
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:

@@ -24,12 +24,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import engine_batch  # noqa: E402
 import jsonschema_gen  # noqa: E402
 import matrix  # noqa: E402
 import package_contract  # noqa: E402
 import recipe  # noqa: E402
 import release_gate  # noqa: E402
 import source_api_normalize  # noqa: E402
+import source_batch  # noqa: E402
 import vmod_batch  # noqa: E402
 import yaml_subset  # noqa: E402
 
@@ -1107,18 +1109,25 @@ def expand_trunk_lane_and_github_format():
         code, out, _ = run_cli(["expand", "--lane", "trunk", "--format", "github", "--root", root])
         eq(code, 0, "expand exit code")
         lines = out.strip().split("\n")
-        eq(len(lines), 5, "github format includes source and package-pair matrices")
-        ok(lines[0].startswith("engines=") and lines[1].startswith("vmods=")
-           and lines[2].startswith("vmod_sources=") and lines[3].startswith("vmod_batches=")
-           and lines[4].startswith("package_pairs="),
+        eq(len(lines), 7, "github format includes bounded source and engine matrices")
+        ok(lines[0].startswith("engines=") and lines[1].startswith("engine_batches=")
+           and lines[2].startswith("vmods=") and lines[3].startswith("vmod_sources=")
+           and lines[4].startswith("source_batches=") and lines[5].startswith("vmod_batches=")
+           and lines[6].startswith("package_pairs="),
            "github output keys")
         engines = json.loads(lines[0][len("engines="):])
-        vmods = json.loads(lines[1][len("vmods="):])
-        sources = json.loads(lines[2][len("vmod_sources="):])
-        batches = json.loads(lines[3][len("vmod_batches="):])
-        package_pairs = json.loads(lines[4][len("package_pairs="):])
+        engine_batches = json.loads(lines[1][len("engine_batches="):])
+        vmods = json.loads(lines[2][len("vmods="):])
+        sources = json.loads(lines[3][len("vmod_sources="):])
+        source_batches = json.loads(lines[4][len("source_batches="):])
+        batches = json.loads(lines[5][len("vmod_batches="):])
+        package_pairs = json.loads(lines[6][len("package_pairs="):])
         ok(engines and vmods, "neither github array is empty")
+        eq([item for batch in engine_batches for item in json.loads(batch["items"])], engines,
+           "engine batches preserve every engine pair")
         eq(len(sources), 1, "one trunk source feeds every matching VMOD cell")
+        eq([item for batch in source_batches for item in json.loads(batch["items"])], sources,
+           "source batches preserve every resolved source")
         ok(all(set(r) >= {"engine", "target", "runner"} for r in engines), "engines= row shape")
         ok(all(r["row"] != r["engine"] for r in vmods), "vmods= excludes engine rows")
         eq([row for batch in batches for row in json.loads(batch["items"])], vmods,
@@ -1183,6 +1192,34 @@ def vmod_batches_are_homogeneous_bounded_and_ordered():
        "batch source pattern deduplicates exact artifact names")
     eq(batches[1]["source_pattern"], "vmod-source-0",
        "a one-source batch uses an exact artifact name")
+
+
+@test
+def source_and_engine_batches_are_bounded_and_preserve_inputs():
+    sources = [
+        {"row": f"vmod-{index}", "engine": "vinyl-9.0.1", "source_artifact": f"source-{index}"}
+        for index in range(matrix.SOURCE_BATCH_SIZE + 2)
+    ]
+    source_batches, source_artifacts = matrix.batch_sources(sources)
+    eq([len(json.loads(batch["items"])) for batch in source_batches], [matrix.SOURCE_BATCH_SIZE, 2],
+       "source batches use the configured bound")
+    eq([item for batch in source_batches for item in json.loads(batch["items"])], sources,
+       "source batches preserve source order")
+    eq(source_artifacts["source-0"], "vmod-sources-001", "source lookup points to its bundle")
+    eq(source_artifacts[f"source-{matrix.SOURCE_BATCH_SIZE}"], "vmod-sources-002",
+       "source lookup crosses the bundle boundary")
+
+    engines = [
+        {"engine": engine, "target": target, "runner": runner}
+        for target, runner in (("debian-13-amd64", "x64"), ("debian-13-arm64", "arm64"))
+        for engine in ("vinyl-9.0.1", "varnish-9.0.3")
+    ]
+    engine_batches = matrix.batch_engines(engines)
+    eq(len(engine_batches), 2, "one engine batch is emitted per native target")
+    eq([item for batch in engine_batches for item in json.loads(batch["items"])], engines,
+       "engine batches preserve every engine pair")
+    ok(all(len({item["target"] for item in json.loads(batch["items"])}) == 1 for batch in engine_batches),
+       "engine batches never mix targets")
 
 
 # ---------------------------------------------------------------------------
@@ -1831,25 +1868,91 @@ def vmod_batch_isolates_cells_reuses_inputs_and_collects_every_result():
 
 
 @test
+def source_batch_attempts_every_fetch_and_keeps_successful_members():
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        repo = tmp / "repo"
+        scripts = repo / "scripts"
+        scripts.mkdir(parents=True)
+        fetch = scripts / "fetch-vmod-source.sh"
+        fetch.write_text(textwrap.dedent("""\
+            #!/bin/sh
+            if [ "$1" = broken ]; then exit 1; fi
+            mkdir -p "$3"
+            printf '%s\\n' "$1" > "$3/vmod-id"
+            : > "$3/source.tar.gz"
+        """))
+        fetch.chmod(0o755)
+        items = [
+            {"row": "broken", "engine": "vinyl", "source_artifact": "source-broken"},
+            {"row": "dict", "engine": "vinyl", "source_artifact": "source-dict"},
+        ]
+        work = tmp / "work"
+        code = source_batch.run_batch(items, work, repo, parallelism=2)
+        eq(code, 1, "one failed source makes the completed batch fail")
+        ok((work / "sources" / "source-dict" / "source.tar.gz").is_file(),
+           "a sibling source remains available after another fetch fails")
+
+
+@test
+def engine_batch_attempts_every_engine_and_preserves_engine_directories():
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        repo = tmp / "repo"
+        scripts = repo / "scripts"
+        scripts.mkdir(parents=True)
+        build = scripts / "build-engine.sh"
+        build.write_text(textwrap.dedent("""\
+            #!/bin/sh
+            mkdir -p "$3/results"
+            printf '{}\\n' > "$3/results/$1.json"
+            if [ "$1" = broken ]; then exit 1; fi
+            mkdir -p "$3/artifacts"
+            : > "$3/artifacts/engine-$1-$2-prefix.tar.gz"
+        """))
+        build.chmod(0o755)
+        items = [
+            {"engine": "broken", "target": "debian-13-amd64", "runner": "x64"},
+            {"engine": "vinyl", "target": "debian-13-amd64", "runner": "x64"},
+        ]
+        work = tmp / "work"
+        code = engine_batch.run_batch(items, work, repo)
+        eq(code, 1, "one infrastructure failure makes the completed engine batch fail")
+        eq(sorted(path.name for path in (work / "results").iterdir()), ["broken.json", "vinyl.json"],
+           "the batch retains results for every engine")
+        ok((work / "artifacts" / "engine-vinyl-debian-13-amd64" /
+            "engine-vinyl-debian-13-amd64-prefix.tar.gz").is_file(),
+           "the successful engine remains addressable by its exact pair")
+
+
+@test
 def workflow_prefetches_each_vmod_source_for_build_cells():
     root = Path(__file__).resolve().parent.parent
     for name in ("matrix.yml", "trunk.yml", "release.yml"):
         workflow = (root / ".github" / "workflows" / name).read_text()
-        ok("vmod_sources: ${{ steps.expand.outputs.vmod_sources }}" in workflow,
-           f"{name} exports the deduplicated source matrix")
-        ok("scripts/fetch-vmod-source.sh" in workflow,
-           f"{name} fetches each resolved VMOD source")
-        ok("name: ${{ matrix.source_artifact }}" in workflow,
-           f"{name} publishes source artifacts under their matrix identity")
+        ok("source_batches: ${{ steps.expand.outputs.source_batches }}" in workflow,
+           f"{name} exports bounded source batches")
+        ok("python3 tools/source_batch.py" in workflow,
+           f"{name} fetches each source batch")
+        ok("name: ${{ matrix.artifact }}" in workflow,
+           f"{name} publishes the source bundle")
+        ok("engine_batches: ${{ steps.expand.outputs.engine_batches }}" in workflow,
+           f"{name} exports target-level engine batches")
+        ok("python3 tools/engine_batch.py" in workflow,
+           f"{name} runs the engine batch driver")
         ok("needs: [expand, engine, vmod_source]" in workflow,
            f"{name} waits for source acquisition before starting VMOD cells")
     batch = (root / ".github" / "workflows" / "vmod-batch.yml").read_text()
     ok("pattern: ${{ inputs.source_pattern }}" in batch,
-       "VMOD batches download only their deduplicated source artifacts")
+       "VMOD batches download only their deduplicated source bundles")
+    ok("merge-multiple: true" in batch,
+       "downloaded source bundles retain one merged directory per source identity")
+    ok('engine-${{ inputs.engine }}-${{ inputs.target }}' in batch,
+       "VMOD batches select only their engine from the target bundle")
     ok("VMOD_BATCH_ITEMS: ${{ inputs.items }}" in batch,
        "the reusable workflow passes every cell to the isolated batch driver")
-    ok((root / "scripts" / "fetch-vmod-source.sh").is_file(),
-       "the source acquisition job has a host-safe script entry point")
+    ok((root / "tools" / "source_batch.py").is_file(),
+       "source acquisition has a host-safe batch driver")
 
 
 @test
