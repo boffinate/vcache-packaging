@@ -2,6 +2,7 @@
 # libvmod-geoip2 (schema vmod/1, DESIGN.md).
 schema: vmod/1
 id: geoip2
+source_api_family: varnish
 upstream:
   git: https://github.com/varnishcache-friends/libvmod-geoip2.git
   homepage: https://github.com/varnishcache-friends/libvmod-geoip2

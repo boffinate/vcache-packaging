@@ -11,6 +11,7 @@
 # the LICENSE file), and its README requires Perl 5 at build time.
 schema: vmod/1
 id: blobdigest
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-blobdigest.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-blobdigest

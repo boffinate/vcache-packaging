@@ -2,6 +2,7 @@
 # libvmod-dynamic (schema vmod/1, DESIGN.md).
 schema: vmod/1
 id: dynamic
+source_api_family: varnish
 upstream:
   git: https://github.com/nigoroll/libvmod-dynamic.git
   homepage: https://github.com/nigoroll/libvmod-dynamic

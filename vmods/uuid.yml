@@ -2,6 +2,7 @@
 # libvmod-uuid (schema vmod/1, DESIGN.md).
 schema: vmod/1
 id: uuid
+source_api_family: varnish
 upstream:
   git: https://github.com/otto-de/libvmod-uuid.git
   homepage: https://github.com/otto-de/libvmod-uuid

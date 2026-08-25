@@ -15,6 +15,7 @@
 # Compat still renders every pairing honestly.
 schema: vmod/1
 id: objvar
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/varnish-objvar.git
   homepage: https://code.uplex.de/uplex-varnish/varnish-objvar

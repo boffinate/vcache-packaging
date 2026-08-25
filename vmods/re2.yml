@@ -15,6 +15,7 @@
 # and on Debian build-essential already ships g++.
 schema: vmod/1
 id: re2
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-re2.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-re2

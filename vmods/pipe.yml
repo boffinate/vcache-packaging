@@ -10,6 +10,7 @@
 # (VDP) exists, the fetch side (VFP) is unimplemented by design.
 schema: vmod/1
 id: pipe
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvdfp-pipe.git
   homepage: https://code.uplex.de/uplex-varnish/libvdfp-pipe

@@ -10,6 +10,7 @@
 # every pairing honestly.
 schema: vmod/1
 id: cluster
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-cluster.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-cluster

@@ -13,6 +13,7 @@
 # upstream states one.
 schema: vmod/1
 id: ipblocker
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-ipblocker.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-ipblocker

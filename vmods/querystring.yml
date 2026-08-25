@@ -10,6 +10,7 @@
 # honest red.
 schema: vmod/1
 id: querystring
+source_api_family: varnish
 upstream:
   git: https://git.sr.ht/~dridi/vmod-querystring
   homepage: https://git.sr.ht/~dridi/vmod-querystring

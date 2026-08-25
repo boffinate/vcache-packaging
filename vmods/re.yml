@@ -11,6 +11,7 @@
 # Compat still renders every pairing honestly.
 schema: vmod/1
 id: re
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-re.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-re

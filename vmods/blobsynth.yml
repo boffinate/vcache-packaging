@@ -11,6 +11,7 @@
 # dedication), not the usual UPLEX BSD-2-Clause.
 schema: vmod/1
 id: blobsynth
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-blobsynth.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-blobsynth

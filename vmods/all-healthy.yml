@@ -13,6 +13,7 @@
 # precedent for ids that are not legal module names).
 schema: vmod/1
 id: all-healthy
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-all_healthy.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-all_healthy

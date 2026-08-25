@@ -13,6 +13,7 @@
 # package declared in build_deps.
 schema: vmod/1
 id: gcrypt
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-gcrypt.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-gcrypt

@@ -2,6 +2,7 @@
 # libvmod-gossip (schema vmod/1, DESIGN.md).
 schema: vmod/1
 id: gossip
+source_api_family: varnish
 upstream:
   git: https://github.com/carlosabalde/libvmod-gossip.git
   homepage: https://github.com/carlosabalde/libvmod-gossip

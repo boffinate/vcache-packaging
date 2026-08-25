@@ -13,6 +13,7 @@
 # honest red.
 schema: vmod/1
 id: varnish-modules
+source_api_family: varnish
 upstream:
   git: https://github.com/varnish/varnish-modules.git
   homepage: https://github.com/varnish/varnish-modules

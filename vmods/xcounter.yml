@@ -2,6 +2,7 @@
 # libvmod-xcounter (schema vmod/1, DESIGN.md).
 schema: vmod/1
 id: xcounter
+source_api_family: vinyl
 upstream:
   git: https://github.com/xcir/libvmod-xcounter.git
   homepage: https://github.com/xcir/libvmod-xcounter

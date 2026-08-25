@@ -4,6 +4,7 @@
 # the Vinyl result.
 schema: vmod/1
 id: jq
+source_api_family: varnish
 upstream:
   git: https://github.com/varnishcache-friends/libvmod-jq.git
   homepage: https://github.com/varnishcache-friends/libvmod-jq

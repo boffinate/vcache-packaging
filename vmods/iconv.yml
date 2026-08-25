@@ -12,6 +12,7 @@
 # extra library dependency.
 schema: vmod/1
 id: iconv
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-iconv.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-iconv

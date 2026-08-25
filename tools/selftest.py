@@ -417,6 +417,49 @@ def catalog_source_api_family_is_autotools_only():
 
 
 @test
+def catalog_source_api_families_match_the_cross_family_experiment():
+    catalog = matrix.load_catalog(matrix.default_root())
+    actual = {
+        vmod_id: vmod["source_api_family"]
+        for vmod_id, vmod in catalog["vmods"].items()
+        if "source_api_family" in vmod
+    }
+    expected = {
+        "all-healthy": "vinyl",
+        "blobdigest": "vinyl",
+        "blobsynth": "vinyl",
+        "cachetag": "vinyl",
+        "cfg": "varnish",
+        "cluster": "vinyl",
+        "crypto": "vinyl",
+        "digest": "varnish",
+        "dns": "vinyl",
+        "dynamic": "varnish",
+        "file": "varnish",
+        "frozen": "vinyl",
+        "gcrypt": "vinyl",
+        "geoip2": "varnish",
+        "gossip": "varnish",
+        "hoailona": "vinyl",
+        "iconv": "vinyl",
+        "ipblocker": "vinyl",
+        "j": "vinyl",
+        "jq": "varnish",
+        "objvar": "vinyl",
+        "pipe": "vinyl",
+        "querystring": "varnish",
+        "re": "vinyl",
+        "re2": "vinyl",
+        "redis": "varnish",
+        "selector": "vinyl",
+        "uuid": "varnish",
+        "varnish-modules": "varnish",
+        "xcounter": "vinyl",
+    }
+    eq(actual, expected, "source API family allow-list")
+
+
+@test
 def catalog_target_registry_drives_metadata_and_rejects_bad_entries():
     with tempfile.TemporaryDirectory() as tmp:
         catalog = matrix.load_catalog(write_fixture(Path(tmp)))

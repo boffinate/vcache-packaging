@@ -8,6 +8,7 @@
 # precedent; the 0 in 0~master keeps the Debian version digit-first).
 schema: vmod/1
 id: hoailona
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-hoailona.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-hoailona
