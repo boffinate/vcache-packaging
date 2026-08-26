@@ -1743,6 +1743,45 @@ def engine_cache_requires_complete_passing_outputs():
 
 
 @test
+def engine_cache_binds_trunk_entries_to_resolved_commits():
+    item = {"engine": "vinyl-trunk", "target": "debian-13-amd64", "runner": "ubuntu-24.04"}
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = write_fixture(Path(tmp_name))
+        calls = []
+
+        def resolver(root, url, branch):
+            calls.append((url, branch))
+            return "a" * 40
+
+        duplicate = {**item, "target": "el10-x86_64"}
+        resolved = engine_cache.resolve_items(tmp, [item, duplicate], resolver)
+        eq(resolved, [{**item, "source_commit": "a" * 40}, {**duplicate, "source_commit": "a" * 40}],
+           "trunk cache inputs retain the resolved commit")
+        eq(calls, [("https://example.org/vinyl.git", "main")],
+           "one upstream branch is resolved once for all native targets")
+        repo_root = Path(__file__).resolve().parent.parent
+        real_item = {"engine": "vinyl-trunk", "target": "debian-13-amd64", "runner": "ubuntu-24.04"}
+        first = engine_cache.cache_key(repo_root, [{**real_item, "source_commit": "a" * 40}])
+        second = engine_cache.cache_key(repo_root, [{**real_item, "source_commit": "b" * 40}])
+        ok(first.startswith("vcache-engine-trunk-v1-"), "trunk keys have their own namespace")
+        ok(first != second, "a new trunk commit invalidates its engine cache")
+
+        pair = tmp / "work" / "artifacts" / "engine-vinyl-trunk-debian-13-amd64"
+        pair.mkdir(parents=True)
+        (pair / "engine-vinyl-trunk-debian-13-amd64-prefix.tar.gz").write_bytes(b"prefix")
+        (pair / "engine-source-commit").write_text("a" * 40 + "\n")
+        result = tmp / "work" / "results" / "vinyl-trunk--vinyl-trunk--debian-13-amd64--engine.json"
+        result.parent.mkdir(parents=True)
+        result.write_text(json.dumps({
+            "schema": "cell/1", "row": "vinyl-trunk", "engine": "vinyl-trunk",
+            "target": "debian-13-amd64", "mode": "engine", "status": "pass",
+        }) + "\n")
+        ok(engine_cache.cacheable(tmp, [resolved[0]]), "matching trunk artifact commit is cacheable")
+        (pair / "engine-source-commit").write_text("b" * 40 + "\n")
+        ok(not engine_cache.cacheable(tmp, [resolved[0]]), "a stale trunk artifact cannot satisfy the cache key")
+
+
+@test
 def vmod_batch_isolates_cells_reuses_inputs_and_collects_every_result():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -1850,6 +1889,32 @@ def engine_batch_attempts_every_engine_and_preserves_engine_directories():
         ok((work / "artifacts" / "engine-vinyl-debian-13-amd64" /
             "engine-vinyl-debian-13-amd64-prefix.tar.gz").is_file(),
            "the successful engine remains addressable by its exact pair")
+
+
+@test
+def engine_batch_passes_resolved_commit_only_to_its_matching_engine():
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        repo = tmp / "repo"
+        scripts = repo / "scripts"
+        scripts.mkdir(parents=True)
+        build = scripts / "build-engine.sh"
+        build.write_text("#!/usr/bin/env bash\n"
+                         "set -eu\n"
+                         "mkdir -p \"$3/results\" \"$3/artifacts\"\n"
+                         "printf '%s\\n' \"${ENGINE_SOURCE_COMMIT-unset}\" > \"$3/artifacts/commit\"\n"
+                         ": > \"$3/artifacts/engine-$1-$2-prefix.tar.gz\"\n")
+        build.chmod(0o755)
+        items = [
+            {"engine": "release", "target": "debian-13-amd64", "runner": "x64"},
+            {"engine": "trunk", "target": "debian-13-amd64", "runner": "x64", "source_commit": "c" * 40},
+        ]
+        work = tmp / "work"
+        eq(engine_batch.run_batch(items, work, repo), 0, "engine batch completes")
+        release = work / "artifacts" / "engine-release-debian-13-amd64" / "commit"
+        trunk = work / "artifacts" / "engine-trunk-debian-13-amd64" / "commit"
+        eq(release.read_text().strip(), "unset", "release builds do not inherit a trunk commit")
+        eq(trunk.read_text().strip(), "c" * 40, "trunk build receives the resolved commit")
 
 
 @test

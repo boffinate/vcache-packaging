@@ -251,6 +251,29 @@ clone_branch() {
   git_clone_retry "$url" "$destination" --recurse-submodules --branch "$branch"
 }
 
+# A cache key is resolved before the build starts. Checking out the branch
+# again would let an intervening push label different source bytes with that
+# earlier key, so fetch and verify the resolved commit explicitly.
+clone_commit() {
+  local url=$1 branch=$2 commit=$3 destination=$4
+  clone_branch "$url" "$branch" "$destination"
+  if ! git -C "$destination" cat-file -e "$commit^{commit}" 2>/dev/null; then
+    if ! git_retry "fetch engine commit $commit" -C "$destination" fetch --depth 1 origin "$commit"; then
+      # Some servers deliberately deny raw object requests once a branch has
+      # moved. A full branch history still contains the recently advertised
+      # commit and retains the exact-build invariant without trusting HEAD.
+      rm -rf "$destination"
+      git_clone_retry "$url" "$destination" --recurse-submodules --branch "$branch"
+    fi
+  fi
+  git -C "$destination" cat-file -e "$commit^{commit}" 2>/dev/null \
+    || { echo "resolved engine commit $commit is unavailable from $branch" >&2; return 1; }
+  git -C "$destination" checkout --detach "$commit"
+  git_retry "update engine submodules" -C "$destination" submodule update --init --recursive
+  [ "$(git -C "$destination" rev-parse HEAD)" = "$commit" ] \
+    || { echo "checked out $(git -C "$destination" rev-parse HEAD), expected $commit" >&2; return 1; }
+}
+
 # clone_vmod URL DESTINATION
 # VMOD source hosts can temporarily reject a burst of concurrent clone
 # requests with HTTP 429. Retry a bounded number

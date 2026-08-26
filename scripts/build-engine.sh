@@ -43,6 +43,15 @@ if [ "${ENGINE_PACKAGES:-false}" = "true" ]; then
 fi
 PREFIX="/opt/$ENGINE_ID"
 if [ "${ENGINE_KIND:-release}" = trunk ]; then REF=${ENGINE_BRANCH:-trunk}; else REF=$ENGINE_VERSION; fi
+ENGINE_SOURCE_COMMIT=${ENGINE_SOURCE_COMMIT:-}
+if [ "${ENGINE_KIND:-release}" = trunk ]; then
+  if [ -n "$ENGINE_SOURCE_COMMIT" ]; then
+    printf '%s' "$ENGINE_SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$' \
+      || die "ENGINE_SOURCE_COMMIT must be a lowercase 40-character commit"
+  fi
+else
+  ENGINE_SOURCE_COMMIT=""
+fi
 
 {
   printf "TAG='%s'\nTARGET='%s'\nPKGFMT='%s'\nPREFIX='%s'\n" "$TAG" "$TARGET" "$PKGFMT" "$PREFIX"
@@ -50,6 +59,8 @@ if [ "${ENGINE_KIND:-release}" = trunk ]; then REF=${ENGINE_BRANCH:-trunk}; else
   printf "ENGINE_PACKAGE_NAME='%s'\nENGINE_DEVELOPMENT_PACKAGE='%s'\n" "$ENGINE_PACKAGE_NAME" "$ENGINE_DEVELOPMENT_PACKAGE"
   printf "ENGINE_SOURCE_NAME='%s'\nENGINE_RPM_ARCHIVE_STEM='%s'\n" "$ENGINE_SOURCE_NAME" "$ENGINE_RPM_ARCHIVE_STEM"
   printf "ENGINE_RECIPE_DIR='%s'\nENGINE_DAEMON='%s'\n" "$ENGINE_RECIPE_DIR" "$ENGINE_DAEMON"
+  # The commit is validated above before becoming shell input to the container.
+  printf "ENGINE_SOURCE_COMMIT='%s'\n" "$ENGINE_SOURCE_COMMIT"
   printf "MAINTAINER='%s'\n" "${MAINTAINER:-Vinyl Cache matrix CI <vcache-matrix-ci@invalid>}"
 } >> "$ENVFILE"
 
@@ -90,8 +101,14 @@ if [ "${ENGINE_KIND:?}" = release ]; then
   tar -xzf "/work/tmp/$TAG.tar.gz" -C "$SRC" --strip-components=1
 else
   step clone
-  clone_branch "${ENGINE_GIT_URL:?}" "${ENGINE_BRANCH:?}" "$SRC"
+  if [ -n "${ENGINE_SOURCE_COMMIT:-}" ]; then
+    clone_commit "${ENGINE_GIT_URL:?}" "${ENGINE_BRANCH:?}" "$ENGINE_SOURCE_COMMIT" "$SRC"
+  else
+    clone_branch "${ENGINE_GIT_URL:?}" "${ENGINE_BRANCH:?}" "$SRC"
+  fi
   COMMIT=$(git -C "$SRC" rev-parse HEAD)
+  [ -z "${ENGINE_SOURCE_COMMIT:-}" ] || [ "$COMMIT" = "$ENGINE_SOURCE_COMMIT" ] \
+    || { echo "built $COMMIT, expected $ENGINE_SOURCE_COMMIT" >&2; exit 1; }
 fi
 printf '%s\n' "$COMMIT" > "/work/tmp/$TAG.commit"
 

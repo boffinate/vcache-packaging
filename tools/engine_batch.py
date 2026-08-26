@@ -34,12 +34,16 @@ def run_batch(items: list[dict], workdir: Path, repo_root: Path) -> int:
         cell = workdir / "cells" / f"{index:02d}-{item['engine']}"
         print(f"::group::engine {item['engine']} on {item['target']}", flush=True)
         try:
+            environment = os.environ.copy()
+            environment.pop("ENGINE_SOURCE_COMMIT", None)
+            if "source_commit" in item:
+                environment["ENGINE_SOURCE_COMMIT"] = item["source_commit"]
             returncode = subprocess.run([
                 str(repo_root / "scripts" / "build-engine.sh"),
                 item["engine"],
                 item["target"],
                 str(cell),
-            ], check=False).returncode
+            ], check=False, env=environment).returncode
             failed = returncode != 0 or failed
         finally:
             collect_tree(

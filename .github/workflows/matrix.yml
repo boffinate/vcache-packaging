@@ -3,8 +3,8 @@ name: matrix
 on:
   workflow_dispatch:
   schedule:
-    # Run stable-release compatibility first, leaving two hours before trunk.
-    - cron: "30 3 1-31/2 * *" # odd-numbered days, 03:30 UTC
+    # Leaves two hours before the daily moving-head run.
+    - cron: "30 3 * * *" # daily, 03:30 UTC
 
 permissions:
   contents: read
