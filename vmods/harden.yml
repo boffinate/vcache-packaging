@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-harden (schema vmod/1, DESIGN.md).
+#
+# The VMOD uses Varnish's TLS and private daemon APIs, so Vinyl compatibility
+# is expected to remain an honest red cell until upstream adds support.
+schema: vmod/1
+id: harden
+source_api_family: varnish
+upstream:
+  git: https://github.com/usdnag9ugudhi/libvmod-harden.git
+  homepage: https://github.com/usdnag9ugudhi/libvmod-harden
+sources:
+  head: main
+  default:
+    ref: 1.1
+    commit: "cd64464fb97e03a2ca76a3607ba4781f00b7da8d"
+    version: "1.1"
+package:
+  summary: TLS certificate and client connection hardening VMOD for Varnish Cache
+  description:
+    - libvmod-harden aborts TLS handshakes when a configured certificate does
+    - "not match the client's SNI or when SNI or a certificate is absent. It"
+    - also provides harden.close() to drop client connections without an HTTP
+    - response.
+  license: Unlicense
+  build_deps:
+    debian:
+      - libssl-dev
+    rpm:
+      - openssl-devel
+  families:
+    - varnish
+tests: make-check
