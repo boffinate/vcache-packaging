@@ -1244,15 +1244,27 @@ def source_api_normalization_is_directional_and_preserves_vtc_syntax():
         )
         (root / "test.vtc").write_bytes(b"varnishtest test\nserver s1 -start\nvarnish v1 -vcl+backend {}\n")
         (root / "private.c").write_bytes(b'#include "cache/cache_varnishd.h"\nvarnishadm\n')
+        (root / "stats.vsc").write_bytes(
+            b".. varnish_vsc_begin:: example\n.. varnish_vsc_end:: example\n"
+        )
         (root / "binary").write_bytes(b"varnishapi\0unchanged")
         (root / ".git").mkdir()
         (root / ".git" / "config").write_bytes(b"varnishapi")
 
         changed, totals = source_api_normalize.normalize_tree(root, "varnish", "vinyl")
 
-        eq([str(path) for path, _ in changed], ["configure.ac", "private.c", "test.vtc"], "changed files")
+        eq(
+            [str(path) for path, _ in changed],
+            ["configure.ac", "private.c", "stats.vsc", "test.vtc"],
+            "changed files",
+        )
         eq((root / "configure.ac").read_text(), "PKG_CHECK_MODULES([VINYLAPI], [vinylapi])\nAC_SUBST([VINYLSRC])\n", "build spellings")
         eq((root / "private.c").read_text(), '#include "cache/cache_vinyld.h"\nvinyladm\n', "header and CLI")
+        eq(
+            (root / "stats.vsc").read_text(),
+            ".. vinyl_vsc_begin:: example\n.. vinyl_vsc_end:: example\n",
+            "VSC directives",
+        )
         eq((root / "test.vtc").read_text(), "varnishtest test\nserver s1 -start\nvinyl v1 -vcl+backend {}\n", "VTC syntax")
         eq((root / "binary").read_bytes(), b"varnishapi\0unchanged", "binary skipped")
         eq((root / ".git" / "config").read_bytes(), b"varnishapi", ".git skipped")

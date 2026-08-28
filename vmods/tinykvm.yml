@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# TinyKVM is limited to x86-64 and requires KVM only when VCL exercises the
+# sandbox, so package expansion is restricted by architecture while the
+# ordinary import check remains usable without exposing /dev/kvm. Upstream's
+# KVM-dependent tests detect a missing device and skip themselves.
+schema: vmod/1
+id: tinykvm
+source_api_family: varnish
+upstream:
+  git: https://github.com/varnish/libvmod-tinykvm.git
+  homepage: https://github.com/varnish/libvmod-tinykvm
+sources:
+  head: main
+  default:
+    ref: v0.3
+    commit: c4077452bebe072350951bfeefefb4a025082c2b
+    version: "0.3"
+package:
+  summary: Sandboxed native compute VMODs for Varnish Cache
+  description:
+    - libvmod-tinykvm provides the kvm and tinykvm VMODs for running
+    - native compute programs in KVM-isolated sandboxes from VCL. Programs
+    - can process cached data, make HTTP requests, and be shared between
+    - Varnish workers while remaining isolated from the host process.
+  license: GPL-3.0-only
+  build_deps:
+    debian:
+      - cmake
+      - g++
+      - libarchive-dev
+      - libcurl4-openssl-dev
+      - libssl-dev
+    rpm:
+      - cmake
+      - gcc-c++
+      - libarchive-devel
+      - libcurl-devel
+      - openssl-devel
+  modules:
+    - kvm
+    - tinykvm
+  families:
+    - varnish
+  targets:
+    - debian-13-amd64
+    - el10-x86_64
+tests: make-check

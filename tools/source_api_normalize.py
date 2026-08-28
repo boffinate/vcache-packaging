@@ -16,6 +16,7 @@ FAMILIES = ("vinyl", "varnish")
 VINYL_TO_VARNISH = (
     (b"cache/cache_vinyld.h", b"cache/cache_varnishd.h"),
     (b"cache_vinyld.h", b"cache_varnishd.h"),
+    (b"vinyl_vsc", b"varnish_vsc"),
     (b"VINYLAPI", b"VARNISHAPI"),
     (b"VINYLSRC", b"VARNISHSRC"),
     (b"VINYLTEST", b"VARNISHTEST"),
