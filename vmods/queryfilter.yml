@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../schemas/vmod.schema.json
+# libvmod-queryfilter (schema vmod/1, DESIGN.md).
+#
+# The source uses Varnish API spellings; recording that lets the compatibility
+# harness normalize its Autotools source for Vinyl before building.
+schema: vmod/1
+id: queryfilter
+source_api_family: varnish
+upstream:
+  git: https://github.com/petitpress/libvmod-queryfilter.git
+  homepage: https://github.com/petitpress/libvmod-queryfilter
+sources:
+  head: main
+  default:
+    ref: 1.0.1
+    commit: "1995f3c78e8b045f2053401f05dfa14287ccf4dc"
+    version: "1.0.1"
+package:
+  summary: Query-string filtering VMOD for Varnish Cache and Vinyl Cache
+  description:
+    - libvmod-queryfilter filters request URLs to a whitelist of query-string
+    - parameters and preserves their values. It supports sorting, duplicate
+    - parameter handling, array notation, and URL-encoded parameter names.
+  license: Apache-2.0
+  families:
+    - varnish
+    - vinyl
+tests: make-check
