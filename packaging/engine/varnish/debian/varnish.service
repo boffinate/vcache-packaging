@@ -1,0 +1,24 @@
+[Unit]
+Description=Varnish Cache, a high-performance HTTP accelerator
+After=network-online.target nss-lookup.target
+
+[Service]
+Type=forking
+KillMode=mixed
+LimitNOFILE=131072
+LimitMEMLOCK=100M
+TasksMax=infinity
+LimitCORE=infinity
+RuntimeDirectory=%N
+PIDFile=%t/%N/varnishd.pid
+ExecStart=/usr/sbin/varnishd \
+      -a :80 \
+      -a localhost:8443,PROXY \
+      -f /etc/varnish/default.vcl \
+      -P %t/%N/varnishd.pid \
+      -p feature=+http2 \
+      -s malloc,256m
+ExecReload=/usr/sbin/varnishreload
+
+[Install]
+WantedBy=multi-user.target

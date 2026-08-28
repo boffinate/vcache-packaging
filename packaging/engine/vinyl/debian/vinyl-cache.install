@@ -1,3 +1,4 @@
+etc/vinyl-cache/default.vcl
 usr/bin/*
 usr/sbin/*
 usr/lib/*/libvinylapi.so.*

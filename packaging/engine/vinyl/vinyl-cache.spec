@@ -1,7 +1,4 @@
-# packaging/engine/vinyl-cache.spec -- EL9 engine package for the matrix.
-# Simplified from v1 recipes/el9/vinyl-cache.spec.in: no ABI/cohort provides,
-# no external dependency generator, no systemd integration, no hardening
-# ceremony. Identity is stamped at build time by scripts/build-engine.sh:
+# Identity is stamped at build time by scripts/build-engine.sh:
 #   rpmbuild -bb --define "engine_version 9.0.1" --define "engine_release <package-revision>"
 #            [--define "engine_srcdir <tarball top dir>"]
 #            [--define "build_date $(date '+%a %b %d %Y')"]
@@ -22,19 +19,26 @@ Summary:        High-performance HTTP accelerator (matrix build)
 License:        BSD-2-Clause
 URL:            https://vinyl-cache.org/
 Source0:        vinyl-cache-%{engine_version}.tar.gz
+Source1:        vinyl-cache.service
+Source2:        vinyl-cache.reload
 
 BuildRequires:  gcc make autoconf automake autoconf-archive libtool pkgconfig
 BuildRequires:  python3 python3-docutils python3-sphinx diffutils
 BuildRequires:  libedit-devel ncurses-devel pcre2-devel jemalloc-devel libunwind-devel
+BuildRequires:  openssl-devel
+BuildRequires:  systemd-rpm-macros
 
 # vinyld compiles each VCL program with the system toolchain at run time.
 Requires:       gcc
+Requires:       openssl
+Requires(pre):  shadow-utils
+%{?systemd_requires}
 
 %description
-Vinyl Cache is a high-performance HTTP accelerator. This is a
-compatibility-matrix build: daemon, command line tools, shared library and
-bundled VMODs, with no systemd integration and no security-update commitment.
-libunwind comes from EPEL.
+Vinyl Cache is a high-performance HTTP accelerator. This package contains the
+daemon, command line tools, shared library, bundled VMODs and systemd
+integration adapted from the official Varnish package. libunwind comes from
+EPEL.
 
 %package devel
 Summary:        Development files for %{name}
@@ -76,8 +80,28 @@ export VCC_CC="exec %{__cc} $VCC_CFLAGS %%w -pthread -fpic -shared -Wl,-x -o %%o
 find %{buildroot} -name '*.la' -delete
 # Build-time help-text generator with no runtime user.
 rm -f %{buildroot}%{_bindir}/vinylstat_help_gen
+install -D -m 0644 etc/example.vcl %{buildroot}%{_sysconfdir}/vinyl-cache/default.vcl
+install -D -m 0644 %{SOURCE1} %{buildroot}%{_unitdir}/vinyl-cache.service
+install -D -m 0755 %{SOURCE2} %{buildroot}%{_sbindir}/vinylreload
+install -d %{buildroot}%{_sharedstatedir}/vinyl-cache
+
+%pre
+getent group vinyl >/dev/null || groupadd -r vinyl
+getent passwd vinyl >/dev/null || useradd -r -g vinyl -d /nonexistent -s /sbin/nologin -c "Vinyl Cache" vinyl
+
+%post
+%systemd_post vinyl-cache.service
+
+%preun
+%systemd_preun vinyl-cache.service
+
+%postun
+%systemd_postun_with_restart vinyl-cache.service
 
 %files
+%config(noreplace) %{_sysconfdir}/vinyl-cache/default.vcl
+%{_unitdir}/vinyl-cache.service
+%dir %attr(0755,vinyl,vinyl) %{_sharedstatedir}/vinyl-cache
 %{_sbindir}/*
 %{_bindir}/*
 %{_libdir}/libvinylapi.so.*
@@ -101,4 +125,4 @@ rm -f %{buildroot}%{_bindir}/vinylstat_help_gen
 
 %changelog
 * %{build_date} Vinyl Cache matrix CI <vcache-matrix-ci@invalid> - %{engine_version}-%{engine_release}
-- Automated matrix build; version stamped by scripts/build-engine.sh.
+- Build the engine and install its systemd integration.

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+if ! getent group vinyl >/dev/null; then
+    addgroup --system vinyl
+fi
+if ! getent passwd vinyl >/dev/null; then
+    adduser --system --no-create-home --home /nonexistent --ingroup vinyl vinyl
+fi
+install -d -o vinyl -g vinyl /var/lib/vinyl-cache
+
+#DEBHELPER#

@@ -2432,6 +2432,61 @@ def recipe_varnish_family_generation():
 
 
 @test
+def engine_packages_declare_build_and_systemd_contracts():
+    root = Path(__file__).resolve().parents[1]
+    families = {
+        "varnish": {
+            "package": "varnish",
+            "daemon": "varnishd",
+            "reload": "varnishreload",
+            "config": "/etc/varnish/default.vcl",
+        },
+        "vinyl": {
+            "package": "vinyl-cache",
+            "daemon": "vinyld",
+            "reload": "vinylreload",
+            "config": "/etc/vinyl-cache/default.vcl",
+        },
+    }
+    for family, contract in families.items():
+        recipe_dir = root / "packaging" / "engine" / family
+        debian = recipe_dir / "debian"
+        control = (debian / "control").read_text()
+        rules = (debian / "rules").read_text()
+        install_manifest = (debian / f"{contract['package']}.install").read_text()
+        service = (debian / f"{contract['package']}.service").read_text()
+        reload_helper = root / "packaging" / "engine" / "reload-vcl"
+        postinst = (debian / f"{contract['package']}.postinst").read_text()
+        spec = (recipe_dir / f"{contract['package']}.spec").read_text()
+
+        ok("libssl-dev" in control, f"{family} Debian build declares OpenSSL headers")
+        ok("adduser" in control and "openssl" in control,
+           f"{family} Debian runtime declares account and OpenSSL tools")
+        ok(contract["daemon"] in service, f"{family} unit starts its daemon")
+        ok(contract["config"] in service, f"{family} unit loads the packaged default VCL")
+        ok("-p feature=+http2" in service, f"{family} unit enables HTTP/2")
+        ok(contract["reload"] in service, f"{family} unit supports safe VCL reloads")
+        ok(reload_helper.is_file(), f"{family} reload helper is checked in")
+        ok("#DEBHELPER#" in postinst, f"{family} postinst retains debhelper hooks")
+        ok(contract["config"].removeprefix("/") in install_manifest,
+           f"{family} Debian payload includes its default VCL")
+        ok("usr/sbin/*" in install_manifest,
+           f"{family} Debian payload includes its reload helper")
+        ok("etc/example.vcl" in rules, f"{family} Debian rules install the upstream example VCL")
+
+        ok("openssl-devel" in spec, f"{family} RPM build declares OpenSSL headers")
+        ok("BuildRequires:  systemd-rpm-macros" in spec, f"{family} RPM build declares systemd macros")
+        ok("Requires:       openssl" in spec, f"{family} RPM runtime declares OpenSSL tools")
+        ok("export VCC_CC=" in spec, f"{family} RPM does not compile runtime VCL with build-only flags")
+        ok(f"Source1:        {contract['package']}.service" in spec,
+           f"{family} RPM consumes the shared unit")
+        ok(f"Source2:        {contract['package']}.reload" in spec,
+           f"{family} RPM consumes the shared reload helper")
+        ok("%systemd_post" in spec and "%systemd_preun" in spec and "%systemd_postun_with_restart" in spec,
+           f"{family} RPM has complete systemd lifecycle hooks")
+
+
+@test
 def recipe_cargo_debian_and_rpm_mapping():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)

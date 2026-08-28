@@ -1,13 +1,11 @@
 #!/usr/bin/make -f
-# Varnish family engine packaging for the matrix quality bar. The build script
-# generates debian/changelog from the family contract. Exact installed-file
-# manifests remain a target-container proof before this family can publish.
+# The build script generates debian/changelog from the family contract.
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
-# Preserve Varnish's own state/configuration defaults. The compile-only load
-# check needs conventional /usr paths and the target's native library dir.
+# The official service expects Varnish's writable state below /var/lib.
 CONFIGURE_FLAGS = \
+	--localstatedir=/var/lib \
 	--libdir=/usr/lib/$(DEB_HOST_MULTIARCH) \
 	--with-unwind
 
@@ -22,3 +20,5 @@ override_dh_auto_test:
 override_dh_auto_install:
 	dh_auto_install
 	find debian/tmp \( -name '*.la' -o -name '*.a' \) -delete
+	install -D -m 0644 etc/example.vcl debian/tmp/etc/varnish/default.vcl
+	install -D -m 0755 debian/varnish.reload debian/tmp/usr/sbin/varnishreload

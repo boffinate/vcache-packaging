@@ -3,6 +3,7 @@ Section: web
 Priority: optional
 Maintainer: Vinyl Cache matrix CI <vcache-matrix-ci@invalid>
 Build-Depends:
+ libssl-dev,
  debhelper-compat (= 13),
  libedit-dev,
  libjemalloc-dev,
@@ -22,18 +23,18 @@ Architecture: any
 Depends:
  ${shlibs:Depends},
  ${misc:Depends},
+ adduser,
  gcc,
  libc6-dev | libc-dev,
+ openssl,
 Suggests: vinyl-cache-dev
 Description: high-performance web accelerator (matrix build)
  Vinyl Cache is a high-performance HTTP accelerator. It stores responses in
  memory so origin servers do not have to produce the same response repeatedly.
  .
  This package contains the vinyld daemon, the command line utilities, the
- shared library and the VMODs distributed with Vinyl Cache. It ships no
- systemd integration: it is a compatibility-matrix build ("you don't want to
- compile from source"), not a distribution-quality package, and it carries no
- security-update commitment.
+ shared library, the VMODs distributed with Vinyl Cache and a systemd service
+ adapted from the official Varnish package integration.
  .
  gcc and the C library headers are runtime dependencies because vinyld
  compiles each VCL program with the system toolchain at run time.

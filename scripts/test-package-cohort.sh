@@ -64,11 +64,32 @@ VMOD_DIR=$(pkg-config --variable=vmoddir "$ENGINE_API")
   printf 'backend default none;\n'
 } > /tmp/cohort.vcl
 
+step systemd-payload
+case "$ENGINE_DAEMON" in
+varnishd)
+  SERVICE=varnish.service
+  DEFAULT_VCL=/etc/varnish/default.vcl
+  RELOAD=/usr/sbin/varnishreload
+  ;;
+vinyld)
+  SERVICE=vinyl-cache.service
+  DEFAULT_VCL=/etc/vinyl-cache/default.vcl
+  RELOAD=/usr/sbin/vinylreload
+  ;;
+*) echo "no systemd contract for $ENGINE_DAEMON" >&2; exit 1 ;;
+esac
+SERVICE_PATH=$(find /usr/lib/systemd/system /lib/systemd/system -name "$SERVICE" -print -quit 2>/dev/null)
+[ -f "$SERVICE_PATH" ] || { echo "missing $SERVICE" >&2; exit 1; }
+[ -f "$DEFAULT_VCL" ] || { echo "missing $DEFAULT_VCL" >&2; exit 1; }
+[ -x "$RELOAD" ] || { echo "missing executable $RELOAD" >&2; exit 1; }
+grep -F -- "-p feature=+http2" "$SERVICE_PATH" >/dev/null \
+  || { echo "$SERVICE does not enable HTTP/2" >&2; exit 1; }
+
 step daemon-start
 DAEMON=$(command -v "$ENGINE_DAEMON" || true)
 [ -n "$DAEMON" ] || { echo "no $ENGINE_DAEMON on PATH after cohort install" >&2; exit 1; }
 INSTANCE=$(mktemp -d)
-"$DAEMON" -j none -F -a 127.0.0.1:0 -n "$INSTANCE" -f /tmp/cohort.vcl \
+"$DAEMON" -j none -F -a 127.0.0.1:0 -n "$INSTANCE" -f /tmp/cohort.vcl -p feature=+http2 \
   > /tmp/cohort-daemon.log 2>&1 &
 PID=$!
 sleep 2

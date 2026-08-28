@@ -3,6 +3,7 @@ Section: web
 Priority: optional
 Maintainer: Vinyl Cache matrix CI <vcache-matrix-ci@invalid>
 Build-Depends:
+ libssl-dev,
  debhelper-compat (= 13),
  libedit-dev,
  libjemalloc-dev,
@@ -22,13 +23,14 @@ Architecture: any
 Depends:
  ${shlibs:Depends},
  ${misc:Depends},
+ adduser,
  gcc,
  libc6-dev | libc-dev,
+ openssl,
 Suggests: varnish-dev
 Description: high-performance web accelerator (matrix build)
- Varnish Cache is a high-performance HTTP accelerator. This provisional
- family recipe is retained for the matrix packaging contract only; it ships
- no systemd integration or distribution replacement policy.
+ Varnish Cache is a high-performance HTTP accelerator. This package includes
+ a systemd service based on the official Varnish package integration.
  .
  gcc and the C library headers are runtime dependencies because varnishd
  compiles each VCL program with the system toolchain at run time.

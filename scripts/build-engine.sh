@@ -144,6 +144,7 @@ if [ "${ENGINE_PACKAGES:-false}" = "true" ]; then
     rm -rf "$PKGWORK"; mkdir -p "$PKGWORK/build"
     tar -xzf "/work/tmp/$TAG.tar.gz" -C "$PKGWORK/build" --strip-components=1
     cp -R "/repo/$ENGINE_RECIPE_DIR/debian" "$PKGWORK/build/debian"
+    cp "/repo/packaging/engine/reload-vcl" "$PKGWORK/build/debian/$ENGINE_PACKAGE_NAME.reload"
     # The changelog is generated, not committed: version stamped from the pins.
     cat > "$PKGWORK/build/debian/changelog" <<CHANGELOG
 $ENGINE_SOURCE_NAME ($ENGINE_VERSION-$ENGINE_PACKAGE_REVISION) unstable; urgency=medium
@@ -163,6 +164,8 @@ CHANGELOG
     TOPD="/work/tmp/$TAG-rpmtop"
     rm -rf "$TOPD"; mkdir -p "$TOPD/SOURCES" "$TOPD/BUILD" "$TOPD/RPMS" "$TOPD/SRPMS"
     cp "/work/tmp/$TAG.tar.gz" "$TOPD/SOURCES/$ENGINE_RPM_ARCHIVE_STEM-$ENGINE_VERSION.tar.gz"
+    cp "/repo/$ENGINE_RECIPE_DIR/debian/$ENGINE_PACKAGE_NAME.service" "$TOPD/SOURCES/"
+    cp "/repo/packaging/engine/reload-vcl" "$TOPD/SOURCES/$ENGINE_PACKAGE_NAME.reload"
     SRCDIR=$(tar -tzf "/work/tmp/$TAG.tar.gz" | head -1 | cut -d/ -f1 || true)
     [ -n "$SRCDIR" ] || { echo "cannot read tarball top directory" >&2; exit 1; }
     rpmbuild -bb \

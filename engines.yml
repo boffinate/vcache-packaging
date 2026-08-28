@@ -57,7 +57,7 @@ engines:
       tarball_url: https://vinyl-cache.org/downloads/vinyl-cache-9.0.1.tgz
       sha256: "2e8ec67cd213ea6864c763939d64912025557342fad2a5ffda6c7c5b59bdeb17"
     packages: "true"
-    package_revision: "3"
+    package_revision: "4"
     targets:
       - debian-13-amd64
       - debian-13-arm64
@@ -73,7 +73,7 @@ engines:
       tarball_url: https://github.com/varnish/varnish/releases/download/varnish-9.0.3/varnish-9.0.3.tar.gz
       sha256: "2aac11dd95329b0cea148d478168b3ccc6fe45fab38160c440159386403b69fd"
     packages: "true"
-    package_revision: "1"
+    package_revision: "2"
     targets:
       - debian-13-amd64
       - debian-13-arm64

@@ -13,7 +13,7 @@ This project does three things, and only these three things:
 ## Ground rules
 
 - **Hand-maintained catalog.** Which engines exist, which versions are supported, and which VMOD ref maps to which engine series are declared by hand in YAML (`engines.yml`, `vmods/*.yml`). Automating that detection is explicitly out of scope for now; there are only a couple of engine releases per year.
-- **We carry nothing on behalf of upstreams.** No patches, no ported test suites, no vendored source, no forked packaging. If a VMOD does not build against an engine, the matrix says so in red. If we ever need to patch a VMOD, we fork its repository and point the catalog at the fork.
+- **We carry no VMOD changes on behalf of upstreams.** No VMOD patches, ported test suites, vendored source, or forked packaging. If a VMOD does not build against an engine, the matrix says so in red. If we ever need to patch a VMOD, we fork its repository and point the catalog at the fork. Engine packages carry the service assets described below because they must be usable after installation.
 - **Red is information.** A build/test failure for a (VMOD, engine) cell is recorded and rendered; it never fails a matrix or build job. The release-only completeness gate is the exception: each package-enabled `(engine, target)` pair publishes only when its engine and every package-eligible VMOD cell pass. A failed Vinyl pair never blocks a Varnish pair, or the reverse.
 - **Verification happens in containers**, never on the host. Host-safe tooling is Python 3 standard library only, so it runs anywhere without an install step.
 - **The smallest mechanism wins.** No evidence ledgers, no per-artifact digest registries, no transaction matrices, no completeness machinery beyond the release-only pair gate, no auto-re-pin PRs, no fleet surveillance, no fault-injection harnesses. Every version pin has exactly one machine-readable home; anything a shell script needs is generated from it.
@@ -21,7 +21,7 @@ This project does three things, and only these three things:
 
 ## Out of scope
 
-Distribution-quality packaging (copyright audits, lintian/rpmlint gates, hardening inspection), byte-equivalent or reproducible-build promises, distro replacement and upgrade-policy guarantees, package upgrade-transaction matrices, signing, service integration, custom repository servers, archival of upstream sources, security response, and any per-VMOD carried content. A proposal that reintroduces one of these is a scope change and needs this file amended first.
+Distribution-quality packaging (copyright audits, lintian/rpmlint gates, hardening inspection), byte-equivalent or reproducible-build promises, distro replacement and upgrade-policy guarantees, package upgrade-transaction matrices, signing, custom repository servers, archival of upstream sources, security response, and any per-VMOD carried content. Service integration is deliberately narrow: the engine runtime packages install a default VCL, daemon account, systemd unit, and safe VCL reload helper derived from the official Varnish package. Broader service policy remains out of scope.
 
 ## Publication
 

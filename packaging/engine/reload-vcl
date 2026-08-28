@@ -1,0 +1,168 @@
+#!/bin/sh
+#
+# Copyright (c) 2006-2021 Varnish Software AS
+# All rights reserved.
+#
+# Author: Dridi Boukelmoune <dridi.boukelmoune@gmail.com>
+# Author: Javier Bartley <javierbartley@yahoo.com>
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL AUTHOR OR CONTRIBUTORS BE LIABLE FOR ANY
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+# THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+set -eu
+
+case "$(basename "$0")" in
+varnishreload) ADMIN=varnishadm ;;
+vinylreload) ADMIN=vinyladm ;;
+*) echo "Unsupported reload helper name: $0" >&2; exit 1 ;;
+esac
+
+MAXIMUM=
+VCL_FILE=
+VCL_LABEL=
+VCL_NAME=
+VCL_PREFIX=
+WARMUP=
+TIMEOUT=
+WORK_DIR=
+SCRIPT=$0
+
+usage() {
+    test $# -eq 1 && printf 'Error: %s.\n\n' "$1"
+    cat <<EOF
+Usage: $SCRIPT [-l <label>] [-m <max>] [-n <workdir>]
+       $SCRIPT [-p <prefix>] [-t <timeout>] [-w <warmup>] [<file>]
+       $SCRIPT -h
+EOF
+    exit $#
+}
+
+admin() {
+    if ! OUTPUT=$(command "$ADMIN" $TIMEOUT -n "$WORK_DIR" -- "$@" 2>&1); then
+        printf 'Command: %s %s -n %s -- %s\n\n%s\n' "$ADMIN" "$TIMEOUT" "$WORK_DIR" "$*" "$OUTPUT" >&2
+        return 1
+    fi
+    echo "$OUTPUT" 2>/dev/null
+}
+
+fail() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
+reload_name() {
+    # The PID prevents collisions when two reloads occur in the same second.
+    printf '%s_%s_%s' "$VCL_PREFIX" "$(date -u +%Y%m%d_%H%M%S)" $$
+}
+
+awk_vcl_list() {
+    printf '%s' "$VCL_LIST" | awk -F ' *|/' "$@"
+}
+
+active_vcl() {
+    awk_vcl_list '$1 == "active" {print $5}'
+}
+
+find_label_ref() {
+    awk_vcl_list '$5 == "'"$VCL_LABEL"'" && $6 == "->" {print $7}'
+}
+
+find_vcl_file() {
+    admin vcl.show -v "$VCL_NAME" |
+    awk '$1 == "//" && $2 == "VCL.SHOW" {print; exit}' | {
+        read -r DELIM VCL_SHOW INDEX SIZE FILE && echo "$FILE"
+    } || fail "failed to get the VCL file name"
+}
+
+find_reloads() {
+    awk_vcl_list -v regex="^${VCL_PREFIX}_[0-9]+_[0-9]+_[0-9]+$" 'NF == 5 &&
+        $1 == "available" && $5 ~ regex {print $5}'
+}
+
+while getopts hl:m:n:p:t:w: OPT; do
+    case $OPT in
+    h) usage ;;
+    l) VCL_LABEL=$OPTARG ;;
+    m) MAXIMUM=$OPTARG ;;
+    n) WORK_DIR=$OPTARG ;;
+    p) VCL_PREFIX=$OPTARG ;;
+    t) TIMEOUT="-t $OPTARG" ;;
+    w) WARMUP=$OPTARG ;;
+    *) usage "wrong usage" >&2 ;;
+    esac
+done
+
+shift $((OPTIND - 1))
+test $# -gt 1 && usage "too many arguments" >&2
+test $# -eq 1 && VCL_FILE=$1
+
+VCL_LIST=$(admin vcl.list) || fail "failed to get the VCL list"
+test -n "$VCL_PREFIX" || VCL_PREFIX=reload
+VCL_PREFIX_CHK=$(printf '%s' "$VCL_PREFIX" | tr '[:space:]' :)
+test "$VCL_PREFIX" = "$VCL_PREFIX_CHK" || fail "illegal whitespace in VCL prefix"
+VCL_PREFIX_CHK=$(printf '%s' "$VCL_PREFIX" | tr -d A-Za-z0-9-_)
+test -z "$VCL_PREFIX_CHK" || fail "illegal character in VCL prefix"
+test "$(printf '%c' "$VCL_PREFIX")" != _ || fail "illegal leading character in VCL prefix ('_')"
+
+if [ -z "$VCL_LABEL" ]; then
+    VCL_NAME=$(active_vcl)
+    VCL_LABEL=$VCL_NAME
+    VCL_REF=$(find_label_ref)
+    if [ -n "$VCL_REF" ]; then
+        VCL_NAME=$VCL_REF
+    else
+        VCL_LABEL=
+    fi
+else
+    VCL_NAME=$(find_label_ref)
+fi
+test -n "$VCL_NAME" || fail "'$VCL_LABEL' is not a label"
+
+if [ -z "$VCL_FILE" ]; then
+    VCL_FILE=$(find_vcl_file)
+    case $VCL_FILE in
+    /*) ;;
+    *) fail "VCL file not found for $VCL_NAME (got $VCL_FILE)" ;;
+    esac
+fi
+
+RELOAD_NAME=$(reload_name)
+admin vcl.load "$RELOAD_NAME" "\"$VCL_FILE\"" >/dev/null
+echo "VCL '$RELOAD_NAME' compiled"
+test -n "$WARMUP" && sleep "$WARMUP"
+
+if [ -n "$VCL_LABEL" ]; then
+    admin vcl.label "$VCL_LABEL" "$RELOAD_NAME" >/dev/null
+    echo "VCL label '$VCL_LABEL' references '$RELOAD_NAME'"
+fi
+if [ "$VCL_NAME" = "$(active_vcl)" ]; then
+    admin vcl.use "$RELOAD_NAME"
+fi
+
+test -n "$MAXIMUM" || exit 0
+test "$MAXIMUM" -ge 0 || exit 0
+VCL_LIST=$(admin vcl.list) || fail "failed to refresh the VCL list"
+AVAILABLE=$(find_reloads | wc -l)
+DISCARDED=$((AVAILABLE - MAXIMUM))
+test "$DISCARDED" -gt 0 || exit 0
+
+find_reloads | head -n "$DISCARDED" | while read -r DISCARD_NAME; do
+    admin vcl.discard "$DISCARD_NAME" >/dev/null
+    echo "VCL '$DISCARD_NAME' discarded"
+done
