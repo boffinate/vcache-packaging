@@ -10,9 +10,10 @@ sources:
   head: main
   default:
     ref: 9.0-21.1
+    commit: "3399f0d13537c55af774b7ef019f72cdada98b4e"
     version: "21.1"
 package:
-  summary: Configuration and environment VMOD for Vinyl Cache
+  summary: Configuration and environment VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-cfg exposes configuration values and selected process
     - environment information to VCL, with optional LuaJIT-backed helpers.
@@ -29,4 +30,6 @@ package:
       - luajit-devel
       - xxd
   families:
+    - varnish
     - vinyl
+  promoted: "true"

@@ -10,9 +10,10 @@ sources:
   head: master
   default:
     ref: master
+    commit: "2376dee2afb3333a8eaa6b12ec7481f7e0f5fe75"
     version: "0~master"
 package:
-  summary: UUID generation VMOD for Varnish Cache
+  summary: UUID generation VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-uuid generates universally unique identifiers from VCL for
     - request correlation, tracing, and cache metadata.
@@ -28,3 +29,5 @@ package:
       - uuid-devel
   families:
     - varnish
+    - vinyl
+  promoted: "true"

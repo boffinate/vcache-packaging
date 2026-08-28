@@ -10,9 +10,10 @@ sources:
   head: main
   default:
     ref: main
+    commit: "61108da029e3d37eca62b91581612aee3af22932"
     version: "0~main"
 package:
-  summary: GeoIP2 database lookup VMOD for Vinyl Cache
+  summary: GeoIP2 database lookup VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-geoip2 looks up client addresses in MaxMind GeoIP2 and
     - GeoLite2 databases, exposing country, city, ASN, and related fields
@@ -24,4 +25,6 @@ package:
     rpm:
       - libmaxminddb-devel
   families:
+    - varnish
     - vinyl
+  promoted: "true"

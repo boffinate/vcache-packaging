@@ -1,16 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-file (schema vmod/1, DESIGN.md).
 #
-# NOT Vinylized, unlike the other UPLEX repos in the catalog: master was last
-# updated September 2025 "for current Varnish-Cache 8.0" and configure.ac
-# still uses VARNISH_PREREQ (floor 6.5.0) with no VINYL_* machinery. The
-# July-2026 empirical sweep found it builds green against varnishd 9.0.3 but
-# red against vinyl -- it uses VRT_synth_page, which vinyl removed -- so per
-# decision 13 package.families is varnish (varnish-modules precedent) and the
-# vinyl compat cells render the honest red.
-# Upstream has old tags (v1.0.0, 2022) targeting Varnish 6.x; they are
-# ignored, and both lanes pin master (selector precedent; the 0 in 0~master
-# keeps the Debian version digit-first).
+# Existing tags target older engine APIs, so release and trunk builds pin
+# master. The 0 in 0~master keeps the Debian version digit-first.
 schema: vmod/1
 id: file
 source_api_family: varnish
@@ -21,9 +13,10 @@ sources:
   head: master
   default:
     ref: master
+    commit: "12f5040ac49e85415de5ce6491b33d5df4c9cb73"
     version: "0~master"
 package:
-  summary: File reader VMOD with periodic refresh for Vinyl Cache
+  summary: File reader VMOD with periodic refresh for Varnish Cache and Vinyl Cache
   description:
     - libvmod-file provides a reader object that reads the contents of a
     - file and re-checks it for changes at a configurable interval,
@@ -43,3 +36,10 @@ package:
       - python3-docutils
   families:
     - varnish
+    - vinyl
+  promoted: "true"
+  targets:
+    - debian-13-amd64
+    - debian-13-arm64
+    - el10-x86_64
+    - el10-aarch64

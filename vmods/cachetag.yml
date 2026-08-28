@@ -13,9 +13,10 @@ sources:
     commit: a3897aaccf1d6996c00ee14b2c6e1ddac91ac982
     version: "1.0.1"
 package:
-  summary: Tag-based cache invalidation VMOD for Vinyl Cache
+  summary: Tag-based cache invalidation VMOD for Varnish Cache and Vinyl Cache
   description:
-    - Cachetag adds tag-based invalidation to Vinyl Cache, running on the
+    - Cachetag adds tag-based invalidation to Varnish Cache and Vinyl Cache,
+    - running on the
     - in-memory storage engines and on Fellow persistent storage. Backends
     - label responses with tags such as product:123, and one purge then
     - invalidates every cached object carrying the tag, without tracking
@@ -30,6 +31,7 @@ package:
       - python3
       - python3-docutils
   families:
+    - varnish
     - vinyl
   promoted: "true"
 tests: make-check

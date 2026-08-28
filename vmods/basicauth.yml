@@ -12,7 +12,7 @@ sources:
     commit: "ce733a3f8c76ec83b44fe05184cf52150ef5faf3"
     version: "2.2"
 package:
-  summary: HTTP Basic Authentication VMOD for Vinyl Cache
+  summary: HTTP Basic Authentication VMOD for Varnish Cache and Vinyl Cache
   description:
     - vmod-basicauth checks HTTP Basic Authentication credentials in VCL,
     - supporting password files and configurable authentication realms.

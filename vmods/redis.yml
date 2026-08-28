@@ -1,14 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-redis (schema vmod/1, DESIGN.md).
 #
-# EXPECTED RED on vinyl columns: upstream's build system addresses the engine
-# by its Varnish names (m4_ifndef([VARNISH_PREREQ]) fires first), and v1
-# needed a reviewed build-system patch to configure against Vinyl. v2 carries
-# no patches (SCOPE.md), so vinyl cells fail at configure and varnish cells
-# pass.
-# Per decision 13 this VMOD declares package.families: varnish, so package
-# cells no longer expand on vinyl engines while compat cells still render the
-# honest red.
+# The source uses Varnish API spellings, recorded by source_api_family so
+# cross-family builds can normalize its disposable source tree.
 schema: vmod/1
 id: redis
 source_api_family: varnish
@@ -19,9 +13,10 @@ sources:
   head: main
   default:
     ref: "9.0-23.1"
+    commit: "b6ca669fc9af3399f3845d9d4930683b4e378aa8"
     version: "23.1"
 package:
-  summary: Redis client VMOD for Vinyl Cache
+  summary: Redis client VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-redis lets VCL execute commands against one or more Redis
     - servers. It supports standalone servers, replicated pairs with
@@ -47,3 +42,5 @@ package:
       - python3-docutils
   families:
     - varnish
+    - vinyl
+  promoted: "true"

@@ -1,11 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvdfp-pipe (schema vmod/1, DESIGN.md).
 #
-# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
-# natively (vinylapi.pc, VINYL_* macros) and a separate 8.0 branch serves
-# Varnish 8, so Varnish 9 cells are EXPECTED RED at configure; v2 carries no
-# patches (SCOPE.md). No usable tags, so both lanes pin master (selector
-# precedent; the 0 in 0~master keeps the Debian version digit-first).
+# Existing tags do not describe the current API, so release and trunk builds
+# pin master. The 0 in 0~master keeps the Debian version digit-first.
 # Upstream marks the project as under development: only the delivery side
 # (VDP) exists, the fetch side (VFP) is unimplemented by design.
 schema: vmod/1
@@ -21,9 +18,9 @@ sources:
     commit: "41117d266a030ff281dd6b5cff21eab120784248"
     version: "0~master"
 package:
-  summary: Delivery processor piping response bodies through external commands for Vinyl Cache
+  summary: Delivery processor piping response bodies through external commands for Varnish Cache and Vinyl Cache
   description:
-    - libvdfp-pipe provides a Vinyl delivery processor (VDP) that pipes
+    - libvdfp-pipe provides a delivery processor (VDP) that pipes
     - client response bodies through external commands, so Unix utilities
     - such as sort and uniq can be chained into delivery as filters. Only
     - the delivery side is implemented; the corresponding fetch processor
@@ -38,5 +35,6 @@ package:
       - python3
       - python3-docutils
   families:
+    - varnish
     - vinyl
   promoted: "true"

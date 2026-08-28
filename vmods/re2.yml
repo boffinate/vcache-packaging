@@ -1,14 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-re2 (schema vmod/1, DESIGN.md).
 #
-# Upstream's tags are stale (pre-Vinylize), so both release and trunk lanes
-# use master. UPLEX Vinylized master in March 2026 (vinylapi.pc, VINYL_*
-# autotools macros; Varnish 8 lives on a separate 8.0 branch), therefore
-# Varnish 9 cells are EXPECTED RED at configure; v2 carries no patches
-# (SCOPE.md). Per decision 13 package.families is vinyl, which is the
-# branch's actual build-system support. The 0 in 0~master makes the trunk
-# version valid for Debian, whose package versions must start with a digit.
-# Compat still renders every pairing honestly.
+# Existing tags do not describe the current API, so release and trunk builds
+# pin master. The 0 in 0~master keeps the Debian version digit-first.
 #
 # The VMOD is written in C++ (it binds Google RE2 directly), so the rpm
 # build deps add gcc-c++; the generated recipes' base set carries only gcc,
@@ -26,7 +20,7 @@ sources:
     commit: "c009a80895cc4a5fa88bd4c1433d8e6955521be7"
     version: "0~master"
 package:
-  summary: Google RE2 linear-time regular expressions for Vinyl Cache
+  summary: Google RE2 linear-time regular expressions for Varnish Cache and Vinyl Cache
   description:
     - libvmod-re2 gives VCL access to the Google RE2 regular expression
     - engine as an alternative to the native PCRE2 matching built into
@@ -50,5 +44,6 @@ package:
       - python3-docutils
       - re2-devel
   families:
+    - varnish
     - vinyl
   promoted: "true"

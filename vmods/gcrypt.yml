@@ -1,13 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-gcrypt (schema vmod/1, DESIGN.md).
 #
-# UPLEX Vinylized this repo in 2026-03: master builds against Vinyl Cache
-# 9 natively (vinylapi and VINYL_* autotools macros) and a separate 8.0
-# branch targets Varnish 8. Tags predate the Vinylize, so both lanes pin
-# master; the 0 in 0~master makes the version valid for Debian, whose
-# package versions must start with a digit. Varnish 9 cells are EXPECTED
-# RED at configure (no vinylapi.pc there); v2 carries no patches
-# (SCOPE.md). Per decision 13 package.families is vinyl.
+# Tags do not describe the current API, so release and trunk builds pin
+# master. The 0 in 0~master keeps the Debian version digit-first.
 # configure requires libgcrypt >= 1.6.3 via AM_PATH_LIBGCRYPT; the m4
 # macro and the libgcrypt-config it uses ship with the -dev/-devel
 # package declared in build_deps.
@@ -24,7 +19,7 @@ sources:
     commit: "a308e9ceac2a14be395cccc0d5441f99457c695e"
     version: "0~master"
 package:
-  summary: libgcrypt cryptography VMOD for Vinyl Cache
+  summary: libgcrypt cryptography VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-gcrypt gives VCL access to the libgcrypt cryptographic
     - library used by GnuPG. It provides symmetric AES encryption and
@@ -44,5 +39,6 @@ package:
       - python3
       - python3-docutils
   families:
+    - varnish
     - vinyl
   promoted: "true"

@@ -10,13 +10,16 @@ sources:
   head: master
   default:
     ref: master
+    commit: "d6b49418f3b8b2871b0a2b07b5c50f6ed68f88df"
     version: "0~master"
 package:
-  summary: Dynamic backend director VMOD for Vinyl Cache
+  summary: Dynamic backend director VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-dynamic creates directors whose backend endpoints can be
     - discovered and changed at runtime, allowing VCL to route requests to
     - dynamically resolved service addresses.
   license: BSD-2-Clause
   families:
+    - varnish
     - vinyl
+  promoted: "true"

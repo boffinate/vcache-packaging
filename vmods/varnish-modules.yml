@@ -5,12 +5,8 @@
 # builds all nine modules or none, and Debian itself ships them as one
 # package, so this is one row and one package carrying nine .so.
 #
-# EXPECTED RED on vinyl columns: upstream's configure looks for varnishapi.pc
-# only, so vinyl cells fail at configure until upstream or a fork supports
-# Vinyl. That red is the matrix doing its job.
-# Per decision 13 this VMOD declares package.families: varnish, so package
-# cells no longer expand on vinyl engines while compat cells still render the
-# honest red.
+# The source uses Varnish API spellings, recorded by source_api_family so
+# cross-family builds can normalize its disposable source tree.
 schema: vmod/1
 id: varnish-modules
 source_api_family: varnish
@@ -21,6 +17,7 @@ sources:
   head: master
   default:
     ref: 0.28.0
+    commit: "7abe0e2a59a685b4ea8626ff1a3fe9c60a037368"
     version: "0.28.0"
 package:
   summary: Collection of nine core VMODs maintained by the Varnish project
@@ -50,4 +47,6 @@ package:
     - xkey
   families:
     - varnish
+    - vinyl
+  promoted: "true"
 tests: make-check

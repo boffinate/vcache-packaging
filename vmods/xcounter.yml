@@ -10,13 +10,16 @@ sources:
   head: vinyl-main
   default:
     ref: vinyl-main
+    commit: "1ada3b055b464039ce5c71c739004528b98f0fca"
     version: "0~vinyl-main"
 package:
-  summary: Extended counters VMOD for Vinyl Cache
+  summary: Extended counters VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-xcounter provides named counters that can be incremented,
     - read, and exposed to VCL for request accounting and lightweight
     - telemetry.
   license: BSD-2-Clause
   families:
+    - varnish
     - vinyl
+  promoted: "true"

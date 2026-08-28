@@ -1,7 +1,6 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
-# libvmod-jq checks for the Varnish API by name, so the unpatched source is
-# restricted to Varnish package builds while compatibility cells still record
-# the Vinyl result.
+# libvmod-jq uses Varnish API spellings, recorded by source_api_family so
+# cross-family builds can normalize its disposable source tree.
 schema: vmod/1
 id: jq
 source_api_family: varnish
@@ -12,9 +11,10 @@ sources:
   head: devel
   default:
     ref: 4051a7d08dc3a4ca90d9e8319d5a3a132793e1da
+    commit: "4051a7d08dc3a4ca90d9e8319d5a3a132793e1da"
     version: "0.3.0"
 package:
-  summary: JSON processing VMOD for Varnish Cache
+  summary: JSON processing VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-jq parses and queries JSON values from VCL through the jq
     - library.
@@ -28,3 +28,5 @@ package:
       - python3-docutils
   families:
     - varnish
+    - vinyl
+  promoted: "true"

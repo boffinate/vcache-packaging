@@ -1,6 +1,5 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
-# vmod-reqwest (schema vmod/1, DESIGN.md). This unpromoted Cargo entry proves
-# the compatibility and package contracts.
+# vmod-reqwest (schema vmod/1, DESIGN.md).
 schema: vmod/1
 id: reqwest
 upstream:
@@ -10,6 +9,7 @@ sources:
   head: main
   default:
     ref: v0.1.0
+    commit: "bd4c8097c035ca1561b062ac3267c88b1057f1b6"
     version: "0.1.0"
 build: cargo
 package:
@@ -24,3 +24,4 @@ package:
     - libvmod_reqwest.so
   families:
     - varnish
+  promoted: "true"

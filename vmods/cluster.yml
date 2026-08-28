@@ -1,13 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-cluster (schema vmod/1, DESIGN.md).
 #
-# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
-# natively (vinylapi.pc, VINYL_* macros) and a separate 8.0 branch targets
-# Varnish-Cache 8. Tags are stale (pre-Vinylize), so both lanes pin master,
-# the selector precedent; the 0 in 0~master keeps the version valid for
-# Debian. Varnish 9 cells are EXPECTED RED at configure (no vinylapi.pc
-# there); per decision 13 package.families is vinyl. Compat still renders
-# every pairing honestly.
+# Tags do not describe the current API, so release and trunk builds pin
+# master. The 0 in 0~master keeps the version valid for Debian.
 schema: vmod/1
 id: cluster
 source_api_family: vinyl
@@ -21,10 +16,10 @@ sources:
     commit: "316d6ee2f9a34c3529a93b4b384a04f733ae10ac"
     version: "0~master"
 package:
-  summary: Cache clustering and sharding director VMOD for Vinyl Cache
+  summary: Cache clustering and sharding director VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-cluster provides a director that makes cache clustering and
-    - sharding across several Vinyl Cache nodes easy, typically on top of a
+    - sharding across several cache nodes easy, typically on top of a
     - shard director. When another cluster node is the designated member
     - for an object, the request is forwarded to that node; when the local
     - node is the designated member, or the request is uncacheable or the
@@ -41,5 +36,6 @@ package:
       - python3
       - python3-docutils
   families:
+    - varnish
     - vinyl
   promoted: "true"

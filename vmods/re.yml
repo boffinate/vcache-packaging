@@ -1,14 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-re (schema vmod/1, DESIGN.md).
 #
-# Upstream's tags are stale (pre-Vinylize), so both release and trunk lanes
-# use master. UPLEX Vinylized master in March 2026 (vinylapi.pc, VINYL_*
-# autotools macros; Varnish 8 lives on a separate 8.0 branch), therefore
-# Varnish 9 cells are EXPECTED RED at configure; v2 carries no patches
-# (SCOPE.md). Per decision 13 package.families is vinyl, which is the
-# branch's actual build-system support. The 0 in 0~master makes the trunk
-# version valid for Debian, whose package versions must start with a digit.
-# Compat still renders every pairing honestly.
+# Existing tags do not describe the current API, so release and trunk builds
+# pin master. The 0 in 0~master keeps the Debian version digit-first.
 schema: vmod/1
 id: re
 source_api_family: vinyl
@@ -22,7 +16,7 @@ sources:
     commit: "5cf46314a7c4834ee0c8b89ba66a02d5e19650ba"
     version: "0~master"
 package:
-  summary: Regular expression matching with subexpression capture for Vinyl Cache
+  summary: Regular expression matching with subexpression capture for Varnish Cache and Vinyl Cache
   description:
     - libvmod-re matches strings against PCRE2 regular expressions and
     - makes captured subexpressions available in VCL. A regex object is
@@ -45,5 +39,6 @@ package:
       - python3
       - python3-docutils
   families:
+    - varnish
     - vinyl
   promoted: "true"

@@ -11,6 +11,7 @@ sources:
   head: main
   default:
     ref: v0.2.0
+    commit: "7ad019ba4a5618af80721abeef082426d6dfa695"
     version: "0.2.0"
 build: cargo
 package:
@@ -33,3 +34,4 @@ package:
     - vmod
   families:
     - varnish
+  promoted: "true"

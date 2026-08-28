@@ -1,13 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-crypto (schema vmod/1, DESIGN.md).
 #
-# UPLEX Vinylized this repo in 2026-03: master builds against Vinyl Cache
-# 9 natively (vinylapi and VINYL_* autotools macros) and a separate 8.0
-# branch targets Varnish 8. Tags predate the Vinylize, so both lanes pin
-# master; the 0 in 0~master makes the version valid for Debian, whose
-# package versions must start with a digit. Varnish 9 cells are EXPECTED
-# RED at configure (no vinylapi.pc there); v2 carries no patches
-# (SCOPE.md). Per decision 13 package.families is vinyl.
+# Tags do not describe the current API, so release and trunk builds pin
+# master. The 0 in 0~master keeps the Debian version digit-first.
 # configure hard-requires OpenSSL libcrypto (AC_CHECK_LIB) and also the
 # openssl, base64, sed, dd and bash programs (AC_MSG_ERROR if absent),
 # hence the openssl CLI package in build_deps alongside the -dev/-devel
@@ -25,7 +20,7 @@ sources:
     commit: "0b6cb770ab0fc134bcd7c02ea09bd6dddfe53736"
     version: "0~master"
 package:
-  summary: Asymmetric cryptographic signature VMOD for Vinyl Cache
+  summary: Asymmetric cryptographic signature VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-crypto verifies and generates asymmetric cryptographic
     - signatures in VCL using OpenSSL libcrypto. Keys are loaded from
@@ -46,5 +41,6 @@ package:
       - python3
       - python3-docutils
   families:
+    - varnish
     - vinyl
   promoted: "true"

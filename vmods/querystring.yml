@@ -1,13 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # vmod-querystring (schema vmod/1, DESIGN.md).
 #
-# EXPECTED RED on vinyl columns: upstream's build system addresses the engine
-# by its Varnish names (VARNISH_PREREQ and friends), and v1 needed a reviewed
-# build-system patch to configure against Vinyl. v2 carries no patches
-# (SCOPE.md), so vinyl cells fail at configure and varnish cells pass.
-# Per decision 13 this VMOD declares package.families: varnish, so package
-# cells no longer expand on vinyl engines while compat cells still render the
-# honest red.
+# The source uses Varnish API spellings, recorded by source_api_family so
+# cross-family builds can normalize its disposable source tree.
 schema: vmod/1
 id: querystring
 source_api_family: varnish
@@ -18,9 +13,10 @@ sources:
   head: master
   default:
     ref: vmod-querystring-2.0.4
+    commit: "c69bb0975b149efe0aa82a71c79804e442a3df50"
     version: "2.0.4"
 package:
-  summary: Query-string filtering VMOD for Vinyl Cache
+  summary: Query-string filtering VMOD for Varnish Cache and Vinyl Cache
   description:
     - vmod-querystring gives fine-grained control over a URL query-string
     - in VCL. It can remove the query-string outright, clean it, sort its
@@ -37,3 +33,5 @@ package:
       - python3-docutils
   families:
     - varnish
+    - vinyl
+  promoted: "true"

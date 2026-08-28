@@ -1,13 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-blobsynth (schema vmod/1, DESIGN.md).
 #
-# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
-# natively (vinylapi.pc, VINYL_* macros) and a separate 8.0 branch targets
-# Varnish-Cache 8. Tags are stale (pre-Vinylize), so both lanes pin master,
-# the selector precedent; the 0 in 0~master keeps the version valid for
-# Debian. Varnish 9 cells are EXPECTED RED at configure (no vinylapi.pc
-# there); per decision 13 package.families is vinyl. Compat still renders
-# every pairing honestly. The LICENSE file is the Unlicense (public domain
+# Tags do not describe the current API, so release and trunk builds pin
+# master. The LICENSE file is the Unlicense (public domain
 # dedication), not the usual UPLEX BSD-2-Clause.
 schema: vmod/1
 id: blobsynth
@@ -22,7 +17,7 @@ sources:
     commit: "c45561b37f08c780fce9d7ae7be834a70e4fb857"
     version: "0~master"
 package:
-  summary: BLOB synthetic response body VMOD for Vinyl Cache
+  summary: BLOB synthetic response body VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-blobsynth serves BLOBs as synthetic response bodies. Its
     - single synthetic function is the BLOB counterpart of the built-in
@@ -38,5 +33,6 @@ package:
       - python3
       - python3-docutils
   families:
+    - varnish
     - vinyl
   promoted: "true"

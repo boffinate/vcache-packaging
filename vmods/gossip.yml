@@ -10,12 +10,15 @@ sources:
   head: main
   default:
     ref: 9.0-18.0
+    commit: "3056c5ea577e2e5afdc65731d02ac00739860a21"
     version: "18.0"
 package:
-  summary: Gossip protocol VMOD for Varnish Cache
+  summary: Gossip protocol VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-gossip implements a gossip-based mechanism for sharing
-    - cache and node information between Varnish instances.
+    - cache and node information between cache instances.
   license: BSD-2-Clause
   families:
     - varnish
+    - vinyl
+  promoted: "true"

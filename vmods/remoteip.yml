@@ -12,7 +12,7 @@ sources:
     commit: b4290fbd656e0afed3fe114b6957eca106e93c50
     version: "2.5"
 package:
-  summary: Client IP address lookup VMOD for Vinyl Cache
+  summary: Client IP address lookup VMOD for Varnish Cache and Vinyl Cache
   description:
     - vmod-remoteip determines the actual client IP address for a
     - connection from a comma-delimited proxy header such as
@@ -29,5 +29,6 @@ package:
       - python3
       - python3-docutils
   families:
+    - varnish
     - vinyl
   promoted: "true"

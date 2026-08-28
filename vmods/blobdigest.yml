@@ -1,13 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-blobdigest (schema vmod/1, DESIGN.md).
 #
-# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
-# natively (vinylapi.pc, VINYL_* macros) and a separate 8.0 branch targets
-# Varnish-Cache 8. Tags are stale (pre-Vinylize), so both lanes pin master,
-# the selector precedent; the 0 in 0~master keeps the version valid for
-# Debian. Varnish 9 cells are EXPECTED RED at configure (no vinylapi.pc
-# there); per decision 13 package.families is vinyl. Compat still renders
-# every pairing honestly. Vendors digest code adapted from librhash (MIT per
+# Tags do not describe the current API, so release and trunk builds pin
+# master. The source vendors digest code adapted from librhash (MIT per
 # the LICENSE file), and its README requires Perl 5 at build time.
 schema: vmod/1
 id: blobdigest
@@ -22,7 +17,7 @@ sources:
     commit: "e14147c3bc94da201139d39735bab8ade1b0428a"
     version: "0~master"
 package:
-  summary: Message digest, checksum and HMAC VMOD for Vinyl Cache
+  summary: Message digest, checksum and HMAC VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-blobdigest computes message digests, checksums and HMACs for
     - the VCL BLOB type, covering binary data of arbitrary length. It ships
@@ -43,5 +38,6 @@ package:
       - python3
       - python3-docutils
   families:
+    - varnish
     - vinyl
   promoted: "true"

@@ -1,13 +1,8 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-all_healthy (schema vmod/1, DESIGN.md).
 #
-# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
-# natively (vinylapi.pc, VINYL_* macros) and a separate 8.0 branch targets
-# Varnish-Cache 8. Tags are stale (pre-Vinylize), so both lanes pin master,
-# the selector precedent; the 0 in 0~master keeps the version valid for
-# Debian. Varnish 9 cells are EXPECTED RED at configure (no vinylapi.pc
-# there); per decision 13 package.families is vinyl. Compat still renders
-# every pairing honestly. The catalog id is all-healthy because the id feeds
+# Tags do not describe the current API, so release and trunk builds pin
+# master. The catalog id is all-healthy because the id feeds
 # Debian package names, where underscores are not allowed; the VCL import
 # name is all_healthy, so package.modules spells it out (the varnish-modules
 # precedent for ids that are not legal module names).
@@ -24,7 +19,7 @@ sources:
     commit: "084aa2a96a27a41a8d9ade98478b6860ec0a71f4"
     version: "0~master"
 package:
-  summary: All-backends-healthy director VMOD for Vinyl Cache
+  summary: All-backends-healthy director VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-all_healthy provides a director that ties the health of a
     - backend to other backends. The director is healthy only if all the
@@ -44,5 +39,6 @@ package:
   modules:
     - all_healthy
   families:
+    - varnish
     - vinyl
   promoted: "true"

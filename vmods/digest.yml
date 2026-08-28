@@ -1,7 +1,6 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
-# libvmod-digest uses the Varnish pkg-config and macro names, so it cannot
-# configure against Vinyl without a patch that this catalog deliberately does
-# not carry.
+# libvmod-digest uses Varnish API spellings, recorded by source_api_family so
+# cross-family builds can normalize its disposable source tree.
 schema: vmod/1
 id: digest
 source_api_family: varnish
@@ -12,9 +11,10 @@ sources:
   head: master
   default:
     ref: libvmod-digest-1.0.3
+    commit: "e745761469b55e83e1fca21dd0cb8eca8022935d"
     version: "1.0.3"
 package:
-  summary: Message digest and Base64 VMOD for Varnish Cache
+  summary: Message digest and Base64 VMOD for Varnish Cache and Vinyl Cache
   description:
     - libvmod-digest computes HMACs and message digests, and encodes or
     - decodes Base64 values from VCL.
@@ -28,3 +28,5 @@ package:
       - python3-docutils
   families:
     - varnish
+    - vinyl
+  promoted: "true"
