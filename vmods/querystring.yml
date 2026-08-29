@@ -24,6 +24,8 @@ package:
     - regular expression, which improves cache hit ratio for requests that
     - differ only in irrelevant parameters such as tracking tags.
   license: GPL-3.0-or-later
+  configure_args:
+    - --enable-docs
   build_deps:
     debian:
       - python3

@@ -111,6 +111,7 @@ SOURCE_API_NORMALIZATIONS = tuple(
 MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 ARTIFACT_BASENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.so$")
 CARGO_FEATURE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+CONFIGURE_ARG_RE = re.compile(r"^--[A-Za-z0-9][A-Za-z0-9_.=-]*$")
 RUST_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 PACKAGE_REVISION_RE = re.compile(r"^[1-9][0-9]*$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -138,7 +139,7 @@ KEYS = {
     "vmod_source_entry": ({"ref", "version"}, {"commit"}),
     "vmod_package": (
         {"summary", "description", "license"},
-        {"build_deps", "build_target", "modules", "artifacts", "cargo_features", "families", "promoted", "targets"},
+        {"build_deps", "build_target", "configure_args", "modules", "artifacts", "cargo_features", "families", "promoted", "targets"},
     ),
     "vmod_build_deps": (set(), {"debian", "rpm"}),
 }
@@ -409,6 +410,15 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, toolchains: dict, e
                 _str_list(package.get("description"), f"{ctx}: package.description", errors)
             if "build_target" in package:
                 _str_value(package, "build_target", f"{ctx}: package", errors)
+            configure_args = package.get("configure_args")
+            if configure_args is not None:
+                for i, arg in enumerate(_str_list(configure_args, f"{ctx}: package.configure_args", errors)):
+                    if not CONFIGURE_ARG_RE.match(arg):
+                        errors.append(
+                            f"{ctx}: package.configure_args[{i}]: {arg!r} must be a simple --option or --option=value"
+                        )
+            if configure_args is not None and build != "autotools":
+                errors.append(f"{ctx}: package.configure_args is only supported for build autotools")
             build_deps = package.get("build_deps")
             if build_deps is not None:
                 if not isinstance(build_deps, dict):
@@ -617,7 +627,10 @@ def engine_recipe_directory(engine: dict) -> str:
 
 
 def engine_vmod_package_name(engine: dict, vmod_id: str) -> str:
-    return family_contract(engine["family"])["vmod_package_prefix"] + vmod_id
+    # VMOD import identifiers may contain underscores, but Debian package
+    # names may not.  A hyphen retains the readable identity and is accepted
+    # by both native package formats.
+    return family_contract(engine["family"])["vmod_package_prefix"] + vmod_id.replace("_", "-")
 
 
 def engine_version(engine: dict) -> str:
@@ -665,14 +678,25 @@ def vmod_cargo_features(vmod: dict) -> list:
     return vmod["package"].get("cargo_features", [])
 
 
+def vmod_configure_args(vmod: dict) -> list:
+    """Declared safe Autotools configure arguments for this VMOD only."""
+    return vmod["package"].get("configure_args", [])
+
+
 def vmod_package_version(upstream_version: str, engine: dict) -> dict:
-    """DESIGN.md naming: family-, engine-, and revision-marked package versions."""
+    """DESIGN.md naming: family-, engine-, and revision-marked package versions.
+
+    Debian permits a hyphen in its upstream-version component, but RPM uses a
+    hyphen as the Version/Release separator.  Keep the catalog spelling for
+    Debian and source selection, while rendering a dot for RPM so one source
+    version is valid in both native recipe formats.
+    """
     ev = engine_version(engine)
     marker = family_contract(engine["family"])["version_marker"]
     revision = engine["package_revision"]
     return {
         "deb": f"{upstream_version}-1~{marker}{ev}.{revision}",
-        "rpm_version": upstream_version,
+        "rpm_version": upstream_version.replace("-", "."),
         "rpm_release": f"1.{marker}{ev}.{revision}",
     }
 
@@ -992,6 +1016,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("VMOD_BUILD_DEPS", " ".join(deps)),
             ("VMOD_BUILD", vmod_build(vmod)),
             ("VMOD_BUILD_TARGET", package.get("build_target", "all")),
+            ("VMOD_CONFIGURE_ARGS", " ".join(vmod_configure_args(vmod))),
             ("VMOD_MODULES", " ".join(vmod_modules(vmod))),
             ("VMOD_ARTIFACTS", " ".join(vmod_artifacts(vmod))),
             ("VMOD_CARGO_FEATURES", " ".join(vmod_cargo_features(vmod))),

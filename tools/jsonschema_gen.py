@@ -324,6 +324,10 @@ def build_vmod() -> dict:
                 "Defaults to 'all'; use this when upstream's default also builds "
                 "an auxiliary program requiring an unavailable compiled engine tree."
             ),
+            "configure_args": _string_list(
+                "Safe Autotools configure arguments for this VMOD's package build only, such as --enable-docs.",
+                items={"type": "string", "pattern": matrix.CONFIGURE_ARG_RE.pattern},
+            ),
             "build_deps": _object(
                 "vmod_build_deps",
                 {

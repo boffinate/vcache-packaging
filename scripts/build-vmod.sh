@@ -320,6 +320,20 @@ fi
 
 if [ "${VMOD_BUILD:-autotools}" = cargo ]; then
   prepare_cargo
+else
+  # Bootstrap before replacing an upstream debian/ directory.  A few
+  # Autotools projects use Debian template inputs from configure.ac; removing
+  # them first lets dh_autoreconf recreate neither the build system nor its
+  # generated documentation.  The generated recipe sees configure afterwards
+  # and deliberately leaves that already-configured source tree alone.
+  step bootstrap
+  cd "$SRC"
+  if [ ! -x configure ]; then
+    if [ -f bootstrap ]; then sh ./bootstrap || autoreconf -f -i
+    elif [ -f autogen.sh ]; then sh ./autogen.sh || autoreconf -f -i
+    else autoreconf -f -i; fi
+  fi
+  [ -x configure ] || { echo "bootstrap produced no executable configure script" >&2; exit 1; }
 fi
 
 step pkg-build
@@ -330,8 +344,18 @@ deb)
   # The generated recipe is authoritative; copying it over an upstream
   # debian/ directory would nest it and silently build with upstream's engine
   # dependencies instead of this cell's family-specific contract.
+  # Keep upstream's configure inputs separately: dh_auto_configure still owns
+  # the actual Autotools configure run, but must not replace our final recipe
+  # metadata with values derived from the upstream Debian package.
+  UPSTREAM_DEBIAN="/work/tmp/$TAG-upstream-debian"
+  rm -rf "$UPSTREAM_DEBIAN"
+  if [ -d "$SRC/debian" ]; then cp -a "$SRC/debian" "$UPSTREAM_DEBIAN"; fi
   rm -rf "$SRC/debian"
   cp -R "/work/tmp/$TAG-recipe/debian" "$SRC/debian"
+  if [ -d "$UPSTREAM_DEBIAN" ]; then
+    mkdir -p "$SRC/debian/.vcache-upstream"
+    cp -a "$UPSTREAM_DEBIAN/." "$SRC/debian/.vcache-upstream/"
+  fi
   (cd "$SRC" && dpkg-buildpackage -us -uc -b)
   assert_package_arch "$PKGFMT" "$TARGET_PACKAGE_ARCH" /work/tmp/*.deb
   step collect
@@ -339,7 +363,9 @@ deb)
   cp "$PACKAGE_FILE" "$OUT/"
   ;;
 rpm)
-  NAMEDIR="$VMOD_PACKAGE_NAME-${VMOD_VERSION:?}"
+  # RPM's Source0 and %autosetup use the RPM-safe normalized version emitted
+  # by matrix.py, not the Debian/source spelling retained in VMOD_VERSION.
+  NAMEDIR="$VMOD_PACKAGE_NAME-${VMOD_RPM_VERSION:?}"
   TOPD="/work/tmp/$TAG-rpmtop"
   rm -rf "$TOPD" "/work/tmp/$NAMEDIR"
   mkdir -p "$TOPD/SOURCES" "$TOPD/BUILD" "$TOPD/RPMS" "$TOPD/SRPMS"

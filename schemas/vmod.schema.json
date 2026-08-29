@@ -164,6 +164,15 @@
           "minLength": 1,
           "description": "Make target or target arguments used to build the installable VMOD. Defaults to 'all'; use this when upstream's default also builds an auxiliary program requiring an unavailable compiled engine tree."
         },
+        "configure_args": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^--[A-Za-z0-9][A-Za-z0-9_.=-]*$"
+          },
+          "description": "Safe Autotools configure arguments for this VMOD's package build only, such as --enable-docs."
+        },
         "build_deps": {
           "type": "object",
           "description": "Extra build dependencies, per packaging ecosystem.",

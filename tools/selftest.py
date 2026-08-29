@@ -817,9 +817,15 @@ def resolution_rule():
         eq(matrix.engine_rpm_archive_stem(varnish), "varnish", "Varnish RPM archive stem")
         eq(matrix.engine_recipe_directory(varnish), "packaging/engine/varnish", "Varnish recipe directory")
         eq(matrix.engine_vmod_package_name(varnish, "dict"), "varnish-vmod-dict", "Varnish VMOD package name")
+        eq(matrix.engine_vmod_package_name(varnish, "k8s_endpoint"), "varnish-vmod-k8s-endpoint",
+           "package names normalize VMOD identifier underscores")
         eq(matrix.vmod_package_version("1.8", varnish),
            {"deb": "1.8-1~varnish9.0.3.1", "rpm_version": "1.8", "rpm_release": "1.varnish9.0.3.1"},
            "Varnish VMOD package version")
+        eq(matrix.vmod_package_version("0~vinyl-main", varnish),
+           {"deb": "0~vinyl-main-1~varnish9.0.3.1", "rpm_version": "0~vinyl.main",
+            "rpm_release": "1.varnish9.0.3.1"},
+           "RPM version normalizes Debian's hyphen separator")
 
 
 @test
@@ -1273,6 +1279,39 @@ def source_api_normalization_is_directional_and_preserves_vtc_syntax():
         reverse, _ = source_api_normalize.normalize_tree(root, "vinyl", "varnish")
         ok(reverse, "reverse normalization changes files")
         eq((root / "test.vtc").read_text().splitlines()[0], "varnishtest test", "VTC header remains stable")
+
+
+@test
+def source_api_normalization_keeps_vsctool_directives_in_the_shared_spelling():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        cachetag_vsc = root / "cachetag.vsc"
+        cachetag_vsc.write_bytes(
+            b".. vinyl_vsc_begin:: cachetag\n.. vinyl_vsc_end:: cachetag\n"
+        )
+
+        changed, _ = source_api_normalize.normalize_tree(root, "vinyl", "varnish")
+
+        eq(changed, [], "Varnish uses the shared vsctool directive spelling")
+        eq(
+            cachetag_vsc.read_bytes(),
+            b".. vinyl_vsc_begin:: cachetag\n.. vinyl_vsc_end:: cachetag\n",
+            "Vinyl source keeps directives Varnish vsctool recognizes",
+        )
+
+        tinykvm_vsc = root / "tinykvm.vsc"
+        tinykvm_vsc.write_bytes(
+            b".. varnish_vsc_begin:: vmod_kvm\n.. varnish_vsc_end:: vmod_kvm\n"
+        )
+
+        changed, _ = source_api_normalize.normalize_tree(root, "varnish", "vinyl")
+
+        eq([str(path) for path, _ in changed], ["tinykvm.vsc"], "legacy Varnish spelling is normalized")
+        eq(
+            tinykvm_vsc.read_bytes(),
+            b".. vinyl_vsc_begin:: vmod_kvm\n.. vinyl_vsc_end:: vmod_kvm\n",
+            "both engines receive directives their shared vsctool recognizes",
+        )
 
 
 @test
@@ -2364,7 +2403,20 @@ def recipe_debian_generation():
            "Debian recipe falls back to an upstream autogen script")
         ok("else autoreconf -fi; fi" in rules_text,
            "Debian recipe retains an autoreconf fallback")
+        ok("restore_upstream_debian_inputs:" in rules_text,
+           "Debian recipe isolates upstream configure inputs from generated metadata")
+        ok("override_dh_auto_configure:" in rules_text and "restore_vcache_debian_metadata" in rules_text,
+           "Debian recipe restores generated metadata after upstream configure")
+        ok("dh_auto_configure -- " in rules_text,
+           "Debian recipe renders the catalog-scoped configure argument seam")
+        ok("$(MAKE) -f debian/rules restore_vcache_debian_metadata" in rules_text,
+           "Debian clean restores metadata through the generated rules rather than upstream's Makefile")
         eq((out / "debian" / "source" / "format").read_text(), "3.0 (quilt)\n", "source format")
+        backup = out / "debian" / ".vcache-packaging"
+        eq((backup / "control").read_text(), control,
+           "Debian recipe retains a private control backup across upstream distclean")
+        eq((backup / "changelog").read_text(), changelog,
+           "Debian recipe retains a private changelog backup across upstream distclean")
         ubuntu_engines = must_replace(
             FIXTURE_ENGINES,
             "      - debian-13-amd64\n      - el10-x86_64\n",
@@ -2399,6 +2451,8 @@ def recipe_rpm_generation():
            "exact-version arch-qualified engine requires")
         ok("BuildRequires:  vinyl-cache-devel = 9.0.1-1%{?dist}" in spec, "exact-version -devel requires")
         ok("BuildRequires:  python3-docutils" in spec, "manifest build_deps included")
+        ok("%global debug_package %{nil}" in spec,
+           "RPM recipe disables debug subpackages that can be empty for Cargo VMODs")
 
 
 @test
@@ -2517,6 +2571,51 @@ def recipe_cargo_debian_and_rpm_mapping():
         ok("--mapping reqwest=libvmod_reqwest.so" in spec, "Cargo RPM artifact mapping")
         ok("%global vmoddir %(pkg-config --variable=vmoddir vinylapi)" in spec,
            "Cargo RPM install follows the selected engine's pkg-config VMOD directory")
+
+
+@test
+def recipe_debian_generation_normalizes_underscored_vmod_package_names():
+    root = matrix.default_root()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "out"
+        recipe.generate(root, "k8s_endpoint", "varnish-9.0.3", "debian-13-amd64", out,
+                        maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
+        control = (out / "debian" / "control").read_text()
+        changelog = (out / "debian" / "changelog").read_text()
+        ok("Package: varnish-vmod-k8s-endpoint" in control,
+           "Debian package names convert VMOD identifier underscores to hyphens")
+        ok("varnish-vmod-k8s-endpoint (0.1.0-" in changelog,
+           "Debian changelog starts with a valid normalized source package name and version")
+
+
+@test
+def recipe_debian_generation_scopes_configure_arguments_to_the_declaring_vmod():
+    root = matrix.default_root()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "out"
+        recipe.generate(root, "querystring", "varnish-9.0.3", "debian-13-amd64", out,
+                        maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
+        ok("dh_auto_configure -- --enable-docs" in (out / "debian" / "rules").read_text(),
+           "querystring alone carries its declared documentation configure argument")
+        rpm_out = Path(tmp) / "rpm-out"
+        recipe.generate(root, "querystring", "varnish-9.0.3", "el10-aarch64", rpm_out,
+                        maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
+        rpm = (rpm_out / "varnish-vmod-querystring.spec").read_text()
+        ok("%configure --enable-docs" in rpm,
+           "querystring configure argument reaches the RPM recipe too")
+
+
+@test
+def package_handoff_preserves_autotools_inputs_until_bootstrap():
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "build-vmod.sh").read_text()
+    bootstrap = script.index('step bootstrap\n  cd "$SRC"', script.index('# --------------------------------------------------------------- package ----'))
+    replace = script.index('rm -rf "$SRC/debian"', bootstrap)
+    ok(bootstrap < replace,
+       "Debian package handoff bootstraps before replacing upstream debian/ inputs")
+    ok('NAMEDIR="$VMOD_PACKAGE_NAME-${VMOD_RPM_VERSION:?}"' in script,
+       "RPM source archive directory follows the rendered RPM-safe version")
+    ok('UPSTREAM_DEBIAN="/work/tmp/$TAG-upstream-debian"' in script,
+       "Debian package handoff keeps upstream configure inputs separate from the generated recipe")
 
 
 @test

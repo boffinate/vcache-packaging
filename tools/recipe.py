@@ -7,7 +7,8 @@ whole recipe. Substitution is ``@TOKEN@`` replacement and nothing else; an
 unresolved token fails loudly. Naming, versioning, and the exact-version
 engine dependency follow DESIGN.md:
 
-  * binary package ``<family>-vmod-<id>`` on both formats;
+  * binary package ``<family>-vmod-<id>`` on both formats, with identifier
+    underscores rendered as hyphens for native package-name validity;
   * Debian version ``<upstream>-1~<family><engine>.<package-revision>``, RPM
     release ``1.<family><engine>.<package-revision>%{?dist}``;
   * exact dependency on the selected family's runtime package -- the RPM side
@@ -21,7 +22,9 @@ Templates live next to this tool (they are code, not catalog data), so a
 The source archive contract for the build scripts: both recipes unpack
 ``<package>-<version>/`` from ``<package>-<version>.tar.gz`` (Debian:
 ``<package>_<version>.orig.tar.gz``), which ``git archive
---prefix=<package>-<version>/`` produces from the resolved ref.
+--prefix=<package>-<version>/`` produces from the resolved ref.  For RPM,
+``<version>`` is the RPM-safe spelling returned by
+``matrix.vmod_package_version``.
 
 Standard library only.
 """
@@ -55,6 +58,7 @@ DEB_TEMPLATES = {
     "copyright.in": "debian/copyright",
     "source-format.in": "debian/source/format",
 }
+DEB_CLEAN_BACKUP = ("control", "changelog", "copyright", "source/format")
 RPM_TEMPLATE = "vmod.spec.in"
 
 # The implied build-dependency set every VMOD gets; the manifest's
@@ -124,6 +128,7 @@ def build_tokens(vmod: dict, engine: dict, maintainer: tuple, now: datetime) -> 
     modules = matrix.vmod_modules(vmod)
     artifacts = matrix.vmod_artifacts(vmod)
     cargo_features = matrix.vmod_cargo_features(vmod)
+    configure_args = matrix.vmod_configure_args(vmod)
     return {
         "PACKAGE_NAME": matrix.engine_vmod_package_name(engine, vmod["id"]),
         "VMOD_ID": vmod["id"],
@@ -154,6 +159,7 @@ def build_tokens(vmod: dict, engine: dict, maintainer: tuple, now: datetime) -> 
         "CARGO_FEATURE_ARGS": f"--features {','.join(cargo_features)}" if cargo_features else "",
         "VMOD_MODULES": " ".join(modules),
         "BUILD_TARGET": package.get("build_target", "all"),
+        "CONFIGURE_ARGS": " ".join(configure_args),
         "MAINTAINER_NAME": maintainer[0],
         "MAINTAINER_EMAIL": maintainer[1],
         "DEB_DATE": format_datetime(now),
@@ -188,6 +194,16 @@ def generate(root, vmod_id: str, engine_id: str, target_id: str, out_dir, mainta
             path.write_text(render_text(template_name, text, tokens), encoding="utf-8")
             written.append(path)
         os.chmod(out / "debian" / "rules", 0o755)
+        # Some Autotools projects generate debian/* from configure.ac. Their
+        # distclean removes those active files before Debhelper has finished
+        # its clean sequence, so keep the generated package metadata in a
+        # private directory that upstream build rules do not own.
+        backup = out / "debian" / ".vcache-packaging"
+        for rel_path in DEB_CLEAN_BACKUP:
+            source = out / "debian" / rel_path
+            target = backup / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
     else:
         text = (TEMPLATE_DIR / "rpm" / RPM_TEMPLATE).read_text(encoding="utf-8")
         path = out / f"{tokens['PACKAGE_NAME']}.spec"

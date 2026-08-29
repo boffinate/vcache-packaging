@@ -36,6 +36,38 @@ override_dh_autoreconf:
 	  else autoreconf -fi; fi; \
 	fi
 
+# configure.ac in a few upstream projects owns debian/* and their distclean
+# removes it. Restore our generated metadata before the remaining dh clean
+# helpers inspect it; the private copy is outside upstream's build contract.
+restore_vcache_debian_metadata:
+	for file in control changelog copyright source/format; do \
+	  test -f "debian/.vcache-packaging/$$file"; \
+	  mkdir -p "$$(dirname "debian/$$file")"; \
+	  cp "debian/.vcache-packaging/$$file" "debian/$$file"; \
+	done
+
+restore_upstream_debian_inputs:
+	find debian/.vcache-upstream -type f -name '*.in' -print 2>/dev/null | while IFS= read -r file; do \
+	  target=$${file#debian/.vcache-upstream/}; \
+	  mkdir -p "$$(dirname "debian/$$target")"; \
+	  cp "$$file" "debian/$$target"; \
+	done
+
+override_dh_auto_clean:
+	dh_auto_clean
+	$(MAKE) -f debian/rules restore_vcache_debian_metadata
+
+# Source checkouts are disposable and bootstrap has already run before their
+# Debian metadata is replaced. A second autoreconf-clean pass would restore
+# upstream's generated packaging files over the generated recipe.
+override_dh_autoreconf_clean:
+	:
+
+override_dh_auto_configure:
+	$(MAKE) -f debian/rules restore_upstream_debian_inputs
+	dh_auto_configure -- @CONFIGURE_ARGS@
+	$(MAKE) -f debian/rules restore_vcache_debian_metadata
+
 override_dh_auto_build:
 	dh_auto_build -- @BUILD_TARGET@
 

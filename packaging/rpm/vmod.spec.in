@@ -6,6 +6,11 @@
 %global vmoddir %(pkg-config --variable=vmoddir @ENGINE_API@)
 %global __provides_exclude_from ^%{vmoddir}/.*\\.so$
 
+# These convenience packages ship only the loadable VMOD.  Rust release
+# builds can legitimately contain no debuggable source paths, which makes
+# EL's automatic debugsource subpackage fail after the VMOD itself built.
+%global debug_package %{nil}
+
 # Serial build: VMOD vmodtool.py make rules race under -j (duplicate vcc_if
 # generation), the same reason debian/rules passes dh --no-parallel and the
 # compat harness retries serially. Overriding _smp_mflags covers both
@@ -48,7 +53,7 @@ if [ ! -x configure ]; then
   elif [ -f autogen.sh ]; then sh ./autogen.sh
   else autoreconf -fi; fi
 fi
-%configure
+%configure @CONFIGURE_ARGS@
 %make_build @BUILD_TARGET@
 %endif
 

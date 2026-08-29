@@ -45,6 +45,17 @@ def replacements(source_family: str, target_family: str) -> tuple[tuple[bytes, b
 def normalize_bytes(data: bytes, path: Path, source_family: str, target_family: str) -> tuple[bytes, Counter]:
     counts = Counter()
     for old, new in replacements(source_family, target_family):
+        # Varnish 9 and Vinyl 9 share one vsctool implementation, which
+        # recognizes the historic vinyl_vsc directives even when building a
+        # Varnish VMOD. Translating them to varnish_vsc makes vsctool emit no
+        # counter headers, so retain that shared generator spelling.
+        if (source_family, target_family, old, new) == (
+            "vinyl",
+            "varnish",
+            b"vinyl_vsc",
+            b"varnish_vsc",
+        ):
+            continue
         if path.suffix == ".vtc" and (old, new) in (
             (b"vinyltest", b"varnishtest"),
             (b"varnishtest", b"vinyltest"),
