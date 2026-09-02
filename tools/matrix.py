@@ -105,6 +105,10 @@ ENGINE_SOURCE_VALUES = ("required",)
 SOURCE_API_FAMILIES = FAMILIES
 SOURCE_API_NORMALIZATIONS = tuple(
     f"{source}-to-{target}" for source in SOURCE_API_FAMILIES for target in SOURCE_API_FAMILIES if source != target
+) + (
+    # Same-family pass: only VSC counter directives were respelled for the
+    # shared vsctool (decision 28).
+    "vsc-directives",
 )
 # VCL import names (package.modules entries). VMOD ids may contain hyphens
 # (varnish-modules); module names may not.
@@ -114,6 +118,9 @@ CARGO_FEATURE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 CONFIGURE_ARG_RE = re.compile(r"^--[A-Za-z0-9][A-Za-z0-9_.=-]*$")
 RUST_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 PACKAGE_REVISION_RE = re.compile(r"^[1-9][0-9]*$")
+# Trunk engines configure as version "trunk"; the prefix .pc files get this
+# numeric stand-in so version-parsing build systems order it (decision 29).
+PKGCONFIG_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 # Mapping keys the parser accepts; also the by_series key charset (DESIGN.md).
 MAPPING_KEY_RE = re.compile(r"^[a-z0-9_.-]+$")
@@ -125,7 +132,7 @@ MAPPING_KEY_RE = re.compile(r"^[a-z0-9_.-]+$")
 KEYS = {
     "engines_doc": ({"schema", "targets", "engines"}, {"toolchains"}),
     "target": ({"image", "format", "runner", "platform", "package_arch"}, set()),
-    "engine": ({"id", "family", "series", "kind", "source", "targets"}, {"packages", "package_revision"}),
+    "engine": ({"id", "family", "series", "kind", "source", "targets"}, {"packages", "package_revision", "pkgconfig_version"}),
     "engine_source_release": ({"tarball_url", "sha256"}, set()),
     "engine_source_trunk": ({"git_url", "branch"}, set()),
     "toolchains": ({"rust"}, set()),
@@ -139,7 +146,7 @@ KEYS = {
     "vmod_source_entry": ({"ref", "version"}, {"commit"}),
     "vmod_package": (
         {"summary", "description", "license"},
-        {"build_deps", "build_target", "configure_args", "modules", "artifacts", "cargo_features", "families", "promoted", "targets"},
+        {"build_deps", "build_target", "install_target", "configure_args", "modules", "artifacts", "cargo_features", "families", "promoted", "targets"},
     ),
     "vmod_build_deps": (set(), {"debian", "rpm"}),
 }
@@ -272,6 +279,17 @@ def _load_engines(path: Path, errors: list) -> tuple[list, dict, dict]:
             _expect(source, "engine_source_trunk", f"{ectx}: source", errors)
             _str_value(source, "git_url", f"{ectx}: source", errors)
             _str_value(source, "branch", f"{ectx}: source", errors)
+        if kind == "trunk":
+            if "pkgconfig_version" not in engine:
+                errors.append(f"{ectx}: kind trunk requires pkgconfig_version")
+            pkgconfig_version = _str_value(engine, "pkgconfig_version", ectx, errors)
+            if pkgconfig_version and not PKGCONFIG_VERSION_RE.match(pkgconfig_version):
+                errors.append(
+                    f"{ectx}: pkgconfig_version must match {PKGCONFIG_VERSION_RE.pattern!r}, "
+                    f"got {pkgconfig_version!r}"
+                )
+        elif "pkgconfig_version" in engine:
+            errors.append(f"{ectx}: pkgconfig_version is valid only for kind trunk")
         engine_target_ids = _str_list(engine.get("targets"), f"{ectx}: targets", errors)
         if len(engine_target_ids) != len(set(engine_target_ids)):
             errors.append(f"{ectx}: targets contains duplicates")
@@ -408,8 +426,11 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, toolchains: dict, e
             _str_value(package, "license", f"{ctx}: package", errors)
             if "description" in package:
                 _str_list(package.get("description"), f"{ctx}: package.description", errors)
-            if "build_target" in package:
-                _str_value(package, "build_target", f"{ctx}: package", errors)
+            for key in ("build_target", "install_target"):
+                if key in package:
+                    _str_value(package, key, f"{ctx}: package", errors)
+                    if build != "autotools":
+                        errors.append(f"{ctx}: package.{key} is only supported for build autotools")
             configure_args = package.get("configure_args")
             if configure_args is not None:
                 for i, arg in enumerate(_str_list(configure_args, f"{ctx}: package.configure_args", errors)):
@@ -976,7 +997,8 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
     if engine["kind"] == "release":
         pairs += [("ENGINE_TARBALL_URL", source["tarball_url"]), ("ENGINE_SHA256", source["sha256"])]
     else:
-        pairs += [("ENGINE_GIT_URL", source["git_url"]), ("ENGINE_BRANCH", source["branch"])]
+        pairs += [("ENGINE_GIT_URL", source["git_url"]), ("ENGINE_BRANCH", source["branch"]),
+                  ("ENGINE_PKGCONFIG_VERSION", engine["pkgconfig_version"])]
     if engine["packages"] == "true":
         pairs += [("ENGINE_PACKAGE_REVISION", engine["package_revision"])]
     if target_id is not None:
@@ -1016,6 +1038,7 @@ def env_pairs(catalog: dict, engine_id: str, vmod_id: str = None, target_id: str
             ("VMOD_BUILD_DEPS", " ".join(deps)),
             ("VMOD_BUILD", vmod_build(vmod)),
             ("VMOD_BUILD_TARGET", package.get("build_target", "all")),
+            ("VMOD_INSTALL_TARGET", package.get("install_target", "install")),
             ("VMOD_CONFIGURE_ARGS", " ".join(vmod_configure_args(vmod))),
             ("VMOD_MODULES", " ".join(vmod_modules(vmod))),
             ("VMOD_ARTIFACTS", " ".join(vmod_artifacts(vmod))),
@@ -1177,7 +1200,8 @@ _MODE_SENTENCE = {
 }
 SOURCE_NORMALIZATION_LEGEND = "compat: Vinyl ↔ Varnish"
 SOURCE_NORMALIZATION_HELP = (
-    "We had to rewrite the VMOD source code from the Vinyl API to the Varnish API, or vice versa."
+    "We had to rewrite the VMOD source code from the Vinyl API to the Varnish API, or vice versa, "
+    "or respell its statistics counter definitions for the engines' shared vsctool."
 )
 
 
@@ -1258,6 +1282,8 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
                     if "-to-" in direction:
                         source, destination = direction.split("-to-", 1)
                         line += f" Source translated from {source.title()} API to {destination.title()} API."
+                    elif direction == "vsc-directives":
+                        line += " VSC counter directives respelled for the engines' shared vsctool."
                     else:
                         line += f" Source translation: {direction}."
                 if cell.get("ref"):

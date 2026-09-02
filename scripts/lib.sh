@@ -599,6 +599,40 @@ read_source_api_normalization() {
   cat "$1/tmp/$2.source-api-normalization" 2>/dev/null || true
 }
 
+# vinyl_private_header_name API -> the daemon-private header the selected
+# engine installs under <pkgincludedir>/cache/ (cache_vinyld.h on Vinyl
+# 9.0.1, cache_int.h from Vinyl trunk 6d36364cc1). Probed, never keyed on the
+# engine series, so the translation table holds no second copy of a pin
+# (decision 28). Varnish installs cache_varnishd.h; the default keeps the
+# translator's historic spelling when nothing is found.
+vinyl_private_header_name() {
+  local api=$1 includedir=""
+  includedir=$(pkg-config --variable=pkgincludedir "$api" 2>/dev/null || true)
+  local name
+  for name in cache_vinyld.h cache_int.h; do
+    if [ -n "$includedir" ] && [ -f "$includedir/cache/$name" ]; then
+      printf '%s\n' "$name"
+      return 0
+    fi
+  done
+  printf '%s\n' cache_vinyld.h
+}
+
+# normalize_vmod_source SRC TAG
+# One normalization pass per build (decision 19 + 28): cross-family when the
+# manifest's source_api_family differs from the engine's family, otherwise the
+# same-family VSC-directive pass. The marker file becomes the cell result's
+# source_api_normalization and is written only when a file changed.
+normalize_vmod_source() {
+  local src=$1 tag=$2
+  local source_family=${VMOD_SOURCE_API_FAMILY:-$ENGINE_FAMILY}
+  step source-api-normalize
+  python3 /repo/tools/source_api_normalize.py \
+    --source-family "$source_family" --target-family "$ENGINE_FAMILY" \
+    --vinyl-private-header "$(vinyl_private_header_name "$ENGINE_API")" \
+    --marker "/work/tmp/$tag.source-api-normalization" "$src"
+}
+
 # emit_result WORKDIR ROW ENGINE TARGET MODE REF COMMIT STATUS DETAIL [FAILURE_STEP]
 # Writes <workdir>/results/<row>--<engine>--<target>--<mode>.json (cell/1).
 emit_result() {

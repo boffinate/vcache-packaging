@@ -53,6 +53,10 @@ if [ ! -x configure ]; then
   elif [ -f autogen.sh ]; then sh ./autogen.sh
   else autoreconf -fi; fi
 fi
+# A warning under a newer toolchain is information, not incompatibility;
+# upstream AM_CFLAGS -Werror precedes CFLAGS, so this wins (decision 30).
+export CFLAGS="%{build_cflags} -Wno-error"
+export CXXFLAGS="%{build_cxxflags} -Wno-error"
 %configure @CONFIGURE_ARGS@
 %make_build @BUILD_TARGET@
 %endif
@@ -64,7 +68,10 @@ python3 /repo/tools/cargo-artifacts.py \
   --destination "%{buildroot}%{vmoddir}" \
   @CARGO_ARTIFACT_ARGS@
 %else
-%make_install
+# Explicit make: %%make_install hardwires the install target, which implies
+# all-am and can build auxiliary programs the install never ships
+# (decision 26).
+%{__make} %{?_smp_mflags} @INSTALL_TARGET@ DESTDIR=%{buildroot} INSTALL="%{__install} -p"
 python3 /repo/tools/vmod-artifacts.py \
   --stage-root "%{buildroot}" \
   --vmod-dir "%{vmoddir}" \

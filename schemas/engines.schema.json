@@ -203,6 +203,12 @@
             "minLength": 1,
             "description": "Quoted positive packaging revision for a packages \"true\" engine.",
             "pattern": "^[1-9][0-9]*$"
+          },
+          "pkgconfig_version": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Trunk engines only: the numeric Version: written into the prefix's .pc files in place of upstream's literal 'trunk' (e.g. \"9.99.0\").",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
           }
         },
         "allOf": [
@@ -254,6 +260,9 @@
               ]
             },
             "then": {
+              "required": [
+                "pkgconfig_version"
+              ],
               "properties": {
                 "source": {
                   "required": [

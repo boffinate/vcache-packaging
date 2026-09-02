@@ -2,10 +2,13 @@
 # libvmod-file (schema vmod/1, DESIGN.md).
 #
 # Existing tags target older engine APIs, so release and trunk builds pin
-# master. The 0 in 0~master keeps the Debian version digit-first.
+# master. Master builds against Vinyl natively since upstream switched to
+# vinylapi.pc and VINYL_* macros, and source_api_family records that so the
+# Varnish columns are translated; the pinned commit is that Vinylized master.
+# The 0 in 0~master keeps the Debian version digit-first.
 schema: vmod/1
 id: file
-source_api_family: varnish
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-file.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-file
@@ -13,7 +16,7 @@ sources:
   head: master
   default:
     ref: master
-    commit: "12f5040ac49e85415de5ce6491b33d5df4c9cb73"
+    commit: "a0a1165d95a4a1d32589384411571aa9112c70d5"
     version: "0~master"
 package:
   summary: File reader VMOD with periodic refresh for Varnish Cache and Vinyl Cache

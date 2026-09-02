@@ -1,16 +1,20 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvfp-brotli (schema vmod/1, DESIGN.md).
 #
-# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
-# natively (vinylapi.pc, VINYL_* macros) and a separate 8.0 branch serves
-# Varnish 8, so Varnish 9 cells are EXPECTED RED at configure; v2 carries no
-# patches (SCOPE.md). No usable tags, so both lanes pin master (selector
-# precedent; the 0 in 0~master keeps the Debian version digit-first).
+# Master is Vinyl-native (vinylapi.pc, VINYL_* macros) and a separate 8.0
+# branch serves Varnish 8. source_api_family lets the harness translate the
+# tree for the Varnish 9 columns. brotli qualifies for that translation
+# because it includes only cache/cache.h and cache/cache_filter.h, whose VFP
+# half is identical between the engines, unlike pesi, slash and zipflow
+# (decision 19).
+# No usable tags, so both lanes pin master (selector precedent; the 0 in
+# 0~master keeps the Debian version digit-first).
 # Upstream's README requires a Vinyl Cache *master* commit (54af42d or later),
-# so the release-engine cell may be red while trunk is green — that split is
+# so the release-engine cell may be red while trunk is green: that split is
 # expected and is exactly the trunk-CI early warning this matrix exists for.
 schema: vmod/1
 id: brotli
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvfp-brotli.git
   homepage: https://code.uplex.de/uplex-varnish/libvfp-brotli

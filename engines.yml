@@ -91,6 +91,10 @@ engines:
       git_url: https://code.vinyl-cache.org/vinyl-cache/vinyl-cache.git
       branch: main
     packages: "false"
+    # Upstream trunk configures as version "trunk"; the prefix .pc files carry
+    # this stand-in instead, meaning "later than every 9.x release, below the
+    # next major" (decision 29). Bump the major when the series moves on.
+    pkgconfig_version: "9.99.0"
     targets:
       - debian-13-amd64
       - debian-13-arm64
@@ -106,6 +110,10 @@ engines:
       git_url: https://github.com/varnish/varnish.git
       branch: main
     packages: "false"
+    # Upstream trunk configures as version "trunk"; the prefix .pc files carry
+    # this stand-in instead, meaning "later than every 9.x release, below the
+    # next major" (decision 29). Bump the major when the series moves on.
+    pkgconfig_version: "9.99.0"
     targets:
       - debian-13-amd64
       - debian-13-arm64

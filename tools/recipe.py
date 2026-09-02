@@ -159,6 +159,7 @@ def build_tokens(vmod: dict, engine: dict, maintainer: tuple, now: datetime) -> 
         "CARGO_FEATURE_ARGS": f"--features {','.join(cargo_features)}" if cargo_features else "",
         "VMOD_MODULES": " ".join(modules),
         "BUILD_TARGET": package.get("build_target", "all"),
+        "INSTALL_TARGET": package.get("install_target", "install"),
         "CONFIGURE_ARGS": " ".join(configure_args),
         "MAINTAINER_NAME": maintainer[0],
         "MAINTAINER_EMAIL": maintainer[1],

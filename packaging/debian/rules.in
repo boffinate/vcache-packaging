@@ -7,6 +7,11 @@
 %:
 	dh $@ --no-parallel
 
+# A warning under a newer toolchain is information, not incompatibility;
+# upstream AM_CFLAGS -Werror precedes CFLAGS, so this wins (decision 30).
+export DEB_CFLAGS_MAINT_APPEND = -Wno-error
+export DEB_CXXFLAGS_MAINT_APPEND = -Wno-error
+
 ifeq (@CARGO_BUILD@,1)
 
 override_dh_auto_configure:
@@ -36,9 +41,9 @@ override_dh_autoreconf:
 	  else autoreconf -fi; fi; \
 	fi
 
-# configure.ac in a few upstream projects owns debian/* and their distclean
-# removes it. Restore our generated metadata before the remaining dh clean
-# helpers inspect it; the private copy is outside upstream's build contract.
+# configure.ac in a few upstream projects owns debian/* and their configure
+# regenerates it. Restore our generated metadata afterwards; the private copy
+# is outside upstream's build contract.
 restore_vcache_debian_metadata:
 	for file in control changelog copyright source/format; do \
 	  test -f "debian/.vcache-packaging/$$file"; \
@@ -53,13 +58,14 @@ restore_upstream_debian_inputs:
 	  cp "$$file" "debian/$$target"; \
 	done
 
-override_dh_auto_clean:
-	dh_auto_clean
-	$(MAKE) -f debian/rules restore_vcache_debian_metadata
-
 # Source checkouts are disposable and bootstrap has already run before their
-# Debian metadata is replaced. A second autoreconf-clean pass would restore
-# upstream's generated packaging files over the generated recipe.
+# Debian metadata is replaced. Cleaning the tree can only lose: an upstream
+# distclean may delete tracked files it has no rule to regenerate (libvmod-re's
+# README.rst), and an autoreconf-clean pass would restore upstream's generated
+# packaging files over the generated recipe (decision 25).
+override_dh_auto_clean:
+	:
+
 override_dh_autoreconf_clean:
 	:
 
@@ -77,8 +83,11 @@ override_dh_auto_build:
 # %check for the same reason.
 override_dh_auto_test:
 
+# Explicit make: dh_auto_install hardwires the install target, which implies
+# all-am and can build auxiliary programs the install never ships
+# (decision 26).
 override_dh_auto_install:
-	dh_auto_install
+	$(MAKE) @INSTALL_TARGET@ DESTDIR=$(CURDIR)/debian/@PACKAGE_NAME@ AM_UPDATE_INFO_DIR=no
 	python3 /repo/tools/vmod-artifacts.py \
 	  --stage-root "debian/@PACKAGE_NAME@" \
 	  --vmod-dir "$$(pkg-config --variable=vmoddir @ENGINE_API@)" \

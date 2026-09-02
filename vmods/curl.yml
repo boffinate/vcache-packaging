@@ -1,14 +1,15 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-curl (schema vmod/1, DESIGN.md).
 #
-# The latest upstream release is Varnish Cache-only: its autotools setup
-# requires varnishapi and VARNISH_VMOD_* macros. Keep package expansion on
-# that family while leaving Vinyl compatibility cells as useful evidence.
-# Its Varnish 9-compatible master has one legacy VTC assertion that compares
-# libcurl error-string spellings. Keep make-check enabled so the matrix tracks
-# the upstream fix rather than masking it.
+# The source uses Varnish API spellings, recorded by source_api_family so
+# cross-family builds can normalize its disposable source tree.
+# The pin is the master commit carrying the test03 fix, which matches the
+# libcurl connection-error string as a pattern instead of one exact spelling.
+# package.families stays varnish because upstream supports Varnish only, so
+# that is the family we ship products for.
 schema: vmod/1
 id: curl
+source_api_family: varnish
 upstream:
   git: https://github.com/varnish/libvmod-curl.git
   homepage: https://github.com/varnish/libvmod-curl
@@ -18,8 +19,8 @@ sources:
     # 1.0.4 predates Varnish 9. Master adds Varnish 7.3+ support, including
     # the Varnish 9 private-object lifetime API.
     ref: master
-    commit: 84e391521396ab4d9a8487a55c8298849b172551
-    version: "1.0.4+git20250531"
+    commit: "98da71c65568b1c1ca2868b7badf237e490ec524"
+    version: "1.0.4+git20260813"
 package:
   summary: HTTP client VMOD for Varnish Cache
   description:

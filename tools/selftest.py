@@ -118,6 +118,7 @@ FIXTURE_ENGINES = textwrap.dedent(
           git_url: https://example.org/vinyl.git
           branch: main
         packages: "false"
+        pkgconfig_version: "9.99.0"
         targets:
           - debian-13-amd64
     """
@@ -2237,6 +2238,7 @@ def render_smoke():
             "      git_url: https://example.org/varnish.git\n"
             "      branch: main\n"
             "    packages: \"false\"\n"
+            "    pkgconfig_version: \"9.99.0\"\n"
             "    targets:\n"
             "      - debian-13-amd64\n"
             "  - id: vinyl-trunk\n",
@@ -2410,7 +2412,17 @@ def recipe_debian_generation():
         ok("dh_auto_configure -- " in rules_text,
            "Debian recipe renders the catalog-scoped configure argument seam")
         ok("$(MAKE) -f debian/rules restore_vcache_debian_metadata" in rules_text,
-           "Debian clean restores metadata through the generated rules rather than upstream's Makefile")
+           "Debian configure restores metadata through the generated rules rather than upstream's Makefile")
+        ok("override_dh_auto_clean:\n\t:\n" in rules_text,
+           "Debian recipe never cleans the disposable checkout (decision 25)")
+        ok("dh_auto_clean" not in rules_text.replace("override_dh_auto_clean", ""),
+           "Debian recipe does not invoke dh_auto_clean")
+        ok("export DEB_CFLAGS_MAINT_APPEND = -Wno-error" in rules_text
+           and "export DEB_CXXFLAGS_MAINT_APPEND = -Wno-error" in rules_text,
+           "Debian recipe appends -Wno-error (decision 30)")
+        ok("$(MAKE) install DESTDIR=$(CURDIR)/debian/vinyl-vmod-dict" in rules_text,
+           "Debian recipe installs through an explicit make with the default install target")
+        ok("\tdh_auto_install\n" not in rules_text, "Debian recipe does not invoke dh_auto_install")
         eq((out / "debian" / "source" / "format").read_text(), "3.0 (quilt)\n", "source format")
         backup = out / "debian" / ".vcache-packaging"
         eq((backup / "control").read_text(), control,
@@ -2451,6 +2463,12 @@ def recipe_rpm_generation():
            "exact-version arch-qualified engine requires")
         ok("BuildRequires:  vinyl-cache-devel = 9.0.1-1%{?dist}" in spec, "exact-version -devel requires")
         ok("BuildRequires:  python3-docutils" in spec, "manifest build_deps included")
+        ok('export CFLAGS="%{build_cflags} -Wno-error"' in spec
+           and 'export CXXFLAGS="%{build_cxxflags} -Wno-error"' in spec,
+           "RPM recipe appends -Wno-error (decision 30)")
+        ok('%{__make} %{?_smp_mflags} install DESTDIR=%{buildroot} INSTALL="%{__install} -p"' in spec,
+           "RPM recipe installs through an explicit make with the default install target")
+        ok("\n%make_install\n" not in spec, "RPM recipe does not invoke %make_install")
         ok("%global debug_package %{nil}" in spec,
            "RPM recipe disables debug subpackages that can be empty for Cargo VMODs")
 
@@ -2725,6 +2743,168 @@ def recipe_refusals_and_unresolved_tokens():
         eq(recipe.target_format(catalog, "debian-13-amd64"), "deb", "deb target format")
         eq(recipe.target_format(catalog, "ubuntu-26.04-amd64"), "deb", "Ubuntu target format")
         eq(recipe.target_format(catalog, "el10-x86_64"), "rpm", "rpm target format")
+
+
+@test
+def catalog_requires_a_numeric_pkgconfig_version_on_trunk_engines_only():
+    missing = must_replace(FIXTURE_ENGINES, '    pkgconfig_version: "9.99.0"\n', "")
+    with tempfile.TemporaryDirectory() as tmp:
+        expect_catalog_error(write_fixture(Path(tmp), engines=missing),
+                             "kind trunk requires pkgconfig_version", "trunk without pkgconfig_version")
+    for bad in ("trunk", "9.99", "9.99.0-rc1"):
+        engines = must_replace(FIXTURE_ENGINES, '    pkgconfig_version: "9.99.0"\n',
+                               f'    pkgconfig_version: "{bad}"\n')
+        with tempfile.TemporaryDirectory() as tmp:
+            expect_catalog_error(write_fixture(Path(tmp), engines=engines),
+                                 "pkgconfig_version must match", f"pkgconfig_version {bad!r}")
+    on_release = must_replace(FIXTURE_ENGINES, '      sha256: "bb22"\n    packages: "false"\n',
+                              '      sha256: "bb22"\n    packages: "false"\n    pkgconfig_version: "9.99.0"\n')
+    with tempfile.TemporaryDirectory() as tmp:
+        expect_catalog_error(write_fixture(Path(tmp), engines=on_release),
+                             "valid only for kind trunk", "pkgconfig_version on a release engine")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = write_fixture(Path(tmp))
+        code, out, _ = run_cli(["env", "--engine", "vinyl-trunk", "--root", str(root)])
+        eq(code, 0, "env exit code")
+        ok("ENGINE_PKGCONFIG_VERSION='9.99.0'" in out, "trunk env exposes the pkg-config version")
+        code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--root", str(root)])
+        ok("ENGINE_PKGCONFIG_VERSION" not in out, "release env carries no pkg-config stand-in")
+
+
+@test
+def install_target_is_an_autotools_package_key_with_an_install_default():
+    scoped = must_replace(FIXTURE_DICT, '  promoted: "true"\n',
+                          '  promoted: "true"\n  build_target: "-C src libvmod_dict.la"\n'
+                          '  install_target: "-C src install-vmodLTLIBRARIES"\n')
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        root = write_fixture(tmp / "repo", vmods={"dict": scoped})
+        code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "dict", "--root", str(root)])
+        eq(code, 0, "env exit code")
+        ok("VMOD_INSTALL_TARGET='-C src install-vmodLTLIBRARIES'" in out, "env exposes install_target")
+        recipe.generate(root, "dict", "vinyl-9.0.1", "debian-13-amd64", tmp / "deb",
+                        maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
+        rules_text = (tmp / "deb" / "debian" / "rules").read_text()
+        ok("dh_auto_build -- -C src libvmod_dict.la" in rules_text, "rules build target")
+        ok("$(MAKE) -C src install-vmodLTLIBRARIES DESTDIR=$(CURDIR)/debian/vinyl-vmod-dict" in rules_text,
+           "rules install target")
+        spec = recipe.generate(root, "dict", "vinyl-9.0.1", "el10-x86_64", tmp / "rpm",
+                               maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)[0].read_text()
+        ok("%make_build -C src libvmod_dict.la" in spec, "spec build target")
+        ok("%{__make} %{?_smp_mflags} -C src install-vmodLTLIBRARIES DESTDIR=%{buildroot}" in spec,
+           "spec install target")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = write_fixture(Path(tmp))
+        code, out, _ = run_cli(["env", "--engine", "vinyl-9.0.1", "--vmod", "dict", "--root", str(root)])
+        ok("VMOD_INSTALL_TARGET='install'" in out, "install_target defaults to install")
+    cargo = must_replace(FIXTURE_CARGO, "  cargo_features:\n",
+                         '  install_target: "-C src install"\n  cargo_features:\n')
+    with tempfile.TemporaryDirectory() as tmp:
+        expect_catalog_error(write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": cargo}),
+                             "package.install_target is only supported for build autotools",
+                             "install_target on a Cargo VMOD")
+
+
+@test
+def source_api_normalization_follows_the_engines_private_header_spelling():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "configure.ac").write_bytes(b"AC_CHECK_HEADERS([cache/cache_varnishd.h])\n")
+        (root / "vmod.c").write_bytes(
+            b"#ifdef HAVE_CACHE_CACHE_VARNISHD_H\n#include <cache/cache_varnishd.h>\n#endif\n"
+            b'#include "cache_varnishd.h"\nVARNISHD\n'
+        )
+        changed, _ = source_api_normalize.normalize_tree(root, "varnish", "vinyl",
+                                                         vinyl_private_header="cache_int.h")
+        eq([str(path) for path, _ in changed], ["configure.ac", "vmod.c"], "changed files")
+        eq((root / "configure.ac").read_text(), "AC_CHECK_HEADERS([cache/cache_int.h])\n",
+           "configure probe follows the installed spelling")
+        eq((root / "vmod.c").read_text(),
+           "#ifdef HAVE_CACHE_CACHE_INT_H\n#include <cache/cache_int.h>\n#endif\n"
+           '#include "cache_int.h"\nVINYLD\n',
+           "include and autoconf macro follow the installed spelling; bare VINYLD rule still applies")
+
+        back, _ = source_api_normalize.normalize_tree(root, "vinyl", "varnish")
+        ok(back, "reverse normalization changes files")
+        eq((root / "vmod.c").read_text(),
+           "#ifdef HAVE_CACHE_CACHE_VARNISHD_H\n#include <cache/cache_varnishd.h>\n#endif\n"
+           '#include "cache_varnishd.h"\nVARNISHD\n',
+           "cache_int.h maps back to Varnish's one installed name")
+
+        (root / "old.c").write_bytes(b"#include <cache/cache_vinyld.h>\n")
+        source_api_normalize.normalize_tree(root, "vinyl", "varnish")
+        eq((root / "old.c").read_text(), "#include <cache/cache_varnishd.h>\n",
+           "the historic Vinyl spelling maps to Varnish too")
+
+    try:
+        source_api_normalize.replacements("varnish", "vinyl", vinyl_private_header="cache.h")
+    except ValueError as exc:
+        ok("unknown Vinyl private header" in str(exc), "unknown spelling is rejected")
+    else:
+        raise Fail("unknown private header spelling accepted")
+
+
+@test
+def same_family_normalization_touches_only_vsc_directives():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "configure.ac").write_bytes(b"PKG_CHECK_MODULES([VARNISHAPI], [varnishapi])\n")
+        (root / "vmod.c").write_bytes(b"#include <cache/cache_varnishd.h>\nvarnish_vsc\n")
+        (root / "VSC_vmod_kvm.vsc").write_bytes(
+            b".. varnish_vsc_begin:: vmod_kvm\n.. varnish_vsc:: x\n.. varnish_vsc_end:: vmod_kvm\n"
+        )
+        (root / "quiet.vsc").write_bytes(b".. vinyl_vsc_begin:: quiet\n")
+        changed, _ = source_api_normalize.normalize_tree(root, "varnish", "varnish")
+        eq([str(path) for path, _ in changed], ["VSC_vmod_kvm.vsc"], "only the legacy .vsc changes")
+        eq((root / "VSC_vmod_kvm.vsc").read_text(),
+           ".. vinyl_vsc_begin:: vmod_kvm\n.. vinyl_vsc:: x\n.. vinyl_vsc_end:: vmod_kvm\n",
+           "directives respelled for the shared vsctool")
+        eq((root / "configure.ac").read_text(), "PKG_CHECK_MODULES([VARNISHAPI], [varnishapi])\n",
+           "same-family pass leaves build spellings alone")
+        eq((root / "vmod.c").read_text(), "#include <cache/cache_varnishd.h>\nvarnish_vsc\n",
+           "same-family pass leaves C sources alone, even a varnish_vsc string")
+        eq(source_api_normalize.normalization_name("varnish", "varnish"), "vsc-directives", "same-family name")
+        eq(source_api_normalize.normalization_name("varnish", "vinyl"), "varnish-to-vinyl", "cross-family name")
+
+        marker = root / "marker"
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = source_api_normalize.main(["--source-family", "vinyl", "--target-family", "vinyl",
+                                              "--marker", str(marker), str(root)])
+        eq(code, 0, "a same-family pass with nothing to do succeeds")
+        ok(not marker.exists(), "no marker when nothing changed")
+        (root / "again.vsc").write_bytes(b".. varnish_vsc_begin:: again\n")
+        with contextlib.redirect_stdout(out):
+            code = source_api_normalize.main(["--source-family", "vinyl", "--target-family", "vinyl",
+                                              "--marker", str(marker), str(root)])
+        eq(code, 0, "same-family pass exit code")
+        eq(marker.read_text(), "vsc-directives\n", "marker records the same-family pass")
+        err = io.StringIO()
+        untouched = root / "untouched"; untouched.mkdir()
+        (untouched / "plain.c").write_bytes(b"int x;\n")
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = source_api_normalize.main(["--source-family", "varnish", "--target-family", "vinyl",
+                                              str(untouched)])
+        eq(code, 1, "a cross-family pass that changes nothing still fails the build")
+    ok("vsc-directives" in matrix.SOURCE_API_NORMALIZATIONS, "cell schema accepts the same-family value")
+
+
+@test
+def vsc_directive_cells_render_their_own_tooltip_sentence():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        root = write_fixture(tmp / "repo")
+        results = tmp / "results"; results.mkdir()
+        (results / "c.json").write_text(json.dumps(make_cell(
+            "dict", "varnish-9.0.3", "debian-13-amd64", "compat", "pass", "2026-09-02T00:00:00Z",
+            source_api_normalization="vsc-directives")))
+        state_file = tmp / "state.json"
+        code, _, err = run_cli(["merge", "--results-dir", str(results), "--state-file", str(state_file)])
+        eq(code, 0, f"merge accepts vsc-directives: {err}")
+        grid = matrix.build_grid(json.loads(state_file.read_text()), "debian-13-amd64", matrix.load_catalog(root))
+        cell = grid["cells"][("dict", "varnish-9.0.3")]
+        eq(cell["modifier"], "NORMALIZED", "same-family respelling still shows the translated edge")
+        ok("VSC counter directives respelled" in cell["title"], "tooltip names the respelling")
 
 
 # ---------------------------------------------------------------------------

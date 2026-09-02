@@ -6,9 +6,12 @@
 #
 # Configure hard-requires a Vinyl Cache source tree. engine_source provisions
 # the pinned source with regenerated VSC headers. Upstream's default target
-# also links an auxiliary test against a compiled engine tree, while the
-# provisioned tree is source-only, so build_target selects only the installable
-# VMOD library.
+# also links an auxiliary zfr_iter_test against
+# $(VINYLSRC)/lib/libvinyl/libvinyl.la, a build-tree artifact the provisioned
+# source-only tree never has, so build_target selects only the installable
+# VMOD library. automake's install implies all, which would build that test
+# again, so install_target names the installable library target too
+# (decision 26).
 # The pandoc build dep is real either way (Makefile regenerates README.md from
 # README.rst when building from git).
 #
@@ -40,6 +43,7 @@ package:
     - delivered while it is generated rather than stored.
   license: BSD-2-Clause AND Zlib
   build_target: "-C src libvmod_zipflow.la"
+  install_target: "-C src install-vmodLTLIBRARIES"
   build_deps:
     debian:
       - pandoc

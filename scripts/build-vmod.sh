@@ -159,8 +159,12 @@ build_autotools() {
   [ -f configure ] || { echo "bootstrap produced no configure script" >&2; exit 1; }
 
   step configure
+  # -Wno-error after upstream's AM_CFLAGS -Werror: a warning under a newer
+  # toolchain is information, not incompatibility (decision 30). The base
+  # flags repeat autoconf's default, which an explicit CFLAGS replaces.
+  configure_flags=(CFLAGS="-g -O2 -Wno-error" CXXFLAGS="-g -O2 -Wno-error")
   # Second chance via autoreconf: autogen.sh often leaves aux files uninstalled.
-  ./configure || { autoreconf -f -i && ./configure; }
+  ./configure "${configure_flags[@]}" || { autoreconf -f -i && ./configure "${configure_flags[@]}"; }
   step make
   # VMOD generators are not reliably parallel-safe.
   make -j1 ${VMOD_BUILD_TARGET:-all}
@@ -170,8 +174,11 @@ build_autotools() {
   # test-only libvmod_*.so files with the same VCL identity (for example
   # Slash's witness build); loading every matching file would misidentify
   # those as separate VMODs and turn a good build into a false red cell.
+  # -L: a VMOD linked without -avoid-version (upstream LDFLAGS typo or no
+  # LDFLAGS at all) leaves .libs/libvmod_X.so as a symlink to the versioned
+  # file, which a plain -type f would skip (decision 24).
   built_sos=()
-  while IFS= read -r -d '' so; do built_sos+=("$so"); done < <(find . -path '*/.libs/libvmod_*.so' -type f -print0)
+  while IFS= read -r -d '' so; do built_sos+=("$so"); done < <(find -L . -path '*/.libs/libvmod_*.so' -type f -print0)
   sos=()
   for mod in ${VMOD_MODULES:-$VMOD_ID}; do
     matches=()
@@ -192,9 +199,20 @@ build_autotools() {
     if ! make check; then
       echo "make check failed; retrying once (known VTC load-flakes)"
       if ! make check; then
-        fails=$( { grep -hE '^FAIL' test-suite.log src/test-suite.log 2>/dev/null || true; } \
+        # Multi-directory automake trees write test-suite.log per directory
+        # (tinykvm: src/kvm/); each failing test also has its own .log with
+        # the daemon output (decision 27).
+        fails=$( { find . -name test-suite.log -exec grep -hE '^FAIL' {} + 2>/dev/null || true; } \
           | head -n 5 | tr '\n' ' ' )
-        echo "make check failed twice: ${fails:-no FAIL lines found in test-suite.log}"
+        find . -name test-suite.log -exec grep -lE '^FAIL' {} + 2>/dev/null | while IFS= read -r suite; do
+          grep -E '^FAIL' "$suite" | sed -E 's/^FAIL:? *//; s/ .*//' | while IFS= read -r test; do
+            log="$(dirname "$suite")/${test%.vtc}.log"
+            [ -f "$log" ] || log="$(dirname "$suite")/$test.log"
+            [ -f "$log" ] || continue
+            echo "----- $log -----"; head -n 60 "$log"
+          done
+        done
+        echo "make check failed twice: ${fails:-no FAIL lines found in any test-suite.log}"
         exit 1
       fi
     fi
@@ -242,11 +260,8 @@ build_cargo() {
 }
 
 checkout_vmod
-if [ -n "${VMOD_SOURCE_API_FAMILY:-}" ] && [ "$VMOD_SOURCE_API_FAMILY" != "$ENGINE_FAMILY" ]; then
-  step source-api-normalize
-  printf '%s-to-%s\n' "$VMOD_SOURCE_API_FAMILY" "$ENGINE_FAMILY" > "/work/tmp/$TAG.source-api-normalization"
-  python3 /repo/tools/source_api_normalize.py \
-    --source-family "$VMOD_SOURCE_API_FAMILY" --target-family "$ENGINE_FAMILY" "$SRC"
+if [ "${VMOD_BUILD:-autotools}" = autotools ]; then
+  normalize_vmod_source "$SRC" "$TAG"
 fi
 case "${VMOD_BUILD:-autotools}" in
 autotools) build_autotools ;;
@@ -311,11 +326,8 @@ cat >> "$INNER" <<'EOF'
 
 checkout_vmod
 
-if [ -n "${VMOD_SOURCE_API_FAMILY:-}" ] && [ "$VMOD_SOURCE_API_FAMILY" != "$ENGINE_FAMILY" ]; then
-  step source-api-normalize
-  printf '%s-to-%s\n' "$VMOD_SOURCE_API_FAMILY" "$ENGINE_FAMILY" > "/work/tmp/$TAG.source-api-normalization"
-  python3 /repo/tools/source_api_normalize.py \
-    --source-family "$VMOD_SOURCE_API_FAMILY" --target-family "$ENGINE_FAMILY" "$SRC"
+if [ "${VMOD_BUILD:-autotools}" = autotools ]; then
+  normalize_vmod_source "$SRC" "$TAG"
 fi
 
 if [ "${VMOD_BUILD:-autotools}" = cargo ]; then

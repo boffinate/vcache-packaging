@@ -2,6 +2,12 @@
 # vmod-oidc is a Cargo VMOD whose Varnish bindings are gated by its vmod
 # feature. The catalog passes that feature to every build path so the produced
 # shared object exposes the declared oidc VCL import.
+# varnish-sys locates the engine only through pkg-config varnishapi, which the
+# Vinyl prefix does not provide (it ships vinylapi.pc only), so Vinyl compat
+# cells are expected red and package.families stays varnish (DESIGN.md
+# decision 19 attempts no normalization for Cargo sources).
+# varnish-sys 0.5.5 is upstream's latest and parses the engine version
+# numerically.
 schema: vmod/1
 id: oidc
 upstream:

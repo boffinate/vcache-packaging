@@ -2,15 +2,21 @@
 # libvmod-dispatch (schema vmod/1, DESIGN.md).
 #
 # Upstream's tags are stale (pre-Vinylize), so both release and trunk lanes
-# use master. UPLEX Vinylized master in March 2026 (vinylapi.pc, VINYL_*
-# autotools macros; Varnish 8 lives on a separate 8.0 branch), therefore
-# Varnish 9 cells are EXPECTED RED at configure; v2 carries no patches
-# (SCOPE.md). Per decision 13 package.families is vinyl, which is the
-# branch's actual build-system support. The 0 in 0~master makes the trunk
-# version valid for Debian, whose package versions must start with a digit.
-# Compat still renders every pairing honestly.
+# use master. Master is Vinyl-native (vinylapi.pc, VINYL_* autotools macros;
+# Varnish 8 lives on a separate 8.0 branch), and source_api_family enables
+# translation for the Varnish columns because the source includes only public
+# headers. Its configure hard-requires an engine source tree, which
+# engine_source: required provides for both families (VINYLSRC and VARNISHSRC
+# are both exported).
+# Upstream's src/Makefile.am sets libvmod_dispatch_la_LDFLAGS = $(VMOD_FLAGS),
+# a variable neither engine's m4 defines, so the library is built versioned
+# and the harness resolves the resulting .so symlink (decision 24).
+# Per decision 13 package.families is vinyl, which is the branch's actual
+# build-system support. The 0 in 0~master makes the trunk version valid for
+# Debian, whose package versions must start with a digit.
 schema: vmod/1
 id: dispatch
+source_api_family: vinyl
 upstream:
   git: https://code.uplex.de/uplex-varnish/libvmod-dispatch.git
   homepage: https://code.uplex.de/uplex-varnish/libvmod-dispatch

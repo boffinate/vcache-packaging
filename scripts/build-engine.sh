@@ -121,6 +121,17 @@ step make
 make -j"$(nproc)"
 make install
 
+# Trunk configures as version "trunk", which version-parsing consumers of
+# the .pc file (acvmod, varnish-sys) cannot order. Only the pkg-config
+# Version line is rewritten; the daemon still reports trunk (decision 29).
+if [ "${ENGINE_KIND:-release}" = trunk ]; then
+  for pc in "$PREFIX"/lib/pkgconfig/*.pc; do
+    [ -f "$pc" ] || continue
+    sed -i "s/^Version: .*/Version: ${ENGINE_PKGCONFIG_VERSION:?}/" "$pc"
+    grep "^Version: " "$pc"
+  done
+fi
+
 # Carry generated daemon-private headers with the prefix artifact. Trunk's
 # install rules do not reliably install these, while deep-integration VMODs
 # need the headers produced by this exact engine build.

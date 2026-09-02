@@ -218,6 +218,11 @@ def build_engines() -> dict:
                 'Quoted positive packaging revision for a packages "true" engine.',
                 pattern=matrix.PACKAGE_REVISION_RE.pattern,
             ),
+            "pkgconfig_version": _string(
+                "Trunk engines only: the numeric Version: written into the prefix's "
+                ".pc files in place of upstream's literal 'trunk' (e.g. \"9.99.0\").",
+                pattern=matrix.PKGCONFIG_VERSION_RE.pattern,
+            ),
         },
         "One engine version we test and/or package against.",
     )
@@ -238,12 +243,13 @@ def build_engines() -> dict:
         {
             "if": {"properties": {"kind": {"const": "trunk"}}, "required": ["kind"]},
             "then": {
+                "required": ["pkgconfig_version"],
                 "properties": {
                     "source": {
                         "required": sorted(matrix.KEYS["engine_source_trunk"][0]),
                         "not": {"anyOf": [{"required": ["tarball_url"]}, {"required": ["sha256"]}]},
                     }
-                }
+                },
             },
         },
         {
@@ -323,6 +329,12 @@ def build_vmod() -> dict:
                 "Make target or target arguments used to build the installable VMOD. "
                 "Defaults to 'all'; use this when upstream's default also builds "
                 "an auxiliary program requiring an unavailable compiled engine tree."
+            ),
+            "install_target": _string(
+                "Make target or target arguments used to install the VMOD from the "
+                "configured tree. Defaults to 'install'; use this when automake's "
+                "install would first build an auxiliary program that needs a compiled "
+                "engine tree (for example '-C src install-vmodLTLIBRARIES')."
             ),
             "configure_args": _string_list(
                 "Safe Autotools configure arguments for this VMOD's package build only, such as --enable-docs.",
