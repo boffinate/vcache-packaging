@@ -2912,7 +2912,19 @@ def vsc_directive_cells_render_their_own_tooltip_sentence():
 # ---------------------------------------------------------------------------
 
 
+# Git exports these to hooks, and `git commit -a` points GIT_INDEX_FILE at a
+# temporary index. Fixture repositories created by the tests would otherwise
+# commit into the caller's index and die with "invalid object ... Error
+# building trees" whenever the pre-commit hook runs the selftest.
+GIT_HOOK_ENVIRONMENT = (
+    "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE",
+)
+
+
 def main() -> int:
+    for name in GIT_HOOK_ENVIRONMENT:
+        os.environ.pop(name, None)
     failed = 0
     for fn in TESTS:
         try:
