@@ -7,6 +7,11 @@
 # libcurl connection-error string as a pattern instead of one exact spelling.
 # package.families stays varnish because upstream supports Varnish only, so
 # that is the family we ship products for.
+# Vinyl trunk removed the VCL synthetic() action (vinyl-cache 199daa31b0,
+# 2026-04-21, replacement "set resp.body = ..."), and tests/test12.vtc still
+# uses it, so the vinyl-trunk check step is red and becomes red on release
+# engines from the first Vinyl release carrying that commit. The portable fix
+# is an upstream VTC change, not a carried patch.
 schema: vmod/1
 id: curl
 source_api_family: varnish

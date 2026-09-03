@@ -1248,6 +1248,7 @@ def source_api_normalization_is_directional_and_preserves_vtc_syntax():
         root = Path(tmp)
         (root / "configure.ac").write_bytes(
             b"PKG_CHECK_MODULES([VARNISHAPI], [varnishapi])\nAC_SUBST([VARNISHSRC])\n"
+            b"PKG_CHECK_MODULES([VARNISH], [varnishapi])\n"
         )
         (root / "test.vtc").write_bytes(b"varnishtest test\nserver s1 -start\nvarnish v1 -vcl+backend {}\n")
         (root / "private.c").write_bytes(b'#include "cache/cache_varnishd.h"\nvarnishadm\n')
@@ -1265,7 +1266,12 @@ def source_api_normalization_is_directional_and_preserves_vtc_syntax():
             ["configure.ac", "private.c", "stats.vsc", "test.vtc"],
             "changed files",
         )
-        eq((root / "configure.ac").read_text(), "PKG_CHECK_MODULES([VINYLAPI], [vinylapi])\nAC_SUBST([VINYLSRC])\n", "build spellings")
+        eq(
+            (root / "configure.ac").read_text(),
+            "PKG_CHECK_MODULES([VINYLAPI], [vinylapi])\nAC_SUBST([VINYLSRC])\n"
+            "PKG_CHECK_MODULES([VINYL], [vinylapi])\n",
+            "build spellings, including the bare pkg-config prefix",
+        )
         eq((root / "private.c").read_text(), '#include "cache/cache_vinyld.h"\nvinyladm\n', "header and CLI")
         eq(
             (root / "stats.vsc").read_text(),
@@ -1275,7 +1281,7 @@ def source_api_normalization_is_directional_and_preserves_vtc_syntax():
         eq((root / "test.vtc").read_text(), "varnishtest test\nserver s1 -start\nvinyl v1 -vcl+backend {}\n", "VTC syntax")
         eq((root / "binary").read_bytes(), b"varnishapi\0unchanged", "binary skipped")
         eq((root / ".git" / "config").read_bytes(), b"varnishapi", ".git skipped")
-        ok(totals["varnishapi -> vinylapi"] == 1, "replacement totals")
+        eq(totals["varnishapi -> vinylapi"], 2, "replacement totals")
 
         reverse, _ = source_api_normalize.normalize_tree(root, "vinyl", "varnish")
         ok(reverse, "reverse normalization changes files")
@@ -2905,6 +2911,24 @@ def vsc_directive_cells_render_their_own_tooltip_sentence():
         cell = grid["cells"][("dict", "varnish-9.0.3")]
         eq(cell["modifier"], "NORMALIZED", "same-family respelling still shows the translated edge")
         ok("VSC counter directives respelled" in cell["title"], "tooltip names the respelling")
+
+
+@test
+def test_failed_cells_say_the_module_loaded_but_its_tests_failed():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        root = write_fixture(tmp / "repo")
+        results = tmp / "results"; results.mkdir()
+        (results / "c.json").write_text(json.dumps(make_cell(
+            "dict", "varnish-9.0.3", "debian-13-amd64", "compat", "test_failed", "2026-09-03T00:00:00Z")))
+        state_file = tmp / "state.json"
+        code, _, err = run_cli(["merge", "--results-dir", str(results), "--state-file", str(state_file)])
+        eq(code, 0, f"merge accepts test_failed: {err}")
+        grid = matrix.build_grid(json.loads(state_file.read_text()), "debian-13-amd64", matrix.load_catalog(root))
+        cell = grid["cells"][("dict", "varnish-9.0.3")]
+        eq(cell["bucket"], "FAIL", "test failures stay red")
+        ok("compiles and loads" in cell["title"], "tooltip credits the successful build and load")
+        ok("fails to compile or load" not in cell["title"], "tooltip drops the compile-or-load sentence")
 
 
 # ---------------------------------------------------------------------------

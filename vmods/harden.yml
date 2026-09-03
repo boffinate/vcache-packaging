@@ -1,8 +1,12 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-harden (schema vmod/1, DESIGN.md).
 #
-# The VMOD uses Varnish's TLS and private daemon APIs, so Vinyl compatibility
-# is expected to remain an honest red cell until upstream adds support.
+# The VMOD builds and loads against Vinyl, but both upstream VTCs open with
+# "feature tls_1_3" and drive the daemon's -A TLS frontend. Vinyl has no
+# native TLS, no -A option and no TLS vocabulary in vinyltest, so the tests
+# abort at the feature line before anything starts. An honest red on the
+# check step until Vinyl grows native TLS; the VMOD's SNI callback could
+# never fire there anyway.
 schema: vmod/1
 id: harden
 source_api_family: varnish

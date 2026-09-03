@@ -45,7 +45,11 @@ def _private_header_pairs(vinyl_header: str) -> tuple:
 
 # Ordered: specific spellings before the bare VINYLD/VINYL_ rules that would
 # otherwise eat them. The private-header pairs are prepended per direction.
+# A bare pkg-config prefix (queryfilter's own m4) defines VINYL_CFLAGS on the
+# m4 side while the underscore rule below rewrites the Makefile consumers, so
+# it needs its own entry or the engine include path silently goes empty.
 VINYL_TO_VARNISH = (
+    (b"PKG_CHECK_MODULES([VINYL]", b"PKG_CHECK_MODULES([VARNISH]"),
     (b"VINYLAPI", b"VARNISHAPI"),
     (b"VINYLSRC", b"VARNISHSRC"),
     (b"VINYLTEST", b"VARNISHTEST"),

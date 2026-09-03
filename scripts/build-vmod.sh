@@ -201,15 +201,16 @@ build_autotools() {
       if ! make check; then
         # Multi-directory automake trees write test-suite.log per directory
         # (tinykvm: src/kvm/); each failing test also has its own .log with
-        # the daemon output (decision 27).
+        # the daemon output (decision 27). Its head is the daemon banner and
+        # CLI handshake, so print the vtest fatal lines and the tail instead.
         fails=$( { find . -name test-suite.log -exec grep -hE '^FAIL' {} + 2>/dev/null || true; } \
           | head -n 5 | tr '\n' ' ' )
         find . -name test-suite.log -exec grep -lE '^FAIL' {} + 2>/dev/null | while IFS= read -r suite; do
-          grep -E '^FAIL' "$suite" | sed -E 's/^FAIL:? *//; s/ .*//' | while IFS= read -r test; do
-            log="$(dirname "$suite")/${test%.vtc}.log"
-            [ -f "$log" ] || log="$(dirname "$suite")/$test.log"
+          grep -E '^FAIL' "$suite" | sed -E 's/^FAIL:? *//; s/ .*//; s/\.vtc$//' | sort -u | while IFS= read -r test; do
+            log="$(dirname "$suite")/$test.log"
             [ -f "$log" ] || continue
-            echo "----- $log -----"; head -n 60 "$log"
+            echo "----- $log: fatal lines -----"; grep -nE '^(---- |[*#] +top +TEST )' "$log" | tail -n 20
+            echo "----- $log: tail -----"; tail -n 40 "$log"
           done
         done
         echo "make check failed twice: ${fails:-no FAIL lines found in any test-suite.log}"

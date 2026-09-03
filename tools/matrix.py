@@ -1184,8 +1184,9 @@ _SHORT_STATUS = {
     "install_failed": "install",
     "infra_failed": "infra",
 }
-# Reader-facing sentence per (mode, bucket). The tooltip is the page's detail
-# surface and speaks human: one such sentence per mode, with its raw status.
+# Reader-facing sentence per (mode, bucket), with a per-status override where
+# the bucket sentence would be wrong: a test_failed module did compile and
+# load. The tooltip is the page's detail surface and speaks human.
 _MODE_SENTENCE = {
     ("engine", "PASS"): "This engine version built from source.",
     ("engine", "FAIL"): "This engine version failed to build.",
@@ -1194,6 +1195,8 @@ _MODE_SENTENCE = {
     ("compat", "FAIL"): "This module fails to compile or load against this engine "
                         "(usually: upstream does not support this engine yet).",
     ("compat", "INFRA"): "This module could not be tested against this engine (harness problem).",
+    ("compat", "test_failed"): "This module compiles and loads against this engine, "
+                               "but its own test suite does not pass.",
     ("package", "PASS"): "The ready-to-install package (.deb/.rpm) built, installed and loaded.",
     ("package", "FAIL"): "The ready-to-install package (.deb/.rpm) failed to build or install.",
     ("package", "INFRA"): "The ready-to-install package (.deb/.rpm) could not be tested (harness problem).",
@@ -1275,7 +1278,8 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
             normalization = top.get("source_api_normalization", "")
             lines = []
             for cell in sorted(group, key=lambda c: (c["target"], c["mode"])):
-                sentence = _MODE_SENTENCE[cell["mode"], classify(cell["status"])]
+                sentence = _MODE_SENTENCE.get((cell["mode"], cell["status"])) \
+                    or _MODE_SENTENCE[cell["mode"], classify(cell["status"])]
                 line = f"{cell['mode']}: {sentence} ({cell['status']})"
                 if cell.get("source_api_normalization"):
                     direction = cell["source_api_normalization"]
