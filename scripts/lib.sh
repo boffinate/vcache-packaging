@@ -670,15 +670,75 @@ infra_cell() {
   exit 1
 }
 
+# write_load_probe_vtc OUT DAEMON MODULE...
+# Write the one-file vtest script both build modes run as their load check.
+# MODULE is either an installed module name or name=/abs/libvmod_name.so for
+# a module in the build tree. vtest execs "<keyword>d", so the daemon keyword
+# is the daemon name minus its trailing d; the top command is spelled
+# varnishtest because Vinyl's vtest accepts that spelling and Varnish's
+# accepts nothing else. vtest prepends the "vcl x.y;" line itself.
+#
+# Compiling the VCL (-C) is not a load check: VCC reads the module's
+# JSON blob with fopen() and only the child dlopen()s the shared object, in
+# RTLD_NOW mode, on vcl.load. -start therefore proves every symbol resolves
+# and the module's LOAD and WARM events succeed; -stop runs COLD, and vtest
+# discards the VCL and checks for a panic on the way out.
+write_load_probe_vtc() {
+  local out=$1 keyword=${2%d} module
+  shift 2
+  {
+    printf 'varnishtest "load every module into a running %sd"\n\n' "$keyword"
+    printf '%s v1 -jail "-jnone" -vcl {\n' "$keyword"
+    for module in "$@"; do
+      case "$module" in
+        *=*) printf '\timport %s from "%s";\n' "${module%%=*}" "${module#*=}" ;;
+        *)   printf '\timport %s;\n' "$module" ;;
+      esac
+    done
+    printf '\tbackend default none;\n} -start\n\n%s v1 -stop\n' "$keyword"
+  } > "$out"
+}
+
+# load_probe VTC
+# Run VTC with the family vtest from PATH. On failure print the vtest log
+# tail, which ends with the fatal line and the CLI response that names the
+# unresolved symbol or the VCC message.
+load_probe() {
+  local vtc=$1 vtest=${ENGINE_DAEMON%d}test log=${1%.vtc}.log
+  command -v "$vtest" > /dev/null || { echo "no $vtest on PATH" >&2; return 1; }
+  if "$vtest" "$vtc" > "$log" 2>&1; then
+    echo "load probe OK: $vtest started ${ENGINE_DAEMON} with $(grep -c 'import ' "$vtc") module(s)"
+    return 0
+  fi
+  echo "load probe failed ($vtc):"
+  tail -n 60 "$log"
+  return 1
+}
+
 # failure_detail LOG STEP
 # Return a short, human-useful diagnostic from a failed container log. RPM
 # appends headings, macro warnings and a generic exit status after the useful
 # error, so a physical log tail reports the wrapper rather than the cause.
-# Make and package builds need the same diagnostic selection; every other step
-# keeps the compact log-tail fallback.
+# Make and package builds need the same diagnostic selection; a failed load
+# probe names its cause in vtest CLI lines that precede the generic fatal
+# line; every other step keeps the compact log-tail fallback.
 failure_detail() {
   local log=$1 step=$2 detail=""
-  case "$step" in make|pkg-build|cargo-build)
+  case "$step" in
+  load|pkg-load)
+    detail=$(awk '
+      /dlopen\(\) failed|undefined symbol|cannot open shared object|Symbol not found|Could not load VMOD|VMOD wants ABI|VCL compilation failed|^---- / {
+        sub(/^\*+ +v1 +CLI RX\|/, ""); sub(/^---- +v1 +/, "")
+        keep[count % 3] = $0
+        count++
+      }
+      END {
+        first = count > 3 ? count - 3 : 0
+        for (i = first; i < count; i++) print keep[i % 3]
+      }
+    ' "$log" 2>/dev/null || true)
+  ;;
+  make|pkg-build|cargo-build)
     detail=$(awk '
       function rpm_epilogue(line) {
         return line ~ /^[[:space:]]*RPM build (warnings|errors):[[:space:]]*$/ ||

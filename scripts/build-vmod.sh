@@ -4,14 +4,15 @@
 # Build one VMOD against one engine on one target (DESIGN.md "Script
 # contracts"). mode:
 #   compat  - untar the engine prefix, autotools-build the resolved ref
-#             against it, compile a minimal VCL importing each built module
-#             with the selected family daemon (-C), then run
-#             upstream's own `make check` when the manifest declares
-#             tests: make-check (retried once; twice -> test_failed).
+#             against it, start the selected family daemon under vtest with
+#             a VCL importing each built module (the child dlopen()s them),
+#             then run upstream's own `make check` when the manifest
+#             declares tests: make-check (retried once; twice ->
+#             test_failed).
 #   package - install the engine .deb/.rpm set, build the generated recipe
 #             (tools/recipe.py), then install engine + VMOD packages in a
-#             fresh container and run an import check covering every name
-#             in package.modules. Installable packages land under
+#             fresh container and run the same daemon load probe over every
+#             name in package.modules. Installable packages land under
 #             <workdir>/packages/.
 # Engine artifacts are found under <workdir>/engine/artifacts/ (CI re-roots
 # the downloaded engine artifact there) or <workdir>/artifacts/ (local runs
@@ -131,16 +132,13 @@ EOF
 
 load_modules() {
   step load
+  local modules=() so mod
   for so in "$@"; do
     mod=$(basename "$so" .so); mod=${mod#libvmod_}
-    abs="$(cd "$(dirname "$so")" && pwd)/$(basename "$so")"
-    vd=$(mktemp -d)
-    printf 'vcl 4.1;\nimport %s from "%s";\nbackend default none;\n' "$mod" "$abs" > "$vd/t.vcl"
-    if ! "$DAEMON" -j none -C -n "$vd/n" -f "$vd/t.vcl" > "$vd/out.log" 2>&1; then
-      echo "load check failed for $mod:"; sed -n '1,40p' "$vd/out.log"; exit 1
-    fi
-    echo "loaded $mod OK"
+    modules+=("$mod=$(cd "$(dirname "$so")" && pwd)/$(basename "$so")")
   done
+  write_load_probe_vtc /work/tmp/$TAG-load-probe.vtc "$ENGINE_DAEMON" "${modules[@]}"
+  load_probe /work/tmp/$TAG-load-probe.vtc || exit 1
 }
 
 build_autotools() {
@@ -439,25 +437,20 @@ step pkg-load
 DAEMON=$(command -v "$ENGINE_DAEMON" || true)
 [ -n "$DAEMON" ] || { echo "no $ENGINE_DAEMON on PATH after install" >&2; exit 1; }
 # One VCL importing every module name the package ships (package.modules,
-# defaulted to the VMOD id by matrix.py env).
+# defaulted to the VMOD id by matrix.py env), loaded by the installed daemon
+# from its own vmod_path.
 VMOD_DIR=$(pkg-config --variable=vmoddir "$ENGINE_API")
 [ -n "$VMOD_DIR" ] || { echo "$ENGINE_API reports an empty VMOD directory" >&2; exit 1; }
 case "$VMOD_DIR" in
   */"$ENGINE_VMOD_DIR_COMPONENT"/vmods) ;;
   *) echo "$ENGINE_API VMOD directory $VMOD_DIR does not match family component $ENGINE_VMOD_DIR_COMPONENT" >&2; exit 1 ;;
 esac
-{
-  printf 'vcl 4.1;\n'
-  for mod in ${VMOD_MODULES:-$VMOD_ID}; do
-    [ -f "$VMOD_DIR/libvmod_$mod.so" ] || { echo "missing $VMOD_DIR/libvmod_$mod.so" >&2; exit 1; }
-    printf 'import %s;\n' "$mod"
-  done
-  printf 'backend default none;\n'
-} > /tmp/load.vcl
-if ! "$DAEMON" -j none -C -n /tmp/vd -f /tmp/load.vcl > /tmp/load.log 2>&1; then
-  echo "installed load check failed:"; tail -n 40 /tmp/load.log; exit 1
-fi
-echo "installed load check OK ($DAEMON, import: ${VMOD_MODULES:-$VMOD_ID})"
+for mod in ${VMOD_MODULES:-$VMOD_ID}; do
+  [ -f "$VMOD_DIR/libvmod_$mod.so" ] || { echo "missing $VMOD_DIR/libvmod_$mod.so" >&2; exit 1; }
+done
+write_load_probe_vtc /tmp/load-probe.vtc "$ENGINE_DAEMON" ${VMOD_MODULES:-$VMOD_ID}
+load_probe /tmp/load-probe.vtc || exit 1
+echo "installed load probe OK ($DAEMON, import: ${VMOD_MODULES:-$VMOD_ID})"
 EOF
 
 LOG2="$WORKDIR/logs/$TAG2.log"

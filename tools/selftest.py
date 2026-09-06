@@ -1406,6 +1406,75 @@ def shell_failure_details_prefer_causes_over_rpm_epilogues():
            "non-package failures retain the log-tail fallback")
 
 
+def shell_load_probe_vtc(daemon: str, *modules: str) -> str:
+    lib = Path(__file__).resolve().parent.parent / "scripts" / "lib.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "probe.vtc"
+        subprocess.run(
+            ["bash", "-c", '. "$1"; shift; write_load_probe_vtc "$@"', "bash", str(lib), str(out), daemon, *modules],
+            check=True, capture_output=True, encoding="utf-8",
+        )
+        return out.read_text()
+
+
+@test
+def load_probe_vtc_starts_the_family_daemon_with_every_module():
+    vtc = shell_load_probe_vtc("vinyld", "a=/x/.libs/libvmod_a.so", "b=/y/libvmod_b.so")
+    ok(vtc.startswith("varnishtest "), "top command spelled the way both families' vtest accept")
+    ok('vinyl v1 -jail "-jnone" -vcl {\n' in vtc, "daemon keyword is the daemon name without its d")
+    ok('\timport a from "/x/.libs/libvmod_a.so";\n\timport b from "/y/libvmod_b.so";\n' in vtc,
+       "every built module is imported from its build-tree path")
+    ok("\tbackend default none;\n} -start\n" in vtc, "the child is started so it dlopen()s the modules")
+    ok(vtc.endswith("vinyl v1 -stop\n"), "the daemon is stopped so COLD runs and a panic is caught")
+    ok(not any(line.startswith("vcl ") for line in vtc.splitlines()), "vtest prepends the vcl version itself")
+
+    installed = shell_load_probe_vtc("varnishd", "std", "kvm")
+    ok("varnish v1 -jail" in installed and "varnish v1 -stop" in installed, "Varnish keyword derives the same way")
+    ok("\timport std;\n\timport kvm;\n" in installed, "installed modules import by name from the daemon's vmod_path")
+    ok(" from " not in installed, "installed modules carry no path")
+
+
+@test
+def shell_failure_details_name_the_cause_of_a_failed_load_probe():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        # Shape of the tinykvm el10-x86_64 vtest log on 2026-09-04: the fatal line
+        # only says vcls could not be pushed; the CLI response names the symbol.
+        dlopen_log = tmp / "dlopen.log"
+        dlopen_log.write_text(
+            "**** v1    vsl|          0 CLI             - Rd vcl.load \"vcl1\" vcl_vcl1/vgc.so 1auto\n"
+            "***  v1    CLI RX  300\n"
+            "**** v1    CLI RX|Child (7458) Pushing vcls failed:\n"
+            "**** v1    CLI RX|VCL \"vcl1\" Failed initialization\n"
+            "**** v1    CLI RX|Message:\n"
+            "**** v1    CLI RX|\\tLoading vmod kvm from ./vmod_cache/_vmod_kvm.e1d5 (/work/tmp/x/libvmod_kvm.so):\n"
+            "**** v1    CLI RX|dlopen() failed: ./vmod_cache/_vmod_kvm.e1d5: undefined symbol: _ZTVN10__cxxabiv117__class_type_infoE\n"
+            "---- v1    CLI start command failed: 300 Child (7458) Pushing vcls failed:\n"
+            "VCL \"vcl1\" Failed initialization\n"
+            "*    top   TEST /work/tmp/load-probe.vtc FAILED\n"
+            "#    top  TEST /work/tmp/load-probe.vtc FAILED (0.717) exit=2\n"
+        )
+        detail = shell_failure_detail(dlopen_log, "load")
+        ok("undefined symbol: _ZTVN10__cxxabiv117__class_type_infoE" in detail, "detail names the unresolved symbol")
+        ok("CLI start command failed" in detail, "detail keeps the vtest fatal line")
+        ok("CLI RX|" not in detail and "---- v1" not in detail, "vtest line prefixes are stripped")
+        eq(len(detail.splitlines()), 2, "only the lines that add information, so the 300-char cell cut keeps the symbol")
+
+        vcc_log = tmp / "vcc.log"
+        vcc_log.write_text(
+            "**** v1    CLI RX|Message from VCC-compiler:\n"
+            "**** v1    CLI RX|Could not load VMOD nosuch\n"
+            "**** v1    CLI RX|\\tFile name: /usr/lib/vinyl-cache/vmods/libvmod_nosuch.so\n"
+            "**** v1    CLI RX|\\tdlerror: cannot open shared object file: No such file or directory\n"
+            "**** v1    CLI RX|VCL compilation failed\n"
+            "---- v1    VCL compilation failed\n"
+            "*    top   TEST /tmp/load-probe.vtc FAILED\n"
+        )
+        detail = shell_failure_detail(vcc_log, "pkg-load")
+        ok("Could not load VMOD nosuch" in detail or "cannot open shared object" in detail, "VCC cause reaches the detail")
+        ok(detail.endswith("VCL compilation failed"), "the fatal line closes the detail")
+
+
 @test
 def shell_failure_details_preserve_compat_make_diagnostics():
     with tempfile.TemporaryDirectory() as tmp:
