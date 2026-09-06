@@ -404,7 +404,7 @@ def catalog_rejects_unknown_key():
 
 
 @test
-def catalog_source_api_family_is_autotools_only():
+def catalog_source_api_family_is_a_supported_family_for_every_build_kind():
     with tempfile.TemporaryDirectory() as tmp:
         vmod = must_replace(FIXTURE_DICT, "id: dict\n", "id: dict\nsource_api_family: other\n")
         expect_catalog_error(
@@ -414,11 +414,8 @@ def catalog_source_api_family_is_autotools_only():
         )
     with tempfile.TemporaryDirectory() as tmp:
         cargo = must_replace(FIXTURE_CARGO, "id: reqwest\n", "id: reqwest\nsource_api_family: varnish\n")
-        expect_catalog_error(
-            write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": cargo}),
-            "source_api_family is only supported for build autotools",
-            "Cargo normalization",
-        )
+        root = write_fixture(Path(tmp), engines=cargo_fixture_engines(), vmods={"reqwest": cargo})
+        matrix.load_catalog(root)
 
 
 @test
@@ -1515,6 +1512,17 @@ def shell_failure_details_preserve_compat_make_diagnostics():
            "error: failed to run custom build command for `varnish-sys v0.1.0`",
            "Cargo detail retains the actual build error rather than its backtrace hint")
 
+        rust_log = tmp / "rust.log"
+        rust_log.write_text(
+            "error[E0063]: missing field `ssl_ca_file` in initializer of `vrt_endpoint`\n"
+            "   --> src/vcl/backend/backend_main.rs:554:30\n"
+            "error: could not compile `varnish` (lib) due to 1 previous error\n"
+        )
+        eq(shell_failure_detail(rust_log, "cargo-build"),
+           "error[E0063]: missing field `ssl_ca_file` in initializer of `vrt_endpoint`\n"
+           "error: could not compile `varnish` (lib) due to 1 previous error",
+           "Cargo detail keeps the Rust API diagnostic ahead of Cargo's summary")
+
 
 @test
 def shared_retry_runner_bounds_attempts_and_preserves_status():
@@ -1650,6 +1658,139 @@ def engine_artifact_carries_and_restores_generated_private_headers():
         ok(not (prefix / "share" / "vcache-packaging" / "engine-source" / "vinyld" /
                 "cache" / "cache_main.c").exists(),
            "the engine artifact carries headers rather than the complete build tree")
+
+
+@test
+def cargo_api_aliases_are_private_directional_and_preserve_engine_metadata():
+    root = Path(__file__).resolve().parent.parent
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        prefix = tmp / "prefix"
+        pcdir = prefix / "lib" / "pkgconfig"
+        include = prefix / "include" / "vinyl-cache" / "cache"
+        pcdir.mkdir(parents=True)
+        include.mkdir(parents=True)
+        original_pc = (
+            f"prefix={prefix}\n"
+            "libdir=${prefix}/lib\n"
+            "pkgincludedir=${prefix}/include/vinyl-cache\n\n"
+            "Name: VinylAPI\nDescription: Vinyl Cache API\nVersion: 9.0.1\n"
+            "Cflags: -I${pkgincludedir}\nLibs: -L${libdir} -lvinylapi\n"
+        )
+        (pcdir / "vinylapi.pc").write_text(original_pc)
+        library = prefix / "lib" / "libvinylapi.so"
+        library.write_text("Vinyl library\n")
+        header = include / "cache_vinyld.h"
+        header.write_text('#include "cache.h"\n')
+        sibling_header = include / "cache.h"
+        sibling_header.write_text("Vinyl private sibling header\n")
+        cargo_home = tmp / "cargo-home"
+        cargo_home.mkdir()
+        cargo_marker = cargo_home / "untouched"
+        cargo_marker.write_text("locked dependency cache\n")
+        target = tmp / "cargo-target"
+        fake_bin = tmp / "bin"
+        fake_bin.mkdir()
+        fake_pkg_config = fake_bin / "pkg-config"
+        fake_pkg_config.write_text(
+            "#!/usr/bin/env bash\n"
+            "case \"$1\" in\n"
+            "  --variable=pcfiledir) printf '%s\\n' \"$PKG_CONFIG_TEST_PCDIR\" ;;\n"
+            "  --variable=libdir) printf '%s\\n' \"$PKG_CONFIG_TEST_LIBDIR\" ;;\n"
+            "  --variable=pkgincludedir) printf '%s\\n' \"$PKG_CONFIG_TEST_INCLUDEDIR\" ;;\n"
+            "  --modversion) printf '%s\\n' 9.0.1 ;;\n"
+            "  *) printf 'unexpected pkg-config call: %s\\n' \"$*\" >&2; exit 1 ;;\n"
+            "esac\n"
+        )
+        fake_pkg_config.chmod(0o755)
+        result = subprocess.run(
+            ["bash", "-c",
+             'source "$1"; prepare_cargo_api_aliases; '
+             'pkg-config --modversion varnishapi; printf "%s\\n" "$PKG_CONFIG_PATH"',
+             "bash", str(root / "scripts" / "lib.sh")],
+            env={**os.environ, "PREFIX": str(prefix), "ENGINE_API": "vinylapi",
+                 "ENGINE_FAMILY": "vinyl", "VMOD_SOURCE_API_FAMILY": "varnish",
+                 "CARGO_TARGET_DIR": str(target), "CARGO_HOME": str(cargo_home),
+                 "PKG_CONFIG_PATH": str(pcdir), "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                 "PKG_CONFIG_TEST_PCDIR": str(pcdir), "PKG_CONFIG_TEST_LIBDIR": str(prefix / "lib"),
+                 "PKG_CONFIG_TEST_INCLUDEDIR": str(prefix / "include" / "vinyl-cache")},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, f"Varnish-to-Vinyl Cargo aliases: {result.stderr}")
+        overlay = target / "engine-api-alias"
+        alias_pc = overlay / "pkgconfig" / "varnishapi.pc"
+        ok("Cargo API aliases: varnishapi -> vinylapi" in result.stdout.splitlines()[0],
+           "alias setup records the translated API names")
+        eq(result.stdout.splitlines()[1], "9.0.1", "alias retains the target engine version")
+        ok(result.stdout.splitlines()[2].startswith(str(overlay / "pkgconfig") + ":"),
+           "alias directory takes precedence in pkg-config lookup")
+        ok(f"Cflags: -I{overlay / 'include'}" in alias_pc.read_text(),
+           "alias prepends its private include directory")
+        ok(f"-I{include}" in alias_pc.read_text(),
+           "alias preserves the target private header's sibling include path")
+        ok(f"Libs: -L{overlay / 'lib'}" in alias_pc.read_text(),
+           "alias exposes its linker directory")
+        ok((overlay / "lib" / "libvarnishapi.so").is_symlink(), "library name is aliased privately")
+        ok((overlay / "include" / "cache" / "cache_varnishd.h").is_symlink(),
+           "Varnish private header name is aliased privately")
+        eq(alias_pc.read_text().split("Version: ", 1)[1].splitlines()[0], "9.0.1",
+           "alias .pc retains the target API version")
+        eq((pcdir / "vinylapi.pc").read_text(), original_pc, "target .pc remains unchanged")
+        eq(library.read_text(), "Vinyl library\n", "target library remains unchanged")
+        eq(header.read_text(), '#include "cache.h"\n', "target header remains unchanged")
+        eq(sibling_header.read_text(), "Vinyl private sibling header\n",
+           "target private header siblings remain unchanged")
+        eq(cargo_marker.read_text(), "locked dependency cache\n", "Cargo cache remains untouched")
+
+        varnish_prefix = tmp / "varnish-prefix"
+        varnish_pcdir = varnish_prefix / "lib" / "pkgconfig"
+        varnish_include = varnish_prefix / "include" / "varnish" / "cache"
+        varnish_pcdir.mkdir(parents=True)
+        varnish_include.mkdir(parents=True)
+        (varnish_pcdir / "varnishapi.pc").write_text(
+            f"prefix={varnish_prefix}\nlibdir=${{prefix}}/lib\n"
+            "pkgincludedir=${prefix}/include/varnish\n\n"
+            "Name: VarnishAPI\nDescription: Varnish Cache API\nVersion: 9.0.3\n"
+            "Cflags: -I${pkgincludedir}\nLibs: -L${libdir} -lvarnishapi\n"
+        )
+        (varnish_prefix / "lib" / "libvarnishapi.so").write_text("Varnish library\n")
+        varnish_header = varnish_include / "cache_varnishd.h"
+        varnish_header.write_text("Varnish private header\n")
+        reverse_target = tmp / "reverse-target"
+        result = subprocess.run(
+            ["bash", "-c", 'source "$1"; prepare_cargo_api_aliases', "bash",
+             str(root / "scripts" / "lib.sh")],
+            env={**os.environ, "PREFIX": str(varnish_prefix), "ENGINE_API": "varnishapi",
+                 "ENGINE_FAMILY": "varnish", "VMOD_SOURCE_API_FAMILY": "vinyl",
+                 "CARGO_TARGET_DIR": str(reverse_target), "PKG_CONFIG_PATH": str(varnish_pcdir),
+                 "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                 "PKG_CONFIG_TEST_PCDIR": str(varnish_pcdir),
+                 "PKG_CONFIG_TEST_LIBDIR": str(varnish_prefix / "lib"),
+                 "PKG_CONFIG_TEST_INCLUDEDIR": str(varnish_prefix / "include" / "varnish")},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, f"Vinyl-to-Varnish Cargo aliases: {result.stderr}")
+        reverse_overlay = reverse_target / "engine-api-alias"
+        ok((reverse_overlay / "pkgconfig" / "vinylapi.pc").is_file(), "reverse API .pc exists")
+        ok((reverse_overlay / "lib" / "libvinylapi.so").is_symlink(), "reverse library alias exists")
+        for name in ("cache_vinyld.h", "cache_int.h"):
+            ok((reverse_overlay / "include" / "cache" / name).is_symlink(),
+               f"reverse {name} alias exists")
+
+        same_target = tmp / "same-target"
+        result = subprocess.run(
+            ["bash", "-c", 'source "$1"; prepare_cargo_api_aliases', "bash",
+             str(root / "scripts" / "lib.sh")],
+            env={**os.environ, "PREFIX": str(prefix), "ENGINE_API": "vinylapi",
+                 "ENGINE_FAMILY": "vinyl", "VMOD_SOURCE_API_FAMILY": "vinyl",
+                 "CARGO_TARGET_DIR": str(same_target), "PKG_CONFIG_PATH": str(pcdir),
+                 "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                 "PKG_CONFIG_TEST_PCDIR": str(pcdir), "PKG_CONFIG_TEST_LIBDIR": str(prefix / "lib"),
+                 "PKG_CONFIG_TEST_INCLUDEDIR": str(prefix / "include" / "vinyl-cache")},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, f"same-family Cargo aliases: {result.stderr}")
+        ok(not (same_target / "engine-api-alias").exists(), "same-family build creates no aliases")
 
 
 @test
@@ -2367,7 +2508,7 @@ def render_smoke():
         eq(el10_grid["cells"][("dict", "vinyl-9.0.1")]["bucket"], "FAIL", "EL10 failure stays separate")
         eq(el10_grid["cells"][("dict", "vinyl-9.0.1")]["text"], "translate",
            "normalizer failure is distinct from a later build failure")
-        ok("Source translated from Varnish API to Vinyl API." in
+        ok("API names translated from Varnish to Vinyl." in
            debian_grid["cells"][("dict", "vinyl-9.0.1")]["title"],
            "normalized tooltip records the direction")
         eq(debian_grid["cells"][("(engine)", "vinyl-9.0.1")]["bucket"], "PASS", "engine cell on the (engine) row")

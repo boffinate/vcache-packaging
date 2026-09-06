@@ -287,7 +287,7 @@
     "source_api_family": {
       "type": "string",
       "minLength": 1,
-      "description": "API family named by this Autotools source tree. When it differs from the selected engine, the build harness normalizes the explicit family spellings before bootstrap.",
+      "description": "API family named by this source tree. Cross-family Cargo builds use private SDK name aliases; Autotools builds normalize explicit family spellings before bootstrap.",
       "enum": [
         "vinyl",
         "varnish"

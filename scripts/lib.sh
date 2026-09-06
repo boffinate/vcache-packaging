@@ -426,6 +426,11 @@ prepare_cargo() {
   rustc --version | grep -F "rustc $RUST_VERSION "
   cargo --version | grep -F "cargo $RUST_VERSION "
 
+  if [ "${VMOD_SOURCE_API_FAMILY:-$ENGINE_FAMILY}" != "$ENGINE_FAMILY" ]; then
+    step source-api-normalize
+    prepare_cargo_api_aliases
+  fi
+
   cd "$SRC"
   step cargo-preflight
   [ -f Cargo.lock ] || { echo "Cargo.lock is required" >&2; exit 1; }
@@ -433,6 +438,80 @@ prepare_cargo() {
 
   step cargo-fetch
   retry_command 3 "cargo fetch" cargo fetch --locked
+}
+
+# Prepare a build-private SDK view for a Cargo VMOD whose bindings use the
+# source family's fixed API filenames. varnish-sys probes and links those names
+# directly, so translating only the .pc filename leaves its explicit -l flag
+# and private-header include unresolved. The overlay keeps the selected
+# engine's .pc metadata intact while supplying aliases for those filenames.
+prepare_cargo_api_aliases() {
+  local source_family=${VMOD_SOURCE_API_FAMILY:-$ENGINE_FAMILY}
+  local source_api source_headers target_header target_pcdir target_pc target_libdir target_includedir header
+  local alias_root alias_pcdir alias_libdir alias_includedir alias_pc
+
+  case "$source_family:$ENGINE_FAMILY" in
+    varnish:vinyl)
+      source_api=varnishapi
+      source_headers="cache_varnishd.h"
+      target_header=$(vinyl_private_header_name "$ENGINE_API")
+      ;;
+    vinyl:varnish)
+      source_api=vinylapi
+      # Vinyl's release and trunk headers use different spellings. A Vinyl
+      # source can name either, whereas Varnish has one installed equivalent.
+      source_headers="cache_vinyld.h cache_int.h"
+      target_header=cache_varnishd.h
+      ;;
+    vinyl:vinyl|varnish:varnish)
+      return 0
+      ;;
+    *)
+      echo "unsupported Cargo API normalization: $source_family -> $ENGINE_FAMILY" >&2
+      return 1
+      ;;
+  esac
+
+  target_pcdir=$(pkg-config --variable=pcfiledir "$ENGINE_API")
+  target_pc="$target_pcdir/$ENGINE_API.pc"
+  [ -f "$target_pc" ] || { echo "missing $ENGINE_API pkg-config file: $target_pc" >&2; return 1; }
+  target_libdir=$(pkg-config --variable=libdir "$ENGINE_API")
+  target_includedir=$(pkg-config --variable=pkgincludedir "$ENGINE_API")
+
+  alias_root="${CARGO_TARGET_DIR:?}/engine-api-alias"
+  alias_pcdir="$alias_root/pkgconfig"
+  alias_libdir="$alias_root/lib"
+  alias_includedir="$alias_root/include"
+  rm -rf "$alias_root"
+  mkdir -p "$alias_pcdir" "$alias_libdir" "$alias_includedir/cache"
+
+  alias_pc="$alias_pcdir/$source_api.pc"
+  cp "$target_pc" "$alias_pc"
+  # The aliased private header can include its siblings with quotes. Keep the
+  # target cache directory in the compiler search path so those includes do
+  # not resolve relative to the overlay's one-header directory.
+  sed \
+    -e "s|^Cflags:|Cflags: -I$alias_includedir -I$target_includedir/cache|" \
+    -e "s|^Libs:|Libs: -L$alias_libdir|" \
+    "$alias_pc" > "$alias_pc.tmp"
+  mv "$alias_pc.tmp" "$alias_pc"
+
+  [ -f "$target_libdir/lib$ENGINE_API.so" ] \
+    || { echo "missing $ENGINE_API linker library: $target_libdir/lib$ENGINE_API.so" >&2; return 1; }
+  ln -s "$target_libdir/lib$ENGINE_API.so" "$alias_libdir/lib$source_api.so"
+
+  [ -f "$target_includedir/cache/$target_header" ] \
+    || { echo "missing $ENGINE_API private header: $target_header" >&2; return 1; }
+  for header in $source_headers; do
+    ln -s "$target_includedir/cache/$target_header" \
+      "$alias_includedir/cache/$header"
+  done
+
+  export PKG_CONFIG_PATH="$alias_pcdir${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+  echo "Cargo API aliases: $source_api -> $ENGINE_API ($alias_pc, $alias_libdir, $alias_includedir/cache)"
+  if [ -n "${TAG:-}" ]; then
+    printf '%s-to-%s\n' "$source_family" "$ENGINE_FAMILY" > "/work/tmp/$TAG.source-api-normalization"
+  fi
 }
 
 # Install one engine package pair and any additional packages supplied by the
@@ -747,6 +826,7 @@ failure_detail() {
       }
       function strong_diagnostic(line) {
         return line ~ /(^|[[:space:]:])error:/ ||
+          line ~ /error\[E[0-9]+\]:/ ||
           line ~ /[[:alnum:]_]+Error:/ ||
           line ~ /fatal[[:space:]]+(error:)?/ ||
           line ~ /undefined reference/

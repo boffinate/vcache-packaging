@@ -2,12 +2,8 @@
 # vmod-oidc is a Cargo VMOD whose Varnish bindings are gated by its vmod
 # feature. The catalog passes that feature to every build path so the produced
 # shared object exposes the declared oidc VCL import.
-# varnish-sys locates the engine only through pkg-config varnishapi, which the
-# Vinyl prefix does not provide (it ships vinylapi.pc only), so Vinyl compat
-# cells are expected red and package.families stays varnish (DESIGN.md
-# decision 19 attempts no normalization for Cargo sources).
-# varnish-sys 0.5.5 is upstream's latest and parses the engine version
-# numerically.
+# SDK aliases translate Varnish names on Vinyl. Package promotion still needs
+# independent install/load proof on every enabled native target.
 schema: vmod/1
 id: oidc
 upstream:
@@ -20,6 +16,7 @@ sources:
     commit: "7ad019ba4a5618af80721abeef082426d6dfa695"
     version: "0.2.0"
 build: cargo
+source_api_family: varnish
 package:
   summary: OpenID Connect authentication VMOD for Varnish Cache
   description:

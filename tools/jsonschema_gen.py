@@ -433,8 +433,8 @@ def build_vmod() -> dict:
                 enum=list(matrix.ENGINE_SOURCE_VALUES),
             ),
             "source_api_family": _string(
-                "API family named by this Autotools source tree. When it differs from the selected engine, "
-                "the build harness normalizes the explicit family spellings before bootstrap.",
+                "API family named by this source tree. Cross-family Cargo builds use private SDK name aliases; "
+                "Autotools builds normalize explicit family spellings before bootstrap.",
                 enum=list(matrix.SOURCE_API_FAMILIES),
             ),
         },

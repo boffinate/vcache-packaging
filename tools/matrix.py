@@ -94,7 +94,6 @@ STATUSES = (
     "install_failed",
     "infra_failed",
 )
-# The one legal value of a vmod manifest's optional top-level 'tests' key.
 BUILD_FAMILIES = ("autotools", "cargo")
 TESTS_VALUES = ("make-check", "cargo-test")
 RUST_BOOTSTRAPS = ("rustup",)
@@ -415,8 +414,6 @@ def _load_vmods(dirpath: Path, engines: list, targets: dict, toolchains: dict, e
             errors.append(
                 f"{ctx}: source_api_family must be one of {SOURCE_API_FAMILIES}, got {source_api_family!r}"
             )
-        if source_api_family is not None and build != "autotools":
-            errors.append(f"{ctx}: source_api_family is only supported for build autotools")
         package = doc.get("package")
         if not isinstance(package, dict):
             errors.append(f"{ctx}: 'package' must be a mapping")
@@ -1203,8 +1200,8 @@ _MODE_SENTENCE = {
 }
 SOURCE_NORMALIZATION_LEGEND = "compat: Vinyl ↔ Varnish"
 SOURCE_NORMALIZATION_HELP = (
-    "We had to rewrite the VMOD source code from the Vinyl API to the Varnish API, or vice versa, "
-    "or respell its statistics counter definitions for the engines' shared vsctool."
+    "We had to translate source names or provide build-time API name aliases between Vinyl and Varnish, "
+    "or respell statistics counter definitions for the engines' shared vsctool."
 )
 
 
@@ -1285,11 +1282,11 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
                     direction = cell["source_api_normalization"]
                     if "-to-" in direction:
                         source, destination = direction.split("-to-", 1)
-                        line += f" Source translated from {source.title()} API to {destination.title()} API."
+                        line += f" API names translated from {source.title()} to {destination.title()}."
                     elif direction == "vsc-directives":
                         line += " VSC counter directives respelled for the engines' shared vsctool."
                     else:
-                        line += f" Source translation: {direction}."
+                        line += f" API name translation: {direction}."
                 if cell.get("ref"):
                     line += f" [{cell['ref']}"
                     if cell.get("commit"):
@@ -1481,7 +1478,7 @@ def render_html(grids: list, generated_at: str) -> str:
   </a>
 </header>
 <main>
-  <p class="matrix-key">Rows are modules, columns are engine versions. Green: works. Red: doesn't — usually upstream doesn't support that engine yet. Amber edge: source translated between Vinyl and Varnish APIs. Grey: not tested.</p>
+  <p class="matrix-key">Rows are modules, columns are engine versions. Green: works. Red: doesn't — usually upstream doesn't support that engine yet. Amber edge: API names translated between Vinyl and Varnish. Grey: not tested.</p>
   <p class="matrix-note">Trunk columns are source-build and load checks, not packages. Packages, where provided, are built only from pinned release engines.</p>
   <div class="target-matrices">
     {"".join(_grid_html(grid) for grid in grids)}
