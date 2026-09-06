@@ -13,7 +13,7 @@ sources:
   head: main
   default:
     ref: v0.3
-    commit: c4077452bebe072350951bfeefefb4a025082c2b
+    commit: 585c57d18a52e4baf6f7ee9aeb2442058196155b
     version: "0.3"
 package:
   summary: Sandboxed native compute VMODs for Varnish Cache
