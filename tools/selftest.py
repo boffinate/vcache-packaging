@@ -36,6 +36,7 @@ import source_batch  # noqa: E402
 import source_digest  # noqa: E402
 import vmod_batch  # noqa: E402
 import vmod_cache  # noqa: E402
+import vmod_heads  # noqa: E402
 import yaml_subset  # noqa: E402
 
 TESTS: list = []
@@ -679,6 +680,56 @@ def catalog_promoted_sources_require_immutable_commits():
     unpromoted = must_replace(without_default, '  promoted: "true"\n', "")
     with tempfile.TemporaryDirectory() as tmp:
         matrix.load_catalog(write_fixture(Path(tmp), vmods={"dict": unpromoted}))
+
+
+@test
+def vmod_heads_compares_each_pin_with_the_configured_branch():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = write_fixture(Path(tmp))
+        catalog = matrix.load_catalog(root)
+        pins = vmod_heads.pins(catalog)
+        eq([(pin.source, pin.pinned_commit) for pin in pins], [
+            ("default", "a" * 40),
+            ("by_series.varnish-9.0", "b" * 40),
+        ], "every immutable source is included")
+        identity = ("https://example.org/vmod-dict.git", "master")
+        rows = vmod_heads.results(pins, {identity: "a" * 40}, {})
+        eq([row["status"] for row in rows], ["current", "changed"],
+           "one remote head compares with every source pin")
+
+        def fake_resolver(pins_to_check, jobs, timeout):
+            eq((len(pins_to_check), jobs, timeout), (2, 1, 1), "CLI passes the audit contract to its resolver")
+            return {identity: "c" * 40}, {}
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = vmod_heads.main(["--root", str(root), "--jobs", "1", "--timeout", "1", "--format", "json", "--check"],
+                                   resolver=fake_resolver)
+        eq(code, 1, "--check fails when an upstream branch moved")
+        report = json.loads(stdout.getvalue())
+        eq([row["status"] for row in report], ["changed", "changed"], "JSON reports each stale pin")
+
+        state = {"schema": "matrix-state/1", "cells": {}, "infra_failures": {}}
+        for key in vmod_heads.expected_trunk_cells(catalog)["dict"]:
+            row, engine, target, mode = key.split("/")
+            state["cells"][key] = {
+                "schema": "cell/1", "row": row, "engine": engine, "target": target,
+                "mode": mode, "status": "pass", "commit": "c" * 40,
+            }
+        promoted = vmod_heads.promotion_results(
+            vmod_heads.results(pins, {identity: "c" * 40}, {}), catalog, state)
+        eq([row["promotion"] for row in promoted], ["green", "green"],
+           "every trunk cell must pass at the advertised head")
+        manifest = root / "vmods" / "dict.yml"
+        manifest.write_text(manifest.read_text().replace(
+            "    commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            '    commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'))
+        vmod_heads.apply_pins(root, pins, {identity: "c" * 40})
+        updated = matrix.load_catalog(root)
+        eq([entry["commit"] for entry in (
+            updated["vmods"]["dict"]["sources"]["default"],
+            updated["vmods"]["dict"]["sources"]["by_series"]["varnish-9.0"],
+        )], ["c" * 40, "c" * 40], "green pins update their exact manifest lines")
 
 
 # ---------------------------------------------------------------------------

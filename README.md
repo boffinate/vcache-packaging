@@ -10,6 +10,8 @@ Basic, best-effort APT/RPM packages of pinned Vinyl Cache or Varnish Cache engin
 ```sh
 python3 tools/matrix.py validate      # catalog well-formed?
 python3 tools/matrix.py selftest      # all tooling tests (stdlib only, host-safe)
+python3 tools/vmod_heads.py           # compare every pinned VMOD source with upstream head
+python3 tools/vmod_heads.py --green   # show changed pins proven green on every trunk matrix cell
 python3 tools/matrix.py expand --lane release --mode compat --format json
 git config core.hooksPath .githooks   # once per clone: run the above before each commit
 ```
