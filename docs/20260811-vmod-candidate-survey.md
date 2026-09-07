@@ -55,7 +55,7 @@ The four entries were written same-day; the VINYLSRC requirement was confirmed v
 
 A container experiment tested whether the harness could satisfy VINYLSRC from the engine release tarball (`ENGINE_TARBALL_URL` is already in `matrix.py env` output): the extracted vinyl-cache-9.0.1 dist tree contains `include/miniobj.h`, pesi bootstraps and configures cleanly against it (`VINYL_PREREQ([9.0],[trunk])` accepts the 9.0.1 release), and the one missing piece was `VSC_main.h` — a header the engine build generates from `lib/libvsc/VSC_main.vsc`, which the dist archive does not ship but the installed prefix's own vsctool regenerates with a single command. Trunk clones can add another class of missing files: daemon-private headers present in the configured engine build but absent from the installed development prefix. That became DESIGN.md decision 14: the `engine_source: required` catalog flag, one shared provisioning step in the build scripts (fetch the engine's source pin, regenerate VSC headers, restore private headers captured from the exact engine build, export VINYLSRC/VARNISHSRC). A full in-tree engine configure was rejected (needs python3-sphinx, minutes of build).
 
-Verified through the real harness on debian-13-arm64 against vinyl-9.0.1 (evidence `work/esrc-verify/`):
+Verified through the real harness on debian-13-arm64 against vinyl-9.0.1:
 
 - **pesi: green in both modes.** Compat pass with both pesi and pesi_debug loading (after adding the missing zlib build dep its link needed); package pass with the .deb shipping both modules and the fresh-container install check importing both (`package.modules` added — without it the check covered only the id).
 - **tus: green in compat** — first build ever, straight pass.
