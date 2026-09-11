@@ -18,6 +18,9 @@ VTC_HEADER = re.compile(rb"(?m)^(?:varnish|vinyl)test(?=\s|$)")
 VTC_COMMAND = re.compile(rb"(?m)^(?:varnish|vinyl)(?=\s)")
 VTC_COMPILER = re.compile(rb"(?m)^(?P<line>[^\r\n]*VTC_LOG_COMPILER[^\r\n]*)$")
 PRIVATE_HEADER = re.compile(rb"cache/cache_(?:varnish|vinyl)d\.h")
+PKG_CONFIG_DATAROOTDIR = re.compile(
+    rb"\((?P<command>pkg-config --variable=datarootdir )(?:varnish|vinyl)api(?P<options>[^\r\n)]*)\)"
+)
 
 
 def _counted_sub(pattern: re.Pattern[bytes], replacement, data: bytes, label: str,
@@ -45,13 +48,27 @@ def convert_bytes(data: bytes, path: Path) -> tuple[bytes, Counter[str]]:
         data = _counted_sub(VTC_COMMAND, b"vcache", data, "VTC command -> vcache", counts)
 
     def compiler(match: re.Match[bytes]) -> bytes:
-        line = re.sub(rb"(?:varnish|vinyl)test", b"vtest", match.group("line"))
+        line = re.sub(rb"(?:varnish|vinyl)test", b"vtest -E@VTESTEXT@", match.group("line"))
         return line
 
     before = data
     data = VTC_COMPILER.sub(compiler, data)
     if data != before:
-        counts["VTC_LOG_COMPILER -> vtest"] += 1
+        counts["VTC_LOG_COMPILER -> vtest extension"] += 1
+
+    def pkg_config_datarootdir(match: re.Match[bytes]) -> bytes:
+        return (
+            b"(" + match.group("command") + b"varnishapi vinylapi" + match.group("options")
+            + b" | awk '{print $1}')"
+        )
+
+    data = _counted_sub(
+        PKG_CONFIG_DATAROOTDIR,
+        pkg_config_datarootdir,
+        data,
+        "pkg-config datarootdir -> both APIs",
+        counts,
+    )
     return data, counts
 
 

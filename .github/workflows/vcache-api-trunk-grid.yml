@@ -6,15 +6,11 @@ on:
       - experiment/vcache-api-grid
 
 permissions:
-  contents: write
+  contents: read
   actions: write
 
 jobs:
   grid:
-    permissions:
-      contents: write
-      actions: write
-    uses: ./.github/workflows/vcache-api-experiment.yml
+    uses: ./.github/workflows/vcache-api-comparison.yml
     with:
-      lane: trunk
       vinyl_commit: 3298560e699377ee88412bcfce2ecbeee1e9b4d8

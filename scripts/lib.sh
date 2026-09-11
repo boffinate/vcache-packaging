@@ -706,6 +706,8 @@ normalize_vmod_source() {
   local source_family=${VMOD_SOURCE_API_FAMILY:-$ENGINE_FAMILY}
   step source-api-normalize
   case "${VCACHE_SOURCE_API_STRATEGY:-directional}" in
+  none)
+    ;;
   directional)
     python3 /repo/tools/source_api_normalize.py \
       --source-family "$source_family" --target-family "$ENGINE_FAMILY" \

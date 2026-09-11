@@ -1,0 +1,173 @@
+name: Vinyl trunk source conversion comparison
+
+on:
+  workflow_call:
+    inputs:
+      vinyl_commit:
+        description: Exact Vinyl Cache commit containing the VCACHE API implementation.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  expand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      engine_batches: ${{ steps.expand.outputs.engine_batches }}
+      source_batches: ${{ steps.expand.outputs.source_batches }}
+      vmod_batches: ${{ steps.expand.outputs.vmod_batches }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: expand
+        run: python3 tools/vcache_compare.py expand --vinyl-commit "$VINYL_EXPERIMENT_COMMIT" >> "$GITHUB_OUTPUT"
+        env:
+          VINYL_EXPERIMENT_COMMIT: ${{ inputs.vinyl_commit }}
+
+  vmod_source:
+    needs: expand
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      max-parallel: 2
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.expand.outputs.source_batches) }}
+    name: ${{ matrix.batch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 tools/source_batch.py
+        env:
+          SOURCE_BATCH_ITEMS: ${{ matrix.items }}
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: work/sources/
+          if-no-files-found: ignore
+          retention-days: 1
+
+  engine:
+    needs: expand
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.expand.outputs.engine_batches) }}
+    name: ${{ matrix.batch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: engine-cache-key
+        run: python3 tools/engine_cache.py key --items "$ENGINE_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
+        env:
+          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+      - id: engine-cache-restore
+        continue-on-error: true
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            work/artifacts
+            work/results
+          key: ${{ steps.engine-cache-key.outputs.key }}
+      - id: restored-engine-cacheable
+        run: python3 tools/engine_cache.py cacheable --items "$ENGINE_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
+        env:
+          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+      - id: engine-batch
+        if: steps.restored-engine-cacheable.outputs.cacheable != 'true'
+        continue-on-error: true
+        run: python3 tools/engine_batch.py
+        env:
+          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+      - id: engine-cacheable
+        if: always()
+        run: python3 tools/engine_cache.py cacheable --items "$ENGINE_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
+        env:
+          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+      - if: always() && steps.engine-cacheable.outputs.cacheable == 'true' && steps.engine-cache-restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            work/artifacts
+            work/results
+          key: ${{ steps.engine-cache-key.outputs.key }}
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: work/artifacts/
+          if-no-files-found: ignore
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: results-${{ matrix.batch }}
+          path: work/results/
+      - if: steps.engine-batch.outcome == 'failure'
+        run: exit 1
+
+  vmod:
+    needs: [expand, engine, vmod_source]
+    if: ${{ !cancelled() }}
+    strategy:
+      max-parallel: 20
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.expand.outputs.vmod_batches) }}
+    uses: ./.github/workflows/vmod-batch.yml
+    with:
+      batch: ${{ matrix.batch }}
+      engine: ${{ matrix.engine }}
+      target: ${{ matrix.target }}
+      mode: ${{ matrix.mode }}
+      runner: ${{ matrix.runner }}
+      source_pattern: ${{ matrix.source_pattern }}
+      items: ${{ matrix.items }}
+
+  report:
+    needs: [engine, vmod]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: results-unmodified-*
+          merge-multiple: true
+          path: results/unmodified
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: results-issue-4537-*
+          merge-multiple: true
+          path: results/issue-4537
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: results-engine-*
+          merge-multiple: true
+          path: results/engine
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ci-state/matrix
+          path: production-state
+          fetch-depth: 1
+      - name: render the comparison
+        run: |
+          python3 repo/tools/vcache_compare.py render \
+            --unmodified-results results/unmodified \
+            --upstream-results results/issue-4537 \
+            --engine-results results/engine \
+            --production-state production-state/matrix-state.json \
+            --out report/vcache-api-comparison.html \
+            --state-out report/comparison-state.json
+      - name: upload the self-contained comparison and raw state
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vcache-api-matrix-trunk
+          path: report/
