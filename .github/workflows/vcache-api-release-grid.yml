@@ -1,0 +1,20 @@
+name: VCACHE API release grid
+
+on:
+  push:
+    branches:
+      - experiment/vcache-api-grid
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  grid:
+    permissions:
+      contents: write
+      actions: write
+    uses: ./.github/workflows/vcache-api-experiment.yml
+    with:
+      lane: release
+      vinyl_commit: 3298560e699377ee88412bcfce2ecbeee1e9b4d8

@@ -1,19 +1,16 @@
-name: VCACHE API experiment
+name: VCACHE API experiment lane
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       lane:
         description: Production matrix lane to reproduce.
         required: true
-        type: choice
-        options:
-          - trunk
-          - release
+        type: string
       vinyl_commit:
         description: Exact Vinyl Cache commit containing the VCACHE API implementation.
         required: true
-        default: "3298560e699377ee88412bcfce2ecbeee1e9b4d8"
+        type: string
 
 permissions:
   contents: read
