@@ -1377,8 +1377,10 @@ def vcache_source_conversion_matches_the_upstream_recipe():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "configure.ac").write_bytes(
-            b"  VARNISH_PREREQ([9.0], [9.1])\nVARNISH_VMODS([foo])\n"
+            b"m4_ifndef([VARNISH_PREREQ], AC_MSG_ERROR([Need varnish.m4]))\n"
+            b"  VARNISH_PREREQ([9.0], [9.1]) dnl trailing text\nVARNISH_VMODS([foo])\n"
         )
+        (root / "acinclude.m4").write_bytes(b"PKG_CHECK_MODULES([VARNISHAPI], [varnishapi])\n")
         (root / "Makefile.am").write_bytes(
             b"AM_CPPFLAGS = $(VARNISHAPI_CFLAGS)\n"
             b"TESTS_ENVIRONMENT = VTC_LOG_COMPILER=varnishtest\n"
@@ -1398,11 +1400,14 @@ def vcache_source_conversion_matches_the_upstream_recipe():
 
         eq([str(path) for path, _ in changed],
            ["Makefile.am", "bootstrap", "configure.ac", "private.c", "test.vtc"],
-           "VCACHE recipe changed files")
+           "VCACHE recipe changed files; the producer file is untouched")
         eq((root / "configure.ac").read_text(),
-           "  VCACHE_REQUIRE([[varnish], [9.0], [9.1]], [[vinyl], [9.0], [9.1]])\n"
+           "m4_ifndef([VCACHE_PREREQ], AC_MSG_ERROR([Need varnish.m4]))\n"
+           "  VCACHE_REQUIRE([[varnish], [9.0], [9.1]], [[vinyl], [9.0], [9.1]]) dnl trailing text\n"
            "VCACHE_VMODS([foo])\n",
-           "prerequisite and build macros use the neutral API")
+           "prerequisite keeps trailing text like the sed; the posted recipe leaves the guard broken")
+        eq((root / "acinclude.m4").read_text(), "PKG_CHECK_MODULES([VARNISHAPI], [varnishapi])\n",
+           "the posted recipe leaves the pkg-config producer unrenamed")
         eq((root / "Makefile.am").read_text(),
            "AM_CPPFLAGS = $(VCACHEAPI_CFLAGS)\n"
            "TESTS_ENVIRONMENT = VTC_LOG_COMPILER=vtest -E@VTESTEXT@\n",
@@ -1410,7 +1415,7 @@ def vcache_source_conversion_matches_the_upstream_recipe():
         eq((root / "bootstrap").read_text(),
            "VCACHEAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir varnishapi vinylapi 2>/dev/null"
            " | awk '{print $1}')\n",
-           "bootstrap discovers either engine's macro directory")
+           "the posted recipe asks pkg-config for both engines at once")
         eq((root / "test.vtc").read_text(),
            'vtest "test"\nvcache v1 -vcl+backend {}\n',
            "VTC header and daemon command use neutral names")
@@ -1419,6 +1424,54 @@ def vcache_source_conversion_matches_the_upstream_recipe():
         eq((root / "binary").read_bytes(), b"VARNISHAPI_\0unchanged", "binary skipped")
         eq((root / ".git" / "config").read_bytes(), b"VARNISHAPI_", ".git skipped")
         eq(totals["prerequisite macro -> VCACHE_REQUIRE"], 1, "one prerequisite converted")
+        eq(source_api_vcache.STRATEGY_MARKERS["posted"], "vcache-api", "posted marker is the original name")
+
+
+@test
+def vcache_fixed_strategy_repairs_the_three_recipe_gaps():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "configure.ac").write_bytes(
+            b"m4_ifndef([VINYL_PREREQ], AC_MSG_ERROR([Need vinyl.m4]))\n"
+            b"VINYL_PREREQ([9.0.0]) dnl trailing text\nVINYL_VMODS([foo])\n"
+        )
+        (root / "acinclude.m4").write_bytes(
+            b"PKG_CHECK_MODULES([VINYLAPI], [vinylapi], [], [PKG_CHECK_MODULES([VINYLAPI], [varnishapi])])\n"
+        )
+        (root / "Makefile.am").write_bytes(b"AM_CPPFLAGS = $(VINYLAPI_CFLAGS)\n")
+        (root / "bootstrap").write_bytes(
+            b"dataroot=$(pkg-config --variable=datarootdir vinylapi 2>/dev/null)\n"
+        )
+        (root / "autogen.sh").write_bytes(
+            b"VARNISHAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir varnishapi)\n"
+        )
+
+        changed, totals = source_api_vcache.convert_tree(root, "fixed")
+
+        eq([str(path) for path, _ in changed],
+           ["Makefile.am", "acinclude.m4", "autogen.sh", "bootstrap", "configure.ac"],
+           "fixed recipe changed files")
+        eq((root / "configure.ac").read_text(),
+           "m4_ifndef([VCACHE_REQUIRE], AC_MSG_ERROR([Need vinyl.m4]))\n"
+           "VCACHE_REQUIRE([[varnish], [9.0.0]], [[vinyl], [9.0.0]]) dnl trailing text\nVCACHE_VMODS([foo])\n",
+           "the guard names the macro vinyl.m4 defines")
+        eq((root / "acinclude.m4").read_text(),
+           "PKG_CHECK_MODULES([VCACHEAPI], [vinylapi], [], [PKG_CHECK_MODULES([VCACHEAPI], [varnishapi])])\n",
+           "pkg-config producers are renamed with their consumers")
+        eq((root / "Makefile.am").read_text(), "AM_CPPFLAGS = $(VCACHEAPI_CFLAGS)\n",
+           "consumers still use the neutral name")
+        eq((root / "bootstrap").read_text(),
+           "dataroot=$(pkg-config --variable=datarootdir vinylapi 2>/dev/null"
+           " || pkg-config --variable=datarootdir varnishapi 2>/dev/null)\n",
+           "the source family is probed first, then the other one")
+        eq((root / "autogen.sh").read_text(),
+           "VCACHEAPI_DATAROOTDIR=$(pkg-config --variable=datarootdir varnishapi"
+           " || pkg-config --variable=datarootdir vinylapi)\n",
+           "a Varnish source probes varnishapi first")
+        eq(totals["prerequisite guard -> VCACHE_REQUIRE"], 1, "one guard repaired")
+        eq(totals["pkg-config producer -> VCACHEAPI"], 2, "both producers renamed")
+        eq(source_api_vcache.STRATEGY_MARKERS["fixed"], "vcache-api-fixed", "fixed marker is distinct")
+        ok("vcache-api-fixed" in matrix.SOURCE_API_NORMALIZATIONS, "state accepts the fixed marker")
 
 
 @test
@@ -1448,7 +1501,7 @@ def vcache_experiment_reproduces_production_lanes_and_only_substitutes_autotools
 
 
 @test
-def vcache_comparison_runs_only_vinyl_trunk_with_two_source_strategies():
+def vcache_comparison_runs_only_vinyl_trunk_with_four_source_strategies():
     with tempfile.TemporaryDirectory() as tmp_name:
         tmp = write_fixture(
             Path(tmp_name),
@@ -1460,57 +1513,69 @@ def vcache_comparison_runs_only_vinyl_trunk_with_two_source_strategies():
         vmod_items = [item for batch in output["vmod_batches"] for item in json.loads(batch["items"])]
         eq({item["engine"] for item in engine_items}, {"vinyl-trunk"}, "comparison builds only Vinyl trunk")
         eq({item["source_commit"] for item in engine_items}, {"c" * 40}, "comparison pins Vinyl trunk")
-        eq(len(vmod_items), 4, "each VMOD is tested under both fresh strategies")
-        eq({item["source_api_strategy"] for item in vmod_items}, {"none", "vcache"},
-           "comparison includes untouched and issue recipe source")
-        ok(all(batch["batch"].startswith(("unmodified-", "issue-4537-")) for batch in output["vmod_batches"]),
+        ok({item["target"] for item in engine_items} <= set(vcache_compare.TARGETS),
+           "comparison engines stay on the comparison targets")
+        ok({item["target"] for item in vmod_items} <= set(vcache_compare.TARGETS),
+           "comparison cells stay on the comparison targets")
+        per_target = len({(item["row"], item["target"]) for item in vmod_items})
+        eq(len(vmod_items), per_target * 4, "each VMOD is tested under all four strategies")
+        eq({item["source_api_strategy"] for item in vmod_items}, {"none", "vcache", "vcache-fixed", "directional"},
+           "comparison includes untouched, posted, fixed and directional source handling")
+        prefixes = tuple(f"{name}-" for name, _, _ in vcache_compare.STRATEGIES)
+        ok(all(batch["batch"].startswith(prefixes) for batch in output["vmod_batches"]),
            "result artifact names retain their strategy")
 
 
 @test
-def vcache_comparison_renders_fresh_results_with_imported_production_cells():
+def vcache_comparison_renders_every_strategy_against_one_fresh_engine():
     with tempfile.TemporaryDirectory() as tmp_name:
         tmp = Path(tmp_name)
         root = write_fixture(tmp / "repo")
-        unmodified = tmp / "unmodified"
-        upstream = tmp / "upstream"
         engines = tmp / "engines"
-        for path in (unmodified, upstream, engines):
-            path.mkdir()
-        fresh_commit = "c" * 40
-        production_commit = "d" * 40
-        fresh_engine = make_cell("vinyl-trunk", "vinyl-trunk", "debian-13-amd64", "engine", "pass",
-                                 "2026-09-11T12:00:00Z", commit=fresh_commit)
-        untouched = make_cell("dict", "vinyl-trunk", "debian-13-amd64", "compat", "configure_failed",
-                              "2026-09-11T12:01:00Z", detail="VARNISH_PREREQ is unknown")
-        neutral = make_cell("dict", "vinyl-trunk", "debian-13-amd64", "compat", "pass",
-                            "2026-09-11T12:02:00Z", source_api_normalization="vcache-api")
-        current = make_cell("dict", "vinyl-trunk", "debian-13-amd64", "compat", "pass",
-                            "2026-09-10T12:02:00Z", source_api_normalization="varnish-to-vinyl")
-        production_engine = make_cell("vinyl-trunk", "vinyl-trunk", "debian-13-amd64", "engine", "pass",
-                                      "2026-09-10T12:00:00Z", commit=production_commit)
-        (unmodified / "dict.json").write_text(json.dumps(untouched))
-        (upstream / "dict.json").write_text(json.dumps(neutral))
+        engines.mkdir()
+        commit = "c" * 40
+        target = vcache_compare.TARGETS[0]
+        fresh_engine = make_cell("vinyl-trunk", "vinyl-trunk", target, "engine", "pass",
+                                 "2026-09-11T12:00:00Z", commit=commit)
         (engines / "engine.json").write_text(json.dumps(fresh_engine))
-        production_state = tmp / "production.json"
-        production_state.write_text(json.dumps({
-            "schema": matrix.STATE_SCHEMA,
-            "cells": {matrix.cell_key(current): current, matrix.cell_key(production_engine): production_engine},
-            "infra_failures": {},
-        }))
+        results = {}
+        cells = {
+            "unmodified": make_cell("dict", "vinyl-trunk", target, "compat", "configure_failed",
+                                    "2026-09-11T12:01:00Z", detail="VARNISH_PREREQ is unknown"),
+            "issue-4537": make_cell("dict", "vinyl-trunk", target, "compat", "build_failed",
+                                    "2026-09-11T12:02:00Z", detail="cache/cache.h: No such file",
+                                    source_api_normalization="vcache-api"),
+            "issue-4537-fixed": make_cell("dict", "vinyl-trunk", target, "compat", "pass",
+                                          "2026-09-11T12:03:00Z", source_api_normalization="vcache-api-fixed"),
+            "current-rules": make_cell("dict", "vinyl-trunk", target, "compat", "pass",
+                                       "2026-09-11T12:04:00Z", source_api_normalization="varnish-to-vinyl"),
+        }
+        for strategy, cell in cells.items():
+            directory = tmp / strategy
+            directory.mkdir()
+            (directory / "dict.json").write_text(json.dumps(cell))
+            results[strategy] = directory
         out = tmp / "comparison.html"
         state_out = tmp / "comparison-state.json"
 
-        vcache_compare.render(root, unmodified, upstream, engines, production_state, out, state_out,
-                              "2026-09-11T13:00:00Z")
+        vcache_compare.render(root, results, engines, out, state_out, "2026-09-11T13:00:00Z")
 
         html_text = out.read_text()
-        for needle in ("No VMOD patching", "Issue #4537 rules", "Current packaging rules",
-                       "VARNISH_PREREQ is unknown", "cccccccccccc", "dddddddddddd",
-                       "VMOD \\ source handling", "Source converted with the neutral VCACHE rules"):
+        for needle in ("No VMOD patching", "Issue #4537 recipe as posted", "Recipe with fixes",
+                       "Current packaging rules", "VARNISH_PREREQ is unknown", "cache/cache.h: No such file",
+                       "cccccccccccc", "VMOD \\ source handling", "recipe as posted in issue #4537",
+                       "recipe plus fixes"):
             ok(needle in html_text, f"comparison page is missing {needle!r}")
         state = json.loads(state_out.read_text())
-        eq(len(state["cells"]), 6, "comparison state contains three engine and three VMOD observations")
+        eq(len(state["cells"]), 8, "comparison state holds one engine and one VMOD observation per column")
+        eq({cell["commit"] for cell in state["cells"].values() if cell["mode"] == "engine"}, {commit},
+           "every column reports the same fresh engine")
+        try:
+            vcache_compare.render(root, {"unmodified": results["unmodified"]}, engines, out, None, "")
+        except ValueError as exc:
+            ok("missing results" in str(exc), "render names the missing strategies")
+        else:
+            ok(False, "render must refuse an incomplete set of columns")
 
 
 @test

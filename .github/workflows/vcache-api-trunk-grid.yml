@@ -13,4 +13,4 @@ jobs:
   grid:
     uses: ./.github/workflows/vcache-api-comparison.yml
     with:
-      vinyl_commit: 3298560e699377ee88412bcfce2ecbeee1e9b4d8
+      vinyl_commit: 95f0d47dceeb91c54c9a453f275411e3c9dfe550

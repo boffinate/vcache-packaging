@@ -144,26 +144,32 @@ jobs:
           path: results/unmodified
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: results-issue-4537-*
+          pattern: results-issue-4537-batch-*
           merge-multiple: true
           path: results/issue-4537
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: results-issue-4537-fixed-*
+          merge-multiple: true
+          path: results/issue-4537-fixed
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: results-current-rules-*
+          merge-multiple: true
+          path: results/current-rules
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: results-engine-*
           merge-multiple: true
           path: results/engine
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ci-state/matrix
-          path: production-state
-          fetch-depth: 1
       - name: render the comparison
         run: |
           python3 repo/tools/vcache_compare.py render \
-            --unmodified-results results/unmodified \
-            --upstream-results results/issue-4537 \
+            --results unmodified=results/unmodified \
+            --results issue-4537=results/issue-4537 \
+            --results issue-4537-fixed=results/issue-4537-fixed \
+            --results current-rules=results/current-rules \
             --engine-results results/engine \
-            --production-state production-state/matrix-state.json \
             --out report/vcache-api-comparison.html \
             --state-out report/comparison-state.json
       - name: upload the self-contained comparison and raw state

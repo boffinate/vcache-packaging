@@ -15,11 +15,18 @@ import matrix  # noqa: E402
 
 ENGINE = "vinyl-trunk"
 COMMIT_LENGTH = 40
+# (column id, column label, per-cell source strategy). Every column is built
+# fresh against the same pinned engine so the columns differ only in how the
+# VMOD source was prepared.
 STRATEGIES = (
     ("unmodified", "No VMOD patching", "none"),
-    ("issue-4537", "Issue #4537 rules", "vcache"),
+    ("issue-4537", "Issue #4537 recipe as posted", "vcache"),
+    ("issue-4537-fixed", "Recipe with fixes", "vcache-fixed"),
     ("current-rules", "Current packaging rules", "directional"),
 )
+# The recipe operates at the shell and m4 level, so distributions cannot
+# change its verdict. Two targets keep one comparison iteration near an hour.
+TARGETS = ("debian-13-amd64", "debian-13-arm64")
 
 
 def validate_commit(value: str) -> str:
@@ -38,15 +45,19 @@ def _named_batches(rows: list[dict], source_artifacts: dict[str, str], name: str
 def expand(root: Path, vinyl_commit: str) -> dict:
     catalog = matrix.load_catalog(root)
     expansion = matrix.expand(catalog, "trunk", "compat")
-    engine_rows = [dict(item, source_commit=vinyl_commit) for item in expansion["engines"] if item["engine"] == ENGINE]
-    base_vmods = [item for item in expansion["vmods"] if item["engine"] == ENGINE]
+    engine_rows = [
+        dict(item, source_commit=vinyl_commit)
+        for item in expansion["engines"]
+        if item["engine"] == ENGINE and item["target"] in TARGETS
+    ]
+    base_vmods = [item for item in expansion["vmods"] if item["engine"] == ENGINE and item["target"] in TARGETS]
     artifacts = {item["source_artifact"] for item in base_vmods}
     source_rows = [item for item in expansion["sources"] if item["source_artifact"] in artifacts]
     source_groups = {vmod["id"]: matrix.vmod_build(vmod) for vmod in catalog["vmods"].values()}
     source_batches, source_artifacts = matrix.batch_sources(source_rows, source_groups)
 
     vmod_batches = []
-    for name, _, source_strategy in STRATEGIES[:2]:
+    for name, _, source_strategy in STRATEGIES:
         rows = [dict(item, source_api_strategy=source_strategy) for item in base_vmods]
         vmod_batches.extend(_named_batches(rows, source_artifacts, name))
     return {
@@ -72,48 +83,42 @@ def _select(cells: list[dict], mode: str) -> list[dict]:
     return [cell for cell in cells if cell["engine"] == ENGINE and cell["mode"] == mode]
 
 
-def comparison_state(unmodified: list[dict], upstream: list[dict], engine_results: list[dict],
-                     production: dict) -> dict:
+def comparison_state(strategy_results: dict[str, list[dict]], engine_results: list[dict]) -> dict:
     state = {"schema": matrix.STATE_SCHEMA, "cells": {}, "infra_failures": {}}
     fresh_engine = _select(engine_results, "engine")
-    production_cells = list(production["cells"].values())
     observations = []
-    observations.extend(_remap(cell, "unmodified") for cell in _select(unmodified, "compat"))
-    observations.extend(_remap(cell, "issue-4537") for cell in _select(upstream, "compat"))
-    observations.extend(_remap(cell, "current-rules") for cell in _select(production_cells, "compat"))
-    for strategy in ("unmodified", "issue-4537"):
+    for strategy, cells in strategy_results.items():
+        observations.extend(_remap(cell, strategy) for cell in _select(cells, "compat"))
         observations.extend(_remap(cell, strategy) for cell in fresh_engine)
-    observations.extend(_remap(cell, "current-rules") for cell in _select(production_cells, "engine"))
     matrix.merge_cells(state, observations)
     return state
 
 
-def _engine_commit(state: dict, strategy: str) -> str:
+def _engine_commit(state: dict) -> str:
     commits = {
         cell.get("commit", "")
         for cell in state["cells"].values()
-        if cell["engine"] == strategy and cell["mode"] == "engine" and cell.get("commit")
+        if cell["mode"] == "engine" and cell.get("commit")
     }
     return ", ".join(sorted(commit[:12] for commit in commits)) or "unknown commit"
 
 
-def render(root: Path, unmodified_results: Path, upstream_results: Path, engine_results: Path,
-           production_state: Path, out: Path, state_out: Path | None, generated_at: str) -> None:
+def render(root: Path, results: dict[str, Path], engine_results: Path, out: Path, state_out: Path | None,
+           generated_at: str) -> None:
     catalog = matrix.load_catalog(root)
-    production = matrix.load_state(production_state)
-    state = comparison_state(
-        _load_results(unmodified_results),
-        _load_results(upstream_results),
-        _load_results(engine_results),
-        production,
-    )
-    engine = matrix.find_engine(catalog, ENGINE)
     columns = [name for name, _, _ in STRATEGIES]
+    missing = [name for name in columns if name not in results]
+    if missing:
+        raise ValueError(f"missing results for strategies: {', '.join(missing)}")
+    state = comparison_state(
+        {name: _load_results(results[name]) for name in columns},
+        _load_results(engine_results),
+    )
     labels = {name: label for name, label, _ in STRATEGIES}
     rows = ["(engine)"] + list(catalog["vmods"])
     row_urls = {row: vmod["upstream"].get("homepage", "") for row, vmod in catalog["vmods"].items()}
     grids = []
-    for target in engine["targets"]:
+    for target in TARGETS:
         grid = matrix.build_grid(state, target)
         grid["columns"] = columns
         grid["column_labels"] = labels
@@ -121,12 +126,12 @@ def render(root: Path, unmodified_results: Path, upstream_results: Path, engine_
         grid["row_urls"] = row_urls
         grids.append(grid)
 
-    fresh_commit = _engine_commit(state, "issue-4537")
-    production_commit = _engine_commit(state, "current-rules")
     note = (
-        f"No VMOD patching leaves upstream source untouched. Issue #4537 rules apply the current neutral VCACHE recipe. "
-        f"Current packaging rules are imported from the latest production matrix state and are not rerun here. "
-        f"The first two columns use Vinyl {fresh_commit}; the imported column uses Vinyl {production_commit}. "
+        f"Every column is built fresh against Vinyl {_engine_commit(state)}. "
+        "No VMOD patching leaves upstream source untouched. Issue #4537 recipe as posted applies the sed recipe from "
+        "the issue blindly across the tree. Recipe with fixes adds the corrections found necessary: pkg-config probes "
+        "each API in turn, the m4_ifndef prerequisite guard names VCACHE_REQUIRE, and PKG_CHECK_MODULES producers are "
+        "renamed with their consumers. Current packaging rules are this repository's directional translator. "
         "Hover over a cell for the failing step, diagnostic, source revision, run and timestamp."
     )
     rendered = matrix.render_html(
@@ -156,10 +161,11 @@ def main(argv: list[str] | None = None) -> int:
     expand_parser.add_argument("--vinyl-commit", required=True)
     expand_parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     render_parser = subparsers.add_parser("render")
-    render_parser.add_argument("--unmodified-results", type=Path, required=True)
-    render_parser.add_argument("--upstream-results", type=Path, required=True)
+    render_parser.add_argument(
+        "--results", action="append", default=[], metavar="STRATEGY=DIR",
+        help="results directory for one comparison column; repeat for every strategy",
+    )
     render_parser.add_argument("--engine-results", type=Path, required=True)
-    render_parser.add_argument("--production-state", type=Path, required=True)
     render_parser.add_argument("--out", type=Path, required=True)
     render_parser.add_argument("--state-out", type=Path)
     render_parser.add_argument("--generated-at", default="")
@@ -171,16 +177,13 @@ def main(argv: list[str] | None = None) -> int:
             for name in ("engine_batches", "source_batches", "vmod_batches"):
                 print(name + "=" + json.dumps(output[name], separators=(",", ":")))
         else:
-            render(
-                args.root,
-                args.unmodified_results,
-                args.upstream_results,
-                args.engine_results,
-                args.production_state,
-                args.out,
-                args.state_out,
-                args.generated_at,
-            )
+            results = {}
+            for item in args.results:
+                strategy, separator, directory = item.partition("=")
+                if not separator or not directory:
+                    raise ValueError(f"--results expects STRATEGY=DIR, got {item!r}")
+                results[strategy] = Path(directory)
+            render(args.root, results, args.engine_results, args.out, args.state_out, args.generated_at)
     except (matrix.CatalogError, ValueError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

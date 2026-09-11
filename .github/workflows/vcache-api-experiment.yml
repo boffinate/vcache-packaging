@@ -18,7 +18,7 @@ permissions:
 
 env:
   VCACHE_EXPERIMENT_LANE: ${{ inputs.lane }}
-  VINYL_EXPERIMENT_COMMIT: ${{ inputs.vinyl_commit || '3298560e699377ee88412bcfce2ecbeee1e9b4d8' }}
+  VINYL_EXPERIMENT_COMMIT: ${{ inputs.vinyl_commit }}
 
 jobs:
   expand:

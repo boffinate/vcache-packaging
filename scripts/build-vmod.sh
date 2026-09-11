@@ -36,7 +36,7 @@ PKGFMT=${TARGET_FORMAT:?}
 # failure does not claim that source code was changed.
 SOURCE_API_NORMALIZATION=""
 SOURCE_API_STRATEGY=${VCACHE_SOURCE_API_STRATEGY:-directional}
-case "$SOURCE_API_STRATEGY" in none|directional|vcache) ;; *) die "unknown source API strategy: $SOURCE_API_STRATEGY" ;; esac
+case "$SOURCE_API_STRATEGY" in none|directional|vcache|vcache-fixed) ;; *) die "unknown source API strategy: $SOURCE_API_STRATEGY" ;; esac
 assert_target_platform "${TARGET_PLATFORM:?}" \
   || infra_cell "$WORKDIR" "$VMOD_ARG" "$ENGINE_ARG" "$TARGET" "$MODE" "" "target platform does not match this host"
 
@@ -128,6 +128,7 @@ VINYLAPI_DATAROOTDIR="$ENGINE_API_DATAROOTDIR"
 VCACHEAPI_DATAROOTDIR="$ENGINE_API_DATAROOTDIR"
 export VARNISHAPI_DATAROOTDIR VINYLAPI_DATAROOTDIR VCACHEAPI_DATAROOTDIR
 export LIBVARNISHAPI_DATAROOTDIR="$VARNISHAPI_DATAROOTDIR" LIBVINYLAPI_DATAROOTDIR="$VINYLAPI_DATAROOTDIR"
+export LIBVCACHEAPI_DATAROOTDIR="$VCACHEAPI_DATAROOTDIR"
 DAEMON="$PREFIX/sbin/$ENGINE_DAEMON"
 [ -x "$DAEMON" ] || { echo "no $ENGINE_DAEMON in $PREFIX/sbin" >&2; exit 1; }
 EOF
@@ -207,11 +208,13 @@ build_autotools() {
         # CLI handshake, so print the vtest fatal lines and the tail instead.
         fails=$( { find . -name test-suite.log -exec grep -hE '^FAIL' {} + 2>/dev/null || true; } \
           | head -n 5 | tr '\n' ' ' )
-        find . -name test-suite.log -exec grep -lE '^FAIL' {} + 2>/dev/null | while IFS= read -r suite; do
-          grep -E '^FAIL' "$suite" | sed -E 's/^FAIL:? *//; s/ .*//; s/\.vtc$//' | sort -u | while IFS= read -r test; do
+        # pipefail turns a grep with no match into a loop-ending failure,
+        # which hid every tail below when vtest died before its first line.
+        { find . -name test-suite.log -exec grep -lE '^FAIL' {} + 2>/dev/null || true; } | while IFS= read -r suite; do
+          { grep -E '^FAIL' "$suite" || true; } | sed -E 's/^FAIL:? *//; s/ .*//; s/\.vtc$//' | sort -u | while IFS= read -r test; do
             log="$(dirname "$suite")/$test.log"
             [ -f "$log" ] || continue
-            echo "----- $log: fatal lines -----"; grep -nE '^(---- |[*#] +top +TEST )' "$log" | tail -n 20
+            echo "----- $log: fatal lines -----"; { grep -nE '^(---- |[*#] +top +TEST )' "$log" || true; } | tail -n 20
             echo "----- $log: tail -----"; tail -n 40 "$log"
           done
         done

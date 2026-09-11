@@ -108,9 +108,11 @@ SOURCE_API_NORMALIZATIONS = tuple(
     # Same-family pass: only VSC counter directives were respelled for the
     # shared vsctool (decision 28).
     "vsc-directives",
-    # Experimental upstream-neutral source conversion. This remains distinct
-    # from the directional translator in the production matrix.
+    # Experimental upstream-neutral source conversion, as posted in issue
+    # #4537 and with the corrections the comparison grid found necessary.
+    # Both remain distinct from the production directional translator.
     "vcache-api",
+    "vcache-api-fixed",
 )
 # VCL import names (package.modules entries). VMOD ids may contain hyphens
 # (varnish-modules); module names may not.
@@ -1289,7 +1291,9 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
                     elif direction == "vsc-directives":
                         line += " VSC counter directives respelled for the engines' shared vsctool."
                     elif direction == "vcache-api":
-                        line += " Source converted with the neutral VCACHE rules from issue #4537."
+                        line += " Source converted with the neutral VCACHE recipe as posted in issue #4537."
+                    elif direction == "vcache-api-fixed":
+                        line += " Source converted with the issue #4537 recipe plus fixes."
                     else:
                         line += f" API name translation: {direction}."
                 if cell.get("ref"):

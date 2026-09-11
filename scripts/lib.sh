@@ -715,7 +715,11 @@ normalize_vmod_source() {
       --marker "/work/tmp/$tag.source-api-normalization" "$src"
     ;;
   vcache)
-    python3 /repo/tools/source_api_vcache.py \
+    python3 /repo/tools/source_api_vcache.py --strategy posted \
+      --marker "/work/tmp/$tag.source-api-normalization" "$src"
+    ;;
+  vcache-fixed)
+    python3 /repo/tools/source_api_vcache.py --strategy fixed \
       --marker "/work/tmp/$tag.source-api-normalization" "$src"
     ;;
   *)

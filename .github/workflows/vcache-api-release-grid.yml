@@ -1,9 +1,14 @@
 name: VCACHE API release grid
 
+# Dispatch only: the release engines predate VCACHE_REQUIRE, so a push-triggered
+# run would spend sixty jobs proving nothing.
 on:
-  push:
-    branches:
-      - experiment/vcache-api-grid
+  workflow_dispatch:
+    inputs:
+      vinyl_commit:
+        description: Exact Vinyl Cache commit containing the VCACHE API implementation.
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -17,4 +22,4 @@ jobs:
     uses: ./.github/workflows/vcache-api-experiment.yml
     with:
       lane: release
-      vinyl_commit: 3298560e699377ee88412bcfce2ecbeee1e9b4d8
+      vinyl_commit: ${{ inputs.vinyl_commit }}
