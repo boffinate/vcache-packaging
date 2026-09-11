@@ -86,7 +86,7 @@ Package: ${OVERLAY_PACKAGE_NAME}
 Architecture: any
 Description: dependency-analysis metadata for the experimental overlay proof
 CONTROL
-dpkg-shlibdeps -O -e"$EXPECTED" -T"$STAGE/DEBIAN/substvars" -l"$(dirname "$EXPECTED")"
+dpkg-shlibdeps -e"$EXPECTED" -T"$STAGE/DEBIAN/substvars" -l"$(dirname "$EXPECTED")"
 SHLIBS_DEPENDS=$(sed -n 's/^shlibs:Depends=//p' "$STAGE/DEBIAN/substvars")
 [ -n "$SHLIBS_DEPENDS" ] || { echo "dpkg-shlibdeps produced no runtime dependencies" >&2; exit 1; }
 sed -i "s/@SHLIBS_DEPENDS@/$SHLIBS_DEPENDS/" "$STAGE/DEBIAN/control"
