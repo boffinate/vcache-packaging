@@ -108,6 +108,9 @@ SOURCE_API_NORMALIZATIONS = tuple(
     # Same-family pass: only VSC counter directives were respelled for the
     # shared vsctool (decision 28).
     "vsc-directives",
+    # Experimental upstream-neutral source conversion. This remains distinct
+    # from the directional translator in the production matrix.
+    "vcache-api",
 )
 # VCL import names (package.modules entries). VMOD ids may contain hyphens
 # (varnish-modules); module names may not.
@@ -1450,18 +1453,20 @@ def _grid_html(grid: dict) -> str:
 </section>'''
 
 
-def render_html(grids: list, generated_at: str) -> str:
+def render_html(grids: list, generated_at: str,
+                page_context: str = "Vinyl Cache and Varnish Cache") -> str:
+    document_title = f"{page_context} VMOD compatibility matrix"
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Vinyl Cache and Varnish Cache VMOD compatibility matrix</title>
+<title>{_esc(document_title)}</title>
 <style>{_STYLE}</style>
 </head>
 <body>
 <header class="page">
-  <h1><span>Vinyl Cache and Varnish Cache</span><span class="title-context">VMOD compatibility matrix</span></h1>
+  <h1><span>{_esc(page_context)}</span><span class="title-context">VMOD compatibility matrix</span></h1>
   <span class="gen">as at <time datetime="{_esc(generated_at)}">{_esc(human_time(generated_at))}</time></span>
   <div class="legend">
     <span><i class="swatch sw-pass"></i>pass</span>
@@ -1594,7 +1599,7 @@ def cmd_render(args) -> int:
     generated_at = args.generated_at or now_iso()
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render_html(grids, generated_at), encoding="utf-8")
+    out_path.write_text(render_html(grids, generated_at, args.page_context), encoding="utf-8")
     shapes = ", ".join(f"{grid['target']}: {len(grid['rows'])} row(s) x {len(grid['columns'])} column(s)" for grid in grids)
     print(f"rendered {out_path}: {len(grids)} target matrix/matrices ({shapes})")
     return 0
@@ -1676,6 +1681,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--state-file", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--generated-at", help="timestamp for the page header; defaults to now (tests pass this)")
+    p.add_argument("--page-context", default="Vinyl Cache and Varnish Cache",
+                   help="heading prefix used to distinguish a separately published matrix")
     add_root(p)
     p.set_defaults(func=cmd_render)
 
