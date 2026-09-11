@@ -169,7 +169,7 @@ jobs:
 
   publish:
     needs: record
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
