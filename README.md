@@ -37,8 +37,6 @@ The release workflow also installs each complete engine/target package cohort in
 scripts/probe-upstream-varnish-overlay.sh "$(python3 tools/matrix.py select-engine --family varnish --kind release)" debian-13-amd64 work/
 ```
 
-The manually dispatched `VCACHE API experiment` tests the upstream-neutral Autotools conversion against an exact Vinyl Cache commit without changing the normal matrix. It stores results on its own state branch and publishes them at `/vcache-packaging/vcache-api-experiment/`.
-
 ## Adding a VMOD
 
 Copy an existing `vmods/<id>.yml` (keeping its modeline first line), edit it with the schema guiding you, run `matrix.py validate`, commit. That's the whole process. If it doesn't build against an engine, the matrix will show it red — that's a result, not a problem.

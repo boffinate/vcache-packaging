@@ -110,7 +110,7 @@ def harness_input(repo_root: Path) -> dict:
     named = [
         "scripts/build-engine.sh", "scripts/build-vmod.sh", "scripts/lib.sh", "tools/matrix.py", "tools/recipe.py",
         "tools/engine_batch.py", "tools/engine_cache.py",
-        "tools/package_contract.py", "tools/source_api_normalize.py", "tools/source_api_vcache.py", "tools/cargo-artifacts.py",
+        "tools/package_contract.py", "tools/source_api_normalize.py", "tools/cargo-artifacts.py",
         "tools/source_digest.py", "tools/vmod_batch.py", "tools/vmod_cache.py",
     ]
     files = {name: file_digest(repo_root / name) for name in named}
@@ -140,10 +140,7 @@ def cell_manifest(item: dict, engine_artifacts: Path, sources: Path, repo_root: 
     engine_available = prefix_available and engine_identity_available and (item["mode"] != "package" or packages_available)
     return {
         "schema": SCHEMA,
-        "cell": {
-            **{key: item[key] for key in ("row", "engine", "target", "mode", "runner", "source_artifact")},
-            "source_api_strategy": item.get("source_api_strategy", "directional"),
-        },
+        "cell": {key: item[key] for key in ("row", "engine", "target", "mode", "runner", "source_artifact")},
         # Engine artifacts are not reproducible archives. The catalog contract
         # identifies releases, while trunk additionally needs its resolved
         # commit; the artifact is still required before any cell may reuse.

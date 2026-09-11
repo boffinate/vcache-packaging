@@ -32,7 +32,6 @@ import package_contract  # noqa: E402
 import recipe  # noqa: E402
 import release_gate  # noqa: E402
 import source_api_normalize  # noqa: E402
-import source_api_vcache  # noqa: E402
 import source_batch  # noqa: E402
 import source_digest  # noqa: E402
 import vmod_batch  # noqa: E402
@@ -1368,47 +1367,6 @@ def source_api_normalization_keeps_vsctool_directives_in_the_shared_spelling():
             b".. vinyl_vsc_begin:: vmod_kvm\n.. vinyl_vsc_end:: vmod_kvm\n",
             "both engines receive directives their shared vsctool recognizes",
         )
-
-
-@test
-def vcache_source_conversion_matches_the_upstream_recipe():
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        (root / "configure.ac").write_bytes(
-            b"  VARNISH_PREREQ([9.0], [9.1])\nVARNISH_VMODS([foo])\n"
-        )
-        (root / "Makefile.am").write_bytes(
-            b"AM_CPPFLAGS = $(VARNISHAPI_CFLAGS)\n"
-            b"TESTS_ENVIRONMENT = VTC_LOG_COMPILER=varnishtest\n"
-        )
-        (root / "test.vtc").write_bytes(
-            b"varnishtest \"test\"\nvarnish v1 -vcl+backend {}\n"
-        )
-        (root / "private.c").write_bytes(b'#include "cache/cache_varnishd.h"\n')
-        (root / "binary").write_bytes(b"VARNISHAPI_\0unchanged")
-        (root / ".git").mkdir()
-        (root / ".git" / "config").write_bytes(b"VARNISHAPI_")
-
-        changed, totals = source_api_vcache.convert_tree(root)
-
-        eq([str(path) for path, _ in changed],
-           ["Makefile.am", "configure.ac", "private.c", "test.vtc"],
-           "VCACHE recipe changed files")
-        eq((root / "configure.ac").read_text(),
-           "  VCACHE_REQUIRE([[varnish], [9.0], [9.1]], [[vinyl], [9.0], [9.1]])\n"
-           "VCACHE_VMODS([foo])\n",
-           "prerequisite and build macros use the neutral API")
-        eq((root / "Makefile.am").read_text(),
-           "AM_CPPFLAGS = $(VCACHEAPI_CFLAGS)\nTESTS_ENVIRONMENT = VTC_LOG_COMPILER=vtest\n",
-           "Makefile variables and test compiler use neutral names")
-        eq((root / "test.vtc").read_text(),
-           'vtest "test"\nvcache v1 -vcl+backend {}\n',
-           "VTC header and daemon command use neutral names")
-        eq((root / "private.c").read_text(), '#include "cache/cache_int.h"\n',
-           "private header uses the common spelling")
-        eq((root / "binary").read_bytes(), b"VARNISHAPI_\0unchanged", "binary skipped")
-        eq((root / ".git" / "config").read_bytes(), b"VARNISHAPI_", ".git skipped")
-        eq(totals["prerequisite macro -> VCACHE_REQUIRE"], 1, "one prerequisite converted")
 
 
 @test
