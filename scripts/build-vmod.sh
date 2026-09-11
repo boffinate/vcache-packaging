@@ -35,6 +35,8 @@ PKGFMT=${TARGET_FORMAT:?}
 # Result provenance comes from the inner build marker so an earlier harness
 # failure does not claim that source code was changed.
 SOURCE_API_NORMALIZATION=""
+SOURCE_API_STRATEGY=${VCACHE_SOURCE_API_STRATEGY:-directional}
+case "$SOURCE_API_STRATEGY" in directional|vcache) ;; *) die "unknown source API strategy: $SOURCE_API_STRATEGY" ;; esac
 assert_target_platform "${TARGET_PLATFORM:?}" \
   || infra_cell "$WORKDIR" "$VMOD_ARG" "$ENGINE_ARG" "$TARGET" "$MODE" "" "target platform does not match this host"
 
@@ -68,6 +70,7 @@ fi
     "$TAG" "$TARGET" "$PKGFMT" "$PREFIX" "$MODE"
   printf "ENGINE_ID='%s'\nVMOD_ID='%s'\nENGINE_ART='%s'\n" "$ENGINE_ID" "$VMOD_ID" "$ENGINE_ART"
   printf "VMOD_SOURCE_ARTIFACT='%s'\n" "$VMOD_SOURCE_ARTIFACT"
+  printf "VCACHE_SOURCE_API_STRATEGY='%s'\n" "$SOURCE_API_STRATEGY"
 } >> "$ENVFILE"
 
 # ---------------------------------------------------------------- compat ----
@@ -122,7 +125,8 @@ export ACLOCAL_PATH="$PREFIX/share/aclocal"
 ENGINE_API_DATAROOTDIR="$PREFIX/share"
 VARNISHAPI_DATAROOTDIR="$ENGINE_API_DATAROOTDIR"
 VINYLAPI_DATAROOTDIR="$ENGINE_API_DATAROOTDIR"
-export VARNISHAPI_DATAROOTDIR VINYLAPI_DATAROOTDIR
+VCACHEAPI_DATAROOTDIR="$ENGINE_API_DATAROOTDIR"
+export VARNISHAPI_DATAROOTDIR VINYLAPI_DATAROOTDIR VCACHEAPI_DATAROOTDIR
 export LIBVARNISHAPI_DATAROOTDIR="$VARNISHAPI_DATAROOTDIR" LIBVINYLAPI_DATAROOTDIR="$VINYLAPI_DATAROOTDIR"
 DAEMON="$PREFIX/sbin/$ENGINE_DAEMON"
 [ -x "$DAEMON" ] || { echo "no $ENGINE_DAEMON in $PREFIX/sbin" >&2; exit 1; }

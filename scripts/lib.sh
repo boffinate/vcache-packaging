@@ -698,18 +698,29 @@ vinyl_private_header_name() {
 }
 
 # normalize_vmod_source SRC TAG
-# One normalization pass per build (decision 19 + 28): cross-family when the
-# manifest's source_api_family differs from the engine's family, otherwise the
-# same-family VSC-directive pass. The marker file becomes the cell result's
-# source_api_normalization and is written only when a file changed.
+# The production strategy follows decisions 19 and 28. The isolated upstream
+# trial selects the neutral VCACHE conversion from decision 33 per matrix cell.
+# The marker becomes the cell result's source_api_normalization.
 normalize_vmod_source() {
   local src=$1 tag=$2
   local source_family=${VMOD_SOURCE_API_FAMILY:-$ENGINE_FAMILY}
   step source-api-normalize
-  python3 /repo/tools/source_api_normalize.py \
-    --source-family "$source_family" --target-family "$ENGINE_FAMILY" \
-    --vinyl-private-header "$(vinyl_private_header_name "$ENGINE_API")" \
-    --marker "/work/tmp/$tag.source-api-normalization" "$src"
+  case "${VCACHE_SOURCE_API_STRATEGY:-directional}" in
+  directional)
+    python3 /repo/tools/source_api_normalize.py \
+      --source-family "$source_family" --target-family "$ENGINE_FAMILY" \
+      --vinyl-private-header "$(vinyl_private_header_name "$ENGINE_API")" \
+      --marker "/work/tmp/$tag.source-api-normalization" "$src"
+    ;;
+  vcache)
+    python3 /repo/tools/source_api_vcache.py \
+      --marker "/work/tmp/$tag.source-api-normalization" "$src"
+    ;;
+  *)
+    echo "unknown source API strategy: $VCACHE_SOURCE_API_STRATEGY" >&2
+    return 1
+    ;;
+  esac
 }
 
 # emit_result WORKDIR ROW ENGINE TARGET MODE REF COMMIT STATUS DETAIL [FAILURE_STEP]

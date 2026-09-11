@@ -17,6 +17,7 @@ import vmod_cache
 
 
 REQUIRED_ROW_KEYS = {"row", "engine", "target", "mode", "runner", "source_artifact"}
+SOURCE_API_STRATEGIES = {"directional", "vcache"}
 
 
 def link_or_copy(source: str, destination: str) -> str:
@@ -45,6 +46,9 @@ def validate_items(items: list[dict]) -> None:
         missing = REQUIRED_ROW_KEYS - set(item)
         if missing:
             raise ValueError(f"VMOD batch cell is missing keys: {', '.join(sorted(missing))}")
+        strategy = item.get("source_api_strategy", "directional")
+        if strategy not in SOURCE_API_STRATEGIES:
+            raise ValueError(f"unknown source API strategy: {strategy}")
     contracts = {(item["engine"], item["target"], item["mode"], item["runner"]) for item in items}
     if len(contracts) != 1:
         raise ValueError("VMOD batch cells must share engine, target, mode, and runner")
@@ -126,7 +130,11 @@ def run_batch(items: list[dict], engine_artifacts: Path, sources: Path, workdir:
                     item["mode"],
                     str(cell),
                 ],
-                env={**os.environ, "VCACHE_REQUIRE_PREFETCHED_VMOD_SOURCE": "1"},
+                env={
+                    **os.environ,
+                    "VCACHE_REQUIRE_PREFETCHED_VMOD_SOURCE": "1",
+                    "VCACHE_SOURCE_API_STRATEGY": item.get("source_api_strategy", "directional"),
+                },
                 start_new_session=True,
             )
             try:
