@@ -37,7 +37,7 @@ The release workflow also installs each complete engine/target package cohort in
 scripts/probe-upstream-varnish-overlay.sh "$(python3 tools/matrix.py select-engine --family varnish --kind release)" debian-13-amd64 work/
 ```
 
-The manually dispatched `VCACHE API experiment` tests the upstream-neutral Autotools conversion against an exact Vinyl Cache commit without changing the normal matrix. It stores results on its own state branch and publishes them at `/vcache-packaging/vcache-api-experiment/`.
+The manually dispatched `VCACHE API experiment` reproduces either production matrix lane with the upstream-neutral Autotools conversion and an exact Vinyl Cache commit. It stores results separately and uploads a self-contained HTML matrix as a workflow artifact; it does not deploy to GitHub Pages.
 
 ## Adding a VMOD
 

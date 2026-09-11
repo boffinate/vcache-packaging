@@ -86,8 +86,8 @@ def main(argv: list[str] | None = None) -> int:
 
     changed, totals = convert_tree(args.source)
     if not changed:
-        print("no Vinyl or Varnish API spellings found while converting to VCACHE", file=sys.stderr)
-        return 1
+        print("no Vinyl or Varnish API spellings found; source already needs no conversion")
+        return 0
     if args.marker is not None:
         args.marker.write_text(MARKER + "\n", encoding="utf-8")
     print(f"converted VMOD source to the VCACHE API in {len(changed)} files")

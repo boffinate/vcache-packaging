@@ -168,14 +168,9 @@ jobs:
       - name: commit and push the state branch
         working-directory: state
         run: ../repo/scripts/matrix-state.sh publish "$GITHUB_RUN_ID"
-      - name: read VCACHE experiment state when available
-        continue-on-error: true
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ci-state/vcache-api-experiment
-          path: experiment-state
-          fetch-depth: 1
-      - run: repo/scripts/render-pages.sh state/matrix-state.json experiment-state/matrix-state.json site
+      - run: |
+          mkdir -p site
+          python3 repo/tools/matrix.py render --state-file state/matrix-state.json --out site/index.html
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

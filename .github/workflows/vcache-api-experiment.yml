@@ -3,19 +3,24 @@ name: VCACHE API experiment
 on:
   workflow_dispatch:
     inputs:
+      lane:
+        description: Production matrix lane to reproduce.
+        required: true
+        type: choice
+        options:
+          - trunk
+          - release
       vinyl_commit:
         description: Exact Vinyl Cache commit containing the VCACHE API implementation.
         required: true
         default: "3298560e699377ee88412bcfce2ecbeee1e9b4d8"
-  push:
-    branches:
-      - experiment/vcache-api-upstream
 
 permissions:
   contents: read
   actions: write
 
 env:
+  VCACHE_EXPERIMENT_LANE: ${{ inputs.lane }}
   VINYL_EXPERIMENT_COMMIT: ${{ inputs.vinyl_commit || '3298560e699377ee88412bcfce2ecbeee1e9b4d8' }}
 
 jobs:
@@ -29,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: expand
-        run: python3 tools/vcache_experiment.py --vinyl-commit "$VINYL_EXPERIMENT_COMMIT" >> "$GITHUB_OUTPUT"
+        run: python3 tools/vcache_experiment.py --lane "$VCACHE_EXPERIMENT_LANE" --vinyl-commit "$VINYL_EXPERIMENT_COMMIT" >> "$GITHUB_OUTPUT"
 
   vmod_source:
     needs: expand
@@ -65,10 +70,15 @@ jobs:
     name: ${{ matrix.batch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: engine-resolve
+        name: retain the pinned Vinyl commit and resolve other trunk engines
+        run: python3 tools/engine_cache.py resolve --items "$ENGINE_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
+        env:
+          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
       - id: engine-cache-key
         run: python3 tools/engine_cache.py key --items "$ENGINE_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
         env:
-          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+          ENGINE_BATCH_ITEMS: ${{ steps.engine-resolve.outputs.items }}
       - id: engine-cache-restore
         continue-on-error: true
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -80,18 +90,18 @@ jobs:
       - id: restored-engine-cacheable
         run: python3 tools/engine_cache.py cacheable --items "$ENGINE_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
         env:
-          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+          ENGINE_BATCH_ITEMS: ${{ steps.engine-resolve.outputs.items }}
       - id: engine-batch
         if: steps.restored-engine-cacheable.outputs.cacheable != 'true'
         continue-on-error: true
         run: python3 tools/engine_batch.py
         env:
-          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+          ENGINE_BATCH_ITEMS: ${{ steps.engine-resolve.outputs.items }}
       - id: engine-cacheable
         if: always()
         run: python3 tools/engine_cache.py cacheable --items "$ENGINE_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
         env:
-          ENGINE_BATCH_ITEMS: ${{ matrix.items }}
+          ENGINE_BATCH_ITEMS: ${{ steps.engine-resolve.outputs.items }}
       - if: always() && steps.engine-cacheable.outputs.cacheable == 'true' && steps.engine-cache-restore.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -161,43 +171,16 @@ jobs:
         env:
           VCACHE_STATE_BRANCH: ci-state/vcache-api-experiment
       - run: python3 repo/tools/matrix.py merge --results-dir results --state-file state/matrix-state.json
+      - run: python3 repo/tools/matrix.py render --state-file state/matrix-state.json --out report/vcache-api-matrix.html --page-context "Upstream VCACHE API experiment"
+      - name: assemble downloadable report
+        run: cp state/matrix-state.json report/matrix-state.json
       - name: commit and push experiment state
         working-directory: state
         run: ../repo/scripts/matrix-state.sh publish "$GITHUB_RUN_ID"
         env:
           VCACHE_STATE_BRANCH: ci-state/vcache-api-experiment
-
-  publish:
-    needs: record
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    concurrency:
-      group: matrix-publish
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}vcache-api-experiment/
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: upload the self-contained matrix page and raw state
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          ref: ci-state/matrix
-          path: state
-          fetch-depth: 1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ci-state/vcache-api-experiment
-          path: experiment-state
-          fetch-depth: 1
-      - run: scripts/render-pages.sh state/matrix-state.json experiment-state/matrix-state.json site
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: site
-      - id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+          name: vcache-api-matrix-${{ inputs.lane }}
+          path: report/

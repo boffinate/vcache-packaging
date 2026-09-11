@@ -35,6 +35,7 @@ import source_api_normalize  # noqa: E402
 import source_api_vcache  # noqa: E402
 import source_batch  # noqa: E402
 import source_digest  # noqa: E402
+import vcache_experiment  # noqa: E402
 import vmod_batch  # noqa: E402
 import vmod_cache  # noqa: E402
 import vmod_heads  # noqa: E402
@@ -1412,6 +1413,32 @@ def vcache_source_conversion_matches_the_upstream_recipe():
 
 
 @test
+def vcache_experiment_reproduces_production_lanes_and_only_substitutes_autotools():
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = write_fixture(
+            Path(tmp_name),
+            engines=cargo_fixture_engines(),
+            vmods={"dict": FIXTURE_DICT, "reqwest": FIXTURE_CARGO},
+        )
+        catalog = matrix.load_catalog(tmp)
+        commit = "c" * 40
+        for lane, mode in vcache_experiment.LANE_MODES.items():
+            expected = matrix.expand(catalog, lane, mode)
+            actual = vcache_experiment.expand(tmp, commit, lane)
+            engine_items = [item for batch in actual["engine_batches"] for item in json.loads(batch["items"])]
+            vmod_items = [item for batch in actual["vmod_batches"] for item in json.loads(batch["items"])]
+            eq(len(engine_items), len(expected["engines"]), f"{lane} engine grid is unchanged")
+            eq(len(vmod_items), len(expected["vmods"]), f"{lane} VMOD grid is unchanged")
+            eq({item["source_api_strategy"] for item in vmod_items if item["row"] == "dict"},
+               {"vcache"}, f"{lane} Autotools cells use VCACHE")
+            ok(all("source_api_strategy" not in item for item in vmod_items if item["row"] == "reqwest"),
+               f"{lane} Cargo cells keep their existing build path")
+            if lane == "trunk":
+                eq({item["source_commit"] for item in engine_items if item["engine"] == "vinyl-trunk"},
+                   {commit}, "Vinyl trunk is pinned to the experiment commit")
+
+
+@test
 def cohort_env_is_generated_from_the_promoted_catalog():
     with tempfile.TemporaryDirectory() as tmp:
         root = str(write_fixture(Path(tmp)))
@@ -2115,11 +2142,12 @@ def engine_cache_binds_trunk_entries_to_resolved_commits():
             return "a" * 40
 
         duplicate = {**item, "target": "el10-x86_64"}
-        resolved = engine_cache.resolve_items(tmp, [item, duplicate], resolver)
-        eq(resolved, [{**item, "source_commit": "a" * 40}, {**duplicate, "source_commit": "a" * 40}],
+        pinned = {**item, "source_commit": "b" * 40}
+        resolved = engine_cache.resolve_items(tmp, [item, duplicate, pinned], resolver)
+        eq(resolved, [{**item, "source_commit": "a" * 40}, {**duplicate, "source_commit": "a" * 40}, pinned],
            "trunk cache inputs retain the resolved commit")
         eq(calls, [("https://example.org/vinyl.git", "main")],
-           "one upstream branch is resolved once for all native targets")
+           "one upstream branch is resolved once while an explicit experiment pin is retained")
         repo_root = Path(__file__).resolve().parent.parent
         real_item = {"engine": "vinyl-trunk", "target": "debian-13-amd64", "runner": "ubuntu-24.04"}
         first = engine_cache.cache_key(repo_root, [{**real_item, "source_commit": "a" * 40}])

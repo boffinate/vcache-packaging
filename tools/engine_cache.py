@@ -56,11 +56,12 @@ def resolve_items(root: Path, items: list[dict], resolver=resolve_trunk_commit) 
         engine = matrix.find_engine(catalog, item["engine"])
         output = dict(item)
         if engine["kind"] == "trunk":
-            source = engine["source"]
-            identity = (source["git_url"], source["branch"])
-            if identity not in commits:
-                commits[identity] = resolver(root, *identity)
-            output["source_commit"] = commits[identity]
+            if "source_commit" not in output:
+                source = engine["source"]
+                identity = (source["git_url"], source["branch"])
+                if identity not in commits:
+                    commits[identity] = resolver(root, *identity)
+                output["source_commit"] = commits[identity]
         resolved.append(output)
     return resolved
 

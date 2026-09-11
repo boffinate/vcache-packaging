@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Expand the isolated upstream VCACHE API compatibility experiment."""
+"""Expand a production matrix lane using the experimental VCACHE API."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import matrix  # noqa: E402
 
 
 COMMIT_LENGTH = 40
+LANE_MODES = {"release": "all", "trunk": "compat"}
 
 
 def validate_commit(value: str) -> str:
@@ -22,43 +23,27 @@ def validate_commit(value: str) -> str:
     return value
 
 
-def expand(root: Path, vinyl_commit: str, target_ids: list[str]) -> dict:
+def expand(root: Path, vinyl_commit: str, lane: str) -> dict:
     catalog = matrix.load_catalog(root)
-    engine = matrix.find_engine(catalog, "vinyl-trunk")
-    unknown = [target for target in target_ids if target not in engine["targets"]]
-    if unknown:
-        raise ValueError("target(s) are not supported by vinyl-trunk: " + ", ".join(unknown))
+    expansion = matrix.expand(catalog, lane, LANE_MODES[lane])
 
     engines = []
-    vmods = []
-    for target_id in target_ids:
-        target = matrix.find_target(catalog, target_id)
-        engines.append({
-            "engine": engine["id"],
-            "target": target_id,
-            "runner": target["runner"],
-            "source_commit": vinyl_commit,
-        })
-        for vmod in catalog["vmods"].values():
-            if vmod.get("source_api_family") != "varnish" or matrix.vmod_build(vmod) != "autotools":
-                continue
-            row = matrix.vmod_matrix_row(vmod, engine, target_id, "compat", target["runner"])
-            row["source_api_strategy"] = "vcache"
-            vmods.append(row)
+    for item in expansion["engines"]:
+        item = dict(item)
+        if item["engine"] == "vinyl-trunk":
+            item["source_commit"] = vinyl_commit
+        engines.append(item)
 
-    sources = []
-    seen = set()
-    for row in vmods:
-        if row["source_artifact"] in seen:
-            continue
-        seen.add(row["source_artifact"])
-        sources.append({
-            "row": row["row"],
-            "engine": row["engine"],
-            "source_artifact": row["source_artifact"],
-        })
+    vmods = []
+    for item in expansion["vmods"]:
+        item = dict(item)
+        vmod = catalog["vmods"][item["row"]]
+        if matrix.vmod_build(vmod) == "autotools":
+            item["source_api_strategy"] = "vcache"
+        vmods.append(item)
+
     source_groups = {vmod["id"]: matrix.vmod_build(vmod) for vmod in catalog["vmods"].values()}
-    source_batches, source_artifacts = matrix.batch_sources(sources, source_groups)
+    source_batches, source_artifacts = matrix.batch_sources(expansion["sources"], source_groups)
     return {
         "engine_batches": matrix.batch_engines(engines),
         "source_batches": source_batches,
@@ -69,17 +54,12 @@ def expand(root: Path, vinyl_commit: str, target_ids: list[str]) -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vinyl-commit", required=True)
-    parser.add_argument("--targets", default="debian-13-amd64,debian-13-arm64")
+    parser.add_argument("--lane", required=True, choices=tuple(LANE_MODES))
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     args = parser.parse_args(argv)
     try:
         commit = validate_commit(args.vinyl_commit)
-        targets = args.targets.split(",")
-        if not targets or any(not target or target != target.strip() for target in targets):
-            raise ValueError("--targets must be a comma-separated list without whitespace")
-        if len(set(targets)) != len(targets):
-            raise ValueError("--targets must not repeat a target")
-        output = expand(args.root, commit, targets)
+        output = expand(args.root, commit, args.lane)
         for name in ("engine_batches", "source_batches", "vmod_batches"):
             print(name + "=" + json.dumps(output[name], separators=(",", ":")))
     except (matrix.CatalogError, ValueError) as exc:
