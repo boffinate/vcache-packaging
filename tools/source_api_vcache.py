@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Convert a family-specific Autotools VMOD tree to the VCACHE API names.
 
-Two strategies exist. ``posted`` is the sed recipe from Vinyl Cache issue
-#4537 comment 62306, applied blindly across the tree the way the recipe's
-``git grep -l`` invocations do. ``fixed`` adds the three corrections that the
-comparison grid showed the recipe needs; see STRATEGY_MARKERS for the cell
-markers each writes.
+``posted`` is the sed recipe from Vinyl Cache issue #4537 comment 62306.
+``upstream`` reproduces tools/vcachize.sh from PR #4588 commit 8ac212ccf14d.
+``fixed`` retains the three corrections tested before that upstream script
+was published. See STRATEGY_MARKERS for the cell markers each writes.
 """
 
 from __future__ import annotations
@@ -18,7 +17,11 @@ from collections import Counter
 from pathlib import Path
 
 
-STRATEGY_MARKERS = {"posted": "vcache-api", "fixed": "vcache-api-fixed"}
+STRATEGY_MARKERS = {
+    "posted": "vcache-api",
+    "fixed": "vcache-api-fixed",
+    "upstream": "vcache-api-upstream",
+}
 
 # The sed has no anchor after the closing paren: it matches greedily to the
 # last ")" on the line and keeps whatever follows (a trailing dnl comment).
@@ -34,10 +37,14 @@ PKG_CONFIG_DATAROOTDIR = re.compile(
 # vinyl.m4 defines no VCACHE_PREREQ, so the generic prefix rule turns the
 # common template guard into a hard configure error.
 PREREQ_GUARD = re.compile(rb"m4_ifndef\(\[(?:VARNISH|VINYL)_PREREQ\]")
+PREREQ_NAME = re.compile(rb"(?:VARNISH|VINYL)_PREREQ")
 # The generic prefix rule needs a trailing underscore, so it renames the
 # consumers ($(VINYLAPI_CFLAGS)) but not this producer; the acvmod trees
 # then compile with an empty include path.
 PKG_CHECK_PRODUCER = re.compile(rb"PKG_CHECK_MODULES\(\[(?:VARNISH|VINYL)API\]")
+PKG_CONFIG_INVOCATION = re.compile(
+    rb"(?P<command>pkg-config --[^\r\n]* )(?P<family>varnish|vinyl)api(?P<options>[^;\r\n)]*)"
+)
 
 
 def _counted_sub(pattern: re.Pattern[bytes], replacement, data: bytes, label: str,
@@ -69,10 +76,17 @@ def _pkg_config_fixed(match: re.Match[bytes]) -> bytes:
     )
 
 
+def _pkg_config_upstream(match: re.Match[bytes]) -> bytes:
+    command = match.group("command")
+    options = match.group("options")
+    return command + b"vinylapi" + options + b" || " + command + b"varnishapi" + options
+
+
 def convert_bytes(data: bytes, path: Path, strategy: str = "posted") -> tuple[bytes, Counter[str]]:
     if strategy not in STRATEGY_MARKERS:
         raise ValueError(f"unknown strategy: {strategy}")
     fixed = strategy == "fixed"
+    upstream = strategy == "upstream"
     counts: Counter[str] = Counter()
 
     def prereq(match: re.Match[bytes]) -> bytes:
@@ -80,6 +94,9 @@ def convert_bytes(data: bytes, path: Path, strategy: str = "posted") -> tuple[by
         return match.group("indent") + b"VCACHE_REQUIRE([[varnish], " + versions + b"], [[vinyl], " + versions + b"])"
 
     data = _counted_sub(PREREQ, prereq, data, "prerequisite macro -> VCACHE_REQUIRE", counts)
+    if upstream and path.name == "configure.ac":
+        data = _counted_sub(PREREQ_NAME, b"VCACHE_REQUIRE", data,
+                            "prerequisite reference -> VCACHE_REQUIRE", counts)
     if fixed:
         data = _counted_sub(PREREQ_GUARD, b"m4_ifndef([VCACHE_REQUIRE]", data,
                             "prerequisite guard -> VCACHE_REQUIRE", counts)
@@ -102,13 +119,22 @@ def convert_bytes(data: bytes, path: Path, strategy: str = "posted") -> tuple[by
     if data != before:
         counts["VTC_LOG_COMPILER -> vtest extension"] += 1
 
-    data = _counted_sub(
-        PKG_CONFIG_DATAROOTDIR,
-        _pkg_config_fixed if fixed else _pkg_config_posted,
-        data,
-        "pkg-config datarootdir -> either API" if fixed else "pkg-config datarootdir -> both APIs",
-        counts,
-    )
+    if upstream:
+        data = _counted_sub(
+            PKG_CONFIG_INVOCATION,
+            _pkg_config_upstream,
+            data,
+            "pkg-config invocation -> either API",
+            counts,
+        )
+    else:
+        data = _counted_sub(
+            PKG_CONFIG_DATAROOTDIR,
+            _pkg_config_fixed if fixed else _pkg_config_posted,
+            data,
+            "pkg-config datarootdir -> either API" if fixed else "pkg-config datarootdir -> both APIs",
+            counts,
+        )
     return data, counts
 
 

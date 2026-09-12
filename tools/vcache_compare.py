@@ -15,13 +15,14 @@ import matrix  # noqa: E402
 
 ENGINE = "vinyl-trunk"
 COMMIT_LENGTH = 40
+UPSTREAM_VCACHIZE_COMMIT = "8ac212ccf14d661ac5c62d4868d422b9ab720670"
 # (column id, column label, per-cell source strategy). Every column is built
 # fresh against the same pinned engine so the columns differ only in how the
 # VMOD source was prepared.
 STRATEGIES = (
     ("unmodified", "No VMOD patching", "none"),
     ("issue-4537", "Issue #4537 recipe as posted", "vcache"),
-    ("issue-4537-fixed", "Recipe with fixes", "vcache-fixed"),
+    ("issue-4537-upstream", "Current upstream vcachize", "vcache-upstream"),
     ("current-rules", "Current packaging rules", "directional"),
 )
 # The recipe operates at the shell and m4 level, so distributions cannot
@@ -129,9 +130,10 @@ def render(root: Path, results: dict[str, Path], engine_results: Path, out: Path
     note = (
         f"Every column is built fresh against Vinyl {_engine_commit(state)}. "
         "No VMOD patching leaves upstream source untouched. Issue #4537 recipe as posted applies the sed recipe from "
-        "the issue blindly across the tree. Recipe with fixes adds the corrections found necessary: pkg-config probes "
-        "each API in turn, the m4_ifndef prerequisite guard names VCACHE_REQUIRE, and PKG_CHECK_MODULES producers are "
-        "renamed with their consumers. Current packaging rules are this repository's directional translator. "
+        f"the issue blindly across the tree. Current upstream vcachize reproduces tools/vcachize.sh at "
+        f"{UPSTREAM_VCACHIZE_COMMIT[:12]} from PR #4588; that script incorporates the prerequisite and pkg-config "
+        "feedback but remains separate from Vinyl trunk. Current packaging rules are this repository's directional "
+        "translator. "
         "Hover over a cell for the failing step, diagnostic, source revision, run and timestamp."
     )
     rendered = matrix.render_html(

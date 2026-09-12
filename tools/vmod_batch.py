@@ -17,7 +17,7 @@ import vmod_cache
 
 
 REQUIRED_ROW_KEYS = {"row", "engine", "target", "mode", "runner", "source_artifact"}
-SOURCE_API_STRATEGIES = {"none", "directional", "vcache", "vcache-fixed"}
+SOURCE_API_STRATEGIES = {"none", "directional", "vcache", "vcache-fixed", "vcache-upstream"}
 
 
 def link_or_copy(source: str, destination: str) -> str:

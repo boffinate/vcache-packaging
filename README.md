@@ -37,7 +37,7 @@ The release workflow also installs each complete engine/target package cohort in
 scripts/probe-upstream-varnish-overlay.sh "$(python3 tools/matrix.py select-engine --family varnish --kind release)" debian-13-amd64 work/
 ```
 
-The `experiment/vcache-api-grid` branch runs release and trunk copies of the production matrix with the upstream-neutral Autotools conversion and an exact Vinyl Cache commit. It stores results separately and uploads a self-contained HTML matrix as a workflow artifact; it does not deploy to GitHub Pages. Pushing the branch runs the trunk comparison; the release lane is dispatch-only. Neither needs a dispatcher on `main`.
+The `experiment/vcache-api-grid` branch compares untouched VMOD source, the original issue recipe, the current upstream `vcachize.sh`, and this repository's directional rules against an exact Vinyl trunk commit. It uploads a self-contained HTML matrix and raw state as a workflow artifact; it does not deploy to GitHub Pages. Pushing the branch runs the trunk comparison, while the release lane is dispatch-only. Neither needs a dispatcher on `main`.
 
 ## Adding a VMOD
 

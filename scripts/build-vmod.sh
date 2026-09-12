@@ -36,7 +36,7 @@ PKGFMT=${TARGET_FORMAT:?}
 # failure does not claim that source code was changed.
 SOURCE_API_NORMALIZATION=""
 SOURCE_API_STRATEGY=${VCACHE_SOURCE_API_STRATEGY:-directional}
-case "$SOURCE_API_STRATEGY" in none|directional|vcache|vcache-fixed) ;; *) die "unknown source API strategy: $SOURCE_API_STRATEGY" ;; esac
+case "$SOURCE_API_STRATEGY" in none|directional|vcache|vcache-fixed|vcache-upstream) ;; *) die "unknown source API strategy: $SOURCE_API_STRATEGY" ;; esac
 assert_target_platform "${TARGET_PLATFORM:?}" \
   || infra_cell "$WORKDIR" "$VMOD_ARG" "$ENGINE_ARG" "$TARGET" "$MODE" "" "target platform does not match this host"
 

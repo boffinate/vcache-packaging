@@ -1475,6 +1475,41 @@ def vcache_fixed_strategy_repairs_the_three_recipe_gaps():
 
 
 @test
+def vcache_upstream_strategy_matches_pr_4588_script():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "configure.ac").write_bytes(
+            b"m4_ifndef([VINYL_PREREQ], AC_MSG_ERROR([Need vinyl.m4]))\n"
+            b"VINYL_PREREQ([9.0.0])\nVINYL_VMODS([foo])\n"
+        )
+        (root / "acinclude.m4").write_bytes(b"PKG_CHECK_MODULES([VINYLAPI], [vinylapi])\n")
+        (root / "bootstrap").write_bytes(
+            b"dataroot=$(pkg-config --variable=datarootdir varnishapi 2>/dev/null)\n"
+            b"version=$(pkg-config --modversion vinylapi)\n"
+        )
+
+        changed, totals = source_api_vcache.convert_tree(root, "upstream")
+
+        eq([str(path) for path, _ in changed], ["bootstrap", "configure.ac"],
+           "upstream script changes the same files as its sed rules")
+        eq((root / "configure.ac").read_text(),
+           "m4_ifndef([VCACHE_REQUIRE], AC_MSG_ERROR([Need vinyl.m4]))\n"
+           "VCACHE_REQUIRE([[varnish], [9.0.0]], [[vinyl], [9.0.0]])\nVCACHE_VMODS([foo])\n",
+           "upstream script renames prerequisite calls and references")
+        eq((root / "acinclude.m4").read_text(), "PKG_CHECK_MODULES([VINYLAPI], [vinylapi])\n",
+           "upstream script retains the producer mismatch under investigation")
+        eq((root / "bootstrap").read_text(),
+           "dataroot=$(pkg-config --variable=datarootdir vinylapi 2>/dev/null"
+           " || pkg-config --variable=datarootdir varnishapi 2>/dev/null)\n"
+           "version=$(pkg-config --modversion vinylapi || pkg-config --modversion varnishapi)\n",
+           "upstream script probes Vinyl then Varnish for every pkg-config query")
+        eq(totals["prerequisite reference -> VCACHE_REQUIRE"], 1, "one prerequisite guard renamed")
+        eq(totals["pkg-config invocation -> either API"], 2, "both pkg-config queries expanded")
+        eq(source_api_vcache.STRATEGY_MARKERS["upstream"], "vcache-api-upstream",
+           "upstream marker identifies the pinned script")
+
+
+@test
 def vcache_experiment_reproduces_production_lanes_and_only_substitutes_autotools():
     with tempfile.TemporaryDirectory() as tmp_name:
         tmp = write_fixture(
@@ -1519,8 +1554,8 @@ def vcache_comparison_runs_only_vinyl_trunk_with_four_source_strategies():
            "comparison cells stay on the comparison targets")
         per_target = len({(item["row"], item["target"]) for item in vmod_items})
         eq(len(vmod_items), per_target * 4, "each VMOD is tested under all four strategies")
-        eq({item["source_api_strategy"] for item in vmod_items}, {"none", "vcache", "vcache-fixed", "directional"},
-           "comparison includes untouched, posted, fixed and directional source handling")
+        eq({item["source_api_strategy"] for item in vmod_items}, {"none", "vcache", "vcache-upstream", "directional"},
+           "comparison includes untouched, posted, current upstream and directional source handling")
         prefixes = tuple(f"{name}-" for name, _, _ in vcache_compare.STRATEGIES)
         ok(all(batch["batch"].startswith(prefixes) for batch in output["vmod_batches"]),
            "result artifact names retain their strategy")
@@ -1545,8 +1580,8 @@ def vcache_comparison_renders_every_strategy_against_one_fresh_engine():
             "issue-4537": make_cell("dict", "vinyl-trunk", target, "compat", "build_failed",
                                     "2026-09-11T12:02:00Z", detail="cache/cache.h: No such file",
                                     source_api_normalization="vcache-api"),
-            "issue-4537-fixed": make_cell("dict", "vinyl-trunk", target, "compat", "pass",
-                                          "2026-09-11T12:03:00Z", source_api_normalization="vcache-api-fixed"),
+            "issue-4537-upstream": make_cell("dict", "vinyl-trunk", target, "compat", "pass",
+                                             "2026-09-11T12:03:00Z", source_api_normalization="vcache-api-upstream"),
             "current-rules": make_cell("dict", "vinyl-trunk", target, "compat", "pass",
                                        "2026-09-11T12:04:00Z", source_api_normalization="varnish-to-vinyl"),
         }
@@ -1561,10 +1596,10 @@ def vcache_comparison_renders_every_strategy_against_one_fresh_engine():
         vcache_compare.render(root, results, engines, out, state_out, "2026-09-11T13:00:00Z")
 
         html_text = out.read_text()
-        for needle in ("No VMOD patching", "Issue #4537 recipe as posted", "Recipe with fixes",
+        for needle in ("No VMOD patching", "Issue #4537 recipe as posted", "Current upstream vcachize",
                        "Current packaging rules", "VARNISH_PREREQ is unknown", "cache/cache.h: No such file",
                        "cccccccccccc", "VMOD \\ source handling", "recipe as posted in issue #4537",
-                       "recipe plus fixes"):
+                       "upstream vcachize.sh from PR #4588"):
             ok(needle in html_text, f"comparison page is missing {needle!r}")
         state = json.loads(state_out.read_text())
         eq(len(state["cells"]), 8, "comparison state holds one engine and one VMOD observation per column")

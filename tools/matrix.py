@@ -113,6 +113,7 @@ SOURCE_API_NORMALIZATIONS = tuple(
     # Both remain distinct from the production directional translator.
     "vcache-api",
     "vcache-api-fixed",
+    "vcache-api-upstream",
 )
 # VCL import names (package.modules entries). VMOD ids may contain hyphens
 # (varnish-modules); module names may not.
@@ -1294,6 +1295,8 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
                         line += " Source converted with the neutral VCACHE recipe as posted in issue #4537."
                     elif direction == "vcache-api-fixed":
                         line += " Source converted with the issue #4537 recipe plus fixes."
+                    elif direction == "vcache-api-upstream":
+                        line += " Source converted with upstream vcachize.sh from PR #4588."
                     else:
                         line += f" API name translation: {direction}."
                 if cell.get("ref"):

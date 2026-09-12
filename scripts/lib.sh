@@ -722,6 +722,10 @@ normalize_vmod_source() {
     python3 /repo/tools/source_api_vcache.py --strategy fixed \
       --marker "/work/tmp/$tag.source-api-normalization" "$src"
     ;;
+  vcache-upstream)
+    python3 /repo/tools/source_api_vcache.py --strategy upstream \
+      --marker "/work/tmp/$tag.source-api-normalization" "$src"
+    ;;
   *)
     echo "unknown source API strategy: $VCACHE_SOURCE_API_STRATEGY" >&2
     return 1
