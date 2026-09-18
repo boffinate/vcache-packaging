@@ -12,9 +12,11 @@ upstream:
 sources:
   head: main
   default:
-    ref: "9.0-23.1"
-    commit: "b6ca669fc9af3399f3845d9d4930683b4e378aa8"
-    version: "23.1"
+    # Upstream closed the Varnish 9.0 line as the 9.0-archived branch. Its
+    # tip is six unreleased commits past the last release tag, 9.0-23.3.
+    ref: "9.0-archived"
+    commit: "ca4a5f593249139af6c0df08cbfbb8c5c5e9cdec"
+    version: "23.3+git20260916"
 package:
   summary: Redis client VMOD for Varnish Cache and Vinyl Cache
   description:
