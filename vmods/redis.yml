@@ -12,9 +12,9 @@ upstream:
 sources:
   head: main
   default:
-    ref: "9.0-23.1"
-    commit: "b6ca669fc9af3399f3845d9d4930683b4e378aa8"
-    version: "23.1"
+    ref: "9.0-23.4"
+    commit: "98b2dae17a078427bd97ac9836d6ce02aced976c"
+    version: "23.4"
 package:
   summary: Redis client VMOD for Varnish Cache and Vinyl Cache
   description:
