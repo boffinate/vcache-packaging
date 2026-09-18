@@ -11,9 +11,9 @@ upstream:
 sources:
   head: main
   default:
-    ref: 9.0-21.1
-    commit: "3399f0d13537c55af774b7ef019f72cdada98b4e"
-    version: "21.1"
+    ref: "9.0-21.3"
+    commit: "0efc800afc74a0c597530aae23393232c0f4c619"
+    version: "21.3"
   by_series:
     varnish-9.1:
       ref: 9.1-22.0
