@@ -71,7 +71,7 @@ Verified through the real harness on debian-13-arm64 against vinyl-9.0.1:
 | dns | github.com/kenshaw/libvmod-dns | vinylized 2026-07-25; Apache-2.0 | libresolv only; zero tags ever, pin master |
 | xcounter | github.com/xcir/libvmod-xcounter | `vinyl-main` branch targets Vinyl 9.0.x; sweep green | pin `vinyl-main`, `families: vinyl`; verify COPYING |
 | cfg | github.com/carlosabalde/libvmod-cfg | explicit `9.0-21.1` tag 2026-03; same maintainer as redis | libcurl + LuaJIT (`--disable-luajit` exists); pin the 9.0 tag — sweep failed *master* on both lanes, the tag matters |
-| gossip | github.com/carlosabalde/libvmod-gossip | `9.0-18.0` tag; sweep: green Varnish 9, red vinyl (object-event API) | `families: varnish` |
+| gossip | github.com/carlosabalde/libvmod-gossip | `9.0-18.0` tag; sweep: green Varnish 9, red vinyl (object-event API) | was catalogued; upstream archived the repository, removed 2026-09-18 (decision 33) |
 | basicauth | download.gnu.org.ua/release/vmod-basicauth | release 2.2 in the Feb/Mar-2026 gnu.org.ua wave | sweep: green Varnish 9, red vinyl (version-guard macros); GPL-3; release tarball needs no autotools |
 | uuid | github.com/otto-de/libvmod-uuid | sweep green both lanes (shimmed); v1 marked it deferred-not-rejected purely on tag policy | OSSP uuid; pin master; `families: varnish` |
 
