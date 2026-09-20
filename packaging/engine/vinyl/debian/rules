@@ -22,7 +22,7 @@ override_dh_auto_configure:
 # checks cover the packaged artifact.
 override_dh_auto_test:
 
-# VINYL_STATE_DIR: the 9.0.1 release tarball's install-data-local rule mkdirs
+# VINYL_STATE_DIR: affected release tarballs' install-data-local rule mkdirs
 # the state dir without $(DESTDIR); the *relative* override keeps that mkdir
 # harmlessly inside the build tree on affected tarballs and is a no-op on
 # fixed ones. vinylstat_help_gen is a build-time generator with no runtime
@@ -31,5 +31,11 @@ override_dh_auto_install:
 	dh_auto_install -- VINYL_STATE_DIR=var/lib/vinyl-cache
 	rm -f debian/tmp/usr/bin/vinylstat_help_gen
 	find debian/tmp \( -name '*.la' -o -name '*.a' \) -delete
+	# Vinyl 9.1+ advertises this test extension in vinylapi.pc; older releases
+	# share the recipe but install no matching file.
+	if ls debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/libvtest_ext_vinyl.so* >/dev/null 2>&1; then \
+		install -d debian/vinyl-cache-dev/usr/lib/$(DEB_HOST_MULTIARCH); \
+		mv debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/libvtest_ext_vinyl.so* debian/vinyl-cache-dev/usr/lib/$(DEB_HOST_MULTIARCH)/; \
+	fi
 	install -D -m 0644 etc/example.vcl debian/tmp/etc/vinyl-cache/default.vcl
 	install -D -m 0755 debian/vinyl-cache.reload debian/tmp/usr/sbin/vinylreload

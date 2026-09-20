@@ -174,7 +174,7 @@ def batch_key(items: list[dict], engine_artifacts: Path, sources: Path, repo_roo
         "schema": SCHEMA,
         "engine": items[0]["engine"], "target": items[0]["target"],
         "mode": items[0]["mode"], "runner": items[0]["runner"],
-        # Restore prefixes must not cross batch membership. Multiple six-cell
+        # Restore prefixes must not cross batch membership. Multiple bounded
         # batches have the same execution contract and run concurrently.
         "cells": [cache_cell_id(item) for item in items],
         "engine_contract": manifests[cache_cell_id(items[0])]["engine_contract"],

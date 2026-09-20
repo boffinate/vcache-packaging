@@ -126,7 +126,7 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "description": "Engine id, '<family>-<version>'. The version half is derived from it, so 'vinyl-9.0.1' yields version 9.0.1."
+            "description": "Engine id, '<family>-<version>'. The version half is derived from it, so 'vinyl-9.0.1' yields version 9.0.1. Release versions use exact major.minor.patch form."
           },
           "family": {
             "type": "string",

@@ -25,8 +25,8 @@ Those schemas are convenience, not truth. `matrix.py validate` is the authority:
 Container builds (never on the host):
 
 ```sh
-scripts/build-engine.sh vinyl-9.0.1 debian-13-amd64 work/
-scripts/build-vmod.sh dict vinyl-9.0.1 debian-13-amd64 compat work/
+scripts/build-engine.sh vinyl-9.1.0 debian-13-amd64 work/
+scripts/build-vmod.sh dict vinyl-9.1.0 debian-13-amd64 compat work/
 python3 tools/matrix.py merge --results-dir work/results --state-file work/state.json
 python3 tools/matrix.py render --state-file work/state.json --out work/index.html
 ```

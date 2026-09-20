@@ -79,11 +79,12 @@ TARGET_PLATFORMS = ("linux/amd64", "linux/arm64")
 # "engine" marks an engine's own build cell (row == engine id); the build
 # scripts write it and the grid shows it on the shared "(engine)" display row.
 MODES = ("compat", "package", "engine")
-# Six cells recovers most per-job setup and billing overhead while leaving
-# enough independent batches to absorb the large runtime variance between
-# VMODs at the workflow's 20-runner concurrency limit.
-VMOD_BATCH_SIZE = 6
+# Ten cells keep the retained release columns below GitHub's 256-job matrix
+# limit while preserving cell-isolated work directories and containers.
+VMOD_BATCH_SIZE = 10
 SOURCE_BATCH_SIZE = 6
+GITHUB_MATRIX_JOB_LIMIT = 256
+GITHUB_JOB_OUTPUT_LIMIT = 1_000_000
 STATUSES = (
     "pass",
     "configure_failed",
@@ -117,6 +118,7 @@ CARGO_FEATURE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 CONFIGURE_ARG_RE = re.compile(r"^--[A-Za-z0-9][A-Za-z0-9_.=-]*$")
 RUST_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 PACKAGE_REVISION_RE = re.compile(r"^[1-9][0-9]*$")
+RELEASE_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 # Trunk engines configure as version "trunk"; the prefix .pc files get this
 # numeric stand-in so version-parsing build systems order it (decision 29).
 PKGCONFIG_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
@@ -247,6 +249,13 @@ def _load_engines(path: Path, errors: list) -> tuple[list, dict, dict]:
         kind = _str_value(engine, "kind", ectx, errors)
         if kind and kind not in KINDS:
             errors.append(f"{ectx}: kind must be one of {KINDS}, got {kind!r}")
+        if kind == "release" and family and eid:
+            version = eid[len(family) + 1:]
+            if not RELEASE_VERSION_RE.match(version):
+                errors.append(
+                    f"{ectx}: release id version must match {RELEASE_VERSION_RE.pattern!r}, "
+                    f"got {version!r}"
+                )
         _str_value(engine, "series", ectx, errors)
         packages = engine.get("packages", "false")
         if packages not in ("true", "false"):
@@ -1517,16 +1526,25 @@ def cmd_expand(args) -> int:
     if args.format == "github":
         source_groups = {vmod["id"]: vmod_build(vmod) for vmod in catalog["vmods"].values()}
         source_batches, source_artifacts = batch_sources(expansion["sources"], source_groups)
-        # Seven `key=<json>` lines, appended verbatim to $GITHUB_OUTPUT.
-        # Engine rows are excluded from vmods= (they would become bogus VMOD
-        # jobs). Each VMOD batch becomes one reusable-workflow runner job.
-        print("engines=" + json.dumps(expansion["engines"], separators=(",", ":")))
-        print("engine_batches=" + json.dumps(batch_engines(expansion["engines"]), separators=(",", ":")))
-        print("vmods=" + json.dumps(expansion["vmods"], separators=(",", ":")))
-        print("vmod_sources=" + json.dumps(expansion["sources"], separators=(",", ":")))
-        print("source_batches=" + json.dumps(source_batches, separators=(",", ":")))
-        print("vmod_batches=" + json.dumps(batch_vmods(expansion["vmods"], source_artifacts), separators=(",", ":")))
-        print("package_pairs=" + json.dumps(expansion["package_pairs"], separators=(",", ":")))
+        outputs = {
+            "engine_batches": batch_engines(expansion["engines"]),
+            "source_batches": source_batches,
+            "vmod_batches": batch_vmods(expansion["vmods"], source_artifacts),
+            "package_pairs": expansion["package_pairs"],
+        }
+        for name, rows in outputs.items():
+            if len(rows) > GITHUB_MATRIX_JOB_LIMIT:
+                raise CatalogError(
+                    f"{name} has {len(rows)} jobs, exceeding GitHub's {GITHUB_MATRIX_JOB_LIMIT}-job matrix limit"
+                )
+        text = "\n".join(
+            name + "=" + json.dumps(rows, separators=(",", ":")) for name, rows in outputs.items()
+        ) + "\n"
+        if len(text.encode("utf-16-le")) > GITHUB_JOB_OUTPUT_LIMIT:
+            raise CatalogError(
+                f"GitHub expansion output exceeds the {GITHUB_JOB_OUTPUT_LIMIT}-byte per-job limit"
+            )
+        print(text, end="")
     else:
         print(json.dumps(expansion["rows"], indent=2))
     return 0
@@ -1558,13 +1576,20 @@ def cmd_cohort_env(args) -> int:
 
 def cmd_select_engine(args) -> int:
     catalog = load_catalog(args.root)
-    matches = [engine["id"] for engine in catalog["engines"]
+    matches = [engine for engine in catalog["engines"]
                if engine["family"] == args.family and engine["kind"] == args.kind]
-    if len(matches) != 1:
+    if not matches:
+        raise CatalogError(f"no {args.kind} engine in family {args.family!r}")
+    if args.kind == "release":
+        selected = max(matches, key=lambda engine: tuple(int(part) for part in engine_version(engine).split(".")))
+    elif len(matches) == 1:
+        selected = matches[0]
+    else:
         raise CatalogError(
-            f"expected exactly one {args.kind} engine in family {args.family!r}, got {matches!r}"
+            f"expected exactly one {args.kind} engine in family {args.family!r}, "
+            f"got {[engine['id'] for engine in matches]!r}"
         )
-    print(matches[0])
+    print(selected["id"])
     return 0
 
 
@@ -1661,7 +1686,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_root(p)
     p.set_defaults(func=cmd_cohort_env)
 
-    p = sub.add_parser("select-engine", help="select the unique engine matching a family and kind")
+    p = sub.add_parser("select-engine", help="select the newest release or unique trunk matching a family")
     p.add_argument("--family", required=True, choices=FAMILIES)
     p.add_argument("--kind", required=True, choices=KINDS)
     add_root(p)

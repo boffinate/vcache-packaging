@@ -238,7 +238,7 @@ def must_replace(text: str, old: str, new: str) -> str:
 
 
 def varnish_package_fixture(include_rpm: bool = False) -> str:
-    """A proof fixture only: the real Varnish catalog row stays disabled."""
+    """Enable packaging on the minimal Varnish fixture used by recipe tests."""
     engines = must_replace(
         FIXTURE_ENGINES,
         '      sha256: "bb22"\n    packages: "false"\n',
@@ -472,6 +472,14 @@ def catalog_requires_canonical_package_revision():
     with tempfile.TemporaryDirectory() as tmp:
         expect_catalog_error(write_fixture(Path(tmp), engines=inactive),
                              'valid only when packages is "true"', "inactive package revision")
+
+
+@test
+def catalog_requires_numeric_release_versions():
+    with tempfile.TemporaryDirectory() as tmp:
+        engines = must_replace(FIXTURE_ENGINES, "id: vinyl-9.0.1", "id: vinyl-next")
+        expect_catalog_error(write_fixture(Path(tmp), engines=engines),
+                             "release id version", "non-numeric release")
 
 
 @test
@@ -1086,29 +1094,24 @@ def expand_trunk_lane_and_github_format():
         code, out, _ = run_cli(["expand", "--lane", "trunk", "--format", "github", "--root", root])
         eq(code, 0, "expand exit code")
         lines = out.strip().split("\n")
-        eq(len(lines), 7, "github format includes bounded source and engine matrices")
-        ok(lines[0].startswith("engines=") and lines[1].startswith("engine_batches=")
-           and lines[2].startswith("vmods=") and lines[3].startswith("vmod_sources=")
-           and lines[4].startswith("source_batches=") and lines[5].startswith("vmod_batches=")
-           and lines[6].startswith("package_pairs="),
+        eq(len(lines), 4, "github format emits only workflow-consumed matrices")
+        ok(lines[0].startswith("engine_batches=") and lines[1].startswith("source_batches=")
+           and lines[2].startswith("vmod_batches=") and lines[3].startswith("package_pairs="),
            "github output keys")
-        engines = json.loads(lines[0][len("engines="):])
-        engine_batches = json.loads(lines[1][len("engine_batches="):])
-        vmods = json.loads(lines[2][len("vmods="):])
-        sources = json.loads(lines[3][len("vmod_sources="):])
-        source_batches = json.loads(lines[4][len("source_batches="):])
-        batches = json.loads(lines[5][len("vmod_batches="):])
-        package_pairs = json.loads(lines[6][len("package_pairs="):])
-        ok(engines and vmods, "neither github array is empty")
-        eq([item for batch in engine_batches for item in json.loads(batch["items"])], engines,
-           "engine batches preserve every engine pair")
+        engine_batches = json.loads(lines[0][len("engine_batches="):])
+        source_batches = json.loads(lines[1][len("source_batches="):])
+        batches = json.loads(lines[2][len("vmod_batches="):])
+        package_pairs = json.loads(lines[3][len("package_pairs="):])
+        engines = [item for batch in engine_batches for item in json.loads(batch["items"])]
+        sources = [item for batch in source_batches for item in json.loads(batch["items"])]
+        vmods = [row for batch in batches for row in json.loads(batch["items"])]
+        ok(engines and vmods, "neither workflow matrix is empty")
+        eq(engines, expansion["engines"], "engine batches preserve every engine pair")
+        eq(sources, expansion["sources"], "source batches preserve every resolved source")
+        eq(vmods, expansion["vmods"], "VMOD batches preserve every logical row")
         eq(len(sources), 1, "one trunk source feeds every matching VMOD cell")
-        eq([item for batch in source_batches for item in json.loads(batch["items"])], sources,
-           "source batches preserve every resolved source")
-        ok(all(set(r) >= {"engine", "target", "runner"} for r in engines), "engines= row shape")
-        ok(all(r["row"] != r["engine"] for r in vmods), "vmods= excludes engine rows")
-        eq([row for batch in batches for row in json.loads(batch["items"])], vmods,
-           "vmod_batches preserves every VMOD row")
+        ok(all(set(r) >= {"engine", "target", "runner"} for r in engines), "engine row shape")
+        ok(all(r["row"] != r["engine"] for r in vmods), "VMOD batches exclude engine rows")
         eq(package_pairs, [], "trunk has no publishable package cohorts")
         code, _, err = run_cli(["expand", "--lane", "trunk", "--mode", "package", "--root", root])
         eq(code, 1, "trunk+package is an error")
@@ -1199,6 +1202,21 @@ def source_and_engine_batches_are_bounded_and_preserve_inputs():
        "engine batches never mix targets")
 
 
+@test
+def production_release_expansion_fits_github_limits():
+    catalog = matrix.load_catalog(matrix.default_root())
+    expansion = matrix.expand(catalog, "release", "all")
+    source_groups = {vmod["id"]: matrix.vmod_build(vmod) for vmod in catalog["vmods"].values()}
+    _, source_artifacts = matrix.batch_sources(expansion["sources"], source_groups)
+    batches = matrix.batch_vmods(expansion["vmods"], source_artifacts)
+    ok(len(batches) <= matrix.GITHUB_MATRIX_JOB_LIMIT,
+       f"release matrix has {len(batches)} VMOD jobs, above GitHub's limit")
+    code, out, err = run_cli(["expand", "--lane", "release", "--mode", "all", "--format", "github"])
+    eq(code, 0, f"production GitHub expansion stays within limits: {err}")
+    ok(len(out.encode("utf-16-le")) <= matrix.GITHUB_JOB_OUTPUT_LIMIT,
+       "production GitHub output stays within the per-job output limit")
+
+
 # ---------------------------------------------------------------------------
 # env
 # ---------------------------------------------------------------------------
@@ -1262,10 +1280,57 @@ def env_output_is_sh_sourceable():
         eq(code, 1, "target not in engine targets is an error")
         ok("not a target of engine" in err, "target error message")
 
+        newer_varnish = textwrap.indent(textwrap.dedent(
+            """\
+            - id: varnish-9.10.0
+              family: varnish
+              series: varnish-9.10
+              kind: release
+              source:
+                tarball_url: https://example.org/varnish-9.10.0.tar.gz
+                sha256: "cc33"
+              packages: "false"
+              targets:
+                - debian-13-amd64
+            - id: varnish-9.9.0
+              family: varnish
+              series: varnish-9.9
+              kind: release
+              source:
+                tarball_url: https://example.org/varnish-9.9.0.tar.gz
+                sha256: "dd44"
+              packages: "false"
+              targets:
+                - debian-13-amd64
+            """
+        ), "  ")
+        engines = must_replace(FIXTURE_ENGINES, "  - id: vinyl-trunk\n", newer_varnish + "  - id: vinyl-trunk\n")
+        selection_root = str(write_fixture(Path(tmp) / "selection", engines=engines))
         code, out, _ = run_cli(["select-engine", "--family", "varnish", "--kind", "release",
-                                "--root", root])
+                                "--root", selection_root])
         eq(code, 0, "select-engine exit code")
-        eq(out.strip(), "varnish-9.0.3", "select-engine returns the unique catalog match")
+        eq(out.strip(), "varnish-9.10.0", "select-engine returns the highest numeric release match")
+
+        ambiguous_trunk = FIXTURE_ENGINES + textwrap.indent(textwrap.dedent(
+            """\
+            - id: vinyl-edge
+              family: vinyl
+              series: vinyl-edge
+              kind: trunk
+              source:
+                git_url: https://example.org/vinyl.git
+                branch: edge
+              packages: "false"
+              pkgconfig_version: "9.98.0"
+              targets:
+                - debian-13-amd64
+            """
+        ), "  ")
+        trunk_root = str(write_fixture(Path(tmp) / "ambiguous-trunk", engines=ambiguous_trunk))
+        code, _, err = run_cli(["select-engine", "--family", "vinyl", "--kind", "trunk",
+                                "--root", trunk_root])
+        eq(code, 1, "select-engine rejects ambiguous trunk matches")
+        ok("expected exactly one trunk engine" in err, "ambiguous trunk error names the invariant")
 
 
 @test
@@ -2823,6 +2888,13 @@ def engine_packages_declare_build_and_systemd_contracts():
            f"{family} RPM consumes the shared reload helper")
         ok("%systemd_post" in spec and "%systemd_preun" in spec and "%systemd_postun_with_restart" in spec,
            f"{family} RPM has complete systemd lifecycle hooks")
+
+    vinyl_rules = (root / "packaging" / "engine" / "vinyl" / "debian" / "rules").read_text()
+    vinyl_spec = (root / "packaging" / "engine" / "vinyl" / "vinyl-cache.spec").read_text()
+    ok("libvtest_ext_vinyl.so*" in vinyl_rules,
+       "Vinyl Debian development package conditionally collects the vtest extension")
+    ok("vinyl-devel.files" in vinyl_spec and "libvtest_ext_vinyl.so*" in vinyl_spec,
+       "Vinyl RPM development package conditionally collects the vtest extension")
 
 
 @test

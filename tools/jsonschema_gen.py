@@ -196,7 +196,7 @@ def build_engines() -> dict:
         {
             "id": _string(
                 "Engine id, '<family>-<version>'. The version half is derived from "
-                "it, so 'vinyl-9.0.1' yields version 9.0.1."
+                "it, so 'vinyl-9.0.1' yields version 9.0.1. Release versions use exact major.minor.patch form."
             ),
             "family": _string("Upstream project.", enum=list(matrix.FAMILIES)),
             "series": _string(

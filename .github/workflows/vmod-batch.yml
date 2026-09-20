@@ -22,7 +22,7 @@ on:
         required: true
         type: string
       items:
-        description: JSON array of at most six VMOD cells with one execution contract.
+        description: JSON array of at most ten VMOD cells with one execution contract.
         required: true
         type: string
       upload_packages:

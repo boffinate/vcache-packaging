@@ -49,9 +49,9 @@ Depends:
  pkgconf,
  python3,
 Description: development files for Vinyl Cache (matrix build)
- Headers, the vinylapi.pc pkg-config file, the vinyl.m4 autoconf macros and
- the vmodtool.py/vsctool.py generators needed to build a Vinyl Cache VMOD or
- an application against libvinylapi.
+ Headers, the vinylapi.pc pkg-config file, the vtest extension, the vinyl.m4
+ autoconf macros and the vmodtool.py/vsctool.py generators needed to build and
+ test a Vinyl Cache VMOD or build an application against libvinylapi.
  .
  A VMOD is bound to the exact Vinyl Cache build it was compiled against, so
  this package depends on the exact matching vinyl-cache binary version.

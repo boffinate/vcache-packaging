@@ -47,9 +47,10 @@ Requires:       pkgconfig
 Requires:       python3
 
 %description devel
-Headers, vinylapi.pc, the vinyl autoconf macros and the vmodtool.py/vsctool.py
-generators needed to build a VMOD against Vinyl Cache. A VMOD is bound to the
-exact runtime build, so this package requires the exact matching vinyl-cache.
+Headers, vinylapi.pc, the vtest extension, the vinyl autoconf macros and the
+vmodtool.py/vsctool.py generators needed to build and test a VMOD against
+Vinyl Cache. A VMOD is bound to the exact runtime build, so this package
+requires the exact matching vinyl-cache.
 
 %prep
 %setup -q -n %{engine_srcdir}
@@ -74,10 +75,15 @@ export VCC_CC="exec %{__cc} $VCC_CFLAGS %%w -pthread -fpic -shared -Wl,-x -o %%o
 %make_build
 
 %install
-# Relative VINYL_STATE_DIR override: the 9.0.1 tarball's install-data-local
+# Relative VINYL_STATE_DIR override: affected tarballs' install-data-local
 # mkdirs the state dir without $(DESTDIR); this keeps it inside the build tree.
 %make_install VINYL_STATE_DIR=var/lib/vinyl-cache
 find %{buildroot} -name '*.la' -delete
+# The 9.1+ SDK advertises this engine-specific vtest command extension in
+# vinylapi.pc. Older releases do not install it, so generate an optional file
+# list instead of making their shared family recipe fail on an unmatched glob.
+find %{buildroot}%{_libdir} -maxdepth 1 -name 'libvtest_ext_vinyl.so*' -print \
+  | sed 's|^%{buildroot}||' > vinyl-devel.files
 # Build-time help-text generator with no runtime user.
 rm -f %{buildroot}%{_bindir}/vinylstat_help_gen
 install -D -m 0644 etc/example.vcl %{buildroot}%{_sysconfdir}/vinyl-cache/default.vcl
@@ -114,7 +120,7 @@ getent passwd vinyl >/dev/null || useradd -r -g vinyl -d /nonexistent -s /sbin/n
 %{_mandir}/man3/*
 %{_mandir}/man7/*
 
-%files devel
+%files devel -f vinyl-devel.files
 %{_includedir}/vinyl-cache/
 %{_libdir}/libvinylapi.so
 %{_libdir}/pkgconfig/vinylapi.pc
