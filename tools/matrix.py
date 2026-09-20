@@ -85,6 +85,7 @@ VMOD_BATCH_SIZE = 10
 SOURCE_BATCH_SIZE = 6
 GITHUB_MATRIX_JOB_LIMIT = 256
 GITHUB_JOB_OUTPUT_LIMIT = 1_000_000
+VMOD_BATCH_CONTRACT_KEYS = ("engine", "target", "mode", "runner")
 STATUSES = (
     "pass",
     "configure_failed",
@@ -939,6 +940,8 @@ def batch_vmods(rows: list, source_artifacts: dict | None = None, size: int = VM
     A batch shares only the runner-level inputs that are safe to reuse. Each
     cell still gets its own work directory and disposable build containers.
     ``items`` remains JSON text because it crosses a workflow_call boundary.
+    Fields already carried by the batch are omitted and restored by the
+    consumer so GitHub output size grows with cells, not duplicated contracts.
     """
     if size < 1:
         raise ValueError("VMOD batch size must be positive")
@@ -955,6 +958,10 @@ def batch_vmods(rows: list, source_artifacts: dict | None = None, size: int = VM
                 for item in items
             ))
             source_pattern = sources[0] if len(sources) == 1 else "{" + ",".join(sources) + "}"
+            compact_items = [
+                {name: value for name, value in item.items() if name not in VMOD_BATCH_CONTRACT_KEYS}
+                for item in items
+            ]
             batches.append({
                 "batch": f"batch-{len(batches) + 1:03d}",
                 "engine": key[0],
@@ -962,9 +969,41 @@ def batch_vmods(rows: list, source_artifacts: dict | None = None, size: int = VM
                 "mode": key[2],
                 "runner": key[3],
                 "source_pattern": source_pattern,
-                "items": json.dumps(items, separators=(",", ":")),
+                "items": json.dumps(compact_items, separators=(",", ":")),
             })
     return batches
+
+
+def hydrate_vmod_batch_items(items: list[dict], contract: dict) -> list[dict]:
+    """Restore fields shared by every cell in a VMOD batch."""
+    missing = [key for key in VMOD_BATCH_CONTRACT_KEYS if not contract.get(key)]
+    if missing:
+        raise ValueError(f"VMOD batch contract is missing keys: {', '.join(missing)}")
+    shared = {key: contract[key] for key in VMOD_BATCH_CONTRACT_KEYS}
+    hydrated = []
+    for item in items:
+        conflicts = [key for key in VMOD_BATCH_CONTRACT_KEYS if key in item and item[key] != shared[key]]
+        if conflicts:
+            raise ValueError(f"VMOD batch cell conflicts with contract keys: {', '.join(conflicts)}")
+        hydrated.append({**item, **shared})
+    return hydrated
+
+
+def github_output_text(outputs: dict[str, list]) -> str:
+    """Render bounded workflow matrices using GitHub's output accounting."""
+    for name, rows in outputs.items():
+        if len(rows) > GITHUB_MATRIX_JOB_LIMIT:
+            raise CatalogError(
+                f"{name} has {len(rows)} jobs, exceeding GitHub's {GITHUB_MATRIX_JOB_LIMIT}-job matrix limit"
+            )
+    value = "\n".join(
+        name + "=" + json.dumps(rows, separators=(",", ":")) for name, rows in outputs.items()
+    ) + "\n"
+    if len(value.encode("utf-16-le")) > GITHUB_JOB_OUTPUT_LIMIT:
+        raise CatalogError(
+            f"GitHub expansion output exceeds the {GITHUB_JOB_OUTPUT_LIMIT}-byte per-job limit"
+        )
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -1532,19 +1571,7 @@ def cmd_expand(args) -> int:
             "vmod_batches": batch_vmods(expansion["vmods"], source_artifacts),
             "package_pairs": expansion["package_pairs"],
         }
-        for name, rows in outputs.items():
-            if len(rows) > GITHUB_MATRIX_JOB_LIMIT:
-                raise CatalogError(
-                    f"{name} has {len(rows)} jobs, exceeding GitHub's {GITHUB_MATRIX_JOB_LIMIT}-job matrix limit"
-                )
-        text = "\n".join(
-            name + "=" + json.dumps(rows, separators=(",", ":")) for name, rows in outputs.items()
-        ) + "\n"
-        if len(text.encode("utf-16-le")) > GITHUB_JOB_OUTPUT_LIMIT:
-            raise CatalogError(
-                f"GitHub expansion output exceeds the {GITHUB_JOB_OUTPUT_LIMIT}-byte per-job limit"
-            )
-        print(text, end="")
+        print(github_output_text(outputs), end="")
     else:
         print(json.dumps(expansion["rows"], indent=2))
     return 0

@@ -174,11 +174,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cell-timeout", type=float, default=3600)
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--cache-report", type=Path)
+    vmod_cache.add_batch_contract_arguments(parser)
     args = parser.parse_args(argv)
     try:
         items = json.loads(os.environ["VMOD_BATCH_ITEMS"])
         if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
             raise ValueError("VMOD_BATCH_ITEMS must be a JSON array of objects")
+        items = vmod_cache.hydrate_cli_items(items, args)
         if args.cell_timeout <= 0:
             raise ValueError("--cell-timeout must be positive")
         return run_batch(items, args.engine_artifacts, args.sources, args.workdir, args.repo_root,

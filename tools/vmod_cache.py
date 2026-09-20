@@ -26,6 +26,16 @@ KEY_VERSION = "v1"
 CACHEABLE_STATUSES = frozenset(matrix.STATUSES) - {"infra_failed"}
 
 
+def add_batch_contract_arguments(parser: argparse.ArgumentParser) -> None:
+    for key in matrix.VMOD_BATCH_CONTRACT_KEYS:
+        parser.add_argument(f"--{key}", required=True)
+
+
+def hydrate_cli_items(items: list[dict], args: argparse.Namespace) -> list[dict]:
+    contract = {key: getattr(args, key) for key in matrix.VMOD_BATCH_CONTRACT_KEYS}
+    return matrix.hydrate_vmod_batch_items(items, contract)
+
+
 def canonical_json(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
 
@@ -292,14 +302,17 @@ def main(argv: list[str] | None = None) -> int:
     key.add_argument("--sources", type=Path, required=True)
     key.add_argument("--items")
     key.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parent.parent)
+    add_batch_contract_arguments(key)
     cacheable = sub.add_parser("cacheable", help="report whether a complete batch snapshot may be saved")
     cacheable.add_argument("--workdir", type=Path, required=True)
     cacheable.add_argument("--items")
+    add_batch_contract_arguments(cacheable)
     args = parser.parse_args(argv)
     try:
         items = json.loads(args.items if args.items is not None else os.environ["VMOD_BATCH_ITEMS"])
         if not isinstance(items, list) or not items or not all(isinstance(item, dict) for item in items):
             raise ValueError("VMOD_BATCH_ITEMS must be a non-empty JSON array of objects")
+        items = hydrate_cli_items(items, args)
         if args.command == "key":
             report, _ = batch_key(items, args.engine_artifacts, args.sources, args.repo_root)
             print(f"key={report['key']}")

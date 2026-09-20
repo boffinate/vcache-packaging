@@ -237,6 +237,14 @@ def must_replace(text: str, old: str, new: str) -> str:
     return text.replace(old, new)
 
 
+def hydrated_vmod_batch_items(batches: list[dict]) -> list[dict]:
+    return [
+        item
+        for batch in batches
+        for item in matrix.hydrate_vmod_batch_items(json.loads(batch["items"]), batch)
+    ]
+
+
 def varnish_package_fixture(include_rpm: bool = False) -> str:
     """Enable packaging on the minimal Varnish fixture used by recipe tests."""
     engines = must_replace(
@@ -1055,8 +1063,7 @@ def release_package_target_filter_limits_every_matrix_output():
            "target filter limits VMOD builds")
         eq({pair["target"] for pair in expansion["package_pairs"]}, {"el10-x86_64"},
            "target filter limits cohort and publication pairs")
-        eq([row for batch in matrix.batch_vmods(expansion["vmods"])
-            for row in json.loads(batch["items"])], expansion["vmods"],
+        eq(hydrated_vmod_batch_items(matrix.batch_vmods(expansion["vmods"])), expansion["vmods"],
            "target filter limits every reusable-workflow batch")
         for selector, expected in (
             ("missing", "without a package-enabled release pair"),
@@ -1104,7 +1111,7 @@ def expand_trunk_lane_and_github_format():
         package_pairs = json.loads(lines[3][len("package_pairs="):])
         engines = [item for batch in engine_batches for item in json.loads(batch["items"])]
         sources = [item for batch in source_batches for item in json.loads(batch["items"])]
-        vmods = [row for batch in batches for row in json.loads(batch["items"])]
+        vmods = hydrated_vmod_batch_items(batches)
         ok(engines and vmods, "neither workflow matrix is empty")
         eq(engines, expansion["engines"], "engine batches preserve every engine pair")
         eq(sources, expansion["sources"], "source batches preserve every resolved source")
@@ -1161,13 +1168,22 @@ def vmod_batches_are_homogeneous_bounded_and_ordered():
        "batch labels")
     eq([len(json.loads(batch["items"])) for batch in batches], [matrix.VMOD_BATCH_SIZE, 1, 2],
        "batch sizes")
-    eq([row for batch in batches for row in json.loads(batch["items"])], rows,
+    eq(hydrated_vmod_batch_items(batches), rows,
        "batches preserve group and row order")
     for batch in batches:
-        items = json.loads(batch["items"])
+        compact_items = json.loads(batch["items"])
+        ok(all(not set(matrix.VMOD_BATCH_CONTRACT_KEYS) & set(item) for item in compact_items),
+           "cell payloads omit the shared execution contract")
+        items = matrix.hydrate_vmod_batch_items(compact_items, batch)
         eq({(item["engine"], item["target"], item["mode"], item["runner"]) for item in items},
            {(batch["engine"], batch["target"], batch["mode"], batch["runner"])},
            "one batch uses one execution contract")
+    try:
+        matrix.hydrate_vmod_batch_items([{"row": "dict", "engine": "varnish-9.0.4"}], batches[0])
+    except ValueError as exc:
+        ok("conflicts with contract" in str(exc), "conflicting compact cell names its contract error")
+    else:
+        raise Fail("conflicting compact cell was accepted")
     eq(batches[0]["source_pattern"], "{vmod-source-0,vmod-source-1}",
        "batch source pattern deduplicates exact artifact names")
     eq(batches[1]["source_pattern"], "vmod-source-0",

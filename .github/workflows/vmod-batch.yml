@@ -22,7 +22,7 @@ on:
         required: true
         type: string
       items:
-        description: JSON array of at most ten VMOD cells with one execution contract.
+        description: Compact JSON array of at most ten VMOD cells; shared contract fields are separate inputs.
         required: true
         type: string
       upload_packages:
@@ -63,6 +63,10 @@ jobs:
           python3 tools/vmod_cache.py key \
             --engine-artifacts "batch-input/engine/engine-${{ inputs.engine }}-${{ inputs.target }}" \
             --sources batch-input/sources \
+            --engine "${{ inputs.engine }}" \
+            --target "${{ inputs.target }}" \
+            --mode "${{ inputs.mode }}" \
+            --runner "${{ inputs.runner }}" \
             --items "$VMOD_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
         env:
           VMOD_BATCH_ITEMS: ${{ inputs.items }}
@@ -78,7 +82,16 @@ jobs:
       - id: run-driver
         name: build VMOD batch
         continue-on-error: true
-        run: python3 tools/vmod_batch.py --engine-artifacts "batch-input/engine/engine-${{ inputs.engine }}-${{ inputs.target }}" --sources batch-input/sources --workdir work --cache-dir work/vmod-cache
+        run: >-
+          python3 tools/vmod_batch.py
+          --engine-artifacts "batch-input/engine/engine-${{ inputs.engine }}-${{ inputs.target }}"
+          --sources batch-input/sources
+          --workdir work
+          --cache-dir work/vmod-cache
+          --engine "${{ inputs.engine }}"
+          --target "${{ inputs.target }}"
+          --mode "${{ inputs.mode }}"
+          --runner "${{ inputs.runner }}"
         env:
           VMOD_BATCH_ITEMS: ${{ inputs.items }}
       - id: cacheable
@@ -87,6 +100,10 @@ jobs:
         run: |
           python3 tools/vmod_cache.py cacheable \
             --workdir work \
+            --engine "${{ inputs.engine }}" \
+            --target "${{ inputs.target }}" \
+            --mode "${{ inputs.mode }}" \
+            --runner "${{ inputs.runner }}" \
             --items "$VMOD_BATCH_ITEMS" >> "$GITHUB_OUTPUT"
         env:
           VMOD_BATCH_ITEMS: ${{ inputs.items }}
