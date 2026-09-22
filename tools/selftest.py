@@ -2911,6 +2911,8 @@ def engine_packages_declare_build_and_systemd_contracts():
        "Vinyl Debian development package conditionally collects the vtest extension")
     ok("vinyl-devel.files" in vinyl_spec and "libvtest_ext_vinyl.so*" in vinyl_spec,
        "Vinyl RPM development package conditionally collects the vtest extension")
+    ok("printf '%s\\n' '%{_libdir}/libvinylapi.so' > vinyl-devel.files" in vinyl_spec,
+       "Vinyl RPM development manifest retains a file on releases without the vtest extension")
 
 
 @test

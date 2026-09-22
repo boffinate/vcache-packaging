@@ -79,11 +79,13 @@ export VCC_CC="exec %{__cc} $VCC_CFLAGS %%w -pthread -fpic -shared -Wl,-x -o %%o
 # mkdirs the state dir without $(DESTDIR); this keeps it inside the build tree.
 %make_install VINYL_STATE_DIR=var/lib/vinyl-cache
 find %{buildroot} -name '*.la' -delete
+# Keep a stable development file in the generated manifest because rpmbuild
+# rejects an empty -f file on older releases without the vtest extension.
+printf '%s\n' '%{_libdir}/libvinylapi.so' > vinyl-devel.files
 # The 9.1+ SDK advertises this engine-specific vtest command extension in
-# vinylapi.pc. Older releases do not install it, so generate an optional file
-# list instead of making their shared family recipe fail on an unmatched glob.
+# vinylapi.pc. Older releases do not install it, so append matches when present.
 find %{buildroot}%{_libdir} -maxdepth 1 -name 'libvtest_ext_vinyl.so*' -print \
-  | sed 's|^%{buildroot}||' > vinyl-devel.files
+  | sed 's|^%{buildroot}||' >> vinyl-devel.files
 # Build-time help-text generator with no runtime user.
 rm -f %{buildroot}%{_bindir}/vinylstat_help_gen
 install -D -m 0644 etc/example.vcl %{buildroot}%{_sysconfdir}/vinyl-cache/default.vcl
@@ -122,7 +124,6 @@ getent passwd vinyl >/dev/null || useradd -r -g vinyl -d /nonexistent -s /sbin/n
 
 %files devel -f vinyl-devel.files
 %{_includedir}/vinyl-cache/
-%{_libdir}/libvinylapi.so
 %{_libdir}/pkgconfig/vinylapi.pc
 %{_datadir}/aclocal/*.m4
 %{_datadir}/vinyl-cache/vmodtool.py
