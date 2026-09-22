@@ -1,5 +1,7 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-cfg (schema vmod/1, DESIGN.md).
+# The 9.1 release is flavor-neutral; the series override avoids the 9.0
+# release's exclusive 9.1 upper bound.
 schema: vmod/1
 id: cfg
 source_api_family: varnish
@@ -12,6 +14,11 @@ sources:
     ref: 9.0-21.1
     commit: "3399f0d13537c55af774b7ef019f72cdada98b4e"
     version: "21.1"
+  by_series:
+    vinyl-9.1:
+      ref: 9.1-22.0
+      commit: "e415e2f3b54691f56d38cfe16bf65b0ac9edab81"
+      version: "22.0"
 package:
   summary: Configuration and environment VMOD for Varnish Cache and Vinyl Cache
   description:

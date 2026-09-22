@@ -102,6 +102,45 @@ def _substitute(data: bytes, old: bytes, new: bytes, counts: Counter[str]) -> by
     return data
 
 
+def _retarget_vcache_require(
+    data: bytes,
+    path: Path,
+    source_family: str,
+    target_family: str,
+    counts: Counter[str],
+) -> bytes:
+    """Retarget ordinary literal single-provider VCACHE_REQUIRE calls.
+
+    Matching the complete argument list keeps multi-provider and computed m4
+    declarations outside this rule. Requiring the macro at the start of a
+    logical line avoids comment lines and examples embedded inline in strings.
+    """
+    if path.name != "configure.ac" and path.suffix != ".m4":
+        return data
+    horizontal_or_newline = rb"[ \t\r\n]"
+    literal_value = rb"\[[ \t]*[A-Za-z0-9][A-Za-z0-9._+~-]*[ \t]*\]"
+    pattern = re.compile(
+        rb"(?m)^[ \t]*VCACHE_REQUIRE"
+        + horizontal_or_newline + rb"*\(" + horizontal_or_newline + rb"*"
+        + rb"\[\[" + horizontal_or_newline + rb"*"
+        + rb"(?P<provider>" + re.escape(source_family.encode()) + rb")"
+        + horizontal_or_newline + rb"*\]"
+        + rb"(?:" + horizontal_or_newline + rb"*," + horizontal_or_newline + rb"*"
+        + literal_value + rb")*"
+        + horizontal_or_newline + rb"*\]"
+        + horizontal_or_newline + rb"*\)",
+    )
+    data, count = pattern.subn(
+        lambda match: match.group(0)[: match.start("provider") - match.start(0)]
+        + target_family.encode()
+        + match.group(0)[match.end("provider") - match.start(0):],
+        data,
+    )
+    if count:
+        counts[f"VCACHE_REQUIRE provider {source_family} -> {target_family}"] += count
+    return data
+
+
 def normalize_bytes(
     data: bytes,
     path: Path,
@@ -112,6 +151,8 @@ def normalize_bytes(
     counts: Counter[str] = Counter()
     if path.suffix == ".vsc":
         data = _substitute(data, *VSC_REPLACEMENT, counts)
+    if source_family != target_family:
+        data = _retarget_vcache_require(data, path, source_family, target_family, counts)
     for old, new in family_replacements:
         # vtest2's leading keyword is independent of the engine family, so a
         # cross-family tool-name replacement would produce invalid VTC syntax.

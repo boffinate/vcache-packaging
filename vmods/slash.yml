@@ -1,9 +1,10 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # SLASH/ Vinyl Cache storage engines (schema vmod/1, DESIGN.md).
 #
-# Upstream master tracks Vinyl Cache main / 9.0 and explicitly supports Vinyl
-# only. Its configure.ac requires VINYLSRC, then includes daemon-private and
-# libvsc headers to implement the buddy and Fellow stevedores. The shared
+# Upstream master tracks Vinyl Cache main and explicitly supports Vinyl only.
+# The 9.1 series selects its upstream private-API compatibility fixes.
+# configure.ac requires VINYLSRC, then includes daemon-private and libvsc
+# headers to implement the buddy and Fellow stevedores. The shared
 # engine_source: required path supplies that source tree from the selected
 # Vinyl engine artifact; Varnish compatibility cells remain an honest red.
 #
@@ -21,6 +22,11 @@ sources:
     ref: master
     commit: 7be4126892dbc58a03f701632e076f312e0332ed
     version: "1.0.0~rc3+trunk"
+  by_series:
+    vinyl-9.1:
+      ref: master
+      commit: "567d30afa84bff9d11bea68c6360d580f80628f7"
+      version: "1.0.0~rc3+trunk"
 package:
   summary: Buddy and Fellow storage engines for Vinyl Cache
   description:

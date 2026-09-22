@@ -72,7 +72,7 @@ engines:
       tarball_url: https://vinyl-cache.org/downloads/vinyl-cache-9.1.0.tgz
       sha256: "3840a06dd0cd212fd1e3beeb8b086dbd7c35ca31cfe1962fe2586363a63410aa"
     packages: "true"
-    package_revision: "1"
+    package_revision: "2"
     targets:
       - debian-13-amd64
       - debian-13-arm64

@@ -1,8 +1,9 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-zipflow (schema vmod/1, DESIGN.md).
 #
-# There are no usable tags, so release and trunk builds pin master. The 0 in
-# 0~master keeps the Debian version digit-first.
+# There are no usable tags, so release builds pin commits from master. The 0
+# in 0~master keeps the Debian version digit-first. The 9.1 series selects
+# upstream's private-header rename; trunk follows master.
 #
 # Configure hard-requires a Vinyl Cache source tree. engine_source provisions
 # the pinned source with regenerated VSC headers. Upstream's default target
@@ -32,6 +33,11 @@ sources:
     ref: master
     commit: "90e576d5d7b3fdb1391f7a1f142989b98056ba83"
     version: "0~master"
+  by_series:
+    vinyl-9.1:
+      ref: master
+      commit: "6191ac1949b32b6feaf2da4fc842bb5125c81f8e"
+      version: "0~master"
 package:
   summary: ZIP archive streaming delivery processor for Vinyl Cache
   description:

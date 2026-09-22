@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 from pathlib import Path
 
 import matrix
@@ -24,11 +25,23 @@ def retain(stage_root: Path, vmod_dir: Path, modules: list[str]) -> None:
     for artifact in expected:
         if not artifact.is_file() or artifact.stat().st_size == 0:
             raise ValueError(f"declared VMOD artifact is missing or empty: {artifact}")
+        if not artifact.resolve().is_relative_to(stage_root.resolve()):
+            raise ValueError(f"declared VMOD artifact resolves outside staging root: {artifact}")
+
+    # Libtool can install a versioned file behind the public .so symlink.
+    # Pruning its target would leave a package that builds but cannot load.
+    for artifact in expected:
+        if artifact.is_symlink():
+            target = artifact.resolve(strict=True)
+            artifact.unlink()
+            shutil.copy2(target, artifact)
 
     for path in sorted(stage_root.rglob("*"), key=lambda item: len(item.parts), reverse=True):
         if path in expected:
             continue
-        if path.is_dir():
+        if path.is_symlink():
+            path.unlink()
+        elif path.is_dir():
             try:
                 path.rmdir()
             except OSError:

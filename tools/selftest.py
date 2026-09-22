@@ -1418,6 +1418,74 @@ def source_api_normalization_is_directional_and_preserves_vtc_syntax():
 
 
 @test
+def source_api_normalization_retargets_literal_single_provider_vcache_require_calls():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        configure = root / "configure.ac"
+        configure.write_text(textwrap.dedent(
+            """\
+            VCACHE_REQUIRE(
+                [[varnish], [9.1.0], [9.2.0]])
+
+            VCACHE_REQUIRE(
+                [[varnish], [9.1.0], [9.2.0]],
+                [[vinyl], [9.1.0], [9.2.0]])
+
+            dnl VCACHE_REQUIRE([[varnish], [1.0]]) is prose
+            AC_MSG_NOTICE([VCACHE_REQUIRE([[varnish], [1.0]])])
+            VCACHE_REQUIRE(m4_if([condition], [[varnish], [1.0]], [[vinyl], [1.0]]))
+            VCACHE_REQUIRE([[varnish], [$MIN_VERSION]])
+            m4_ifndef([VCACHE_REQUIRE], AC_MSG_ERROR([Need varnish.m4]))
+            """
+        ))
+        macro = root / "provider.m4"
+        macro.write_text("VCACHE_REQUIRE(\n    [[vinyl], [8.0], [10.0]])\n")
+        source = root / "provider.c"
+        source.write_text("VCACHE_REQUIRE([[varnish], [9.1.0]])\n")
+        readme = root / "README"
+        readme.write_text("Use VCACHE_REQUIRE([[varnish], [9.1.0]]) here.\n")
+
+        changed, totals = source_api_normalize.normalize_tree(root, "varnish", "vinyl")
+
+        eq(configure.read_text(), textwrap.dedent(
+            """\
+            VCACHE_REQUIRE(
+                [[vinyl], [9.1.0], [9.2.0]])
+
+            VCACHE_REQUIRE(
+                [[varnish], [9.1.0], [9.2.0]],
+                [[vinyl], [9.1.0], [9.2.0]])
+
+            dnl VCACHE_REQUIRE([[varnish], [1.0]]) is prose
+            AC_MSG_NOTICE([VCACHE_REQUIRE([[varnish], [1.0]])])
+            VCACHE_REQUIRE(m4_if([condition], [[varnish], [1.0]], [[vinyl], [1.0]]))
+            VCACHE_REQUIRE([[varnish], [$MIN_VERSION]])
+            m4_ifndef([VCACHE_REQUIRE], AC_MSG_ERROR([Need varnish.m4]))
+            """
+        ), "only the literal single-provider call is retargeted; bounds, computed m4 and macro filenames survive")
+        eq(macro.read_text(), "VCACHE_REQUIRE(\n    [[vinyl], [8.0], [10.0]])\n",
+           "a declaration that already names the target provider is unchanged")
+        eq(source.read_text(), "VCACHE_REQUIRE([[varnish], [9.1.0]])\n",
+           "the macro rule is restricted to configure and m4 sources")
+        eq(readme.read_text(), "Use VCACHE_REQUIRE([[varnish], [9.1.0]]) here.\n",
+           "prose outside build macro sources is unchanged")
+        eq(totals["VCACHE_REQUIRE provider varnish -> vinyl"], 1,
+           "the provider rewrite is reported once")
+        ok((Path("configure.ac"),) == tuple(path for path, _ in changed if path == Path("configure.ac")),
+           "configure.ac records the provider rewrite")
+
+        reverse, reverse_totals = source_api_normalize.normalize_tree(root, "vinyl", "varnish")
+        eq(macro.read_text(), "VCACHE_REQUIRE(\n    [[varnish], [8.0], [10.0]])\n",
+           "the literal provider translation works in reverse")
+        ok(configure.read_text().startswith("VCACHE_REQUIRE(\n    [[varnish], [9.1.0], [9.2.0]])\n"),
+           "the previously translated configure declaration returns to Varnish")
+        eq(reverse_totals["VCACHE_REQUIRE provider vinyl -> varnish"], 2,
+           "the reverse pass reports both single-provider declarations")
+        ok(any(path == Path("provider.m4") for path, _ in reverse),
+           "m4 macro sources can carry a literal provider declaration")
+
+
+@test
 def source_api_normalization_keeps_vsctool_directives_in_the_shared_spelling():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -3055,23 +3123,77 @@ def vmod_artifact_helper_keeps_only_declared_modules():
         vmod_dir = "/usr/lib/vinyl-cache/vmods"
         destination = stage / vmod_dir.lstrip("/")
         destination.mkdir(parents=True)
-        (destination / "libvmod_slash.so").write_bytes(b"public shared object")
+        versioned = destination / "libvmod_slash.so.0.0.0"
+        versioned.write_bytes(b"public shared object")
+        versioned.chmod(0o755)
+        os.symlink(versioned.name, destination / "libvmod_slash.so.0")
+        os.symlink("libvmod_slash.so.0", destination / "libvmod_slash.so")
         (destination / "libvmod_slashwitness.so").write_bytes(b"test shared object")
         (stage / "usr/bin").mkdir(parents=True)
         (stage / "usr/bin/slashmap").write_bytes(b"utility")
+        undeclared_directory = stage / "undeclared-directory"
+        undeclared_directory.mkdir()
+        undeclared_link = destination / "undeclared-directory-link"
+        os.symlink("../../../../undeclared-directory", undeclared_link)
         command = [
             sys.executable, str(Path(__file__).resolve().parent / "vmod-artifacts.py"),
             "--stage-root", str(stage), "--vmod-dir", vmod_dir, "--modules", "slash",
         ]
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         eq(result.returncode, 0, "VMOD artifact helper accepts the declared public module")
+        retained = destination / "libvmod_slash.so"
+        ok(retained.is_file() and not retained.is_symlink(),
+           "a declared libtool symlink chain becomes a regular shared object")
+        eq(retained.read_bytes(), b"public shared object", "materialized VMOD keeps its target bytes")
+        eq(retained.stat().st_mode & 0o777, 0o755, "materialized VMOD keeps its target mode")
         eq([path.relative_to(stage).as_posix() for path in stage.rglob("*") if path.is_file()],
            ["usr/lib/vinyl-cache/vmods/libvmod_slash.so"],
-           "VMOD artifact helper removes test modules and upstream utilities")
-        (destination / "libvmod_slash.so").unlink()
+           "VMOD artifact helper removes versioned targets, test modules and upstream utilities")
+        ok(not undeclared_link.is_symlink() and not undeclared_directory.exists(),
+           "VMOD artifact helper removes undeclared directory symlinks and their targets")
+        retained.unlink()
         missing = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         ok(missing.returncode != 0 and "missing or empty" in missing.stderr,
            "VMOD artifact helper fails before accepting an incomplete staged payload")
+
+        destination.mkdir(parents=True, exist_ok=True)
+        outside = tmp / "outside.so"
+        outside.write_bytes(b"outside stage")
+        os.symlink(outside, retained)
+        escaped = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        ok(escaped.returncode != 0 and "outside staging root" in escaped.stderr,
+           "VMOD artifact helper rejects a declared symlink that escapes the staging tree")
+
+
+@test
+def vmod_artifact_helper_rejects_broken_and_empty_declared_symlinks():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        helper = str(Path(__file__).resolve().parent / "vmod-artifacts.py")
+        vmod_dir = "/usr/lib/vinyl-cache/vmods"
+
+        def run(stage: Path) -> subprocess.CompletedProcess:
+            return subprocess.run([
+                sys.executable, helper,
+                "--stage-root", str(stage), "--vmod-dir", vmod_dir, "--modules", "digest",
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        broken_stage = tmp / "broken"
+        broken_destination = broken_stage / vmod_dir.lstrip("/")
+        broken_destination.mkdir(parents=True)
+        os.symlink("libvmod_digest.so.0", broken_destination / "libvmod_digest.so")
+        broken = run(broken_stage)
+        ok(broken.returncode != 0 and "missing or empty" in broken.stderr,
+           "a broken declared symlink fails before pruning")
+
+        empty_stage = tmp / "empty"
+        empty_destination = empty_stage / vmod_dir.lstrip("/")
+        empty_destination.mkdir(parents=True)
+        (empty_destination / "libvmod_digest.so.0").write_bytes(b"")
+        os.symlink("libvmod_digest.so.0", empty_destination / "libvmod_digest.so")
+        empty = run(empty_stage)
+        ok(empty.returncode != 0 and "missing or empty" in empty.stderr,
+           "a declared symlink with an empty target fails before pruning")
 
 
 @test
@@ -3205,7 +3327,10 @@ def source_api_normalization_follows_the_engines_private_header_spelling():
 def same_family_normalization_touches_only_vsc_directives():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        (root / "configure.ac").write_bytes(b"PKG_CHECK_MODULES([VARNISHAPI], [varnishapi])\n")
+        (root / "configure.ac").write_bytes(
+            b"PKG_CHECK_MODULES([VARNISHAPI], [varnishapi])\n"
+            b"VCACHE_REQUIRE([[varnish], [9.1.0]])\n"
+        )
         (root / "vmod.c").write_bytes(b"#include <cache/cache_varnishd.h>\nvarnish_vsc\n")
         (root / "VSC_vmod_kvm.vsc").write_bytes(
             b".. varnish_vsc_begin:: vmod_kvm\n.. varnish_vsc:: x\n.. varnish_vsc_end:: vmod_kvm\n"
@@ -3216,7 +3341,9 @@ def same_family_normalization_touches_only_vsc_directives():
         eq((root / "VSC_vmod_kvm.vsc").read_text(),
            ".. vinyl_vsc_begin:: vmod_kvm\n.. vinyl_vsc:: x\n.. vinyl_vsc_end:: vmod_kvm\n",
            "directives respelled for the shared vsctool")
-        eq((root / "configure.ac").read_text(), "PKG_CHECK_MODULES([VARNISHAPI], [varnishapi])\n",
+        eq((root / "configure.ac").read_text(),
+           "PKG_CHECK_MODULES([VARNISHAPI], [varnishapi])\n"
+           "VCACHE_REQUIRE([[varnish], [9.1.0]])\n",
            "same-family pass leaves build spellings alone")
         eq((root / "vmod.c").read_text(), "#include <cache/cache_varnishd.h>\nvarnish_vsc\n",
            "same-family pass leaves C sources alone, even a varnish_vsc string")

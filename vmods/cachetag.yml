@@ -12,6 +12,11 @@ sources:
     ref: v1.0.1
     commit: a3897aaccf1d6996c00ee14b2c6e1ddac91ac982
     version: "1.0.1"
+  by_series:
+    vinyl-9.1:
+      ref: v1.0.2
+      commit: "d453872347e718a478e677aa551be2d4ae389916"
+      version: "1.0.2"
 package:
   summary: Tag-based cache invalidation VMOD for Varnish Cache and Vinyl Cache
   description:
