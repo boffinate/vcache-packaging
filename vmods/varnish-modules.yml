@@ -14,7 +14,7 @@ upstream:
   git: https://github.com/varnish/varnish-modules.git
   homepage: https://github.com/varnish/varnish-modules
 sources:
-  head: master
+  head: main
   default:
     ref: 0.28.0
     commit: "7abe0e2a59a685b4ea8626ff1a3fe9c60a037368"
