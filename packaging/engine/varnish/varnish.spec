@@ -39,8 +39,9 @@ Requires:       pkgconfig
 Requires:       python3
 
 %description devel
-Headers, varnishapi.pc, autoconf macros and generator tools needed to build a
-VMOD against Varnish Cache. A VMOD is bound to the exact runtime build.
+Headers, varnishapi.pc, the vtest extension, autoconf macros and generator
+tools needed to build and test a VMOD against Varnish Cache. A VMOD is bound to
+the exact runtime build.
 
 %prep
 %setup -q -n %{engine_srcdir}
@@ -59,6 +60,13 @@ export VCC_CC="exec %{__cc} $VCC_CFLAGS %%w -pthread -fpic -shared -Wl,-x -o %%o
 %install
 %make_install
 find %{buildroot} -name '*.la' -delete
+# The 9.1+ SDK advertises this engine-specific vtest command extension in
+# varnishapi.pc. Older releases do not install it, so generate an optional file
+# list instead of making their shared family recipe fail on an unmatched glob.
+find %{buildroot}%{_libdir} -maxdepth 1 -name 'libvtest_ext_varnish.so*' -print \
+  | sed 's|^%{buildroot}||' > varnish-devel.files
+# Build-time help-text generator with no runtime user.
+rm -f %{buildroot}%{_bindir}/varnishstat_help_gen
 install -D -m 0644 etc/example.vcl %{buildroot}%{_sysconfdir}/varnish/default.vcl
 install -D -m 0644 %{SOURCE1} %{buildroot}%{_unitdir}/varnish.service
 install -D -m 0755 %{SOURCE2} %{buildroot}%{_sbindir}/varnishreload
@@ -92,7 +100,7 @@ getent passwd varnish >/dev/null || useradd -r -g varnish -d /nonexistent -s /sb
 %{_mandir}/man3/*
 %{_mandir}/man7/*
 
-%files devel
+%files devel -f varnish-devel.files
 %{_includedir}/varnish/
 %{_libdir}/libvarnishapi.so
 %{_libdir}/pkgconfig/varnishapi.pc

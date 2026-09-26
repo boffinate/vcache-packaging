@@ -45,7 +45,8 @@ Depends:
  pkgconf,
  python3,
 Description: development files for Varnish Cache (matrix build)
- Headers, the varnishapi.pc pkg-config file, autoconf macros and generator
- tools needed to build a Varnish VMOD or an application against libvarnishapi.
+ Headers, the varnishapi.pc pkg-config file, the vtest extension, autoconf
+ macros and generator tools needed to build and test a Varnish VMOD or build an
+ application against libvarnishapi.
  A VMOD is bound to the exact Varnish Cache build it was compiled against, so
  this package depends on the exact matching varnish binary version.

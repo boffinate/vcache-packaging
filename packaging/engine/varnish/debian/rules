@@ -17,8 +17,16 @@ override_dh_auto_configure:
 
 override_dh_auto_test:
 
+# varnishstat_help_gen is a build-time generator with no runtime user.
 override_dh_auto_install:
 	dh_auto_install
+	rm -f debian/tmp/usr/bin/varnishstat_help_gen
 	find debian/tmp \( -name '*.la' -o -name '*.a' \) -delete
+	# Varnish 9.1+ advertises this test extension in varnishapi.pc; older
+	# releases share the recipe but install no matching file.
+	if ls debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/libvtest_ext_varnish.so* >/dev/null 2>&1; then \
+		install -d debian/varnish-dev/usr/lib/$(DEB_HOST_MULTIARCH); \
+		mv debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/libvtest_ext_varnish.so* debian/varnish-dev/usr/lib/$(DEB_HOST_MULTIARCH)/; \
+	fi
 	install -D -m 0644 etc/example.vcl debian/tmp/etc/varnish/default.vcl
 	install -D -m 0755 debian/varnish.reload debian/tmp/usr/sbin/varnishreload
