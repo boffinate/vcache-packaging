@@ -61,10 +61,11 @@ export VCC_CC="exec %{__cc} $VCC_CFLAGS %%w -pthread -fpic -shared -Wl,-x -o %%o
 %make_install
 find %{buildroot} -name '*.la' -delete
 # The 9.1+ SDK advertises this engine-specific vtest command extension in
-# varnishapi.pc. Older releases do not install it, so generate an optional file
-# list instead of making their shared family recipe fail on an unmatched glob.
+# varnishapi.pc. Include the API library so RPM's file list stays nonempty on
+# older releases that do not install the extension.
+printf '%s\n' '%{_libdir}/libvarnishapi.so' > varnish-devel.files
 find %{buildroot}%{_libdir} -maxdepth 1 -name 'libvtest_ext_varnish.so*' -print \
-  | sed 's|^%{buildroot}||' > varnish-devel.files
+  | sed 's|^%{buildroot}||' >> varnish-devel.files
 # Build-time help-text generator with no runtime user.
 rm -f %{buildroot}%{_bindir}/varnishstat_help_gen
 install -D -m 0644 etc/example.vcl %{buildroot}%{_sysconfdir}/varnish/default.vcl
@@ -102,7 +103,6 @@ getent passwd varnish >/dev/null || useradd -r -g varnish -d /nonexistent -s /sb
 
 %files devel -f varnish-devel.files
 %{_includedir}/varnish/
-%{_libdir}/libvarnishapi.so
 %{_libdir}/pkgconfig/varnishapi.pc
 %{_datadir}/aclocal/*.m4
 %{_datadir}/varnish/vmodtool.py
