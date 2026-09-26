@@ -26,4 +26,4 @@ package:
     - libvmod_rers.so
   families:
     - varnish
-  promoted: "true"
+  promoted: "false"

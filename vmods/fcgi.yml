@@ -26,4 +26,4 @@ package:
     - libvmod_fastcgi.so
   families:
     - varnish
-  promoted: "true"
+  promoted: "false"

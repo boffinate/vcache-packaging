@@ -26,4 +26,4 @@ package:
     - libvmod_k8s_endpoint.so
   families:
     - varnish
-  promoted: "true"
+  promoted: "false"

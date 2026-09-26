@@ -36,4 +36,4 @@ package:
   families:
     - varnish
     - vinyl
-  promoted: "true"
+  promoted: "false"

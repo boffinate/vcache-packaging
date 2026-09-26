@@ -27,4 +27,4 @@ package:
     - libvmod_reqwest.so
   families:
     - varnish
-  promoted: "true"
+  promoted: "false"
