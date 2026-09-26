@@ -20,11 +20,13 @@ from pathlib import Path
 FAMILIES = ("vinyl", "varnish")
 VSC_DIRECTIVES_MARKER = "vsc-directives"
 
-# Cross-family builds targeting Vinyl cannot use one fixed private-header name:
-# supported Vinyl engines expose different names without a compatibility alias.
-VINYL_PRIVATE_HEADERS = ("cache_vinyld.h", "cache_int.h")
-DEFAULT_VINYL_PRIVATE_HEADER = "cache_vinyld.h"
-VARNISH_PRIVATE_HEADER = "cache_varnishd.h"
+# Cross-family builds cannot use one fixed private-header name: supported
+# engines of either family install their historic name or cache_int.h, with no
+# compatibility alias. The first spelling of each family is its historic name.
+PRIVATE_HEADERS = {
+    "vinyl": ("cache_vinyld.h", "cache_int.h"),
+    "varnish": ("cache_varnishd.h", "cache_int.h"),
+}
 
 VTC_TEST_TOOL_SPELLINGS = (b"vinyltest", b"varnishtest")
 
@@ -36,11 +38,15 @@ def _header_macro(name: str) -> bytes:
     return name.upper().replace(".", "_").encode()
 
 
-def _private_header_replacements(vinyl_header: str) -> tuple[Replacement, ...]:
-    return (
-        (vinyl_header.encode(), VARNISH_PRIVATE_HEADER.encode()),
-        (_header_macro(vinyl_header), _header_macro(VARNISH_PRIVATE_HEADER)),
-    )
+def _private_header_replacements(source_family: str, target_header: str) -> tuple[Replacement, ...]:
+    headers: tuple[Replacement, ...] = ()
+    for name in PRIVATE_HEADERS[source_family]:
+        if name != target_header:
+            headers += (
+                (name.encode(), target_header.encode()),
+                (_header_macro(name), _header_macro(target_header)),
+            )
+    return headers
 
 
 VINYL_TO_VARNISH: tuple[Replacement, ...] = (
@@ -70,28 +76,26 @@ VSC_REPLACEMENT: Replacement = (b"varnish_vsc", b"vinyl_vsc")
 def replacements(
     source_family: str,
     target_family: str,
-    vinyl_private_header: str = DEFAULT_VINYL_PRIVATE_HEADER,
+    private_header: str | None = None,
 ) -> tuple[Replacement, ...]:
     """Return the ordered cross-family replacements, or none when the families match.
 
-    When targeting Vinyl, the private-header replacement must precede the
-    generic daemon-name replacement. Otherwise cache_varnishd.h becomes
-    cache_vinyld.h even when the selected engine requires cache_int.h. When
-    targeting Varnish, both Vinyl spellings map to its single header name.
+    ``private_header`` is the name the selected engine installs; it defaults to
+    the target family's historic name. The private-header replacements must
+    precede the generic daemon-name replacements, which would otherwise turn
+    cache_varnishd.h into cache_vinyld.h regardless of the installed name.
     """
-    if vinyl_private_header not in VINYL_PRIVATE_HEADERS:
-        raise ValueError(f"unknown Vinyl private header spelling: {vinyl_private_header}")
+    if source_family not in FAMILIES or target_family not in FAMILIES:
+        raise ValueError(f"unsupported family normalization: {source_family} -> {target_family}")
+    target_header = private_header or PRIVATE_HEADERS[target_family][0]
+    if target_header not in PRIVATE_HEADERS[target_family]:
+        raise ValueError(f"unknown {target_family} private header spelling: {target_header}")
     if source_family == target_family:
         return ()
-    if (source_family, target_family) == ("vinyl", "varnish"):
-        headers: tuple[Replacement, ...] = ()
-        for name in VINYL_PRIVATE_HEADERS:
-            headers += _private_header_replacements(name)
+    headers = _private_header_replacements(source_family, target_header)
+    if target_family == "varnish":
         return headers + VINYL_TO_VARNISH
-    if (source_family, target_family) == ("varnish", "vinyl"):
-        directional_replacements = _private_header_replacements(vinyl_private_header) + VINYL_TO_VARNISH
-        return tuple((new, old) for old, new in directional_replacements)
-    raise ValueError(f"unsupported family normalization: {source_family} -> {target_family}")
+    return headers + tuple((new, old) for old, new in VINYL_TO_VARNISH)
 
 
 def _substitute(data: bytes, old: bytes, new: bytes, counts: Counter[str]) -> bytes:
@@ -179,12 +183,12 @@ def normalize_tree(
     root: Path,
     source_family: str,
     target_family: str,
-    vinyl_private_header: str = DEFAULT_VINYL_PRIVATE_HEADER,
+    private_header: str | None = None,
 ) -> tuple[list[tuple[Path, Counter[str]]], Counter[str]]:
     changed: list[tuple[Path, Counter[str]]] = []
     totals: Counter[str] = Counter()
     same_family = source_family == target_family
-    family_replacements = replacements(source_family, target_family, vinyl_private_header)
+    family_replacements = replacements(source_family, target_family, private_header)
     for directory, names, filenames in os.walk(root):
         names[:] = sorted(name for name in names if name != ".git")
         for filename in sorted(filenames):
@@ -217,9 +221,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-family", required=True, choices=FAMILIES)
     parser.add_argument("--target-family", required=True, choices=FAMILIES)
-    parser.add_argument("--vinyl-private-header", default=DEFAULT_VINYL_PRIVATE_HEADER,
-                        choices=VINYL_PRIVATE_HEADERS,
-                        help="the daemon-private header name the Vinyl engine installs under cache/")
+    parser.add_argument("--private-header",
+                        choices=sorted({name for names in PRIVATE_HEADERS.values() for name in names}),
+                        help="the daemon-private header name the target engine installs under cache/")
     parser.add_argument("--marker", type=Path,
                         help="write the normalization name here when any file changed")
     parser.add_argument("source", type=Path)
@@ -229,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"source tree is not a directory: {args.source}")
 
     changed, totals = normalize_tree(args.source, args.source_family, args.target_family,
-                                     args.vinyl_private_header)
+                                     args.private_header)
     same_family = args.source_family == args.target_family
     if not changed:
         if same_family:

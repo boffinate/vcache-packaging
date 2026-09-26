@@ -3294,7 +3294,7 @@ def source_api_normalization_follows_the_engines_private_header_spelling():
             b'#include "cache_varnishd.h"\nVARNISHD\n'
         )
         changed, _ = source_api_normalize.normalize_tree(root, "varnish", "vinyl",
-                                                         vinyl_private_header="cache_int.h")
+                                                         private_header="cache_int.h")
         eq([str(path) for path, _ in changed], ["configure.ac", "vmod.c"], "changed files")
         eq((root / "configure.ac").read_text(), "AC_CHECK_HEADERS([cache/cache_int.h])\n",
            "configure probe follows the installed spelling")
@@ -3315,12 +3315,24 @@ def source_api_normalization_follows_the_engines_private_header_spelling():
         eq((root / "old.c").read_text(), "#include <cache/cache_varnishd.h>\n",
            "the historic Vinyl spelling maps to Varnish too")
 
-    try:
-        source_api_normalize.replacements("varnish", "vinyl", vinyl_private_header="cache.h")
-    except ValueError as exc:
-        ok("unknown Vinyl private header" in str(exc), "unknown spelling is rejected")
-    else:
-        raise Fail("unknown private header spelling accepted")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "vmod.c").write_bytes(
+            b"#include <cache/cache_int.h>\n#include <cache/cache_vinyld.h>\n#include <vinylapi.h>\n")
+        changed, _ = source_api_normalize.normalize_tree(root, "vinyl", "varnish",
+                                                         private_header="cache_int.h")
+        eq([str(path) for path, _ in changed], ["vmod.c"], "Varnish 9.1 changed files")
+        eq((root / "vmod.c").read_text(),
+           "#include <cache/cache_int.h>\n#include <cache/cache_int.h>\n#include <varnishapi.h>\n",
+           "a Varnish engine installing cache_int.h keeps that spelling and receives the historic Vinyl one")
+
+    for source, target, header in (("varnish", "vinyl", "cache.h"), ("vinyl", "varnish", "cache_vinyld.h")):
+        try:
+            source_api_normalize.replacements(source, target, private_header=header)
+        except ValueError as exc:
+            ok(f"unknown {target} private header" in str(exc), f"{header} is rejected for {target}")
+        else:
+            raise Fail(f"{header} accepted as a {target} private header")
 
 
 @test

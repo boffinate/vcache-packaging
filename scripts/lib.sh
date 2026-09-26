@@ -454,14 +454,12 @@ prepare_cargo_api_aliases() {
     varnish:vinyl)
       source_api=varnishapi
       source_headers="cache_varnishd.h"
-      target_header=$(vinyl_private_header_name "$ENGINE_API")
       ;;
     vinyl:varnish)
       source_api=vinylapi
-      # Vinyl's release and trunk headers use different spellings. A Vinyl
-      # source can name either, whereas Varnish has one installed equivalent.
+      # Vinyl's release and trunk headers use different spellings, and a Vinyl
+      # source can name either.
       source_headers="cache_vinyld.h cache_int.h"
-      target_header=cache_varnishd.h
       ;;
     vinyl:vinyl|varnish:varnish)
       return 0
@@ -472,6 +470,7 @@ prepare_cargo_api_aliases() {
       ;;
   esac
 
+  target_header=$(engine_private_header_name "$ENGINE_API" "$ENGINE_FAMILY")
   target_pcdir=$(pkg-config --variable=pcfiledir "$ENGINE_API")
   target_pc="$target_pcdir/$ENGINE_API.pc"
   [ -f "$target_pc" ] || { echo "missing $ENGINE_API pkg-config file: $target_pc" >&2; return 1; }
@@ -678,23 +677,28 @@ read_source_api_normalization() {
   cat "$1/tmp/$2.source-api-normalization" 2>/dev/null || true
 }
 
-# vinyl_private_header_name API -> the daemon-private header the selected
-# engine installs under <pkgincludedir>/cache/ (cache_vinyld.h on Vinyl
-# 9.0.1, cache_int.h from Vinyl trunk 6d36364cc1). Probed, never keyed on the
-# engine series, so the translation table holds no second copy of a pin
-# (decision 28). Varnish installs cache_varnishd.h; the default keeps the
-# translator's historic spelling when nothing is found.
-vinyl_private_header_name() {
-  local api=$1 includedir=""
+# engine_private_header_name API FAMILY -> the daemon-private header the
+# selected engine installs under <pkgincludedir>/cache/: the family's historic
+# name (cache_vinyld.h, cache_varnishd.h) before 9.1, cache_int.h from 9.1 and
+# Vinyl trunk 6d36364cc1. Probed, never keyed on the engine series, so the
+# translation table holds no second copy of a pin (decisions 28 and 39). The
+# historic name is the fallback when nothing is found.
+engine_private_header_name() {
+  local api=$1 family=$2 includedir="" historic
+  case "$family" in
+    vinyl) historic=cache_vinyld.h ;;
+    varnish) historic=cache_varnishd.h ;;
+    *) echo "unknown engine family: $family" >&2; return 1 ;;
+  esac
   includedir=$(pkg-config --variable=pkgincludedir "$api" 2>/dev/null || true)
   local name
-  for name in cache_vinyld.h cache_int.h; do
+  for name in "$historic" cache_int.h; do
     if [ -n "$includedir" ] && [ -f "$includedir/cache/$name" ]; then
       printf '%s\n' "$name"
       return 0
     fi
   done
-  printf '%s\n' cache_vinyld.h
+  printf '%s\n' "$historic"
 }
 
 # normalize_vmod_source SRC TAG
@@ -708,7 +712,7 @@ normalize_vmod_source() {
   step source-api-normalize
   python3 /repo/tools/source_api_normalize.py \
     --source-family "$source_family" --target-family "$ENGINE_FAMILY" \
-    --vinyl-private-header "$(vinyl_private_header_name "$ENGINE_API")" \
+    --private-header "$(engine_private_header_name "$ENGINE_API" "$ENGINE_FAMILY")" \
     --marker "/work/tmp/$tag.source-api-normalization" "$src"
 }
 
