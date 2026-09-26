@@ -19,6 +19,11 @@ sources:
     ref: 0.28.0
     commit: "7abe0e2a59a685b4ea8626ff1a3fe9c60a037368"
     version: "0.28.0"
+  by_series:
+    varnish-9.1:
+      ref: 0.29.0
+      commit: "c92849cbf25c69755250b05775b0cb42a90504de"
+      version: "0.29.0"
 package:
   summary: Collection of nine core VMODs maintained by the Varnish project
   description:
