@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=schemas/engines.schema.json
 # Hand-maintained engine catalog (schema engines/1, DESIGN.md).
-# Release rows pin upstream tarballs and retain older versions as matrix
-# columns. Trunk rows carry no pin: the branch HEAD is built as it stands and
+# Release rows pin upstream tarballs. Each series keeps its newest patch
+# release as a matrix column (DESIGN.md decision 38). Trunk rows carry no pin: the branch HEAD is built as it stands and
 # the cell result records the commit.
 schema: engines/1
 toolchains:
@@ -80,22 +80,6 @@ engines:
       - ubuntu-26.04-arm64
       - el10-x86_64
       - el10-aarch64
-  - id: varnish-9.0.3
-    family: varnish
-    series: varnish-9.0
-    kind: release
-    source:
-      tarball_url: https://github.com/varnish/varnish/releases/download/varnish-9.0.3/varnish-9.0.3.tar.gz
-      sha256: "2aac11dd95329b0cea148d478168b3ccc6fe45fab38160c440159386403b69fd"
-    packages: "true"
-    package_revision: "2"
-    targets:
-      - debian-13-amd64
-      - debian-13-arm64
-      - ubuntu-26.04-amd64
-      - ubuntu-26.04-arm64
-      - el10-x86_64
-      - el10-aarch64
   - id: varnish-9.0.4
     family: varnish
     series: varnish-9.0
@@ -103,6 +87,22 @@ engines:
     source:
       tarball_url: https://github.com/varnish/varnish/releases/download/varnish-9.0.4/varnish-9.0.4.tar.gz
       sha256: "766e91abf4d9ca7f00a88e105bc61109f1145983c09116db4228c9067fa2adc3"
+    packages: "true"
+    package_revision: "1"
+    targets:
+      - debian-13-amd64
+      - debian-13-arm64
+      - ubuntu-26.04-amd64
+      - ubuntu-26.04-arm64
+      - el10-x86_64
+      - el10-aarch64
+  - id: varnish-9.1.0
+    family: varnish
+    series: varnish-9.1
+    kind: release
+    source:
+      tarball_url: https://github.com/varnish/varnish/releases/download/varnish-9.1.0/varnish-9.1.0.tar.gz
+      sha256: "fe615fa024c801d12928e7eea0e822ba93ab625a585841143c36ae02d5bcc37a"
     packages: "true"
     package_revision: "1"
     targets:

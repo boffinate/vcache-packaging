@@ -3021,7 +3021,7 @@ def recipe_debian_generation_normalizes_underscored_vmod_package_names():
     root = matrix.default_root()
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out"
-        recipe.generate(root, "k8s_endpoint", "varnish-9.0.3", "debian-13-amd64", out,
+        recipe.generate(root, "k8s_endpoint", "varnish-9.0.4", "debian-13-amd64", out,
                         maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
         control = (out / "debian" / "control").read_text()
         changelog = (out / "debian" / "changelog").read_text()
@@ -3036,12 +3036,12 @@ def recipe_debian_generation_scopes_configure_arguments_to_the_declaring_vmod():
     root = matrix.default_root()
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out"
-        recipe.generate(root, "querystring", "varnish-9.0.3", "debian-13-amd64", out,
+        recipe.generate(root, "querystring", "varnish-9.0.4", "debian-13-amd64", out,
                         maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
         ok("dh_auto_configure -- --enable-docs" in (out / "debian" / "rules").read_text(),
            "querystring alone carries its declared documentation configure argument")
         rpm_out = Path(tmp) / "rpm-out"
-        recipe.generate(root, "querystring", "varnish-9.0.3", "el10-aarch64", rpm_out,
+        recipe.generate(root, "querystring", "varnish-9.0.4", "el10-aarch64", rpm_out,
                         maintainer=("Test Maintainer", "test@example.org"), now=FIXED_NOW)
         rpm = (rpm_out / "varnish-vmod-querystring.spec").read_text()
         ok("%configure --enable-docs" in rpm,

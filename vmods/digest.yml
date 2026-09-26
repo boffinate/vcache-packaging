@@ -15,6 +15,10 @@ sources:
     version: "1.0.3"
   # The 9.1 branch adopts the upstream VCACHE build macros.
   by_series:
+    varnish-9.1:
+      ref: varnish-9.1.0-vcache-vmods
+      commit: "8c33b4a4ad9330acdb1fdb8577982ac5d028ecb8"
+      version: "1.0.3+git20260921"
     vinyl-9.1:
       ref: varnish-9.1.0-vcache-vmods
       commit: "8c33b4a4ad9330acdb1fdb8577982ac5d028ecb8"

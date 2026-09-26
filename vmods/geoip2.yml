@@ -14,6 +14,10 @@ sources:
     commit: "61108da029e3d37eca62b91581612aee3af22932"
     version: "0~main"
   by_series:
+    varnish-9.1:
+      ref: devel
+      commit: "d958af1dec630794af0695cf4181062a430e99e4"
+      version: "0~devel+git20260922"
     vinyl-9.1:
       ref: devel
       commit: "d958af1dec630794af0695cf4181062a430e99e4"

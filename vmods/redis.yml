@@ -18,6 +18,10 @@ sources:
     commit: "b6ca669fc9af3399f3845d9d4930683b4e378aa8"
     version: "23.1"
   by_series:
+    varnish-9.1:
+      ref: "9.1-24.0"
+      commit: "6d78352fb87d81604ace7099a042032601f9211e"
+      version: "24.0"
     vinyl-9.1:
       ref: "9.1-24.0"
       commit: "6d78352fb87d81604ace7099a042032601f9211e"
