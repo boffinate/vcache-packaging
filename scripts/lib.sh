@@ -134,21 +134,6 @@ ensure_container_image() {
   fi
 }
 
-replace_github_release_once() {
-  local tag=$1 target=$2 notes_file=$3
-  shift 3
-  # A failed create may leave a draft. Delete on every attempt so retrying the
-  # whole transaction is idempotent; absence is the expected first-run case.
-  gh release delete "$tag" --cleanup-tag --yes >/dev/null 2>&1 || true
-  gh release create "$tag" "$@" \
-    --target "$target" --title "$tag" --notes-file "$notes_file"
-}
-
-replace_github_release_retry() {
-  local tag=$1
-  retry_command 3 "replace GitHub release $tag" replace_github_release_once "$@"
-}
-
 target_platform_for_machine() {
   case "${1:-$(uname -m)}" in
     x86_64) echo linux/amd64 ;;

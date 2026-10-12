@@ -2386,47 +2386,13 @@ def engine_batch_passes_resolved_commit_only_to_its_matching_engine():
 
 
 @test
-def github_release_retry_restarts_the_replace_transaction():
-    root = Path(__file__).resolve().parent.parent
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        fake_bin = tmp / "bin"
-        fake_bin.mkdir()
-        creates = tmp / "creates"
-        deletes = tmp / "deletes"
-        fake_gh = fake_bin / "gh"
-        fake_gh.write_text(
-            "#!/usr/bin/env bash\n"
-            "case \"$1 $2\" in\n"
-            "'release delete')\n"
-            "  count=$(cat \"$DELETE_ATTEMPTS\" 2>/dev/null || echo 0)\n"
-            "  printf '%s\\n' \"$((count + 1))\" > \"$DELETE_ATTEMPTS\"\n"
-            "  exit 0 ;;\n"
-            "'release create')\n"
-            "  count=$(cat \"$CREATE_ATTEMPTS\" 2>/dev/null || echo 0)\n"
-            "  count=$((count + 1)); printf '%s\\n' \"$count\" > \"$CREATE_ATTEMPTS\"\n"
-            "  [ \"$count\" -ge 3 ] ;;\n"
-            "*) exit 64 ;;\n"
-            "esac\n"
-        )
-        fake_gh.chmod(0o755)
-        fake_sleep = fake_bin / "sleep"
-        fake_sleep.write_text("#!/usr/bin/env bash\nexit 0\n")
-        fake_sleep.chmod(0o755)
-        notes = tmp / "notes.md"
-        asset = tmp / "asset.deb"
-        notes.write_text("release notes\n")
-        asset.write_text("package\n")
-        result = subprocess.run(
-            [str(root / "scripts" / "retry.sh"), "release", "engine-target", "deadbeef",
-             str(notes), str(asset)],
-            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}",
-                 "CREATE_ATTEMPTS": str(creates), "DELETE_ATTEMPTS": str(deletes)},
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
-        eq(result.returncode, 0, "release replacement succeeds on a later transaction attempt")
-        eq(creates.read_text().strip(), "3", "release creation uses the shared attempt bound")
-        eq(deletes.read_text().strip(), "3", "each retry removes a possibly partial draft first")
+def immutable_release_publisher_selftests():
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve().parent / "release_publish_test.py")],
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    eq(result.returncode, 0, f"release publisher selftests: {result.stdout}\n{result.stderr}")
 
 
 @test
@@ -2466,14 +2432,20 @@ def rpm_collection_selects_the_main_package_by_metadata():
 
 @test
 def release_payload_gate_rejects_missing_artifact():
-    engine = {"id": "vinyl-9.0.1", "family": "vinyl"}
-    target = {"format": "deb", "package_arch": "amd64"}
+    with tempfile.TemporaryDirectory() as tmp:
+        catalog = matrix.load_catalog(write_fixture(Path(tmp) / "catalog"))
+        engine = matrix.find_engine(catalog, "vinyl-9.0.1")
+        target = matrix.find_target(catalog, "debian-13-amd64")
+        _release_payload_gate_rejects_missing_artifact(catalog, engine, target)
+
+
+def _release_payload_gate_rejects_missing_artifact(catalog, engine, target):
     cells = [
         {"row": "vinyl-9.0.1", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "engine"},
         {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "package"},
     ]
-    with tempfile.TemporaryDirectory() as tmp:
-        pkgdl = Path(tmp) / "pkgdl"
+    with tempfile.TemporaryDirectory() as work:
+        pkgdl = Path(work) / "pkgdl"
         engine_dir = pkgdl / "engine-vinyl-9.0.1-debian-13-amd64"
         vmod_dir = pkgdl / "packages-batch-001-vinyl-9.0.1-debian-13-amd64" / "packages-dict-vinyl-9.0.1-debian-13-amd64"
         engine_dir.mkdir(parents=True)
@@ -2484,20 +2456,21 @@ def release_payload_gate_rejects_missing_artifact():
         for path in (runtime, development, vmod):
             path.write_bytes(b"native package placeholder")
         metadata = {
-            runtime: ("vinyl-cache", "amd64"),
-            development: ("vinyl-cache-dev", "amd64"),
-            vmod: ("vinyl-vmod-dict", "amd64"),
+            runtime: {"Package": "vinyl-cache", "Architecture": "amd64", "Version": "9.0.1-1"},
+            development: {"Package": "vinyl-cache-dev", "Architecture": "amd64", "Version": "9.0.1-1"},
+            vmod: {"Package": "vinyl-vmod-dict", "Architecture": "amd64",
+                   "Version": "1.7-1~vinyl9.0.1.1", "Depends": "vinyl-cache (= 9.0.1-1)"},
         }
         reader = lambda path: metadata[path]
-        staged = Path(tmp) / "dist"
-        release_gate.validate_pair_payload(pkgdl, engine, target, cells,
+        staged = Path(work) / "dist"
+        release_gate.validate_pair_payload(pkgdl, catalog, engine, target, cells,
                                             metadata_reader=reader, stage_dir=staged)
         eq(sorted(path.name for path in staged.iterdir()),
            ["development.deb", "dict.deb", "runtime.deb"],
            "release payload stages every expected package")
         vmod.unlink()
         try:
-            release_gate.validate_pair_payload(pkgdl, engine, target, cells,
+            release_gate.validate_pair_payload(pkgdl, catalog, engine, target, cells,
                                                 metadata_reader=reader)
         except release_gate.PayloadError as exc:
             ok("no native deb artifacts" in str(exc) or "missing package artifact" in str(exc),
@@ -2507,25 +2480,136 @@ def release_payload_gate_rejects_missing_artifact():
 
 
 @test
-def release_payload_gate_stages_github_asset_names():
-    engine = {"id": "vinyl-9.0.1", "family": "vinyl"}
-    target = {"format": "deb", "package_arch": "amd64"}
-    cells = [
-        {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "package"},
-    ]
+def release_payload_gate_rejects_duplicate_artifact_directories():
     with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        catalog = matrix.load_catalog(write_fixture(tmp / "catalog"))
+        engine = matrix.find_engine(catalog, "vinyl-9.0.1")
+        target = matrix.find_target(catalog, "debian-13-amd64")
+        source = "engine-vinyl-9.0.1-debian-13-amd64"
+        (tmp / "pkgdl" / "first" / source).mkdir(parents=True)
+        (tmp / "pkgdl" / "second" / source).mkdir(parents=True)
+        cells = [{"row": engine["id"], "engine": engine["id"],
+                  "target": "debian-13-amd64", "mode": "engine"}]
+        try:
+            release_gate.validate_pair_payload(tmp / "pkgdl", catalog, engine, target, cells)
+        except release_gate.PayloadError as exc:
+            ok("duplicate package artifact directory" in str(exc),
+               "duplicate artifact directories fail before metadata inspection")
+        else:
+            raise Fail("release gate accepted duplicate package artifact directories")
+
+
+@test
+def release_payload_gate_binds_versions_and_runtime_dependencies_to_the_catalog():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        catalog = matrix.load_catalog(write_fixture(tmp / "catalog"))
+        engine = matrix.find_engine(catalog, "vinyl-9.0.1")
+        target = matrix.find_target(catalog, "debian-13-amd64")
+        cells = [
+            {"row": "vinyl-9.0.1", "engine": engine["id"], "target": "debian-13-amd64", "mode": "engine"},
+            {"row": "dict", "engine": engine["id"], "target": "debian-13-amd64", "mode": "package"},
+        ]
+        pkgdl = tmp / "pkgdl"
+        engine_dir = pkgdl / "engine-vinyl-9.0.1-debian-13-amd64"
+        vmod_dir = pkgdl / "packages-dict-vinyl-9.0.1-debian-13-amd64"
+        engine_dir.mkdir(parents=True)
+        vmod_dir.mkdir()
+        runtime = engine_dir / "runtime.deb"; runtime.touch()
+        development = engine_dir / "development.deb"; development.touch()
+        vmod = vmod_dir / "vmod.deb"; vmod.touch()
+
+        def metadata(engine_version="9.0.1-1", vmod_version="1.7-1~vinyl9.0.1.1",
+                     depends="vinyl-cache (= 9.0.1-1)"):
+            return {
+                runtime: {"Package": "vinyl-cache", "Architecture": "amd64", "Version": engine_version},
+                development: {"Package": "vinyl-cache-dev", "Architecture": "amd64", "Version": engine_version},
+                vmod: {"Package": "vinyl-vmod-dict", "Architecture": "amd64",
+                       "Version": vmod_version, "Depends": depends},
+            }
+
+        release_gate.validate_pair_payload(pkgdl, catalog, engine, target, cells,
+                                            metadata_reader=lambda path: metadata()[path])
+        cases = [
+            (metadata("9.0.1-0", "1.7-1~vinyl9.0.1.0", "vinyl-cache (= 9.0.1-0)"), "catalog revision"),
+            (metadata(vmod_version="1.6-1~vinyl9.0.1.1"), "catalog revision"),
+            (metadata(depends="vinyl-cache (= 9.0.1-0)"), "exact staged runtime"),
+        ]
+        for stale, expected in cases:
+            try:
+                release_gate.validate_pair_payload(pkgdl, catalog, engine, target, cells,
+                                                    metadata_reader=lambda path, stale=stale: stale[path])
+            except release_gate.PayloadError as exc:
+                ok(expected in str(exc), f"stale native metadata reports {expected}: {exc}")
+            else:
+                raise Fail(f"release gate accepted stale metadata: {stale[vmod]}")
+
+        rpm_target = matrix.find_target(catalog, "el10-x86_64")
+        rpm_cells = [
+            {"row": "vinyl-9.0.1", "engine": engine["id"], "target": "el10-x86_64", "mode": "engine"},
+            {"row": "dict", "engine": engine["id"], "target": "el10-x86_64", "mode": "package"},
+        ]
+        rpm_engine_dir = pkgdl / "engine-vinyl-9.0.1-el10-x86_64"
+        rpm_vmod_dir = pkgdl / "packages-dict-vinyl-9.0.1-el10-x86_64"
+        rpm_engine_dir.mkdir()
+        rpm_vmod_dir.mkdir()
+        rpm_runtime = rpm_engine_dir / "runtime.rpm"; rpm_runtime.touch()
+        rpm_development = rpm_engine_dir / "development.rpm"; rpm_development.touch()
+        rpm_vmod = rpm_vmod_dir / "vmod.rpm"; rpm_vmod.touch()
+        rpm_metadata = {
+            rpm_runtime: {"Package": "vinyl-cache", "Architecture": "x86_64", "Version": "9.0.1-1.el10"},
+            rpm_development: {"Package": "vinyl-cache-devel", "Architecture": "x86_64", "Version": "9.0.1-1.el10"},
+            rpm_vmod: {"Package": "vinyl-vmod-dict", "Architecture": "x86_64",
+                   "Version": "1.7-1.vinyl9.0.1.1.el10",
+                   "Requires": ["vinyl-cache(x86-64) = 9.0.1-1.el10"]},
+        }
+        release_gate.validate_pair_payload(pkgdl, catalog, engine, rpm_target, rpm_cells,
+                                            metadata_reader=lambda path: rpm_metadata[path])
+        rpm_metadata[rpm_vmod]["Requires"] = ["vinyl-cache = 9.0.1-1.el10"]
+        try:
+            release_gate.validate_pair_payload(pkgdl, catalog, engine, rpm_target, rpm_cells,
+                                                metadata_reader=lambda path: rpm_metadata[path])
+        except release_gate.PayloadError as exc:
+            ok("exact staged runtime" in str(exc), "RPM requires the architecture-qualified runtime")
+        else:
+            raise Fail("release gate accepted an RPM dependency without its ISA")
+
+
+@test
+def release_payload_gate_stages_github_asset_names():
+    with tempfile.TemporaryDirectory() as tmp:
+        catalog = matrix.load_catalog(write_fixture(Path(tmp) / "catalog"))
+        engine = matrix.find_engine(catalog, "vinyl-9.0.1")
+        target = matrix.find_target(catalog, "debian-13-amd64")
+        cells = [
+            {"row": "vinyl-9.0.1", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "engine"},
+            {"row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64", "mode": "package"},
+        ]
         pkgdl = Path(tmp) / "pkgdl"
+        engine_source = pkgdl / "engine-vinyl-9.0.1-debian-13-amd64"
         source = pkgdl / "packages-dict-vinyl-9.0.1-debian-13-amd64"
-        source.mkdir(parents=True)
+        engine_source.mkdir(parents=True)
+        source.mkdir()
+        (engine_source / "vinyl-cache_9.0.1-1_amd64.deb").write_bytes(b"runtime")
+        (engine_source / "vinyl-cache-dev_9.0.1-1_amd64.deb").write_bytes(b"development")
         artifact = source / "vinyl-vmod-dict_1.7-1~vinyl9.0.1.1_amd64.deb"
         artifact.write_bytes(b"native package placeholder")
         staged = Path(tmp) / "dist"
         release_gate.validate_pair_payload(
-            pkgdl, engine, target, cells,
-            metadata_reader=lambda path: ("vinyl-vmod-dict", "amd64"), stage_dir=staged,
+            pkgdl, catalog, engine, target, cells,
+            metadata_reader=lambda path: {
+                "vinyl-cache_9.0.1-1_amd64.deb": {
+                    "Package": "vinyl-cache", "Architecture": "amd64", "Version": "9.0.1-1"},
+                "vinyl-cache-dev_9.0.1-1_amd64.deb": {
+                    "Package": "vinyl-cache-dev", "Architecture": "amd64", "Version": "9.0.1-1"},
+                artifact.name: {"Package": "vinyl-vmod-dict", "Architecture": "amd64",
+                                "Version": "1.7-1~vinyl9.0.1.1", "Depends": "vinyl-cache (= 9.0.1-1)"},
+            }[path.name], stage_dir=staged,
         )
         eq(sorted(path.name for path in staged.iterdir()),
-           ["vinyl-vmod-dict_1.7-1.vinyl9.0.1.1_amd64.deb"],
+           ["vinyl-cache-dev_9.0.1-1_amd64.deb", "vinyl-cache_9.0.1-1_amd64.deb",
+            "vinyl-vmod-dict_1.7-1.vinyl9.0.1.1_amd64.deb"],
            "release checksums use GitHub's retained asset name")
 
 
@@ -3083,6 +3167,44 @@ def native_package_contract_normalizes_payload_and_exact_dependencies():
     ok(not package_contract.deb_exact_dependency(
         "vinyl-cache (>= 9.0.1-1)", "vinyl-cache", "9.0.1-1"
     ), "a lower-bound dependency cannot masquerade as the exact engine cohort")
+
+
+@test
+def container_metadata_queries_use_the_runner_image_architecture():
+    with tempfile.TemporaryDirectory() as tmp:
+        package = Path(tmp) / "metadata package.deb"
+        package.touch()
+        calls = []
+
+        def succeeds(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, "vinyl-cache\tamd64\t9.0.1-1\t\n", "")
+
+        original = package_contract.subprocess.run
+        package_contract.subprocess.run = succeeds
+        try:
+            fields = package_contract.container_fields(package, {
+                "format": "deb", "image": "debian:13", "platform": "linux/arm64",
+            })
+        finally:
+            package_contract.subprocess.run = original
+        eq(fields["Package"], "vinyl-cache", "container query parses native metadata")
+        ok("--platform" not in calls[0], "metadata query does not require foreign-architecture emulation")
+        ok("'/packages/metadata package.deb'" in calls[0][-1], "container query shell-quotes package paths")
+
+        def fails(command, **kwargs):
+            raise subprocess.CalledProcessError(1, command, stderr="rpm metadata failed")
+
+        package_contract.subprocess.run = fails
+        try:
+            try:
+                package_contract.container_fields(package, {"format": "deb", "image": "debian:13"})
+            except package_contract.ContractError as exc:
+                ok("rpm metadata failed" in str(exc), "container errors retain native tool stderr")
+            else:
+                raise Fail("container metadata query accepted a failed native tool")
+        finally:
+            package_contract.subprocess.run = original
 
 
 @test

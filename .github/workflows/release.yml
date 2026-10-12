@@ -26,7 +26,12 @@ jobs:
       - id: expand
         env:
           RELEASE_TARGETS: ${{ inputs.targets }}
+          IMMUTABLE_RELEASES_CONFIGURED: ${{ vars.IMMUTABLE_RELEASES_CONFIGURED }}
         run: |
+          if [ "$IMMUTABLE_RELEASES_CONFIGURED" != true ]; then
+            echo "Enable immutable releases and set IMMUTABLE_RELEASES_CONFIGURED=true before dispatching." >&2
+            exit 1
+          fi
           args=(--lane release --mode package --format github)
           if [ -n "$RELEASE_TARGETS" ]; then
             args+=(--targets "$RELEASE_TARGETS")
@@ -213,7 +218,7 @@ jobs:
       group: release-stable
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
@@ -233,102 +238,11 @@ jobs:
         with:
           pattern: packages-*
           path: pkgdl
-      # Decision 13: releases are all-or-nothing per (engine, target) pair, at
-      # the stable tag <engine-id>-<target>. Every expected cell — the engine's
-      # own build plus every package-eligible VMOD — must be `pass` or the pair
-      # publishes nothing and the job goes red. All green-pair payloads are
-      # staged and validated before any stable tag or release is mutated.
       - name: gate, stage, and publish the green pairs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TARGETS: ${{ inputs.targets }}
+          IMMUTABLE_RELEASES_CONFIGURED: ${{ vars.IMMUTABLE_RELEASES_CONFIGURED }}
         run: |
           set -eu
-          python3 - <<'EOF'
-          import glob, json, os, shutil, subprocess, sys
-
-          sys.path.insert(0, "tools")
-
-          import matrix
-          import release_gate
-
-          catalog = matrix.load_catalog(".")
-          # The same expansion the build jobs ran: every expected cell of the
-          # release lane in package mode, engine rows (mode "engine") included.
-          targets = matrix.release_package_target_filter(catalog, os.environ.get("RELEASE_TARGETS", ""))
-          expansion = matrix.expand(catalog, "release", "package", targets)
-          if not expansion["engines"] or not expansion["vmods"]:
-              sys.exit("release package matrix is empty")
-          expected = expansion["rows"]
-
-          results = {}
-          cohort_results = {}
-          for path in glob.glob("results/**/*.json", recursive=True):
-              with open(path) as f:
-                  cell = json.load(f)
-              if cell.get("schema") == "cohort/1":
-                  cohort_results[(cell["engine"], cell["target"])] = cell["status"]
-                  continue
-              results[(cell["row"], cell["engine"], cell["target"], cell["mode"])] = cell["status"]
-
-          pairs = {}
-          for cell in expected:
-              pairs.setdefault((cell["engine"], cell["target"]), []).append(cell)
-
-          sha = os.environ["GITHUB_SHA"]
-          gate_failed = False
-          prepared = []
-          for (engine, target), cells in sorted(pairs.items()):
-              tag = f"{engine}-{target}"
-              cohort_status = cohort_results.get((engine, target), "missing result")
-              if cohort_status != "pass":
-                  gate_failed = True
-                  print(f"gate FAILED for {tag} — package cohort: {cohort_status}")
-                  continue
-              bad = [(c, results.get((c["row"], engine, target, c["mode"]), "missing result"))
-                     for c in cells]
-              bad = [(c, status) for c, status in bad if status != "pass"]
-              if bad:
-                  gate_failed = True
-                  print(f"gate FAILED for {tag} — publishing nothing for this pair:")
-                  for c, status in bad:
-                      print(f"  {c['row']} ({c['mode']}): {status}")
-                  continue
-              engine_doc = matrix.find_engine(catalog, engine)
-              target_doc = matrix.find_target(catalog, target)
-              dist = os.path.join("dist", tag)
-              if os.path.isdir(dist):
-                  shutil.rmtree(dist)
-              try:
-                  release_gate.validate_pair_payload(
-                      "pkgdl", engine_doc, target_doc, cells, stage_dir=dist
-                  )
-              except release_gate.PayloadError as exc:
-                  gate_failed = True
-                  print(f"gate FAILED for {tag}: {exc}")
-                  continue
-              names = sorted(os.listdir(dist))
-              sums = subprocess.run(["sha256sum", "--"] + names, cwd=dist,
-                                    check=True, stdout=subprocess.PIPE, text=True).stdout
-              with open(os.path.join(dist, "SHA256SUMS"), "w") as f:
-                  f.write(sums)
-              body = f"body-{tag}.md"
-              with open(body, "w") as f:
-                  f.write("This release contains every packaged module for this target, or it would not have been published.\n\n")
-                  f.write(f"Packages built from the pinned release catalog for `{target}`, against engine `{engine}`. Every package below passed its build-and-install-and-load check.\n\n")
-                  f.write("## Packages\n\n")
-                  f.write("".join(f"- `{name}`\n" for name in names))
-              prepared.append((tag, dist, body, names))
-
-          for tag, dist, body, names in prepared:
-              # Retry the whole delete/create transaction. A failed gh create
-              # can leave a draft, so lib.sh deletes it before the next try.
-              subprocess.run(["scripts/retry.sh", "release", tag, sha, body]
-                             + [os.path.join(dist, n) for n in sorted(os.listdir(dist))],
-                             check=True)
-              print(f"published {tag}: {len(names)} packages")
-
-          if gate_failed:
-              print("release validation failed for one or more pairs; green pairs were published")
-              sys.exit(1)
-          EOF
+          python3 tools/release_assemble.py

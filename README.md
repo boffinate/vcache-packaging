@@ -40,3 +40,11 @@ scripts/probe-upstream-varnish-overlay.sh "$(python3 tools/matrix.py select-engi
 ## Adding a VMOD
 
 Copy an existing `vmods/<id>.yml` (keeping its modeline first line), edit it with the schema guiding you, run `matrix.py validate`, commit. That's the whole process. If it doesn't build against an engine, the matrix will show it red — that's a result, not a problem.
+
+## Publishing packages
+
+Release tags include the engine-wide package revision: `<engine-id>-r<package_revision>-<target>`, for example `vinyl-9.0.1-r9-debian-13-amd64`. Bump `package_revision` before rebuilding changed packages. Every target of a revision must use the same packaging commit. Recover failed targets by rerunning the original workflow run. If main has advanced since a filtered run, use a new revision to publish targets that run omitted.
+
+Enable GitHub immutable releases and set the repository variable `IMMUTABLE_RELEASES_CONFIGURED` to `true` before dispatching `release.yml`. The variable acknowledges that setup; the workflow token cannot query the administration setting. Publication assembles and verifies a draft before locking it. Published releases and tags are never replaced; a retry of staged artifacts must match the original commit and every asset. To redistribute an existing revision, use its existing release.
+
+For the cutover, merge the producer and distributor changes while publication is stopped, enable immutable releases and set the acknowledgement variable, then build fresh package revisions. Leave historical releases and tags untouched; the distributor rejects them. Verify the first release is immutable and exercise a retry from the same workflow commit before distributing it.

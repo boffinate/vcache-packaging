@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -30,24 +31,33 @@ def run(command: list[str]) -> str:
     return result.stdout
 
 
-def deb_fields(package: Path) -> dict:
-    output = run([
-        "dpkg-deb", "-W", "--showformat=${Package}\\t${Architecture}\\t${Version}\\t${Depends}",
-        str(package),
-    ])
+def _parse_deb_fields(output: str, package: Path) -> dict:
     values = output.split("\t", 3)
     if len(values) != 4 or not all(values[:3]):
         raise ContractError(f"incomplete Debian metadata in {package.name}")
     return dict(zip(("Package", "Architecture", "Version", "Depends"), values))
 
 
+def _parse_rpm_fields(output: str, package: Path) -> dict:
+    values = output.splitlines()
+    if len(values) != 3 or not all(values):
+        raise ContractError(f"incomplete RPM metadata in {package.name}")
+    return dict(zip(("Package", "Architecture", "Version"), values))
+
+
+def deb_fields(package: Path) -> dict:
+    output = run([
+        "dpkg-deb", "-W", "--showformat=${Package}\\t${Architecture}\\t${Version}\\t${Depends}",
+        str(package),
+    ])
+    return _parse_deb_fields(output, package)
+
+
 def rpm_fields(package: Path) -> dict:
     output = run([
         "rpm", "-qp", "--qf", "%{NAME}\\n%{ARCH}\\n%{VERSION}-%{RELEASE}\\n", str(package)
-    ]).splitlines()
-    if len(output) != 3:
-        raise ContractError(f"incomplete RPM metadata in {package.name}")
-    return dict(zip(("Package", "Architecture", "Version"), output))
+    ])
+    return _parse_rpm_fields(output, package)
 
 
 def native_fields(package: Path) -> dict:
@@ -56,6 +66,60 @@ def native_fields(package: Path) -> dict:
     if package.suffix == ".rpm":
         return rpm_fields(package)
     raise ContractError(f"unsupported package suffix: {package}")
+
+
+def _container_run(package: Path, target: dict, command: str) -> str:
+    """Run a native package query without making the workflow runner a package host."""
+    package = package.resolve()
+    try:
+        result = subprocess.run([
+            "docker", "run", "--rm",
+            "-v", f"{package.parent}:/packages:ro", target["image"],
+            "sh", "-ec", command,
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    except subprocess.CalledProcessError as exc:
+        detail = exc.stderr.strip() if isinstance(exc.stderr, str) else ""
+        raise ContractError(f"container metadata query failed for {package.name}: {detail or exc}") from exc
+    except (KeyError, OSError) as exc:
+        raise ContractError(f"container metadata query failed for {package.name}: {exc}") from exc
+    return result.stdout
+
+
+def container_fields(package: Path, target: dict) -> dict:
+    """Read the metadata needed by release staging in the target's native tools."""
+    quoted = shlex.quote("/packages/" + package.name)
+    if target.get("format") == "deb":
+        output = _container_run(
+            package, target,
+            f"dpkg-deb -W --showformat='${{Package}}\\t${{Architecture}}\\t${{Version}}\\t${{Depends}}' {quoted}",
+        )
+        return _parse_deb_fields(output, package)
+    if target.get("format") == "rpm":
+        output = _container_run(
+            package, target,
+            f"rpm -qp --qf '%{{NAME}}\\n%{{ARCH}}\\n%{{VERSION}}-%{{RELEASE}}\\n' {quoted}; "
+            f"printf '\036'; rpm -qp --requires {quoted}",
+        )
+        metadata, separator, requires = output.partition("\036")
+        if not separator:
+            raise ContractError(f"incomplete RPM metadata in {package.name}")
+        return {**_parse_rpm_fields(metadata, package), "Requires": requires.splitlines()}
+    raise ContractError(f"unsupported package format {target.get('format')!r}")
+
+
+RPM_ISA_BY_ARCH = {
+    "x86_64": "(x86-64)",
+    "aarch64": "(aarch-64)",
+}
+
+
+def rpm_exact_requirement(package: str, package_arch: str, version: str) -> str:
+    """Render rpm's architecture-qualified exact dependency for a target package."""
+    try:
+        isa = RPM_ISA_BY_ARCH[package_arch]
+    except KeyError as exc:
+        raise ContractError(f"unsupported RPM package architecture {package_arch!r}") from exc
+    return f"{package}{isa} = {version}"
 
 
 def deb_payload(package: Path) -> list[str]:
