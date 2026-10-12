@@ -3027,7 +3027,7 @@ def recipe_debian_generation_normalizes_underscored_vmod_package_names():
         changelog = (out / "debian" / "changelog").read_text()
         ok("Package: varnish-vmod-k8s-endpoint" in control,
            "Debian package names convert VMOD identifier underscores to hyphens")
-        ok("varnish-vmod-k8s-endpoint (0.1.0-" in changelog,
+        ok("varnish-vmod-k8s-endpoint (0.1.1-" in changelog,
            "Debian changelog starts with a valid normalized source package name and version")
 
 

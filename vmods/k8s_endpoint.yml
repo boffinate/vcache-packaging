@@ -9,9 +9,9 @@ upstream:
 sources:
   head: main
   default:
-    ref: v0.1.0
-    commit: "8b74a31e3e2775030e6028ef09975cac5de05859"
-    version: "0.1.0"
+    ref: v0.1.1
+    commit: "5d3fa372c226b43ae6d1b2cb3a1aeeaec22bdfc6"
+    version: "0.1.1"
 build: cargo
 source_api_family: varnish
 package:
