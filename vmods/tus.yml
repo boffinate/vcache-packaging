@@ -1,22 +1,13 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-tus (schema vmod/1, DESIGN.md).
 #
-# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
-# natively (vinylapi.pc, VINYL_PREREQ([9.0.0])) and a separate 8.0 branch
-# serves Varnish 8, so Varnish 9 cells are EXPECTED RED at configure; v2
-# carries no patches (SCOPE.md). No usable tags, so both lanes pin master
-# (selector precedent; the 0 in 0~master keeps the Debian version
-# digit-first).
-#
-# Verified in configure.ac on master: AC_ARG_VAR([VINYLSRC], [path to Vinyl
-# source]), then AC_MSG_FAILURE([Need VINYLSRC]) when unset, and a header
-# check for cache/cache_obj.h that dies with "Missing $VINYLSRC development
-# files." -- configure hard-requires a Vinyl Cache *source tree* on top of
-# the normal vinylapi.pc machinery. engine_source: required makes the
-# harness provision that tree from the engine's own source pin, with VSC
-# headers regenerated (decision 14). The mechanism is container-proven on
-# the sibling pesi; tus itself has not been built yet, so its first cells
-# are the verdict (docs/20260811-vmod-candidate-survey.md).
+# Engine 9.0 selects the upstream commit before the VCACHE migration raised
+# the minimum engine version to 9.1. The default and trunk follow master.
+# The 9.0 source uses Vinyl build rules, so selecting it does not establish
+# Varnish compatibility. We carry no upstream patches (SCOPE.md).
+# configure requires an engine source tree and private cache/cache_obj.h
+# headers in addition to the installed SDK. engine_source: required supplies
+# the selected engine's source with regenerated VSC headers (decision 14).
 schema: vmod/1
 id: tus
 upstream:
@@ -27,6 +18,15 @@ sources:
   default:
     ref: master
     version: "0~master"
+  by_series:
+    vinyl-9.0:
+      ref: master
+      commit: "7dd1a25a8a792df72cdbef1ac58db8e838b44c4e"
+      version: "0~master"
+    varnish-9.0:
+      ref: master
+      commit: "7dd1a25a8a792df72cdbef1ac58db8e838b44c4e"
+      version: "0~master"
 package:
   summary: TUS resumable upload proxy VMOD for Vinyl Cache
   description:

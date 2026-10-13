@@ -1,28 +1,17 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvdp-pesi (schema vmod/1, DESIGN.md).
 #
-# UPLEX Vinylized this repo in March 2026: master builds against Vinyl Cache 9
-# natively (vinylapi.pc, VINYL_* macros; configure.ac declares
-# VINYL_PREREQ([9.0],[trunk]) and its AC_INIT version is trunk) and a separate
-# 8.0 branch serves Varnish 8, so Varnish 9 cells are EXPECTED RED at
-# configure; v2 carries no patches (SCOPE.md). Release builds pin commits
-# from master; trunk follows master. The 0 in 0~master keeps the Debian
-# version digit-first. The 9.1 series selects upstream's private-header rename.
+# The older pins use Vinyl's build macros. Varnish 9.1 selects upstream's
+# VCACHE build rules, which accept both providers from 9.1; using that commit
+# on 9.0 would discard upstream's minimum-version check. Package promotion
+# remains Vinyl-only. The 0 in 0~master keeps Debian versions digit-first.
 #
-# configure.ac hard-requires the VINYLSRC environment variable pointing at a
-# Vinyl Cache *source tree* (it checks for $VINYLSRC/include/miniobj.h and
-# AC_MSG_ERRORs without it), on top of the normal vinylapi.pc machinery.
-# engine_source: required makes the harness provision that tree from the
-# engine's own source pin, regenerating the VSC headers the dist archive
-# omits (decision 14). Container-proven against vinyl-9.0.1: configure
-# accepts the release (VINYL_PREREQ([9.0],[trunk])), the build converges
-# after vsctool regenerates VSC_main.h, and both modules load
-# (docs/20260811-vmod-candidate-survey.md).
+# The private headers and VSC_main.h need the matching engine source tree,
+# beyond its installed development package. engine_source provisions that
+# tree and regenerates the VSC headers omitted from the dist archive.
 #
-# No tests: key on purpose: upstream's VTC suite ran 52/54 against
-# vinyl-9.0.1 (2026-08-11) with e00000/e00001 timing out on a logexpect
-# that never matches "1001 End" despite it being present in the VSL --
-# revisit when upstream moves.
+# The suite stays undeclared because the 9.0 tests e00000/e00001 time out on
+# a logexpect that fails to match "1001 End" even when it is present in VSL.
 schema: vmod/1
 id: pesi
 upstream:
@@ -35,6 +24,10 @@ sources:
     commit: d6c234da43e2aec7dc5db48013b0eaaf66668981
     version: "0~master"
   by_series:
+    varnish-9.1:
+      ref: master
+      commit: "5125576556da4cb2f9a0be68bafdd003a877aecc"
+      version: "0~master"
     vinyl-9.1:
       ref: master
       commit: "916dd724a1854ba2988b0a040aa9c397fe6ea533"

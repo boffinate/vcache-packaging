@@ -1,19 +1,14 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-dispatch (schema vmod/1, DESIGN.md).
 #
-# Upstream's tags are stale (pre-Vinylize), so both release and trunk lanes
-# use master. Master is Vinyl-native (vinylapi.pc, VINYL_* autotools macros;
-# Varnish 8 lives on a separate 8.0 branch), and source_api_family enables
-# translation for the Varnish columns because the source includes only public
-# headers. Its configure hard-requires an engine source tree, which
-# engine_source: required provides for both families (VINYLSRC and VARNISHSRC
-# are both exported).
-# Upstream's src/Makefile.am sets libvmod_dispatch_la_LDFLAGS = $(VMOD_FLAGS),
-# a variable neither engine's m4 defines, so the library is built versioned
-# and the harness resolves the resulting .so symlink (decision 24).
-# Per decision 13 package.families is vinyl, which is the branch's actual
-# build-system support. The 0 in 0~master makes the trunk version valid for
-# Debian, whose package versions must start with a digit.
+# Engine 9.0 selects the upstream commit before the VCACHE migration raised
+# the minimum engine version to 9.1. The default and trunk follow master.
+# source_api_family enables Varnish translation because the source uses only
+# public headers. engine_source: required supplies the engine tree required
+# by configure for both families.
+# Upstream's src/Makefile.am uses $(VMOD_FLAGS), which neither engine's m4
+# defines, so the library is versioned and the harness resolves its .so
+# symlink (decision 24). package.families follows upstream's Vinyl support.
 schema: vmod/1
 id: dispatch
 source_api_family: vinyl
@@ -25,6 +20,15 @@ sources:
   default:
     ref: master
     version: "0~master"
+  by_series:
+    vinyl-9.0:
+      ref: master
+      commit: "668d957211e2be266360d8ea1a430d9f8a245abd"
+      version: "0~master"
+    varnish-9.0:
+      ref: master
+      commit: "668d957211e2be266360d8ea1a430d9f8a245abd"
+      version: "0~master"
 engine_source: required
 package:
   summary: Dispatch to VCL labels or subroutines by integer id for Vinyl Cache

@@ -3,15 +3,11 @@
 #
 # The source uses Varnish API spellings, recorded by source_api_family so
 # cross-family builds can normalize its disposable source tree.
-# The pin is the master commit carrying the test03 fix, which matches the
-# libcurl connection-error string as a pattern instead of one exact spelling.
+# The 9.0 pin carries the test03 fix, which matches the libcurl connection-error
+# string as a pattern instead of one exact spelling. The 9.1 selection uses
+# upstream's VCACHE build rules and resp.body tests; it requires engine 9.1.
 # package.families stays varnish because upstream supports Varnish only, so
 # that is the family we ship products for.
-# Vinyl trunk removed the VCL synthetic() action (vinyl-cache 199daa31b0,
-# 2026-04-21, replacement "set resp.body = ..."), and tests/test12.vtc still
-# uses it, so the vinyl-trunk check step is red and becomes red on release
-# engines from the first Vinyl release carrying that commit. The portable fix
-# is an upstream VTC change, not a carried patch.
 schema: vmod/1
 id: curl
 source_api_family: varnish
@@ -26,6 +22,15 @@ sources:
     ref: master
     commit: "98da71c65568b1c1ca2868b7badf237e490ec524"
     version: "1.0.4+git20260813"
+  by_series:
+    varnish-9.1:
+      ref: master
+      commit: "dd44d119470c2b6d484adf5cfb53f053b6a18b21"
+      version: "1.0.4+git20260929"
+    vinyl-9.1:
+      ref: master
+      commit: "dd44d119470c2b6d484adf5cfb53f053b6a18b21"
+      version: "1.0.4+git20260929"
 package:
   summary: HTTP client VMOD for Varnish Cache
   description:

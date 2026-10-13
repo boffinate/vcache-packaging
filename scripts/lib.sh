@@ -411,10 +411,8 @@ prepare_cargo() {
   rustc --version | grep -F "rustc $RUST_VERSION "
   cargo --version | grep -F "cargo $RUST_VERSION "
 
-  if [ "${VMOD_SOURCE_API_FAMILY:-$ENGINE_FAMILY}" != "$ENGINE_FAMILY" ]; then
-    step source-api-normalize
-    prepare_cargo_api_aliases
-  fi
+  step source-api-normalize
+  prepare_cargo_api_aliases
 
   cd "$SRC"
   step cargo-preflight
@@ -425,11 +423,9 @@ prepare_cargo() {
   retry_command 3 "cargo fetch" cargo fetch --locked
 }
 
-# Prepare a build-private SDK view for a Cargo VMOD whose bindings use the
-# source family's fixed API filenames. varnish-sys probes and links those names
-# directly, so translating only the .pc filename leaves its explicit -l flag
-# and private-header include unresolved. The overlay keeps the selected
-# engine's .pc metadata intact while supplying aliases for those filenames.
+# varnish-sys probes fixed API filenames, including a private header renamed
+# within each family. A private SDK view resolves those names without changing
+# bindings or the selected engine's declarations and version metadata.
 prepare_cargo_api_aliases() {
   local source_family=${VMOD_SOURCE_API_FAMILY:-$ENGINE_FAMILY}
   local source_api source_headers target_header target_pcdir target_pc target_libdir target_includedir header
@@ -447,7 +443,13 @@ prepare_cargo_api_aliases() {
       source_headers="cache_vinyld.h cache_int.h"
       ;;
     vinyl:vinyl|varnish:varnish)
-      return 0
+      source_api=$ENGINE_API
+      case "$ENGINE_FAMILY" in
+        vinyl) source_headers=cache_vinyld.h ;;
+        varnish) source_headers=cache_varnishd.h ;;
+      esac
+      target_header=$(engine_private_header_name "$ENGINE_API" "$ENGINE_FAMILY")
+      [ "$target_header" != "$source_headers" ] || return 0
       ;;
     *)
       echo "unsupported Cargo API normalization: $source_family -> $ENGINE_FAMILY" >&2
@@ -494,7 +496,11 @@ prepare_cargo_api_aliases() {
   export PKG_CONFIG_PATH="$alias_pcdir${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
   echo "Cargo API aliases: $source_api -> $ENGINE_API ($alias_pc, $alias_libdir, $alias_includedir/cache)"
   if [ -n "${TAG:-}" ]; then
-    printf '%s-to-%s\n' "$source_family" "$ENGINE_FAMILY" > "/work/tmp/$TAG.source-api-normalization"
+    if [ "$source_family" = "$ENGINE_FAMILY" ]; then
+      printf '%s\n' private-header-alias > "/work/tmp/$TAG.source-api-normalization"
+    else
+      printf '%s-to-%s\n' "$source_family" "$ENGINE_FAMILY" > "/work/tmp/$TAG.source-api-normalization"
+    fi
   fi
 }
 

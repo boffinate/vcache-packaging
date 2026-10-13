@@ -8,7 +8,7 @@ upstream:
   git: https://github.com/varnishcache-friends/libvmod-geoip2.git
   homepage: https://github.com/varnishcache-friends/libvmod-geoip2
 sources:
-  head: main
+  head: devel
   default:
     ref: main
     commit: "61108da029e3d37eca62b91581612aee3af22932"

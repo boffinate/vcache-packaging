@@ -1,17 +1,13 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvfp-brotli (schema vmod/1, DESIGN.md).
 #
-# Master is Vinyl-native (vinylapi.pc, VINYL_* macros) and a separate 8.0
-# branch serves Varnish 8. source_api_family lets the harness translate the
-# tree for the Varnish 9 columns. brotli qualifies for that translation
-# because it includes only cache/cache.h and cache/cache_filter.h, whose VFP
-# half is identical between the engines, unlike pesi, slash and zipflow
-# (decision 19).
-# No usable tags, so both lanes pin master (selector precedent; the 0 in
-# 0~master keeps the Debian version digit-first).
-# Upstream's README requires a Vinyl Cache *master* commit (54af42d or later),
-# so the release-engine cell may be red while trunk is green: that split is
-# expected and is exactly the trunk-CI early warning this matrix exists for.
+# Engine 9.0 selects the upstream commit before the VCACHE migration raised
+# the minimum engine version to 9.1. The default and trunk follow master.
+# source_api_family enables Varnish translation because the source uses only
+# cache/cache.h and cache/cache_filter.h, whose VFP API is shared (decision 19).
+# The 9.0 source also requires the engine changes described in upstream's
+# README (54af42d or later); its configure minimum alone does not prove that
+# every 9.0 engine can build it.
 schema: vmod/1
 id: brotli
 source_api_family: vinyl
@@ -23,6 +19,15 @@ sources:
   default:
     ref: master
     version: "0~master"
+  by_series:
+    vinyl-9.0:
+      ref: master
+      commit: "b9adda40115815120b71fdfa42ef9c8c9567757a"
+      version: "0~master"
+    varnish-9.0:
+      ref: master
+      commit: "b9adda40115815120b71fdfa42ef9c8c9567757a"
+      version: "0~master"
 package:
   summary: Brotli compression fetch processor for Vinyl Cache
   description:

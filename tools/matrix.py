@@ -107,9 +107,9 @@ SOURCE_API_FAMILIES = FAMILIES
 SOURCE_API_NORMALIZATIONS = tuple(
     f"{source}-to-{target}" for source in SOURCE_API_FAMILIES for target in SOURCE_API_FAMILIES if source != target
 ) + (
-    # Same-family pass: only VSC counter directives were respelled for the
-    # shared vsctool (decision 28).
+    # Same-family adaptations retain separate provenance from translation.
     "vsc-directives",
+    "private-header-alias",
 )
 # VCL import names (package.modules entries). VMOD ids may contain hyphens
 # (varnish-modules); module names may not.
@@ -1249,7 +1249,8 @@ _MODE_SENTENCE = {
 SOURCE_NORMALIZATION_LEGEND = "compat: Vinyl ↔ Varnish"
 SOURCE_NORMALIZATION_HELP = (
     "We had to translate source names or provide build-time API name aliases between Vinyl and Varnish, "
-    "or respell statistics counter definitions for the engines' shared vsctool."
+    "respell statistics counter definitions for the engines' shared vsctool, "
+    "or provide an older private-header filename for the selected engine's SDK."
 )
 
 
@@ -1333,6 +1334,8 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
                         line += f" API names translated from {source.title()} to {destination.title()}."
                     elif direction == "vsc-directives":
                         line += " VSC counter directives respelled for the engines' shared vsctool."
+                    elif direction == "private-header-alias":
+                        line += " An older private-header filename aliases the selected engine's SDK header."
                     else:
                         line += f" API name translation: {direction}."
                 if cell.get("ref"):

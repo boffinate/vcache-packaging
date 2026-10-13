@@ -1,12 +1,9 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-harden (schema vmod/1, DESIGN.md).
 #
-# The VMOD builds and loads against Vinyl, but both upstream VTCs open with
-# "feature tls_1_3" and drive the daemon's -A TLS frontend. Vinyl has no
-# native TLS, no -A option and no TLS vocabulary in vinyltest, so the tests
-# abort at the feature line before anything starts. An honest red on the
-# check step until Vinyl grows native TLS; the VMOD's SNI callback could
-# never fire there anyway.
+# Upstream 1.2 requires Varnish 9.1's VCACHE macros and private header names;
+# 1.1 retains the 9.0 build rules. The VMOD hooks Varnish's native TLS, which
+# Vinyl does not provide, so Vinyl compatibility failures remain expected.
 schema: vmod/1
 id: harden
 source_api_family: varnish
@@ -19,6 +16,11 @@ sources:
     ref: 1.1
     commit: "cd64464fb97e03a2ca76a3607ba4781f00b7da8d"
     version: "1.1"
+  by_series:
+    varnish-9.1:
+      ref: "1.2"
+      commit: "b3d1dda6cc6244cc96968735fb45ca838e7067c5"
+      version: "1.2"
 package:
   summary: TLS certificate and client connection hardening VMOD for Varnish Cache
   description:

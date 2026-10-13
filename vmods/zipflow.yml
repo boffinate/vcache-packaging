@@ -3,9 +3,10 @@
 #
 # There are no usable tags, so release builds pin commits from master. The 0
 # in 0~master keeps the Debian version digit-first. The 9.1 series selects
-# upstream's private-header rename; trunk follows master.
+# upstream's private-header rename on Vinyl and its dual-provider VCACHE build
+# rules on Varnish. The latter require 9.1; trunk follows master.
 #
-# Configure hard-requires a Vinyl Cache source tree. engine_source provisions
+# Configure requires the matching engine source tree. engine_source provisions
 # the pinned source with regenerated VSC headers. Upstream's default target
 # also links an auxiliary zfr_iter_test against
 # $(VINYLSRC)/lib/libvinyl/libvinyl.la, a build-tree artifact the provisioned
@@ -34,6 +35,10 @@ sources:
     commit: "90e576d5d7b3fdb1391f7a1f142989b98056ba83"
     version: "0~master"
   by_series:
+    varnish-9.1:
+      ref: master
+      commit: "ff9882083644d3fafa04ec675c5ba3073d469038"
+      version: "0~master"
     vinyl-9.1:
       ref: master
       commit: "6191ac1949b32b6feaf2da4fc842bb5125c81f8e"

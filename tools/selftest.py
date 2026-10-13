@@ -1992,6 +1992,26 @@ def cargo_api_aliases_are_private_directional_and_preserve_engine_metadata():
         eq(result.returncode, 0, f"same-family Cargo aliases: {result.stderr}")
         ok(not (same_target / "engine-api-alias").exists(), "same-family build creates no aliases")
 
+        varnish_header.rename(varnish_include / "cache_int.h")
+        same_varnish_target = tmp / "same-varnish-target"
+        result = subprocess.run(
+            ["bash", "-c", 'source "$1"; prepare_cargo_api_aliases', "bash",
+             str(root / "scripts" / "lib.sh")],
+            env={**os.environ, "PREFIX": str(varnish_prefix), "ENGINE_API": "varnishapi",
+                 "ENGINE_FAMILY": "varnish", "VMOD_SOURCE_API_FAMILY": "varnish",
+                 "CARGO_TARGET_DIR": str(same_varnish_target), "PKG_CONFIG_PATH": str(varnish_pcdir),
+                 "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                 "PKG_CONFIG_TEST_PCDIR": str(varnish_pcdir),
+                 "PKG_CONFIG_TEST_LIBDIR": str(varnish_prefix / "lib"),
+                 "PKG_CONFIG_TEST_INCLUDEDIR": str(varnish_prefix / "include" / "varnish")},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        eq(result.returncode, 0, f"same-family renamed Cargo header: {result.stderr}")
+        alias = same_varnish_target / "engine-api-alias" / "include" / "cache" / "cache_varnishd.h"
+        ok(alias.is_symlink(), "older Cargo bindings can include the renamed same-family header")
+        eq(alias.resolve(), (varnish_include / "cache_int.h").resolve(),
+           "header alias uses the selected engine's real header")
+
 
 @test
 def vmod_clone_retries_transient_failures():
@@ -2115,13 +2135,13 @@ def source_digest_is_stable_across_checkout_metadata_and_tar_noise():
 
 @test
 def vmod_cache_reuses_only_matching_conclusive_cells():
-    root = Path(__file__).resolve().parent.parent
     item = {
         "row": "dict", "engine": "vinyl-9.0.1", "target": "debian-13-amd64",
         "mode": "compat", "runner": "ubuntu-24.04", "source_artifact": "fixture-source",
     }
     with tempfile.TemporaryDirectory() as tmp_name:
         tmp = Path(tmp_name)
+        root = write_fixture(tmp / "repo")
         engine = tmp / "engine"
         engine.mkdir()
         (engine / "engine-vinyl-9.0.1-debian-13-amd64-prefix.tar.gz").write_bytes(b"engine")
@@ -3523,6 +3543,25 @@ def vsc_directive_cells_render_their_own_tooltip_sentence():
         cell = grid["cells"][("dict", "varnish-9.0.3")]
         eq(cell["modifier"], "NORMALIZED", "same-family respelling still shows the translated edge")
         ok("VSC counter directives respelled" in cell["title"], "tooltip names the respelling")
+
+
+@test
+def private_header_alias_cells_merge_and_render_their_provenance():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        root = write_fixture(tmp / "repo")
+        results = tmp / "results"; results.mkdir()
+        (results / "c.json").write_text(json.dumps(make_cell(
+            "dict", "varnish-9.0.3", "debian-13-amd64", "compat", "pass", "2026-10-13T00:00:00Z",
+            source_api_normalization="private-header-alias")))
+        state_file = tmp / "state.json"
+        code, _, err = run_cli(["merge", "--results-dir", str(results), "--state-file", str(state_file)])
+        eq(code, 0, f"merge accepts private-header-alias: {err}")
+        grid = matrix.build_grid(json.loads(state_file.read_text()), "debian-13-amd64", matrix.load_catalog(root))
+        cell = grid["cells"][("dict", "varnish-9.0.3")]
+        eq(cell["modifier"], "NORMALIZED", "header adaptation is visible")
+        ok("older private-header filename" in cell["title"], "tooltip names the filename alias")
+        ok("API names translated" not in cell["title"], "same-family aliases do not claim family translation")
 
 
 @test
