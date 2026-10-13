@@ -4,6 +4,7 @@ Basic, best-effort APT/RPM packages of pinned Vinyl Cache or Varnish Cache engin
 
 - What this project is and is not: [SCOPE.md](SCOPE.md)
 - How it works, schemas and contracts: [DESIGN.md](DESIGN.md)
+- Changes for package users: [package release notes](https://github.com/boffinate/vcache-repository/blob/main/CHANGELOG.md)
 
 ## Quick start
 
@@ -44,6 +45,8 @@ Copy an existing `vmods/<id>.yml` (keeping its modeline first line), edit it wit
 ## Publishing packages
 
 Release tags include the engine-wide package revision: `<engine-id>-r<package_revision>-<target>`, for example `vinyl-9.0.1-r9-debian-13-amd64`. Bump `package_revision` before rebuilding changed packages. Every target of a revision must use the same packaging commit. Recover failed targets by rerunning the original workflow run. If main has advanced since a filtered run, use a new revision to publish targets that run omitted.
+
+When a change affects package users, add an Unreleased entry to [the distributor's package release notes](https://github.com/boffinate/vcache-repository/blob/main/CHANGELOG.md). Cover new or retired packages, engine or target support, compatibility changes, and required installation or upgrade steps. Name the affected packages and explain the impact; internal build changes belong in Git history. The distributor records when the change reaches users, so these notes have one maintained copy.
 
 Enable GitHub immutable releases and set the repository variable `IMMUTABLE_RELEASES_CONFIGURED` to `true` before dispatching `release.yml`. The variable acknowledges that setup; the workflow token cannot query the administration setting. Publication assembles and verifies a draft before locking it. Published releases and tags are never replaced; a retry of staged artifacts must match the original commit and every asset. To redistribute an existing revision, use its existing release.
 
