@@ -10,8 +10,8 @@ upstream:
 sources:
   head: main
   default:
-    ref: 821221922e7437a22e668c42680d98e6560aa4ca
-    commit: "821221922e7437a22e668c42680d98e6560aa4ca"
+    ref: e52072e9cb4c651d4530f01edf6cfad870e06a04
+    commit: "e52072e9cb4c651d4530f01edf6cfad870e06a04"
     version: "0.1.1"
 build: cargo
 source_api_family: varnish
