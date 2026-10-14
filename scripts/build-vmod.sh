@@ -164,8 +164,15 @@ build_autotools() {
   # toolchain is information, not incompatibility (decision 30). The base
   # flags repeat autoconf's default, which an explicit CFLAGS replaces.
   configure_flags=(CFLAGS="-g -O2 -Wno-error" CXXFLAGS="-g -O2 -Wno-error")
-  # Second chance via autoreconf: autogen.sh often leaves aux files uninstalled.
-  ./configure "${configure_flags[@]}" || { autoreconf -f -i && ./configure "${configure_flags[@]}"; }
+  # Retry after autoreconf: autogen.sh often leaves aux files uninstalled.
+  # Keep the explicit exits. In `configure || { autoreconf && configure; }`,
+  # set -e does not fire when autoreconf fails (it is the left side of &&),
+  # so the build fell through to make and the cell was recorded as a make
+  # failure, hiding a configure-time incompatibility.
+  if ! ./configure "${configure_flags[@]}"; then
+    autoreconf -f -i || exit 1
+    ./configure "${configure_flags[@]}" || exit 1
+  fi
   step make
   # VMOD generators are not reliably parallel-safe.
   make -j1 ${VMOD_BUILD_TARGET:-all}
