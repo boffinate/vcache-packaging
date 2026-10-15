@@ -73,7 +73,7 @@ jobs:
       - id: cache-restore
         name: restore VMOD batch cache
         continue-on-error: true
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: work/vmod-cache
           key: ${{ steps.cache-key.outputs.key }}
@@ -110,7 +110,7 @@ jobs:
       - if: ${{ always() && steps.cacheable.outputs.cacheable == 'true' && steps.cache-key.outputs.key != '' && steps.cache-restore.outputs.cache-hit != 'true' }}
         name: save VMOD batch cache
         continue-on-error: true
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: work/vmod-cache
           key: ${{ steps.cache-key.outputs.key }}
