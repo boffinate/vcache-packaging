@@ -1268,24 +1268,26 @@ def display_row(cell: dict) -> str:
 
 
 def matrix_targets(state: dict, catalog: dict = None) -> list:
-    """Return targets in catalog order, followed by stale-state targets."""
+    """Use catalog membership so historical results cannot restore removed targets."""
     targets = []
     if catalog is not None:
         for engine in catalog["engines"]:
             for target in engine["targets"]:
                 if target not in targets:
                     targets.append(target)
-    return targets + sorted({c["target"] for c in state["cells"].values()} - set(targets))
+        return targets
+    return sorted({c["target"] for c in state["cells"].values()})
 
 
 def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
     """Pivot one target's merged cells into one visual cell per row and engine.
 
-    Axis order comes from the catalog when it is loadable (columns: Varnish
+    Axis order comes from the catalog when supplied (columns: Varnish
     release then trunk, followed by Vinyl release then trunk; rows: the engine
     build row, then VMODs in catalog order). Only engines configured for
-    ``target`` are shown. Anything present only in the state is appended
-    sorted, so stale state still renders instead of erroring.
+    ``target`` are shown. Historical results cannot extend catalog axes,
+    because removing a YAML entry must also remove it from the page.
+    Without a catalog, axes are derived from the state alone.
     """
     cells = [cell for cell in state["cells"].values() if cell["target"] == target]
     if catalog is not None:
@@ -1299,11 +1301,9 @@ def build_grid(state: dict, target: str, catalog: dict = None) -> dict:
         row_ids = ["(engine)"] + list(catalog["vmods"])
         row_urls = {row_id: vmod["upstream"].get("homepage", "") for row_id, vmod in catalog["vmods"].items()}
     else:
-        columns = []
-        row_ids = ["(engine)"]
+        columns = sorted({c["engine"] for c in cells})
+        row_ids = ["(engine)"] + sorted({display_row(c) for c in cells} - {"(engine)"})
         row_urls = {}
-    columns += sorted({c["engine"] for c in cells} - set(columns))
-    row_ids += sorted({display_row(c) for c in cells} - set(row_ids))
 
     groups: dict = {}
     for cell in cells:
@@ -1640,11 +1640,7 @@ def cmd_merge(args) -> int:
 
 def cmd_render(args) -> int:
     state = load_state(Path(args.state_file))
-    try:
-        catalog = load_catalog(args.root)
-    except CatalogError as exc:
-        print(f"warning: rendering without a catalog ({exc.args[0].splitlines()[0]})", file=sys.stderr)
-        catalog = None
+    catalog = load_catalog(args.root)
     grids = [build_grid(state, target, catalog) for target in matrix_targets(state, catalog)]
     generated_at = args.generated_at or now_iso()
     out_path = Path(args.out)

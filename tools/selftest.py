@@ -2744,6 +2744,80 @@ def merge_rejects_malformed_cells():
 
 
 @test
+def render_excludes_results_removed_from_the_catalog():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        root = write_fixture(tmp / "repo", vmods={
+            "dict": FIXTURE_DICT,
+            "gossip": must_replace(FIXTURE_DICT, "id: dict\n", "id: gossip\n"),
+        })
+        cells = [
+            ("dict", "vinyl-9.0.1", "debian-13-amd64", "compat"),
+            ("vinyl-9.0.1", "vinyl-9.0.1", "debian-13-amd64", "engine"),
+            ("gossip", "vinyl-9.0.1", "debian-13-amd64", "compat"),
+            ("gossip", "vinyl-9.0.1", "debian-13-amd64", "package"),
+            ("dict", "retired-engine", "debian-13-amd64", "compat"),
+            ("retired-engine", "retired-engine", "debian-13-amd64", "engine"),
+            ("dict", "vinyl-9.0.1", "retired-target", "compat"),
+            ("dict", "vinyl-trunk", "el10-x86_64", "compat"),
+        ]
+        results = tmp / "results"
+        results.mkdir()
+        for i, identity in enumerate(cells):
+            (results / f"c{i}.json").write_text(json.dumps(make_cell(
+                *identity, "pass", "2026-08-09T00:00:00Z")))
+        state_file = tmp / "state.json"
+        code, _, err = run_cli(["merge", "--results-dir", str(results), "--state-file", str(state_file)])
+        eq(code, 0, f"merge historical observations: {err}")
+        saved_state = state_file.read_bytes()
+        (root / "vmods" / "gossip.yml").unlink()
+        out_file = tmp / "index.html"
+        code, _, err = run_cli(["render", "--state-file", str(state_file), "--out", str(out_file),
+                                "--root", str(root)])
+        eq(code, 0, f"render with historical observations: {err}")
+        html_text = out_file.read_text()
+        for removed in ("gossip", "retired-engine", "retired-target"):
+            ok(removed not in html_text, f"removed catalog entry {removed} stays hidden")
+        eq(state_file.read_bytes(), saved_state, "render preserves historical observations")
+        state = matrix.load_state(state_file)
+        catalog = matrix.load_catalog(root)
+        eq(matrix.matrix_targets(state, catalog), ["debian-13-amd64", "el10-x86_64"],
+           "only configured targets appear")
+        debian = matrix.build_grid(state, "debian-13-amd64", catalog)
+        eq(debian["rows"], ["(engine)", "dict"], "only current VMOD rows appear")
+        eq(debian["columns"], ["varnish-9.0.3", "vinyl-9.0.1", "vinyl-trunk"],
+           "only current engines appear, including those without results")
+        eq(debian["counts"], {"PASS": 2, "FAIL": 0, "INFRA": 0, "MISSING": 4},
+           "historical observations do not affect visible counts")
+        el10 = matrix.build_grid(state, "el10-x86_64", catalog)
+        eq(el10["columns"], ["vinyl-9.0.1"], "removed engine/target pairs stay hidden")
+        eq(el10["counts"], {"PASS": 0, "FAIL": 0, "INFRA": 0, "MISSING": 2},
+           "current entries without results remain visible as missing")
+
+
+@test
+def render_requires_a_valid_catalog():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        state_file = tmp / "state.json"
+        cell = make_cell("gossip", "vinyl-9.0.1", "debian-13-amd64", "compat", "pass",
+                         "2026-08-09T00:00:00Z")
+        state_file.write_text(json.dumps({"schema": matrix.STATE_SCHEMA, "cells": {matrix.cell_key(cell): cell}}))
+        root = write_fixture(tmp / "repo")
+        for catalog_text in (None, "schema: invalid\n"):
+            if catalog_text is None:
+                (root / "engines.yml").unlink()
+            else:
+                (root / "engines.yml").write_text(catalog_text)
+            out_file = tmp / "index.html"
+            code, _, err = run_cli(["render", "--state-file", str(state_file), "--out", str(out_file),
+                                    "--root", str(root)])
+            eq(code, 1, "render rejects a missing or invalid catalog")
+            ok("error:" in err, "render explains the catalog error")
+            ok(not out_file.exists(), "no page is generated without a valid catalog")
+
+
+@test
 def render_smoke():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -2860,7 +2934,10 @@ def translated_build_failure_keeps_its_outcome_label():
 def mixed_modes_fold_and_retain_result_context():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        root = write_fixture(tmp / "repo")
+        root = write_fixture(tmp / "repo", vmods={
+            "dict": FIXTURE_DICT,
+            "redis": must_replace(FIXTURE_DICT, "id: dict\n", "id: redis\n"),
+        })
         cells = [
             make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "compat", "pass", "2026-08-09T00:00:00Z"),
             make_cell("dict", "vinyl-9.0.1", "debian-13-amd64", "package", "package_failed",
