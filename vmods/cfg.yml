@@ -16,9 +16,9 @@ sources:
     version: "21.3"
   by_series:
     varnish-9.1:
-      ref: 9.1-22.0
-      commit: "e415e2f3b54691f56d38cfe16bf65b0ac9edab81"
-      version: "22.0"
+      ref: 9.1-22.1
+      commit: "1b192dc69fce3e7250745e1bb28b4a4502642659"
+      version: "22.1"
     vinyl-9.1:
       ref: 9.1-22.0
       commit: "e415e2f3b54691f56d38cfe16bf65b0ac9edab81"

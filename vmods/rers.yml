@@ -11,8 +11,8 @@ sources:
   head: main
   default:
     ref: v0.0.14
-    commit: "0997c41af76aba2a22dede27643c141ae29d586e"
-    version: "0.0.14"
+    commit: "d453cf2b00cb622bcf2672d393077d774e18995e"
+    version: "0.0.15"
 build: cargo
 source_api_family: varnish
 package:

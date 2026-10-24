@@ -3,18 +3,26 @@
 #
 # The source uses Varnish API spellings, recorded by source_api_family so
 # cross-family builds can normalize its disposable source tree.
+# The catalog points at a fork (SCOPE.md) whose fix-9.1.0 tag fixes the
+# QS_CHECK_SYM probe for Varnish 9.1's function-like WS_Reservation macro.
+# The fork keeps the upstream release tags, so other columns are unchanged.
 schema: vmod/1
 id: querystring
 source_api_family: varnish
 upstream:
-  git: https://git.sr.ht/~dridi/vmod-querystring
+  git: https://github.com/gquintard/vmod-querystring.git
   homepage: https://git.sr.ht/~dridi/vmod-querystring
 sources:
-  head: master
+  head: main
   default:
     ref: vmod-querystring-2.0.4
     commit: "c69bb0975b149efe0aa82a71c79804e442a3df50"
     version: "2.0.4"
+  by_series:
+    varnish-9.1:
+      ref: fix-9.1.0
+      commit: "16c1c486f0624973119f38508f3ea5dc581a669d"
+      version: "2.0.4+git20260922"
 package:
   summary: Query-string filtering VMOD for Varnish Cache and Vinyl Cache
   description:

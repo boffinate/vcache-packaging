@@ -1,11 +1,13 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-jq uses Varnish API spellings, recorded by source_api_family so
 # cross-family builds can normalize its disposable source tree.
+# Varnish 9.1 support (VCACHE build macros) lives on a fork branch; the fork's
+# devel matches upstream, so the other columns build the same source.
 schema: vmod/1
 id: jq
 source_api_family: varnish
 upstream:
-  git: https://github.com/varnishcache-friends/libvmod-jq.git
+  git: https://github.com/gquintard/libvmod-jq.git
   homepage: https://github.com/varnishcache-friends/libvmod-jq
 sources:
   head: devel
@@ -13,6 +15,11 @@ sources:
     ref: 4051a7d08dc3a4ca90d9e8319d5a3a132793e1da
     commit: "4051a7d08dc3a4ca90d9e8319d5a3a132793e1da"
     version: "0.3.0"
+  by_series:
+    varnish-9.1:
+      ref: varnish-9.1.0-vcache-vmods
+      commit: "d117ed322d75c06d40324180746f6973b99424b3"
+      version: "0.3.0+git20260922"
 package:
   summary: JSON processing VMOD for Varnish Cache and Vinyl Cache
   description:
