@@ -36,6 +36,8 @@ The release workflow also installs each complete engine/target package cohort in
 
 The GNU-hosted `basicauth`, `dict`, `remoteip`, and `tbf` VMODs are temporarily disabled because their Git provider blocks automated access. Their manifests and pins are retained in [docs/disabled-vmods/](docs/disabled-vmods/README.md). The experimental upstream Varnish overlay proof is also suspended because it uses `basicauth`.
 
+The supported release engines are Vinyl Cache 9.1.0 and Varnish Cache 9.1.0. Vinyl Cache 9.0.2 and Varnish Cache 9.0.4 are retired from packaging and the compatibility matrix.
+
 ## Adding a VMOD
 
 Copy an existing `vmods/<id>.yml` (keeping its modeline first line), edit it with the schema guiding you, run `matrix.py validate`, commit. That's the whole process. If it doesn't build against an engine, the matrix will show it red — that's a result, not a problem.

@@ -1,8 +1,6 @@
 # yaml-language-server: $schema=../schemas/vmod.schema.json
 # libvmod-dispatch (schema vmod/1, DESIGN.md).
 #
-# Engine 9.0 selects the upstream commit before the VCACHE migration raised
-# the minimum engine version to 9.1. The default and trunk follow master.
 # source_api_family enables Varnish translation because the source uses only
 # public headers. engine_source: required supplies the engine tree required
 # by configure for both families.
@@ -20,15 +18,6 @@ sources:
   default:
     ref: master
     version: "0~master"
-  by_series:
-    vinyl-9.0:
-      ref: master
-      commit: "668d957211e2be266360d8ea1a430d9f8a245abd"
-      version: "0~master"
-    varnish-9.0:
-      ref: master
-      commit: "668d957211e2be266360d8ea1a430d9f8a245abd"
-      version: "0~master"
 engine_source: required
 package:
   summary: Dispatch to VCL labels or subroutines by integer id for Vinyl Cache
