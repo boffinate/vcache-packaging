@@ -27,16 +27,14 @@ Container builds (never on the host):
 
 ```sh
 scripts/build-engine.sh vinyl-9.1.0 debian-13-amd64 work/
-scripts/build-vmod.sh dict vinyl-9.1.0 debian-13-amd64 compat work/
+scripts/build-vmod.sh cachetag vinyl-9.1.0 debian-13-amd64 compat work/
 python3 tools/matrix.py merge --results-dir work/results --state-file work/state.json
 python3 tools/matrix.py render --state-file work/state.json --out work/index.html
 ```
 
-The release workflow also installs each complete engine/target package cohort in one fresh container and starts the family daemon with a generated VCL that imports every promoted module. The experimental, non-publishing upstream Varnish overlay proof can be run on a native amd64 host with:
+The release workflow also installs each complete engine/target package cohort in one fresh container and starts the family daemon with a generated VCL that imports every promoted module.
 
-```sh
-scripts/probe-upstream-varnish-overlay.sh "$(python3 tools/matrix.py select-engine --family varnish --kind release)" debian-13-amd64 work/
-```
+The GNU-hosted `basicauth`, `dict`, `remoteip`, and `tbf` VMODs are temporarily disabled because their Git provider blocks automated access. Their manifests and pins are retained in [docs/disabled-vmods/](docs/disabled-vmods/README.md). The experimental upstream Varnish overlay proof is also suspended because it uses `basicauth`.
 
 ## Adding a VMOD
 

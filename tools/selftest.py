@@ -1757,6 +1757,99 @@ def shared_retry_runner_bounds_attempts_and_preserves_status():
 
 
 @test
+def almalinux_recovery_uses_vendor_https_baseurls_without_changing_other_repositories():
+    root = Path(__file__).resolve().parent.parent
+    with tempfile.TemporaryDirectory() as tmp:
+        repos = Path(tmp)
+        vendor = repos / "almalinux-appstream.repo"
+        vendor.write_text(
+            "[appstream]\nmirrorlist=https://mirrors.almalinux.org/mirrorlist/$releasever/appstream\n"
+            "# baseurl=https://repo.almalinux.org/almalinux/$releasever/AppStream/$basearch/os/\n"
+            "enabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/vendor-key\n"
+        )
+        epel = repos / "epel.repo"
+        epel.write_text("[epel]\nmirrorlist=https://example.invalid/mirrors\ngpgcheck=1\n")
+        unsupported = repos / "almalinux-custom.repo"
+        unsupported.write_text("[custom]\nmirrorlist=https://example.invalid/mirrors\n# baseurl=http://example.invalid/\n")
+        original_epel, original_unsupported = epel.read_bytes(), unsupported.read_bytes()
+        for _ in range(2):
+            result = subprocess.run(
+                ["bash", "-c", 'set -e; source "$1"; almalinux_baseurl_fallback "$2"',
+                 "bash", str(root / "scripts" / "lib.sh"), str(repos)],
+                capture_output=True, text=True,
+            )
+            eq(result.returncode, 0, f"repository recovery succeeds on repeated retries: {result.stderr}")
+        output = vendor.read_text()
+        ok("\nbaseurl=https://repo.almalinux.org/" in output, "recovery activates the vendor HTTPS endpoint")
+        ok("\nmirrorlist=" not in output, "recovery stops repeating mirror selection")
+        ok("\ngpgcheck=1\n" in output and "\ngpgkey=file:///etc/pki/rpm-gpg/vendor-key\n" in output,
+           "signature verification and its trusted key remain unchanged")
+        eq(epel.read_bytes(), original_epel, "third-party repositories remain unchanged")
+        eq(unsupported.read_bytes(), original_unsupported, "a repository without a trusted fallback retains its source")
+        eq(sorted(p.name for p in repos.iterdir()),
+           ["almalinux-appstream.repo", "almalinux-custom.repo", "epel.repo"], "recovery removes temporary files")
+
+
+@test
+def engine_clone_ignores_broken_unrelated_remote_branches():
+    import functools
+    import http.server
+    import threading
+
+    root = Path(__file__).resolve().parent.parent
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        source = tmp / "source"
+        remote = tmp / "remote.git"
+        subprocess.run(["git", "init", "--initial-branch=main", str(source)], check=True, capture_output=True)
+        (source / "README").write_text("trunk fixture\n")
+        subprocess.run(["git", "-C", str(source), "add", "."], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(source), "-c", "user.name=Fixture", "-c",
+                        "user.email=fixture@example.invalid", "commit", "-m", "fixture"],
+                       check=True, capture_output=True)
+        commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+        subprocess.run(["git", "clone", "--bare", str(source), str(remote)], check=True, capture_output=True)
+        subprocess.run(["git", "--git-dir", str(remote), "update-server-info"], check=True, capture_output=True)
+        # Dumb HTTP advertises all branches; an unrelated stale ref must not
+        # make the requested, intact engine branch unavailable.
+        with (remote / "info" / "refs").open("a") as refs:
+            refs.write("b" * 40 + "\trefs/heads/obsolete\n")
+
+        class QuietHandler(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), functools.partial(QuietHandler, directory=str(tmp)))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_port}/remote.git"
+            baseline = subprocess.run(["git", "clone", "--branch", "main", url, str(tmp / "baseline")],
+                                      capture_output=True, text=True)
+            ok(baseline.returncode != 0, "an unrestricted clone reproduces the broken advertised-ref failure")
+            result = subprocess.run(
+                ["bash", "-c", 'set -e; source "$1"; sleep() { :; }; clone_commit "$2" main "$3" "$4"',
+                 "bash", str(root / "scripts" / "lib.sh"), url, commit, str(tmp / "checkout")],
+                capture_output=True, text=True,
+            )
+            eq(result.returncode, 0, f"engine clone uses only the requested branch: {result.stderr}")
+            eq(subprocess.check_output(["git", "-C", str(tmp / "checkout"), "rev-parse", "HEAD"], text=True).strip(),
+               commit, "the clone retains the exact resolved engine commit")
+            missing = subprocess.run(
+                ["bash", "-c", 'set -e; source "$1"; sleep() { :; }; '
+                 'if fetch_full_branch "$2" nonexistent "$3"; then exit 0; else exit 42; fi',
+                 "bash", str(root / "scripts" / "lib.sh"), url, str(tmp / "missing")],
+                capture_output=True, text=True,
+            )
+            eq(missing.returncode, 42, "a conditional caller cannot hide a failed fetch behind submodule success")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+
+@test
 def missing_remote_branch_is_not_retried_as_a_transport_failure():
     root = Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory() as tmp:

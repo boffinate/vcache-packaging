@@ -1,0 +1,41 @@
+name: Deploy Pages with bounded retries
+description: Retry Pages deployment without uploading the artifact again
+inputs:
+  artifact_name:
+    description: Name of the uploaded Pages artifact
+    required: true
+outputs:
+  page_url:
+    description: URL of the deployed site
+    value: ${{ (steps.first.outcome == 'success' && steps.first.outputs.page_url) || (steps.second.outcome == 'success' && steps.second.outputs.page_url) || (steps.third.outcome == 'success' && steps.third.outputs.page_url) }}
+runs:
+  using: composite
+  steps:
+    # The artifact service can briefly omit a just-uploaded artifact from its listing.
+    - id: first
+      continue-on-error: true
+      uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+      with:
+        artifact_name: ${{ inputs.artifact_name }}
+        timeout: '240000'
+    - name: wait before second attempt
+      if: ${{ !cancelled() && steps.first.outcome == 'failure' }}
+      shell: bash
+      run: sleep 5
+    - id: second
+      if: ${{ !cancelled() && steps.first.outcome == 'failure' }}
+      continue-on-error: true
+      uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+      with:
+        artifact_name: ${{ inputs.artifact_name }}
+        timeout: '240000'
+    - name: wait before final attempt
+      if: ${{ !cancelled() && steps.second.outcome == 'failure' }}
+      shell: bash
+      run: sleep 10
+    - id: third
+      if: ${{ !cancelled() && steps.second.outcome == 'failure' }}
+      uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+      with:
+        artifact_name: ${{ inputs.artifact_name }}
+        timeout: '240000'

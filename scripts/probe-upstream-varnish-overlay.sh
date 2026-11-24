@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Non-publishing Debian/amd64 proof for the upstream-Varnish overlay model.
-# Downloads the exact upstream Varnish cohort, builds basicauth against its
-# development package, stamps exact-version + strict-ABI dependencies into a
-# small native package, then installs and starts the assembled cohort.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
 [ $# -eq 3 ] || die "usage: probe-upstream-varnish-overlay.sh <engine-id> <target> <workdir>"
 ENGINE_ID=$1
 TARGET=$2
-WORKDIR=$(prepare_workdir "$3")
 VMOD_ID=basicauth
+[ -f "$REPO_ROOT/vmods/$VMOD_ID.yml" ] \
+  || die "upstream Varnish overlay proof is disabled because basicauth is parked; see docs/disabled-vmods/README.md and docs/disabled-vmods/upstream-varnish-overlay.yml"
+WORKDIR=$(prepare_workdir "$3")
 OVERLAY_PACKAGE_NAME="varnish-overlay-vmod-$VMOD_ID"
 TAG="upstream-overlay-$ENGINE_ID-$TARGET-$VMOD_ID"
 ENVFILE="$WORKDIR/tmp/$TAG.env"

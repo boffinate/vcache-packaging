@@ -84,8 +84,28 @@ apt_install_retry() {
     apt-get install -y --no-install-recommends "$@"
 }
 
+almalinux_baseurl_fallback() {
+  local repo temporary
+  for repo in "${1:-/etc/yum.repos.d}"/almalinux-*.repo; do
+    [ -f "$repo" ] || continue
+    grep -Eq '^#[[:space:]]*baseurl=https://(repo|vault)\.almalinux\.org/' "$repo" || continue
+    temporary=$(mktemp "${repo}.XXXXXX") || return
+    if ! sed -E \
+      -e 's@^mirrorlist=(https://mirrors\.almalinux\.org/.*)@# mirrorlist=\1@' \
+      -e 's@^#[[:space:]]*(baseurl=https://(repo|vault)\.almalinux\.org/.*)@\1@' \
+      "$repo" > "$temporary" || ! cat "$temporary" > "$repo"; then
+      rm -f "$temporary"
+      return 1
+    fi
+    rm -f "$temporary"
+  done
+}
+
 dnf_install_recover() {
   dnf clean all >/dev/null 2>&1 || true
+  # Clearing local metadata cannot repair a mirror serving invalid XML.
+  # AlmaLinux supplies an HTTPS fallback without relaxing package verification.
+  almalinux_baseurl_fallback
 }
 
 dnf_install_retry() {
@@ -222,18 +242,32 @@ EOF
 
 # clone_branch URL BRANCH DESTINATION
 # Prefer a shallow checkout for the normal smart-HTTP case, but retry without
-# depth when an upstream only exposes Git's dumb HTTP transport. Initialize
-# submodules in both cases: trunk engine configure scripts can require them.
+# depth when an upstream only exposes Git's dumb HTTP transport. Unrelated
+# historical refs can advertise missing objects, so fetch only this branch.
+# Initialize submodules: trunk engine configure scripts can require them.
 clone_branch() {
   local url=$1 branch=$2 destination=$3
   # A shallow clone may be unsupported by dumb HTTP. Try it once, then use
   # the fully retried compatible form for both that case and transport flakes.
   if git_clone_once "$url" "$destination" \
-    --depth 1 --recurse-submodules --branch "$branch"; then
+    --depth 1 --single-branch --no-tags --recurse-submodules --branch "$branch"; then
     return 0
   fi
   echo "shallow clone unavailable; retrying full clone" >&2
-  git_clone_retry "$url" "$destination" --recurse-submodules --branch "$branch"
+  fetch_full_branch "$url" "$branch" "$destination"
+}
+
+# Retrying clone deletes partial packs. Fetching into the same repository
+# lets dumb HTTP resume them after a truncated transfer.
+fetch_full_branch() {
+  local url=$1 branch=$2 destination=$3
+  rm -rf "$destination" || return
+  git init "$destination" || return
+  git -C "$destination" remote add origin "$url" || return
+  git -C "$destination" config remote.origin.fetch "+refs/heads/$branch:refs/remotes/origin/$branch" || return
+  git_retry "fetch engine branch $branch" -C "$destination" fetch --no-tags origin || return
+  git -C "$destination" checkout -B "$branch" --track "origin/$branch" || return
+  git_retry "update engine submodules" -C "$destination" submodule update --init --recursive
 }
 
 # A cache key is resolved before the build starts. Checking out the branch
@@ -241,20 +275,19 @@ clone_branch() {
 # earlier key, so fetch and verify the resolved commit explicitly.
 clone_commit() {
   local url=$1 branch=$2 commit=$3 destination=$4
-  clone_branch "$url" "$branch" "$destination"
+  clone_branch "$url" "$branch" "$destination" || return
   if ! git -C "$destination" cat-file -e "$commit^{commit}" 2>/dev/null; then
     if ! git_retry "fetch engine commit $commit" -C "$destination" fetch --depth 1 origin "$commit"; then
       # Some servers deliberately deny raw object requests once a branch has
       # moved. A full branch history still contains the recently advertised
       # commit and retains the exact-build invariant without trusting HEAD.
-      rm -rf "$destination"
-      git_clone_retry "$url" "$destination" --recurse-submodules --branch "$branch"
+      fetch_full_branch "$url" "$branch" "$destination" || return
     fi
   fi
   git -C "$destination" cat-file -e "$commit^{commit}" 2>/dev/null \
     || { echo "resolved engine commit $commit is unavailable from $branch" >&2; return 1; }
-  git -C "$destination" checkout --detach "$commit"
-  git_retry "update engine submodules" -C "$destination" submodule update --init --recursive
+  git -C "$destination" checkout --detach "$commit" || return
+  git_retry "update engine submodules" -C "$destination" submodule update --init --recursive || return
   [ "$(git -C "$destination" rev-parse HEAD)" = "$commit" ] \
     || { echo "checked out $(git -C "$destination" rev-parse HEAD), expected $commit" >&2; return 1; }
 }

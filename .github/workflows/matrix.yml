@@ -133,7 +133,7 @@ jobs:
     needs: [expand, engine, vmod]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     # Shared with trunk.yml: both push ci-state/matrix and deploy the same
     # Pages site, so their publishes must never race.
     concurrency:
@@ -172,8 +172,12 @@ jobs:
           mkdir -p site
           python3 repo/tools/matrix.py render --state-file state/matrix-state.json --out site/index.html
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      - id: pages_artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
+          name: github-pages-${{ github.run_attempt }}
           path: site
       - id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        uses: ./repo/.github/actions/deploy-pages
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
